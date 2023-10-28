@@ -9,11 +9,55 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
     //     .name = code[0..10],
     //     .args = std.ArrayList(ast.Type).init(alloc)
     // };
-    var parser = Parser { .code = code, .alloc = alloc };
+    var parser = Parser{ .code = code, .alloc = alloc };
+    // TODO: Handle OOM error differently
     const program = parser.parse_program() catch |err| {
-        std.debug.print("Error: {}\n", .{err});
         const offset = code.len - parser.code.len;
-        std.debug.print("Error is at {}.\n", .{offset});
+
+        var lines = std.ArrayList([]u8).init(alloc);
+        var current_line = std.ArrayList(u8).init(alloc);
+        for (code, 0..) |c, i| {
+            if (offset == i) {
+                break;
+            }
+            switch (c) {
+                '\n' => {
+                    lines.append(current_line.items) catch {
+                        unreachable;
+                    };
+                    current_line = std.ArrayList(u8).init(alloc);
+                },
+                else => |a| current_line.append(a) catch {
+                    unreachable;
+                },
+            }
+        }
+        const num_lines_to_display = 4;
+        for (lines.items.len - num_lines_to_display + 1..lines.items.len) |number| {
+            if (lines.items.len >= number) {
+                std.debug.print("{d} | {s}\n", .{ number + 1, lines.items[number] });
+            }
+        }
+        std.debug.print("{d} | {s}", .{ lines.items.len, current_line.items });
+        for (code[offset..]) |c| {
+            switch (c) {
+                '\n' => break,
+                else => std.debug.print("{c}", .{c}),
+            }
+        }
+        std.debug.print("\n", .{});
+
+        std.debug.print("    ", .{});
+        for (0..current_line.items.len) |_| {
+            std.debug.print(" ", .{});
+        }
+        std.debug.print("^\n", .{});
+        std.debug.print("    ", .{});
+        for (0..current_line.items.len) |_| {
+            std.debug.print(" ", .{});
+        }
+        std.debug.print("{}\n", .{err});
+
         return null;
     };
     return program;
@@ -76,15 +120,12 @@ const Parser = struct {
             if (try self.parse_builtin_type()) |bt| {
                 try declarations.append(.{ .builtin_type = bt });
             }
-
             if (try self.parse_struct()) |s| {
                 try declarations.append(.{ .struct_ = s });
             }
-
             if (try self.parse_enum()) |e| {
                 try declarations.append(.{ .enum_ = e });
             }
-
             if (try self.parse_fun()) |fun| {
                 try declarations.append(.{ .fun = fun });
             }
@@ -95,6 +136,9 @@ const Parser = struct {
             } else {
                 len = new_len;
             }
+        }
+        if (len > 0) {
+            return error.ExpectedDeclaration;
         }
         return .{ .declarations = declarations };
     }
@@ -124,7 +168,7 @@ const Parser = struct {
         self.consume_keyword("builtinType") orelse return null;
         self.consume_whitespace();
         const name = self.parse_name() orelse return error.ExpectedNameOfBuiltinType;
-        return ast.BuiltinType { .name = name };
+        return ast.BuiltinType{ .name = name };
     }
 
     fn parse_type(self: *Self) !?ast.Type {
@@ -166,7 +210,9 @@ const Parser = struct {
             self.consume_whitespace();
             self.consume_prefix(":") orelse return error.ExpectedColon;
             self.consume_whitespace();
-            const field_type = try self.parse_type() orelse { return error.ExpectedTypeOfField; };
+            const field_type = try self.parse_type() orelse {
+                return error.ExpectedTypeOfField;
+            };
             try fields.append(.{ .name = field_name, .type_ = field_type });
             self.consume_prefix(",") orelse break;
             self.consume_whitespace();
@@ -174,7 +220,7 @@ const Parser = struct {
 
         self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
 
-        return ast.Struct { .name = name, .type_args = type_args, .fields = fields };
+        return ast.Struct{ .name = name, .type_args = type_args, .fields = fields };
     }
 
     fn parse_enum(self: *Self) !?ast.Enum {
@@ -207,7 +253,7 @@ const Parser = struct {
 
         self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
 
-        return ast.Enum { .name = name, .type_args = type_args, .variants = variants };
+        return ast.Enum{ .name = name, .type_args = type_args, .variants = variants };
     }
 
     fn parse_fun(self: *Self) !?ast.Fun {
@@ -227,7 +273,9 @@ const Parser = struct {
             self.consume_whitespace();
             self.consume_prefix(":") orelse return error.ExpectedColon;
             self.consume_whitespace();
-            const arg_type = try self.parse_type() orelse { return error.ExpectedTypeOfArgument; };
+            const arg_type = try self.parse_type() orelse {
+                return error.ExpectedTypeOfArgument;
+            };
             try args.append(.{ .name = arg_name, .type_ = arg_type });
             self.consume_prefix(",") orelse break;
             self.consume_whitespace();
@@ -251,17 +299,3 @@ const Parser = struct {
         };
     }
 };
-
-// fn Parsed(comptime T: type) type {
-//     return struct {
-//         code: []u8,
-//         parsed: T,
-//     };
-// }
-
-
-
-
-
-
-
