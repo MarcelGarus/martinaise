@@ -7,7 +7,7 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
     // unreachable;
     // return .{
     //     .name = code[0..10],
-    //     .arguments = std.ArrayList(ast.Type).init(alloc)
+    //     .args = std.ArrayList(ast.Type).init(alloc)
     // };
     var parser = Parser { .code = code, .alloc = alloc };
     const program = parser.parse_program() catch {
@@ -76,6 +76,10 @@ const Parser = struct {
                 const bt = self.parse_builtin_type() catch { break :parse_builtin_type; };
                 try declarations.append(.{ .builtin_type = bt });
             }
+            parse_struct: {
+                const struct_ = self.parse_struct() catch { break :parse_struct; };
+                try declarations.append(.{ .struct_ = struct_ });
+            }
             parse_fun: {
                 const fun = self.parse_fun() catch { break :parse_fun; };
                 try declarations.append(.{ .fun = fun });
@@ -112,7 +116,7 @@ const Parser = struct {
         return name;
     }
 
-    fn parse_builtin_type(self: *Self) error{NoMatch, ExpectedNameOfBuiltinType}!ast.BuiltinType {
+    fn parse_builtin_type(self: *Self) !ast.BuiltinType {
         try self.consume_keyword("builtinType");
         self.consume_whitespace();
         const name = self.parse_name() catch { return error.ExpectedNameOfBuiltinType; };
@@ -123,13 +127,13 @@ const Parser = struct {
         const name = try self.parse_name();
         self.consume_whitespace();
 
-        var type_arguments = std.ArrayList(ast.Type).init(self.alloc);
+        var type_args = std.ArrayList(ast.Type).init(self.alloc);
         parse_type_args: {
             self.consume_prefix("[") catch { break :parse_type_args; };
             self.consume_whitespace();
             while (true) {
                 const arg = self.parse_type() catch { return error.ExpectedTypeArgument; };
-                try type_arguments.append(arg);
+                try type_args.append(arg);
                 self.consume_whitespace();
                 self.consume_prefix(",") catch { break; };
                 self.consume_whitespace();
@@ -137,9 +141,37 @@ const Parser = struct {
             self.consume_prefix("]") catch { return error.ExpectedClosingBracket; };
         }
 
-        return .{ .name = name, .arguments = type_arguments };
+        return .{ .name = name, .args = type_args };
     }
 
+    fn parse_struct(self: *Self) !ast.Struct {
+        try self.consume_keyword("struct");
+        self.consume_whitespace();
+        const name = self.parse_name() catch { return error.ExpectedNameOfStruct; };
+        self.consume_whitespace();
+
+        // TODO: parse types args
+        var type_args = std.ArrayList(ast.Type).init(self.alloc);
+
+        self.consume_prefix("{") catch { return error.ExpectedOpeningBrace; };
+        self.consume_whitespace();
+
+        var fields = std.ArrayList(ast.Field).init(self.alloc);
+        while (true) {
+            const field_name = self.parse_name() catch { break; };
+            self.consume_whitespace();
+            self.consume_prefix(":") catch { return error.ExpectedColon; };
+            self.consume_whitespace();
+            const field_type = try self.parse_type();
+            try fields.append(.{ .name = field_name, .type_ = field_type });
+            self.consume_prefix(",") catch { break; };
+            self.consume_whitespace();
+        }
+
+        self.consume_prefix("}") catch { return error.ExpectedClosingBrace; };
+
+        return ast.Struct { .name = name, .type_args = type_args, .fields = fields };
+    }
 
     fn parse_fun(self: *Self) !ast.Fun {
         self.consume_keyword("fun") catch { return error.NoMatch; };
@@ -147,10 +179,10 @@ const Parser = struct {
         const name = self.parse_name() catch { return error.ExpectedNameOfFunction; };
         self.consume_whitespace();
 
-        // TODO: parse type arguments
-        var type_arguments = std.ArrayList(ast.Type).init(self.alloc);
+        // TODO: parse type args
+        var type_args = std.ArrayList(ast.Type).init(self.alloc);
 
-        var arguments = std.ArrayList(ast.Argument).init(self.alloc);
+        var args = std.ArrayList(ast.Argument).init(self.alloc);
         self.consume_prefix("(") catch { return error.ExpectedOpeningParenthesis; };
         self.consume_whitespace();
         while (true) {
@@ -159,7 +191,7 @@ const Parser = struct {
             self.consume_prefix(":") catch { return error.ExpectedColon; };
             self.consume_whitespace();
             const arg_type = try self.parse_type();
-            try arguments.append(.{ .name = arg_name, .type_ = arg_type });
+            try args.append(.{ .name = arg_name, .type_ = arg_type });
             self.consume_prefix(",") catch { break; };
             self.consume_whitespace();
         }
@@ -175,8 +207,8 @@ const Parser = struct {
 
         return .{
             .name = name,
-            .type_arguments = type_arguments,
-            .arguments = arguments,
+            .type_args = type_args,
+            .args = args,
             .return_type = return_type,
             .body = std.ArrayList(ast.Expression).init(self.alloc),
         };

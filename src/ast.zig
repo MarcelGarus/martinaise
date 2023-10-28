@@ -19,12 +19,13 @@ pub const BuiltinType = struct {
 
 pub const Type = struct {
     name: Name,
-    arguments: ArrayList(Type),
+    args: ArrayList(Type),
 };
 
 pub const Struct = struct {
-    name: Type,
-    fields: []Field,
+    name: Name,
+    type_args: ArrayList(Type),
+    fields: ArrayList(Field),
 };
 pub const Field = struct {
     name: Name,
@@ -33,7 +34,7 @@ pub const Field = struct {
 
 pub const Enum = struct {
     name: Type,
-    variants: []Variant,
+    variants: ArrayList(Variant),
 };
 pub const Variant = struct {
     name: Name,
@@ -42,8 +43,8 @@ pub const Variant = struct {
 
 pub const Fun = struct {
     name: Name,
-    type_arguments: ArrayList(Type),
-    arguments: ArrayList(Argument),
+    type_args: ArrayList(Type),
+    args: ArrayList(Argument),
     return_type: ?Type,
     body: Body,
 };
@@ -60,7 +61,7 @@ pub const Expression = union(enum) {
 };
 pub const Call = struct {
     callee: *Expression,
-    arguments: ArrayList(Expression),
+    args: ArrayList(Expression),
 };
 pub const Var = struct {
     name: Name,
@@ -83,21 +84,17 @@ pub fn print(program: Program) void {
 fn print_declaration(declaration: Declaration) void {
     switch (declaration) {
         .builtin_type => |bt| print_builtin_type(bt),
-        .struct_ => std.debug.print("struct", .{}),
+        .struct_ => |s| print_struct(s),
         .enum_ => std.debug.print("enum", .{}),
         .fun => |fun| print_fun(fun),
     }
 }
-fn print_name(name: Name) void {
-    std.debug.print("{s}", .{name});
-}
 fn print_builtin_type(bt: BuiltinType) void {
-    std.debug.print("builtinType ", .{});
-    print_name(bt.name);
+    std.debug.print("builtinType {s}", .{bt.name});
 }
 fn print_type(type_: Type) void {
     std.debug.print("{s}", .{type_.name});
-    const args = type_.arguments.items;
+    const args = type_.args.items;
     if (args.len > 0) {
         std.debug.print("[", .{});
         for (args, 0..) |arg, i| {
@@ -109,11 +106,24 @@ fn print_type(type_: Type) void {
         std.debug.print("]", .{});
     }
 }
+fn print_struct(s: Struct) void {
+    const fields = s.fields.items;
+    if (fields.len == 0) {
+        std.debug.print("struct {s} {{}}", .{s.name});
+    } else {
+        std.debug.print("struct {s} {{\n", .{s.name});
+        for (fields) |field| {
+            std.debug.print("  {s}: ", .{field.name});
+            print_type(field.type_);
+            std.debug.print(",\n", .{});
+        }
+        std.debug.print("}}", .{});
+    }
+}
 pub fn print_fun(fun: Fun) void {
-    std.debug.print("fun ", .{});
-    print_name(fun.name);
+    std.debug.print("fun {s}", .{fun.name});
 
-    const type_args = fun.type_arguments.items;
+    const type_args = fun.type_args.items;
     if (type_args.len > 0) {
         std.debug.print("[", .{});
         for (type_args, 0..) |arg, i| {
@@ -125,7 +135,7 @@ pub fn print_fun(fun: Fun) void {
         std.debug.print("]", .{});
     }
 
-    const args = fun.arguments.items;
+    const args = fun.args.items;
     std.debug.print("(", .{});
     for (args, 0..) |arg, i| {
         print_argument(arg);
@@ -143,7 +153,6 @@ pub fn print_fun(fun: Fun) void {
     std.debug.print(" {{ ... }}", .{});
 }
 fn print_argument(arg: Argument) void {
-    print_name(arg.name);
-    std.debug.print(": ", .{});
+    std.debug.print("{s}: ", .{arg.name});
     print_type(arg.type_);
 }
