@@ -10,8 +10,10 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
     //     .args = std.ArrayList(ast.Type).init(alloc)
     // };
     var parser = Parser { .code = code, .alloc = alloc };
-    const program = parser.parse_program() catch {
-        std.debug.print("Couldn't parse program.\n", .{});
+    const program = parser.parse_program() catch |err| {
+        std.debug.print("Error: {}\n", .{err});
+        const offset = code.len - parser.code.len;
+        std.debug.print("Error is at {}.\n", .{offset});
         return null;
     };
     return program;
@@ -72,17 +74,28 @@ const Parser = struct {
         while (true) {
             self.consume_whitespace();
 
-            parse_builtin_type: {
-                const bt = self.parse_builtin_type() catch { break :parse_builtin_type; };
+            if (self.parse_builtin_type()) |bt| {
                 try declarations.append(.{ .builtin_type = bt });
+            } else |err| if (err != error.NoMatch) {
+                return err;
             }
-            parse_struct: {
-                const struct_ = self.parse_struct() catch { break :parse_struct; };
-                try declarations.append(.{ .struct_ = struct_ });
+
+            if (self.parse_struct()) |s| {
+                try declarations.append(.{ .struct_ = s });
+            } else |err| if (err != error.NoMatch) {
+                return err;
             }
-            parse_fun: {
-                const fun = self.parse_fun() catch { break :parse_fun; };
+
+            if (self.parse_enum()) |e| {
+                try declarations.append(.{ .enum_ = e });
+            } else |err| if (err != error.NoMatch) {
+                return err;
+            }
+
+            if (self.parse_fun()) |fun| {
                 try declarations.append(.{ .fun = fun });
+            } else |err| if (err != error.NoMatch) {
+                return err;
             }
 
             const new_len = self.code.len;
@@ -150,7 +163,7 @@ const Parser = struct {
         const name = self.parse_name() catch { return error.ExpectedNameOfStruct; };
         self.consume_whitespace();
 
-        // TODO: parse types args
+        // TODO: parse type args
         var type_args = std.ArrayList(ast.Type).init(self.alloc);
 
         self.consume_prefix("{") catch { return error.ExpectedOpeningBrace; };
@@ -171,6 +184,39 @@ const Parser = struct {
         self.consume_prefix("}") catch { return error.ExpectedClosingBrace; };
 
         return ast.Struct { .name = name, .type_args = type_args, .fields = fields };
+    }
+
+    fn parse_enum(self: *Self) !ast.Enum {
+        try self.consume_keyword("enum");
+        self.consume_whitespace();
+        const name = self.parse_name() catch { return error.ExpectedNameOfEnum; };
+        self.consume_whitespace();
+
+        // TODO: parse type args
+        var type_args = std.ArrayList(ast.Type).init(self.alloc);
+
+        self.consume_prefix("{") catch { return error.ExpectedOpeningBrace; };
+        self.consume_whitespace();
+
+        var variants = std.ArrayList(ast.Variant).init(self.alloc);
+        while (true) {
+            const variant_name = self.parse_name() catch { break; };
+            var variant_type: ?ast.Type = null;
+
+            self.consume_whitespace();
+            if (self.consume_prefix(":")) {
+                self.consume_whitespace();
+                variant_type = try self.parse_type();
+                self.consume_whitespace();
+            } else |_| {}
+            try variants.append(.{ .name = variant_name, .type_ = variant_type });
+            self.consume_prefix(",") catch { break; };
+            self.consume_whitespace();
+        }
+
+        self.consume_prefix("}") catch { return error.ExpectedClosingBrace; };
+
+        return ast.Enum { .name = name, .type_args = type_args, .variants = variants };
     }
 
     fn parse_fun(self: *Self) !ast.Fun {

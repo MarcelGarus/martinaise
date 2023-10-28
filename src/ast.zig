@@ -33,7 +33,8 @@ pub const Field = struct {
 };
 
 pub const Enum = struct {
-    name: Type,
+    name: Name,
+    type_args: ArrayList(Type),
     variants: ArrayList(Variant),
 };
 pub const Variant = struct {
@@ -85,7 +86,7 @@ fn print_declaration(declaration: Declaration) void {
     switch (declaration) {
         .builtin_type => |bt| print_builtin_type(bt),
         .struct_ => |s| print_struct(s),
-        .enum_ => std.debug.print("enum", .{}),
+        .enum_ => |e| print_enum(e),
         .fun => |fun| print_fun(fun),
     }
 }
@@ -115,6 +116,23 @@ fn print_struct(s: Struct) void {
         for (fields) |field| {
             std.debug.print("  {s}: ", .{field.name});
             print_type(field.type_);
+            std.debug.print(",\n", .{});
+        }
+        std.debug.print("}}", .{});
+    }
+}
+fn print_enum(e: Enum) void {
+    const variants = e.variants.items;
+    if (variants.len == 0) {
+        std.debug.print("enum {s} {{}}", .{e.name});
+    } else {
+        std.debug.print("enum {s} {{\n", .{e.name});
+        for (variants) |variant| {
+            std.debug.print("  {s}", .{variant.name});
+            if (variant.type_) |t| {
+                std.debug.print(": ", .{});
+                print_type(t);
+            }
             std.debug.print(",\n", .{});
         }
         std.debug.print("}}", .{});
