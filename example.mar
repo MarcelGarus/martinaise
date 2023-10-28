@@ -1,0 +1,69 @@
+builtinType U8
+
+fun add(a: U8, b: U8): U8 {
+  @add(a, b)
+}
+fun main() {
+  @debug(add(2, 3));
+}
+
+# ---
+
+fun foo() {
+  var bar: U8 = 4;
+  var baz: U8 = 5;
+  @debug(add(bar, baz));
+  @debug(bar.add(baz));
+}
+
+
+fun fib(n: U8) {
+  if @lessThan(n, 2) {
+    n
+  } else {
+    fib(@subtract(n, 1), @subtract(n, 2))
+  }
+}
+fun main() {
+  @debug(fib(10));
+}
+
+struct Foo {
+  bar: U8,
+}
+fun computedProperty(foo: Foo) U8 {
+  ...
+}
+
+
+fun bar {
+  var foo = ...
+  someHigherOrderFun(foo.computedProperty())
+}
+
+fun bar {
+  var foo: Foo = Foo { bar = 4 };
+  var also_foo = Foo { bar = 4 };
+}
+fun 
+
+enum Bool { True, False }
+
+fun and(a: Bool, b: Bool) {}
+
+
+enum Maybe[T] { Some: T, None }
+
+fun map[T, X](maybe: Maybe[T], mapper: T -> X): Maybe[X] {
+  return match maybe {
+    case Some t -> Some mapper(t),
+    case None -> None,
+  };
+}
+
+struct String {
+  len: U8,
+}
+
+fun print()
+
