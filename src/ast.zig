@@ -55,6 +55,7 @@ pub const Argument = struct {
 };
 pub const Body = ArrayList(Expression);
 pub const Expression = union(enum) {
+    number: i128,
     reference: Name,
     call: Call,
     var_: Var,

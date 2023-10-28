@@ -35,10 +35,10 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
         const num_lines_to_display = 4;
         for (lines.items.len - num_lines_to_display + 1..lines.items.len) |number| {
             if (lines.items.len >= number) {
-                std.debug.print("{d} | {s}\n", .{ number + 1, lines.items[number] });
+                std.debug.print("{d:4} | {s}\n", .{ number + 1, lines.items[number] });
             }
         }
-        std.debug.print("{d} | {s}", .{ lines.items.len, current_line.items });
+        std.debug.print("{d:4} | {s}", .{ lines.items.len, current_line.items });
         for (code[offset..]) |c| {
             switch (c) {
                 '\n' => break,
@@ -47,12 +47,12 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
         }
         std.debug.print("\n", .{});
 
-        std.debug.print("    ", .{});
+        std.debug.print("       ", .{});
         for (0..current_line.items.len) |_| {
             std.debug.print(" ", .{});
         }
         std.debug.print("^\n", .{});
-        std.debug.print("    ", .{});
+        std.debug.print(" ", .{});
         for (0..current_line.items.len) |_| {
             std.debug.print(" ", .{});
         }
@@ -290,12 +290,87 @@ const Parser = struct {
             return_type = try self.parse_type() orelse return error.ExpectedReturnType;
         }
 
+        const body = try self.parse_body() orelse return error.ExpectedBody;
+
         return .{
             .name = name,
             .type_args = type_args,
             .args = args,
             .return_type = return_type,
-            .body = std.ArrayList(ast.Expression).init(self.alloc),
+            .body = body,
         };
+    }
+
+    fn parse_body(self: *Self) !?ast.Body {
+        self.consume_prefix("{") orelse return null;
+
+        var statements = std.ArrayList(ast.Expression).init(self.alloc);
+        var len = self.code.len;
+        while (true) {
+            self.consume_whitespace();
+
+            if (try self.parse_var()) |var_| {
+                try statements.append(.{ .var_ = var_ });
+            }
+
+            const new_len = self.code.len;
+            if (new_len == len) {
+                break; // Nothing more got parsed.
+            } else {
+                len = new_len;
+            }
+        }
+
+        self.consume_prefix("}") orelse return error.ExpectedStatementOrClosingBrace;
+        return statements;
+    }
+
+    fn parse_expression(self: *Self) !?ast.Expression {
+        if (self.parse_number()) |number| {
+            return .{ .number = number };
+        }
+
+        return null;
+    }
+
+    fn parse_number(self: *Self) ?i128 {
+        var i: usize = 0;
+        var num: i128 = 0;
+        loop: while (true) {
+            switch (self.code[i]) {
+                '0'...'9' => {
+                    num = num * 10 + (self.code[i] - '0');
+                    i += 1;
+                },
+                else => break :loop,
+            }
+        }
+        if (i == 0) {
+            return null;
+        }
+        self.code = self.code[i..];
+        return num;
+    }
+
+    fn parse_var(self: *Self) !?ast.Var {
+        self.consume_keyword("var") orelse return null;
+        self.consume_whitespace();
+
+        const name = self.parse_name() orelse return error.ExpectedNameOfVar;
+        self.consume_whitespace();
+
+        self.consume_prefix(":") orelse return error.ExpectedColon;
+        self.consume_whitespace();
+
+        const type_ = try self.parse_type() orelse return error.ExpectedTypeOfVar;
+
+        self.consume_whitespace();
+        self.consume_prefix("=") orelse return error.ExpectedEquals;
+        self.consume_whitespace();
+
+        var value = try self.parse_expression() orelse return error.ExpectedValueOfVar;
+        self.consume_prefix(";") orelse return error.ExpectedSemicolon;
+
+        return .{ .name = name, .type_ = type_, .value = &value };
     }
 };
