@@ -73,6 +73,11 @@ fn parse_program(alloc: std.mem.Allocator, code_: []u8) ?Parsed(ast.Program) {
             declarations.append(.{ .builtin_type = bt.parsed }) catch { unreachable; };
         }
 
+        if (parse_fun(alloc, code)) |fun| {
+            code = fun.code;
+            declarations.append(.{ .fun = fun.parsed }) catch { unreachable; };
+        }
+
         const newlen = code.len;
         if (newlen == len) {
             break; // Nothing more got parsed.
@@ -91,11 +96,7 @@ fn parse_builtin_type(code_: []u8) ?Parsed(ast.Name) {
     var code = code_;
 
     code = (parse_prefix(code, "builtinType") orelse return null).code;
-    if (parse_whitespace(code)) |w| {
-        code = w.code;
-    } else {
-        return null;
-    }
+    code = (parse_whitespace(code) orelse return null).code;
 
     return parse_name(code);
 }
@@ -159,15 +160,14 @@ fn parse_type(alloc: std.mem.Allocator, code_: []u8) ?Parsed(ast.Type) {
             }
             if (parse_prefix(code, ",")) |c| {
                 code = c.code;
+            } else {
+                break;
             }
             if (parse_whitespace(code)) |c| {
                 code = c.code;
             }
-            if (parse_prefix(code, "]")) |c| {
-                code = c.code;
-                break;
-            }
         }
+        code = (parse_prefix(code, "]") orelse return null).code;
     }
 
     // _ = name;
@@ -183,6 +183,72 @@ fn parse_type(alloc: std.mem.Allocator, code_: []u8) ?Parsed(ast.Type) {
     };
 }
 
+fn parse_fun(alloc: std.mem.Allocator, code_: []u8) ?Parsed(ast.Fun) {
+    var code = code_;
+
+    code = (parse_prefix(code, "fun") orelse return null).code;
+    code = (parse_whitespace(code) orelse return null).code;
+
+    const a = parse_name(code) orelse return null;
+    code = a.code;
+    const name = a.parsed;
+
+    // TODO: parse type arguments
+    var type_arguments = std.ArrayList(ast.Type).init(alloc);
+
+    code = (parse_prefix(code, "(") orelse return null).code;
+    if (parse_whitespace(code)) |w| {
+        code = w.code;
+    }
+
+    var arguments = std.ArrayList(ast.Argument).init(alloc);
+    while (true) {
+        const n = parse_name(code) orelse return null;
+        code = n.code;
+        const arg_name = n.parsed;
+
+        if (parse_whitespace(code)) |w| {
+            code = w.code;
+        }
+        code = (parse_prefix(code, ":") orelse return null).code;
+        if (parse_whitespace(code)) |w| {
+            code = w.code;
+        }
+
+        const t = parse_type(alloc, code) orelse return null;
+        code = t.code;
+        const arg_type = t.parsed;
+
+        if (parse_whitespace(code)) |w| {
+            code = w.code;
+        }
+
+        arguments.append(.{ .name = arg_name, .type_ = arg_type }) catch { unreachable; };
+
+        if (parse_prefix(code, ",")) |c| {
+            code = c.code;
+        } else {
+            break;
+        }
+
+        if (parse_whitespace(code)) |w| {
+            code = w.code;
+        }
+    }
+
+    code = (parse_prefix(code, ")") orelse return null).code;
+
+    return .{
+        .code = code,
+        .parsed = .{
+            .name = name,
+            .type_arguments = type_arguments,
+            .arguments = arguments,
+            .return_type = null,
+            .body = std.ArrayList(ast.Expression).init(alloc),
+        }
+    };
+}
 
 
 

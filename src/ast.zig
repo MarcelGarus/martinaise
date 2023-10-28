@@ -38,8 +38,8 @@ pub const Variant = struct {
 
 pub const Fun = struct {
     name: Name,
-    type_arguments: []Type,
-    arguments: []Argument,
+    type_arguments: ArrayList(Type),
+    arguments: ArrayList(Argument),
     return_type: ?Type,
     body: Body,
 };
@@ -47,7 +47,7 @@ pub const Argument = struct {
     name: Name,
     type_: Type,
 };
-pub const Body = []Expression;
+pub const Body = ArrayList(Expression);
 pub const Expression = union(enum) {
     reference: Name,
     call: Call,
@@ -56,7 +56,7 @@ pub const Expression = union(enum) {
 };
 pub const Call = struct {
     callee: *Expression,
-    arguments: []Expression,
+    arguments: ArrayList(Expression),
 };
 pub const Var = struct {
     name: Name,
@@ -87,7 +87,7 @@ fn print_declaration(declaration: Declaration) void {
         },
         .struct_ => std.debug.print("struct", .{}),
         .enum_ => std.debug.print("enum", .{}),
-        .fun => std.debug.print("fun", .{}),
+        .fun => |fun| print_fun(fun),
     }
 }
 fn print_type(type_: Type) void {
@@ -96,11 +96,49 @@ fn print_type(type_: Type) void {
     if (args.len > 0) {
         std.debug.print("[", .{});
         for (args, 0..) |arg, i| {
-            print(arg);
+            print_type(arg);
             if (i < args.len - 1) {
                 std.debug.print(", ", .{});
             }
         }
         std.debug.print("]", .{});
     }
+}
+fn print_fun(fun: Fun) void {
+    std.debug.print("fun ", .{});
+    print_name(fun.name);
+
+    const type_args = fun.type_arguments.items;
+    if (type_args.len > 0) {
+        std.debug.print("[", .{});
+        for (type_args, 0..) |arg, i| {
+            print_type(arg);
+            if (i < type_args.len - 1) {
+                std.debug.print(", ", .{});
+            }
+        }
+        std.debug.print("]", .{});
+    }
+
+    const args = fun.arguments.items;
+    std.debug.print("(", .{});
+    for (args, 0..) |arg, i| {
+        print_argument(arg);
+        if (i < args.len - 1) {
+            std.debug.print(", ", .{});
+        }
+    }
+    std.debug.print(")", .{});
+
+    if (fun.return_type) |ty| {
+        std.debug.print(": ", .{});
+        print_type(ty);
+    }
+
+    std.debug.print(" {{ ... }}", .{});
+}
+fn print_argument(arg: Argument) void {
+    print_name(arg.name);
+    std.debug.print(": ", .{});
+    print_type(arg.type_);
 }
