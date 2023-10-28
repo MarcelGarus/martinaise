@@ -5,13 +5,17 @@ pub const Program = struct {
     declarations: ArrayList(Declaration),
 };
 pub const Declaration = union(enum) {
-    builtin_type: Name,
+    builtin_type: BuiltinType,
     struct_: Struct,
     enum_: Enum,
     fun: Fun,
 };
 
 pub const Name = []u8;
+
+pub const BuiltinType = struct {
+    name: Name,
+};
 
 pub const Type = struct {
     name: Name,
@@ -76,19 +80,20 @@ pub fn print(program: Program) void {
         std.debug.print("\n", .{});
     }
 }
-fn print_name(name: Name) void {
-    std.debug.print("{s}", .{name});
-}
 fn print_declaration(declaration: Declaration) void {
     switch (declaration) {
-        .builtin_type => |bt| {
-            std.debug.print("builtinType ", .{});
-            print_name(bt);
-        },
+        .builtin_type => |bt| print_builtin_type(bt),
         .struct_ => std.debug.print("struct", .{}),
         .enum_ => std.debug.print("enum", .{}),
         .fun => |fun| print_fun(fun),
     }
+}
+fn print_name(name: Name) void {
+    std.debug.print("{s}", .{name});
+}
+fn print_builtin_type(bt: BuiltinType) void {
+    std.debug.print("builtinType ", .{});
+    print_name(bt.name);
 }
 fn print_type(type_: Type) void {
     std.debug.print("{s}", .{type_.name});
@@ -104,7 +109,7 @@ fn print_type(type_: Type) void {
         std.debug.print("]", .{});
     }
 }
-fn print_fun(fun: Fun) void {
+pub fn print_fun(fun: Fun) void {
     std.debug.print("fun ", .{});
     print_name(fun.name);
 

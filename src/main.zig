@@ -18,7 +18,7 @@ pub fn main() !void {
     // _ = the_ast;
     std.debug.print("Parsed:\n", .{});
     if (the_ast) |a| {
-        ast.print(a.parsed);
+        ast.print(a);
     }
 }
 

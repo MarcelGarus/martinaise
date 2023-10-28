@@ -1,7 +1,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 
-pub fn parse(alloc: std.mem.Allocator, code: []u8) ?Parsed(ast.Program) {
+pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
     // std.debug.print("Compiling code:\n{s}\n", .{code});
     // return ast.Program.builtin_type("hi");
     // unreachable;
@@ -9,262 +9,189 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) ?Parsed(ast.Program) {
     //     .name = code[0..10],
     //     .arguments = std.ArrayList(ast.Type).init(alloc)
     // };
-    return parse_program(alloc, code);
-}
-
-fn Parsed(comptime T: type) type {
-    return struct {
-        code: []u8,
-        parsed: T,
-    };
-}
-
-fn parse_whitespace(code_: []u8) ?Parsed(void) {
-    var code = code_;
-
-    var parsed_something = false;
-    loop: while (code.len > 0) {
-        switch (code[0]) {
-            ' ', '\t', '\n' => {
-                parsed_something = true;
-                code = code[1..];
-            },
-            else => break :loop,
-        }
-    }
-
-    if (parsed_something) {
-        return .{
-            .code = code,
-            .parsed = {}
-        };
-    } else {
+    var parser = Parser { .code = code, .alloc = alloc };
+    const program = parser.parse_program() catch {
+        std.debug.print("Couldn't parse program.\n", .{});
         return null;
-    }
-}
-
-fn parse_prefix(code: []u8, prefix: []const u8) ?Parsed(void) {
-    if (code.len < prefix.len) {
-        return null;
-    }
-    for (prefix, code[0..prefix.len]) |a, b| {
-        if (a != b) {
-            return null;
-        }
-    }
-    return .{
-        .code = code[prefix.len..],
-        .parsed = {}
     };
+    return program;
 }
 
-fn parse_program(alloc: std.mem.Allocator, code_: []u8) ?Parsed(ast.Program) {
-    var code = code_;
-    var declarations = std.ArrayList(ast.Declaration).init(alloc);
-    
-    var len = code.len;
-    while (true) {
-        if (parse_whitespace(code)) |w| {
-            code = w.code;
-        }
+const Parser = struct {
+    code: []u8,
+    alloc: std.mem.Allocator,
 
-        if (parse_builtin_type(code)) |bt| {
-            code = bt.code;
-            declarations.append(.{ .builtin_type = bt.parsed }) catch { unreachable; };
-        }
+    const Self = @This();
 
-        if (parse_fun(alloc, code)) |fun| {
-            code = fun.code;
-            declarations.append(.{ .fun = fun.parsed }) catch { unreachable; };
+    fn consume_whitespace(self: *Self) void {
+        var i: usize = 0;
+        loop: while (i < self.code.len) : (i += 1) {
+            switch (self.code[i]) {
+                ' ', '\t', '\n' => {},
+                else => break :loop,
+            }
         }
-
-        const newlen = code.len;
-        if (newlen == len) {
-            break; // Nothing more got parsed.
-        } else {
-            len = newlen;
-        }
+        self.code = self.code[i..];
     }
 
-    return .{
-        .code = code,
-        .parsed = .{ .declarations = declarations }
-    };
-}
-
-fn parse_builtin_type(code_: []u8) ?Parsed(ast.Name) {
-    var code = code_;
-
-    code = (parse_prefix(code, "builtinType") orelse return null).code;
-    code = (parse_whitespace(code) orelse return null).code;
-
-    return parse_name(code);
-}
-
-fn parse_name(code: []u8) ?Parsed(ast.Name) {
-    var i: usize = 0;
-    loop: while (true) {
-        switch (code[i]) {
-            'A'...'Z', 'a'...'z' => i += 1,
-            '0'...'9' => if (i == 0) {
-                break :loop;
-            } else {
-                i += 1;
-            },
-            else => break :loop,
+    fn consume_prefix(self: *Self, prefix: []const u8) error{NoMatch}!void {
+        if (self.code.len < prefix.len) {
+            return error.NoMatch;
         }
-    }
-    if (i == 0) {
-        return null;
-    } else {
-        return .{
-            .code = code[i..],
-            .parsed = code[0..i]
-        };
-    }
-}
-
-fn parse_type(alloc: std.mem.Allocator, code_: []u8) ?Parsed(ast.Type) {
-    var code = code_;
-    
-    // Parse the name of the type.
-    const a = parse_name(code) orelse return null;
-    const name = a.parsed;
-    code = a.code;
-
-    if (parse_whitespace(code)) |b| {
-        code = b.code;
-    }
-
-    // Parse type arguments.
-    var type_arguments = std.ArrayList(ast.Type).init(alloc);
-    if (parse_prefix(code, "[")) |b| {
-        code = b.code;
-
-        if (parse_whitespace(code)) |c| {
-            code = c.code;
+        for (prefix, self.code[0..prefix.len]) |a, b| {
+            if (a != b) {
+                return error.NoMatch;
+            }
         }
+        self.code = self.code[prefix.len..];
+    }
+    // Also makes sure there's a whitespace following, so
+    // `consume_keyword("fun")` doesn't match the code `funny`.
+    fn consume_keyword(self: *Self, keyword: []const u8) error{NoMatch}!void {
+        if (self.code.len < keyword.len) {
+            return error.NoMatch;
+        }
+        for (keyword, self.code[0..keyword.len]) |a, b| {
+            if (a != b) {
+                return error.NoMatch;
+            }
+        }
+        if (self.code.len > keyword.len) {
+            switch (self.code[keyword.len]) {
+                ' ', '\t', '\n' => {},
+                else => return error.NoMatch,
+            }
+        }
+        self.code = self.code[keyword.len..];
+    }
 
+
+    fn parse_program(self: *Self) !ast.Program {
+        var declarations = std.ArrayList(ast.Declaration).init(self.alloc);
+        var len = self.code.len;
         while (true) {
-            if (parse_type(alloc, code)) |c| {
-                type_arguments.append(c.parsed) catch {
-                    unreachable;
-                };
-                code = c.code;
+            self.consume_whitespace();
+
+            parse_builtin_type: {
+                const bt = self.parse_builtin_type() catch { break :parse_builtin_type; };
+                try declarations.append(.{ .builtin_type = bt });
+            }
+            parse_fun: {
+                const fun = self.parse_fun() catch { break :parse_fun; };
+                try declarations.append(.{ .fun = fun });
+            }
+
+            const new_len = self.code.len;
+            if (new_len == len) {
+                break; // Nothing more got parsed.
             } else {
-                // TODO: do stuff
-                unreachable;
-            }
-            if (parse_whitespace(code)) |c| {
-                code = c.code;
-            }
-            if (parse_prefix(code, ",")) |c| {
-                code = c.code;
-            } else {
-                break;
-            }
-            if (parse_whitespace(code)) |c| {
-                code = c.code;
+                len = new_len;
             }
         }
-        code = (parse_prefix(code, "]") orelse return null).code;
+        return .{ .declarations = declarations };
     }
 
-    // _ = name;
-
-    // std.debug.print("Compiling code:\n{s}\n", .{code});
-    // return ast.Program.builtin_type("hi");
-    return .{
-        .code = code,
-        .parsed = .{
-            .name = name,
-            .arguments = type_arguments
+    fn parse_name(self: *Self) error{NoMatch}!ast.Name {
+        var i: usize = 0;
+        loop: while (true) {
+            switch (self.code[i]) {
+                'A'...'Z', 'a'...'z' => i += 1,
+                '0'...'9' => if (i == 0) {
+                    break :loop;
+                } else {
+                    i += 1;
+                },
+                else => break :loop,
+            }
         }
-    };
-}
-
-fn parse_fun(alloc: std.mem.Allocator, code_: []u8) ?Parsed(ast.Fun) {
-    var code = code_;
-
-    code = (parse_prefix(code, "fun") orelse return null).code;
-    code = (parse_whitespace(code) orelse return null).code;
-
-    const a = parse_name(code) orelse return null;
-    code = a.code;
-    const name = a.parsed;
-
-    // TODO: parse type arguments
-    var type_arguments = std.ArrayList(ast.Type).init(alloc);
-
-    code = (parse_prefix(code, "(") orelse return null).code;
-    if (parse_whitespace(code)) |w| {
-        code = w.code;
+        if (i == 0) {
+            return error.NoMatch;
+        }
+        const name = self.code[0..i];
+        self.code = self.code[i..];
+        return name;
     }
 
-    var arguments = std.ArrayList(ast.Argument).init(alloc);
-    while (true) {
-        const n = parse_name(code) orelse return null;
-        code = n.code;
-        const arg_name = n.parsed;
-
-        if (parse_whitespace(code)) |w| {
-            code = w.code;
-        }
-        code = (parse_prefix(code, ":") orelse return null).code;
-        if (parse_whitespace(code)) |w| {
-            code = w.code;
-        }
-
-        const t = parse_type(alloc, code) orelse return null;
-        code = t.code;
-        const arg_type = t.parsed;
-
-        if (parse_whitespace(code)) |w| {
-            code = w.code;
-        }
-
-        arguments.append(.{ .name = arg_name, .type_ = arg_type }) catch { unreachable; };
-
-        if (parse_prefix(code, ",")) |c| {
-            code = c.code;
-        } else {
-            break;
-        }
-
-        if (parse_whitespace(code)) |w| {
-            code = w.code;
-        }
+    fn parse_builtin_type(self: *Self) error{NoMatch, ExpectedNameOfBuiltinType}!ast.BuiltinType {
+        try self.consume_keyword("builtinType");
+        self.consume_whitespace();
+        const name = self.parse_name() catch { return error.ExpectedNameOfBuiltinType; };
+        return ast.BuiltinType { .name = name };
     }
 
-    code = (parse_prefix(code, ")") orelse return null).code;
-    if (parse_whitespace(code)) |w| {
-        code = w.code;
-    }
+    fn parse_type(self: *Self) !ast.Type {
+        const name = try self.parse_name();
+        self.consume_whitespace();
 
-    var return_type: ?ast.Type = null;
-    if (parse_prefix(code, ":")) |c| {
-        code = c.code;
-
-        if (parse_whitespace(code)) |w| {
-            code = w.code;
+        var type_arguments = std.ArrayList(ast.Type).init(self.alloc);
+        parse_type_args: {
+            self.consume_prefix("[") catch { break :parse_type_args; };
+            self.consume_whitespace();
+            while (true) {
+                const arg = self.parse_type() catch { return error.ExpectedTypeArgument; };
+                try type_arguments.append(arg);
+                self.consume_whitespace();
+                self.consume_prefix(",") catch { break; };
+                self.consume_whitespace();
+            }
+            self.consume_prefix("]") catch { return error.ExpectedClosingBracket; };
         }
-        const t = parse_type(alloc, code) orelse return null;
-        code = t.code;
-        return_type = t.parsed;
+
+        return .{ .name = name, .arguments = type_arguments };
     }
 
 
-    return .{
-        .code = code,
-        .parsed = .{
+    fn parse_fun(self: *Self) !ast.Fun {
+        self.consume_keyword("fun") catch { return error.NoMatch; };
+        self.consume_whitespace();
+        const name = self.parse_name() catch { return error.ExpectedNameOfFunction; };
+        self.consume_whitespace();
+
+        // TODO: parse type arguments
+        var type_arguments = std.ArrayList(ast.Type).init(self.alloc);
+
+        var arguments = std.ArrayList(ast.Argument).init(self.alloc);
+        self.consume_prefix("(") catch { return error.ExpectedOpeningParenthesis; };
+        self.consume_whitespace();
+        while (true) {
+            const arg_name = self.parse_name() catch { break; };
+            self.consume_whitespace();
+            self.consume_prefix(":") catch { return error.ExpectedColon; };
+            self.consume_whitespace();
+            const arg_type = try self.parse_type();
+            try arguments.append(.{ .name = arg_name, .type_ = arg_type });
+            self.consume_prefix(",") catch { break; };
+            self.consume_whitespace();
+        }
+        self.consume_prefix(")") catch { return error.ExpectedClosingParenthesis; };
+        self.consume_whitespace();
+
+        var return_type: ?ast.Type = null;
+        parse_return_type: {
+            self.consume_prefix(":") catch { break :parse_return_type; };
+            self.consume_whitespace();
+            return_type = self.parse_type() catch { return error.ExpectedReturnType; };
+        }
+
+        return .{
             .name = name,
             .type_arguments = type_arguments,
             .arguments = arguments,
             .return_type = return_type,
-            .body = std.ArrayList(ast.Expression).init(alloc),
-        }
-    };
-}
+            .body = std.ArrayList(ast.Expression).init(self.alloc),
+        };
+    }
+};
+
+// fn Parsed(comptime T: type) type {
+//     return struct {
+//         code: []u8,
+//         parsed: T,
+//     };
+// }
+
+
+
 
 
 
