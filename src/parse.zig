@@ -237,6 +237,22 @@ fn parse_fun(alloc: std.mem.Allocator, code_: []u8) ?Parsed(ast.Fun) {
     }
 
     code = (parse_prefix(code, ")") orelse return null).code;
+    if (parse_whitespace(code)) |w| {
+        code = w.code;
+    }
+
+    var return_type: ?ast.Type = null;
+    if (parse_prefix(code, ":")) |c| {
+        code = c.code;
+
+        if (parse_whitespace(code)) |w| {
+            code = w.code;
+        }
+        const t = parse_type(alloc, code) orelse return null;
+        code = t.code;
+        return_type = t.parsed;
+    }
+
 
     return .{
         .code = code,
@@ -244,7 +260,7 @@ fn parse_fun(alloc: std.mem.Allocator, code_: []u8) ?Parsed(ast.Fun) {
             .name = name,
             .type_arguments = type_arguments,
             .arguments = arguments,
-            .return_type = null,
+            .return_type = return_type,
             .body = std.ArrayList(ast.Expression).init(alloc),
         }
     };
