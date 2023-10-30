@@ -9,12 +9,12 @@ pub fn main() !void {
     defer my_file.close();
 
     var buf: [1024]u8 = undefined;
-    _ = try my_file.read(&buf);
+    const len = try my_file.read(&buf);
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var alloc = gpa.allocator();
 
-    const the_ast = parse(alloc, &buf);
+    const the_ast = parse(alloc, buf[0..len]);
     // _ = the_ast;
     std.debug.print("Parsed:\n", .{});
     if (the_ast) |a| {

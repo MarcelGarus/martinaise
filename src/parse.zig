@@ -2,13 +2,6 @@ const std = @import("std");
 const ast = @import("ast.zig");
 
 pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
-    // std.debug.print("Compiling code:\n{s}\n", .{code});
-    // return ast.Program.builtin_type("hi");
-    // unreachable;
-    // return .{
-    //     .name = code[0..10],
-    //     .args = std.ArrayList(ast.Type).init(alloc)
-    // };
     var parser = Parser{ .code = code, .alloc = alloc };
     // TODO: Handle OOM error differently
     const program = parser.parse_program() catch |err| {
@@ -38,7 +31,7 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
                 std.debug.print("{d:4} | {s}\n", .{ number + 1, lines.items[number] });
             }
         }
-        std.debug.print("{d:4} | {s}", .{ lines.items.len, current_line.items });
+        std.debug.print("{d:4} | {s}", .{ lines.items.len + 1, current_line.items });
         for (code[offset..]) |c| {
             switch (c) {
                 '\n' => break,
@@ -74,6 +67,11 @@ const Parser = struct {
         loop: while (i < self.code.len) : (i += 1) {
             switch (self.code[i]) {
                 ' ', '\t', '\n' => {},
+                '#' => while (i < self.code.len) : (i += 1) {
+                    if (self.code[i] == '\n') {
+                        break;
+                    }
+                },
                 else => break :loop,
             }
         }
@@ -113,31 +111,30 @@ const Parser = struct {
 
     fn parse_program(self: *Self) !ast.Program {
         var declarations = std.ArrayList(ast.Declaration).init(self.alloc);
-        var len = self.code.len;
         while (true) {
             self.consume_whitespace();
 
             if (try self.parse_builtin_type()) |bt| {
                 try declarations.append(.{ .builtin_type = bt });
+                continue;
             }
             if (try self.parse_struct()) |s| {
                 try declarations.append(.{ .struct_ = s });
+                continue;
             }
             if (try self.parse_enum()) |e| {
                 try declarations.append(.{ .enum_ = e });
+                continue;
             }
             if (try self.parse_fun()) |fun| {
                 try declarations.append(.{ .fun = fun });
+                continue;
             }
 
-            const new_len = self.code.len;
-            if (new_len == len) {
-                break; // Nothing more got parsed.
-            } else {
-                len = new_len;
-            }
+            break; // Nothing more got parsed.
         }
-        if (len > 0) {
+        self.consume_whitespace();
+        if (self.code.len > 0) {
             return error.ExpectedDeclaration;
         }
         return .{ .declarations = declarations };
@@ -147,7 +144,12 @@ const Parser = struct {
         var i: usize = 0;
         loop: while (true) {
             switch (self.code[i]) {
-                'A'...'Z', 'a'...'z' => i += 1,
+                'A'...'Z', 'a'...'z', '_' => i += 1,
+                '@' => if (i == 0) {
+                    i += 1;
+                } else {
+                    break :loop;
+                },
                 '0'...'9' => if (i == 0) {
                     break :loop;
                 } else {
@@ -171,25 +173,27 @@ const Parser = struct {
         return ast.BuiltinType{ .name = name };
     }
 
-    fn parse_type(self: *Self) !?ast.Type {
+    fn parse_type(self: *Self) error{
+        OutOfMemory, ExpectedTypeArgument, ExpectedClosingBracket
+    }!?ast.Type {
         const name = self.parse_name() orelse return null;
         self.consume_whitespace();
-
-        var type_args = std.ArrayList(ast.Type).init(self.alloc);
-        parse_type_args: {
-            self.consume_prefix("[") orelse break :parse_type_args;
-            self.consume_whitespace();
-            while (true) {
-                const arg = try self.parse_type() orelse return error.ExpectedTypeArgument;
-                try type_args.append(arg);
-                self.consume_whitespace();
-                self.consume_prefix(",") orelse break;
-                self.consume_whitespace();
-            }
-            self.consume_prefix("]") orelse return error.ExpectedClosingBracket;
-        }
-
+        const type_args = try self.parse_type_args();
         return .{ .name = name, .args = type_args };
+    }
+    fn parse_type_args(self: *Self) !std.ArrayList(ast.Type) {
+        var type_args = std.ArrayList(ast.Type).init(self.alloc);
+        self.consume_prefix("[") orelse return type_args;
+        self.consume_whitespace();
+        while (true) {
+            const arg = try self.parse_type() orelse return error.ExpectedTypeArgument;
+            try type_args.append(arg);
+            self.consume_whitespace();
+            self.consume_prefix(",") orelse break;
+            self.consume_whitespace();
+        }
+        self.consume_prefix("]") orelse return error.ExpectedClosingBracket;
+        return type_args;
     }
 
     fn parse_struct(self: *Self) !?ast.Struct {
@@ -197,10 +201,8 @@ const Parser = struct {
         self.consume_whitespace();
         const name = self.parse_name() orelse return error.ExpectedNameOfStruct;
         self.consume_whitespace();
-
-        // TODO: parse type args
-        var type_args = std.ArrayList(ast.Type).init(self.alloc);
-
+        const type_args = try self.parse_type_args();
+        self.consume_whitespace();
         self.consume_prefix("{") orelse return error.ExpectedOpeningBrace;
         self.consume_whitespace();
 
@@ -228,10 +230,8 @@ const Parser = struct {
         self.consume_whitespace();
         const name = self.parse_name() orelse return error.ExpectedNameOfEnum;
         self.consume_whitespace();
-
-        // TODO: parse type args
-        var type_args = std.ArrayList(ast.Type).init(self.alloc);
-
+        const type_args = try self.parse_type_args();
+        self.consume_whitespace();
         self.consume_prefix("{") orelse return error.ExpectedOpeningBrace;
         self.consume_whitespace();
 
@@ -261,10 +261,8 @@ const Parser = struct {
         self.consume_whitespace();
         const name = self.parse_name() orelse return error.ExpectedNameOfFunction;
         self.consume_whitespace();
-
-        // TODO: parse type args
-        var type_args = std.ArrayList(ast.Type).init(self.alloc);
-
+        const type_args = try self.parse_type_args();
+        self.consume_whitespace();
         var args = std.ArrayList(ast.Argument).init(self.alloc);
         self.consume_prefix("(") orelse return error.ExpectedOpeningParenthesis;
         self.consume_whitespace();
@@ -305,32 +303,63 @@ const Parser = struct {
         self.consume_prefix("{") orelse return null;
 
         var statements = std.ArrayList(ast.Expression).init(self.alloc);
-        var len = self.code.len;
         while (true) {
             self.consume_whitespace();
 
             if (try self.parse_var()) |var_| {
                 try statements.append(.{ .var_ = var_ });
+                continue;
+            }
+            if (try self.parse_expression()) |expr| {
+                try statements.append(expr);
+                continue;
             }
 
-            const new_len = self.code.len;
-            if (new_len == len) {
-                break; // Nothing more got parsed.
-            } else {
-                len = new_len;
-            }
+            break; // Nothing more got parsed.
         }
 
         self.consume_prefix("}") orelse return error.ExpectedStatementOrClosingBrace;
         return statements;
     }
 
-    fn parse_expression(self: *Self) !?ast.Expression {
-        if (self.parse_number()) |number| {
-            return .{ .number = number };
+    fn parse_expression(self: *Self) error{
+        ExpectedClosingParenthesis, OutOfMemory, ExpectedMemberOrConstructor,
+        ExpectedCondition, ExpectedThenBody, ExpectedElseBody, ExpectedColon,
+        ExpectedTypeArgument, ExpectedClosingBracket, ExpectedNameOfVar,
+        ExpectedTypeOfVar, ExpectedEquals, ExpectedValueOfVar,
+        ExpectedStatementOrClosingBrace, ExpectedClosingBrace,
+        ExpectedValueOfField, ExpectedExpression
+    }!?ast.Expression {
+        var expression: ?ast.Expression = null;
+        
+        if (try self.parse_if()) |if_| {
+            expression = .{ .if_ = if_ };
+        } else if (self.parse_number()) |number| {
+            expression = .{ .number = number };
+        } else if (self.parse_name()) |name| {
+            expression = .{ .reference = name };
+        } else if (try self.parse_parenthesized()) |expr| {
+            expression = expr;
         }
 
-        return null;
+        if (expression) |expr| {
+            while (true) {
+                self.consume_whitespace();
+
+                if (try self.parse_expression_suffix_call(&expr)) |call| {
+                    expression = .{ .call = call };
+                    continue;
+                }
+                if (try self.parse_expression_suffix_member_or_constructor(&expr)) |e| {
+                    expression = e;
+                    continue;
+                }
+
+                break; // Nothing more got parsed.
+            }
+        }
+
+        return expression;
     }
 
     fn parse_number(self: *Self) ?i128 {
@@ -352,6 +381,64 @@ const Parser = struct {
         return num;
     }
 
+    fn parse_parenthesized(self: *Self) !?ast.Expression {
+        self.consume_prefix("(") orelse return null;
+        const expr = try self.parse_expression() orelse return error.ExpectedExpression;
+        self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
+        return expr;
+    }
+
+    fn parse_expression_suffix_call(self: *Self, current: *const ast.Expression) !?ast.Call {
+        self.consume_prefix("(") orelse return null;
+
+        var args = std.ArrayList(ast.Expression).init(self.alloc);
+        self.consume_whitespace();
+        while (true) {
+            const arg = try self.parse_expression() orelse break;
+            self.consume_whitespace();
+            try args.append(arg);
+            self.consume_prefix(",") orelse break;
+            self.consume_whitespace();
+        }
+        self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
+
+        return .{ .callee = current, .args = args };
+    }
+
+    fn parse_expression_suffix_member_or_constructor(self: *Self, current: *const ast.Expression) !?ast.Expression {
+        self.consume_prefix(".") orelse return null;
+        self.consume_whitespace();
+        if (self.parse_name()) |name| {
+            return .{ .member = .{ .callee = current, .member = name }};
+        } else if (self.consume_prefix("{")) |_| {
+            self.consume_whitespace();
+
+            var fields = std.ArrayList(ast.ConstructionField).init(self.alloc);
+            while (true) {
+                const name = self.parse_name() orelse break;
+                self.consume_whitespace();
+                self.consume_prefix("=") orelse return error.ExpectedEquals;
+                self.consume_whitespace();
+                const value = try self.parse_expression() orelse return error.ExpectedValueOfField;
+                try fields.append(.{
+                    .name = name,
+                    .value = value,
+                });
+                self.consume_whitespace();
+                self.consume_prefix(",") orelse break;
+                self.consume_whitespace();
+            }
+            self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
+
+            return .{
+                .struct_construction = .{
+                    .type_ = current,
+                    .fields = fields,
+                }
+            };
+        } else return error.ExpectedMemberOrConstructor;
+    }
+
     fn parse_var(self: *Self) !?ast.Var {
         self.consume_keyword("var") orelse return null;
         self.consume_whitespace();
@@ -369,8 +456,26 @@ const Parser = struct {
         self.consume_whitespace();
 
         var value = try self.parse_expression() orelse return error.ExpectedValueOfVar;
-        self.consume_prefix(";") orelse return error.ExpectedSemicolon;
 
         return .{ .name = name, .type_ = type_, .value = &value };
+    }
+
+    fn parse_if(self: *Self) !?ast.If {
+        self.consume_keyword("if") orelse return null;
+        self.consume_whitespace();
+
+        const condition = try self.parse_expression() orelse return error.ExpectedCondition;
+        self.consume_whitespace();
+
+        const then = try self.parse_body() orelse return error.ExpectedThenBody;
+        self.consume_whitespace();
+
+        var else_: ?ast.Body = null;
+        if (self.consume_keyword("else")) |_| {
+            self.consume_whitespace();
+            else_ = try self.parse_body() orelse return error.ExpectedElseBody;
+        }
+
+        return .{ .condition = &condition, .then = then, .else_ = else_ };
     }
 };

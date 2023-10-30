@@ -58,12 +58,18 @@ pub const Expression = union(enum) {
     number: i128,
     reference: Name,
     call: Call,
+    member: Member,
     var_: Var,
     if_: If,
+    struct_construction: StructConstruction,
 };
 pub const Call = struct {
-    callee: *Expression,
+    callee: *const Expression,
     args: ArrayList(Expression),
+};
+pub const Member = struct {
+    callee: *const Expression,
+    member: Name,
 };
 pub const Var = struct {
     name: Name,
@@ -71,9 +77,17 @@ pub const Var = struct {
     value: *Expression,
 };
 pub const If = struct {
-    condition: *Expression,
+    condition: *const Expression,
     then: Body,
-    else_: Body,
+    else_: ?Body,
+};
+pub const StructConstruction = struct {
+    type_: *const Expression,
+    fields: ArrayList(ConstructionField),
+};
+pub const ConstructionField = struct {
+    name: Name,
+    value: Expression,
 };
 
 pub fn print(program: Program) void {
