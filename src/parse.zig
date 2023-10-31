@@ -346,11 +346,11 @@ const Parser = struct {
             while (true) {
                 self.consume_whitespace();
 
-                if (try self.parse_expression_suffix_call(&expr)) |call| {
+                if (try self.parse_expression_suffix_call(expr)) |call| {
                     expression = .{ .call = call };
                     continue;
                 }
-                if (try self.parse_expression_suffix_member_or_constructor(&expr)) |e| {
+                if (try self.parse_expression_suffix_member_or_constructor(expr)) |e| {
                     expression = e;
                     continue;
                 }
@@ -388,8 +388,11 @@ const Parser = struct {
         return expr;
     }
 
-    fn parse_expression_suffix_call(self: *Self, current: *const ast.Expression) !?ast.Call {
+    fn parse_expression_suffix_call(self: *Self, current: ast.Expression) !?ast.Call {
         self.consume_prefix("(") orelse return null;
+
+        const heaped = try self.alloc.create(ast.Expression);
+        heaped.* = current;
 
         var args = std.ArrayList(ast.Expression).init(self.alloc);
         self.consume_whitespace();
@@ -402,14 +405,18 @@ const Parser = struct {
         }
         self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
 
-        return .{ .callee = current, .args = args };
+        return .{ .callee = heaped, .args = args };
     }
 
-    fn parse_expression_suffix_member_or_constructor(self: *Self, current: *const ast.Expression) !?ast.Expression {
+    fn parse_expression_suffix_member_or_constructor(self: *Self, current: ast.Expression) !?ast.Expression {
         self.consume_prefix(".") orelse return null;
+
+        const heaped = try self.alloc.create(ast.Expression);
+        heaped.* = current;
+        
         self.consume_whitespace();
         if (self.parse_name()) |name| {
-            return .{ .member = .{ .callee = current, .member = name }};
+            return .{ .member = .{ .callee = heaped, .member = name }};
         } else if (self.consume_prefix("{")) |_| {
             self.consume_whitespace();
 
@@ -432,7 +439,7 @@ const Parser = struct {
 
             return .{
                 .struct_construction = .{
-                    .type_ = current,
+                    .type_ = heaped,
                     .fields = fields,
                 }
             };
@@ -456,8 +463,10 @@ const Parser = struct {
         self.consume_whitespace();
 
         var value = try self.parse_expression() orelse return error.ExpectedValueOfVar;
+        const heaped = try self.alloc.create(ast.Expression);
+        heaped.* = value;
 
-        return .{ .name = name, .type_ = type_, .value = &value };
+        return .{ .name = name, .type_ = type_, .value = heaped };
     }
 
     fn parse_if(self: *Self) !?ast.If {
@@ -466,6 +475,8 @@ const Parser = struct {
 
         const condition = try self.parse_expression() orelse return error.ExpectedCondition;
         self.consume_whitespace();
+        const heaped = try self.alloc.create(ast.Expression);
+        heaped.* = condition;
 
         const then = try self.parse_body() orelse return error.ExpectedThenBody;
         self.consume_whitespace();
@@ -476,6 +487,6 @@ const Parser = struct {
             else_ = try self.parse_body() orelse return error.ExpectedElseBody;
         }
 
-        return .{ .condition = &condition, .then = then, .else_ = else_ };
+        return .{ .condition = heaped, .then = then, .else_ = else_ };
     }
 };
