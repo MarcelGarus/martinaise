@@ -11,7 +11,7 @@ pub const Declaration = union(enum) {
     fun: Fun,
 };
 
-pub const Name = []u8;
+pub const Name = []const u8;
 
 pub const BuiltinType = struct {
     name: Name,
@@ -65,6 +65,7 @@ pub const Expression = union(enum) {
 };
 pub const Call = struct {
     callee: *const Expression,
+    type_args: ArrayList(Type),
     args: ArrayList(Expression),
 };
 pub const Member = struct {
@@ -97,7 +98,7 @@ pub fn print(program: Program) void {
         std.debug.print("\n", .{});
     }
 }
-fn print_declaration(declaration: Declaration) void {
+pub fn print_declaration(declaration: Declaration) void {
     switch (declaration) {
         .builtin_type => |bt| print_builtin_type(bt),
         .struct_ => |s| print_struct(s),
@@ -214,6 +215,19 @@ fn print_expression(indent: usize, expression: Expression) void {
 }
 fn print_call(indent: usize, call: Call) void {
     print_expression(indent, call.callee.*);
+
+    const type_args = call.type_args.items;
+    if (type_args.len > 0) {
+        std.debug.print("[", .{});
+        for (type_args, 0..) |arg, i| {
+            print_type(arg);
+            if (i < type_args.len - 1) {
+                std.debug.print(", ", .{});
+            }
+        }
+        std.debug.print("]", .{});
+    }
+
     std.debug.print("(", .{});
     for (call.args.items, 0..) |arg, i| {
         if (i > 0) {

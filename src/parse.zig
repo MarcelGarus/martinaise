@@ -342,21 +342,23 @@ const Parser = struct {
             expression = expr;
         }
 
-        if (expression) |expr| {
-            while (true) {
-                self.consume_whitespace();
+        while (true) {
+            self.consume_whitespace();
 
+            if (expression) |expr| {
                 if (try self.parse_expression_suffix_call(expr)) |call| {
                     expression = .{ .call = call };
                     continue;
                 }
+            }
+            if (expression) |expr| {
                 if (try self.parse_expression_suffix_member_or_constructor(expr)) |e| {
                     expression = e;
                     continue;
                 }
-
-                break; // Nothing more got parsed.
             }
+
+            break; // Nothing more got parsed.
         }
 
         return expression;
@@ -389,6 +391,8 @@ const Parser = struct {
     }
 
     fn parse_expression_suffix_call(self: *Self, current: ast.Expression) !?ast.Call {
+        const type_args = try self.parse_type_args();
+        
         self.consume_prefix("(") orelse return null;
 
         const heaped = try self.alloc.create(ast.Expression);
@@ -405,7 +409,7 @@ const Parser = struct {
         }
         self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
 
-        return .{ .callee = heaped, .args = args };
+        return .{ .callee = heaped, .type_args = type_args, .args = args };
     }
 
     fn parse_expression_suffix_member_or_constructor(self: *Self, current: ast.Expression) !?ast.Expression {
@@ -416,6 +420,7 @@ const Parser = struct {
         
         self.consume_whitespace();
         if (self.parse_name()) |name| {
+            std.debug.print("This is a member {s}\n", .{name});
             return .{ .member = .{ .callee = heaped, .member = name }};
         } else if (self.consume_prefix("{")) |_| {
             self.consume_whitespace();
