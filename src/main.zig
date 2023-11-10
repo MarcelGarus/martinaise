@@ -1,6 +1,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const parse = @import("parse.zig").parse;
+const monomorphize = @import("compile.zig").monomorphize;
 
 pub fn main() !void {
     std.debug.print("Welcome to Martinaise.\n", .{});
@@ -14,12 +15,11 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var alloc = gpa.allocator();
 
-    const the_ast = parse(alloc, buf[0..len]);
-    // _ = the_ast;
+    const the_ast = parse(alloc, buf[0..len]) orelse return error.ParseError;
     std.debug.print("Parsed:\n", .{});
-    if (the_ast) |a| {
-        ast.print(a);
-    }
+    ast.print(the_ast);
+    
+    try monomorphize(alloc, the_ast);
 }
 
 test "simple test" {
