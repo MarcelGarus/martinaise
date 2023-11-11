@@ -65,7 +65,7 @@ pub const Expression = union(enum) {
 };
 pub const Call = struct {
     callee: *const Expression,
-    type_args: ArrayList(Type),
+    type_args: ?ArrayList(Type),
     args: ArrayList(Expression),
 };
 pub const Member = struct {
@@ -138,16 +138,18 @@ fn print_type(type_: Type) void {
     std.debug.print("{s}", .{type_.name});
     print_type_args(type_.args);
 }
-pub fn print_type_args(type_args: ArrayList(Type)) void {
-    if (type_args.items.len > 0) {
-        std.debug.print("[", .{});
-        for (type_args.items, 0..) |arg, i| {
-            if (i > 0) {
-                std.debug.print(", ", .{});
+pub fn print_type_args(type_args: ?ArrayList(Type)) void {
+    if (type_args) |ty_args| {
+        if (ty_args.items.len > 0) {
+            std.debug.print("[", .{});
+            for (ty_args.items, 0..) |arg, i| {
+                if (i > 0) {
+                    std.debug.print(", ", .{});
+                }
+                print_type(arg);
             }
-            print_type(arg);
+            std.debug.print("]", .{});
         }
-        std.debug.print("]", .{});
     }
 }
 fn print_struct(s: Struct) void {

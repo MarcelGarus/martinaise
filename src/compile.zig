@@ -176,13 +176,14 @@ const Monomorphizer = struct {
             .labels = ArrayList(mono.Label).init(self.alloc),
         };
         for (fun.body.items) |expr| {
-            _ = try self.compile_expression(&mono_fun, expr);
+            _ = try self.compile_expression(&mono_fun, type_env, expr);
         }
     }
 
     fn compile_expression(
         self: *Self,
         fun: *mono.Fun,
+        type_env: TypeEnv,
         expression: ast.Expression
     ) !mono.ExpressionIndex {
         std.debug.print("compiling {any}\n", .{expression});
@@ -190,25 +191,31 @@ const Monomorphizer = struct {
             .number => |n| try fun.put(.{ .number = n }, "U8"),
             .call => |call| {
                 var args = ArrayList(mono.ExpressionIndex).init(self.alloc);
+                // Calls of the form `something.name()` cause `something` to be
+                // treated like an extra argument.
                 switch (call.callee.*) {
-                    // Calls of the form `something.name()` cause `something` to
-                    // be treated like an extra argument at the front.
                     .member => |member| {
-                        try args.append(try self.compile_expression(fun, member.callee.*));
+                        try args.append(try self.compile_expression(fun, type_env, member.callee.*));
                     },
                     else => {},
                 }
                 for (call.args.items) |arg| {
-                    try args.append(try self.compile_expression(fun, arg));
+                    try args.append(try self.compile_expression(fun, type_env, arg));
                 }
 
                 var arg_types = ArrayList(Name).init(self.alloc);
                 for (args.items) |arg| {
                     try arg_types.append(fun.types.items[@intCast(arg)]);
                 }
+
+                var type_args: ?ArrayList(Name) = null;
+                if (call.type_args) |ty_args| {
+                    type_args = try self.compile_types(ty_args, type_env);
+                }
+
                 const called_fun = switch (call.callee.*) {
-                    .reference => |name| try self.lookup(name, null, arg_types),
-                    .member => |member| try self.lookup(member.member, null, arg_types),
+                    .reference => |name| try self.lookup(name, type_args, arg_types),
+                    .member => |member| try self.lookup(member.member, type_args, arg_types),
                     else => return error.InvalidExpressionCalled,
                 };
                 _ = called_fun;
