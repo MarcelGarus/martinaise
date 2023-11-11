@@ -10,12 +10,24 @@ fun add(a: U8, b: U8): U8 {
   var bar: U8 = 4
   @add(a, b)
 }
+
+fun foo(): U8 {
+  return 5
+}
+fun foo[A](a: A): A {
+  return a
+}
+
 fun main() {
-  @debug(add(2, 3))
+  foo()
+  foo[U8](5)
+  5.foo[U8]()
+
+  add(2, 3)
 }
 
 
-fun foo() {
+fun bar() {
   var bar: U8 = 4
   var baz: U8 = 5
   @debug(add(bar, baz))
@@ -30,9 +42,9 @@ fun fib(n: U8) {
     fib(@subtract(n, 1), @subtract(n, 2))
   }
 }
-fun main() {
-  @debug(fib(10))
-}
+#fun main() {
+#  @debug(fib(10))
+#}
 
 fun computedProperty(foo: Foo): U8 {
 }

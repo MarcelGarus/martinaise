@@ -52,8 +52,19 @@ pub const Funs = struct {
 
 pub const Fun = struct {
     expressions: ArrayList(Expression),
-    types: ArrayList(Type),
-    // blocks: ArrayList(Block),
+    types: ArrayList(Name),
+    labels: ArrayList(Label),
+
+    const Self = @This();
+
+    pub fn put(self: *Self, expr: Expression, ty: Name) !void {
+        try self.expressions.append(expr);
+        try self.types.append(ty);
+    }
+};
+pub const Label = struct {
+    name: ?Name,
+    target: usize,
 };
 pub const ExpressionIndex = isize;
 pub const Expression = union(enum) {
@@ -63,7 +74,7 @@ pub const Expression = union(enum) {
     return_: ExpressionIndex,
 };
 pub const Call = struct {
-    callee: Name, // monomorphized function name
+    fun: Name, // monomorphized function name
     args: ArrayList(ExpressionIndex),
 };
 pub const Member = struct {

@@ -17,22 +17,13 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !void {
         .types = types,
     };
 
-    const mains = try monomorphizer.lookup("main", 0);
-    if (mains.items.len == 0) {
-        return error.NoMainFunction;
-    } else if (mains.items.len > 1) {
-        std.debug.print("Mains:\n", .{});
-        for (mains.items) |main| {
-            ast.print_declaration(main);
-        }
-        return error.MultipleMainFunctions;
-    }
-    const main = switch (mains.items[0]) {
+    const main = try monomorphizer.lookup("main", ArrayList(Name).init(alloc), ArrayList(Name).init(alloc));
+    const main_fun = switch (main) {
         .fun => |f| f,
         else => return error.MainIsNotAFunction,
     };
 
-    try monomorphizer.compile_function(main, ArrayList(Name).init(alloc));
+    try monomorphizer.compile_function(main_fun, ArrayList(Name).init(alloc));
 }
 
 const Monomorphizer = struct {
@@ -45,20 +36,109 @@ const Monomorphizer = struct {
     // Maps function or type parameter names to fully monomorphized types.
     const TypeEnv = StringHashMap(Name);
 
-    fn lookup(self: *Self, name: Name, type_args: usize) !ArrayList(ast.Declaration) {
-        var matching = ArrayList(ast.Declaration).init(self.alloc);
+    // Looks up the given name with the given number of type args and the args
+    // of the given types.
+    fn lookup(self: *Self, name: Name, type_args: ?ArrayList(Name), args: ?ArrayList(Name)) !ast.Declaration {
+        var name_matches = ArrayList(ast.Declaration).init(self.alloc);
         for (self.program.declarations.items) |decl| {
             const matches = switch (decl) {
-                .builtin_type => |b| strcmp(name, b.name) and type_args == 0,
-                .struct_ => |s| strcmp(name, s.name) and type_args == s.type_args.items.len,
-                .enum_ => |e| strcmp(name, e.name) and type_args == e.type_args.items.len,
-                .fun => |f| strcmp(name, f.name) and type_args == f.type_args.items.len,
+                .builtin_type => |b| strcmp(name, b.name),
+                .struct_ => |s| strcmp(name, s.name),
+                .enum_ => |e| strcmp(name, e.name),
+                .fun => |f| strcmp(name, f.name),
             };
             if (matches) {
-                try matching.append(decl);
+                try name_matches.append(decl);
             }
         }
-        return matching;
+
+        var type_args_matches = ArrayList(ast.Declaration).init(self.alloc);
+        if (type_args) |ty_args| {
+            const num_args = ty_args.items.len;
+            for (name_matches.items) |decl| {
+                const matches = switch (decl) {
+                    .builtin_type => |_| num_args == 0,
+                    .struct_ => |s| num_args == s.type_args.items.len,
+                    .enum_ => |e| num_args == e.type_args.items.len,
+                    .fun => |f| num_args == f.type_args.items.len,
+                };
+                if (matches) {
+                    try type_args_matches.append(decl);
+                }
+            }
+        } else {
+            try type_args_matches.appendSlice(name_matches.items);
+        }
+
+        var everything_matches = ArrayList(ast.Declaration).init(self.alloc);
+        if (args) |args_| {
+            const num_args = args_.items.len;
+            for (type_args_matches.items) |decl| {
+                const matches = switch (decl) {
+                    .builtin_type => |_| num_args == 0,
+                    .struct_ => |_| num_args == 0,
+                    .enum_ => |_| num_args == 0,
+                    .fun => |f| num_args == f.args.items.len,
+                };
+                if (matches) {
+                    try everything_matches.append(decl);
+                }
+            }
+        } else {
+            try everything_matches.appendSlice(type_args_matches.items);
+        }
+
+        if (everything_matches.items.len != 1) {
+            std.debug.print("Looked for a definition that matches `{s}", .{name});
+            if (type_args) |ty_args| {
+                if (ty_args.items.len > 0) {
+                    std.debug.print("[", .{});
+                    for (ty_args.items, 0..) |arg, i| {
+                        if (i > 0) {
+                            std.debug.print(", ", .{});
+                        }
+                        std.debug.print("{s}", .{arg});
+                    }
+                    std.debug.print("]", .{});
+                } 
+            }
+            if (args) |args_| {
+                std.debug.print("(", .{});
+                for (args_.items, 0..) |arg, i| {
+                    if (i > 0) {
+                        std.debug.print(", ", .{});
+                    }
+                    std.debug.print("{s}", .{arg});
+                }
+                std.debug.print(")", .{});
+            }
+            std.debug.print("`.\n", .{});
+        }
+
+        if (everything_matches.items.len > 1) {
+            std.debug.print("Multiple definitions match:\n", .{});
+            for (everything_matches.items) |match| {
+                std.debug.print("- ", .{});
+                ast.print_signature(match);
+                std.debug.print("\n", .{});
+            }
+            return error.MultipleMatches;
+        }
+
+        if (everything_matches.items.len == 0) {
+            std.debug.print("No definition matches.\n", .{});
+            if (name_matches.items.len > 0) {
+                std.debug.print("These definitions have the same name, but arguments don't match:\n", .{});
+                for (name_matches.items) |match| {
+                    std.debug.print("- ", .{});
+                    ast.print_signature(match);
+                    std.debug.print("\n", .{});
+                }
+            }
+            return error.NoMatch;
+        }
+
+        return everything_matches.items[0];
     }
 
     fn strcmp(a: []const u8, b: []const u8) bool {
@@ -90,71 +170,63 @@ const Monomorphizer = struct {
             );
         }
 
-        var body = ArrayList(mono.Expression).init(self.alloc);
+        var mono_fun = mono.Fun {
+            .expressions = ArrayList(mono.Expression).init(self.alloc),
+            .types = ArrayList(Name).init(self.alloc),
+            .labels = ArrayList(mono.Label).init(self.alloc),
+        };
         for (fun.body.items) |expr| {
-            _ = try self.compile_expression(&body, expr);
+            _ = try self.compile_expression(&mono_fun, expr);
         }
     }
 
     fn compile_expression(
         self: *Self,
-        body: *ArrayList(mono.Expression),
+        fun: *mono.Fun,
         expression: ast.Expression
     ) !mono.ExpressionIndex {
         std.debug.print("compiling {any}\n", .{expression});
         switch (expression) {
-            .number => |n| try body.append(.{ .number = n }),
+            .number => |n| try fun.put(.{ .number = n }, "U8"),
             .call => |call| {
-                switch (call.callee.*) {
-                    .reference => |name| {
-                        const matches = try self.lookup(name, 0);
-                        if (matches.items.len == 0) {
-                            return error.FunctionNotFound;
-                        }
-                        if (matches.items.len > 1) {
-                            std.debug.print("Multiple functions match:\n", .{});
-                            for (matches.items) |fun| {
-                                ast.print_declaration(fun);
-                            }
-                            return error.MultipleFunctionsMatch;
-                        }
-                    },
-                    .member => |member| {
-                        const extra_arg = try self.compile_expression(body, member.callee.*);
-                        _ = extra_arg;
-
-                        const matches = try self.lookup(member.member, 0);
-                        if (matches.items.len == 0) {
-                            return error.FunctionNotFound;
-                        }
-                        if (matches.items.len > 1) {
-                            std.debug.print("Multiple functions match:\n", .{});
-                            for (matches.items) |fun| {
-                                ast.print_declaration(fun);
-                            }
-                            return error.MultipleFunctionsMatch;
-                        }
-                    },
-                    else => return error.InvalidExpressionCalled,
-                }
-
                 var args = ArrayList(mono.ExpressionIndex).init(self.alloc);
-                for (call.args.items) |arg| {
-                    try args.append(try self.compile_expression(body, arg));
+                switch (call.callee.*) {
+                    // Calls of the form `something.name()` cause `something` to
+                    // be treated like an extra argument at the front.
+                    .member => |member| {
+                        try args.append(try self.compile_expression(fun, member.callee.*));
+                    },
+                    else => {},
                 }
-                try body.append(.{ .call = .{ .callee = "", .args = args } });
+                for (call.args.items) |arg| {
+                    try args.append(try self.compile_expression(fun, arg));
+                }
+
+                var arg_types = ArrayList(Name).init(self.alloc);
+                for (args.items) |arg| {
+                    try arg_types.append(fun.types.items[@intCast(arg)]);
+                }
+                const called_fun = switch (call.callee.*) {
+                    .reference => |name| try self.lookup(name, null, arg_types),
+                    .member => |member| try self.lookup(member.member, null, arg_types),
+                    else => return error.InvalidExpressionCalled,
+                };
+                _ = called_fun;
+
+                try fun.put(.{ .call = .{ .fun = "", .args = args } }, "Nothing");
             },
             else => {
                 @panic("expression not handled");
             }
         }
-        const len: isize = @intCast(body.items.len);
+        const len: isize = @intCast(fun.expressions.items.len);
         return len - 1;
     }
 
     fn compile_types(self: *Self, tys: ArrayList(ast.Type), type_env: TypeEnv) error{
         OutOfMemory, TypeArgumentCalledWithGenerics, MultipleTypesMatch,
         NoTypesMatch, StructTypeArgsCannotHaveTypeArgs, EnumTypeArgsCannotHaveTypeArgs,
+        MultipleMatches, NoMatch,
     }!ArrayList(Name) {
         var args = ArrayList(Name).init(self.alloc);
         for (tys.items) |arg| {
@@ -176,14 +248,6 @@ const Monomorphizer = struct {
             return name;
         }
 
-        const matching = try self.lookup(ty.name, args.items.len);
-        if (matching.items.len > 1) {
-            return error.MultipleTypesMatch;
-        }
-        if (matching.items.len == 0) {
-            return error.NoTypesMatch;
-        }
-
         var name_buf = ArrayList(u8).init(self.alloc);
         try name_buf.appendSlice(ty.name);
         if (args.items.len > 0) {
@@ -198,8 +262,7 @@ const Monomorphizer = struct {
         }
         const name = name_buf.items;
 
-        var decl = matching.items[0];
-        switch (decl) {
+        switch (try self.lookup(ty.name, args, null)) {
             .builtin_type => |_| {
                 try self.types.put(name, .builtin_type);
             },

@@ -106,24 +106,52 @@ pub fn print_declaration(declaration: Declaration) void {
         .fun => |fun| print_fun(fun),
     }
 }
+pub fn print_signature(declaration: Declaration) void {
+    switch (declaration) {
+        .builtin_type => |bt| std.debug.print("{s}", .{bt.name}),
+        .struct_ => |s| {
+            std.debug.print("{s}", .{s.name});
+            print_type_args(s.type_args);
+        },
+        .enum_ => |e| {
+            std.debug.print("{s}", .{e.name});
+            print_type_args(e.type_args);
+        },
+        .fun => |fun| {
+            std.debug.print("{s}", .{fun.name});
+            print_type_args(fun.type_args);
+            std.debug.print("(", .{});
+            for (fun.args.items, 0..) |arg, i| {
+                if (i > 0) {
+                    std.debug.print(", ", .{});
+                }
+                print_type(arg.type_);
+            }
+            std.debug.print(")", .{});
+        },
+    }
+}
 fn print_builtin_type(bt: BuiltinType) void {
     std.debug.print("builtinType {s}", .{bt.name});
 }
 fn print_type(type_: Type) void {
     std.debug.print("{s}", .{type_.name});
-    const args = type_.args.items;
-    if (args.len > 0) {
+    print_type_args(type_.args);
+}
+pub fn print_type_args(type_args: ArrayList(Type)) void {
+    if (type_args.items.len > 0) {
         std.debug.print("[", .{});
-        for (args, 0..) |arg, i| {
-            print_type(arg);
-            if (i < args.len - 1) {
+        for (type_args.items, 0..) |arg, i| {
+            if (i > 0) {
                 std.debug.print(", ", .{});
             }
+            print_type(arg);
         }
         std.debug.print("]", .{});
     }
 }
 fn print_struct(s: Struct) void {
+    // TODO: print type args
     const fields = s.fields.items;
     if (fields.len == 0) {
         std.debug.print("struct {s} {{}}", .{s.name});
@@ -138,6 +166,7 @@ fn print_struct(s: Struct) void {
     }
 }
 fn print_enum(e: Enum) void {
+    // TODO: print type args
     const variants = e.variants.items;
     if (variants.len == 0) {
         std.debug.print("enum {s} {{}}", .{e.name});
@@ -157,17 +186,7 @@ fn print_enum(e: Enum) void {
 pub fn print_fun(fun: Fun) void {
     std.debug.print("fun {s}", .{fun.name});
 
-    const type_args = fun.type_args.items;
-    if (type_args.len > 0) {
-        std.debug.print("[", .{});
-        for (type_args, 0..) |arg, i| {
-            print_type(arg);
-            if (i < type_args.len - 1) {
-                std.debug.print(", ", .{});
-            }
-        }
-        std.debug.print("]", .{});
-    }
+    print_type_args(fun.type_args);
 
     const args = fun.args.items;
     std.debug.print("(", .{});
@@ -216,17 +235,7 @@ fn print_expression(indent: usize, expression: Expression) void {
 fn print_call(indent: usize, call: Call) void {
     print_expression(indent, call.callee.*);
 
-    const type_args = call.type_args.items;
-    if (type_args.len > 0) {
-        std.debug.print("[", .{});
-        for (type_args, 0..) |arg, i| {
-            print_type(arg);
-            if (i < type_args.len - 1) {
-                std.debug.print(", ", .{});
-            }
-        }
-        std.debug.print("]", .{});
-    }
+    print_type_args(call.type_args);
 
     std.debug.print("(", .{});
     for (call.args.items, 0..) |arg, i| {
