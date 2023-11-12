@@ -3,24 +3,9 @@ const ArrayList = std.ArrayList;
 const StringHashMap = std.StringHashMap;
 const Name = @import("ast.zig").Name;
 
-pub const Types = struct {
-    // The keys are strings of concrete types such as "Maybe[U8]".
+pub const Mono = struct {
     types: StringHashMap(Type),
-
-    const Self = @This();
-
-    pub fn contains(self: *Self, name: Name) bool {
-        for (self.types.items) |ty| {
-            if (ty.name == name) {
-                return true;
-            }
-        }
-        return false;
-    }
-    pub fn put(self: *Self, name: Name, ty: Type) !void {
-        std.debug.print("New type {s}.\n", .{name});
-        try self.types.put(name, ty);
-    }
+    funs: StringHashMap(Fun),
 };
 
 pub const Type = union(enum) {
@@ -81,3 +66,51 @@ pub const Member = struct {
     callee: ExpressionIndex,
     member: Name,
 };
+
+pub fn print(mono: Mono) void {
+    {
+        std.debug.print("Types:\n", .{});
+        var iter = mono.types.keyIterator();
+        while (iter.next()) |ty| {
+            std.debug.print("- {s}\n", .{ty.*});
+        }
+    }
+    {
+        std.debug.print("Funs:\n", .{});
+        var iter = mono.funs.iterator();
+        while (iter.next()) |fun| {
+            print_fun(fun.key_ptr.*, fun.value_ptr.*);
+            std.debug.print("\n", .{});
+        }
+    }
+}
+
+fn print_fun(name: Name, fun: Fun) void {
+    std.debug.print("{s}\n", .{name});
+    for (fun.expressions.items, fun.types.items, 0..) |expr, ty, i| {
+        if (i > 0) {
+            std.debug.print("\n", .{});
+        }
+        std.debug.print("  _{d} = ", .{i});
+        print_expression(expr);
+        std.debug.print(": {s}", .{ty});
+    }
+}
+
+fn print_expression(expr: Expression) void {
+    switch (expr) {
+        .number => |n| std.debug.print("{d}", .{n}),
+        .call => |call| {
+            std.debug.print("{s}(", .{call.fun});
+            for (call.args.items, 0..) |arg, i| {
+                if (i > 0) {
+                    std.debug.print(", ", .{});
+                }
+                std.debug.print("_{d}", .{arg});
+            }
+            std.debug.print(")", .{});
+        },
+        .member => |m| std.debug.print("_{d}.{s}", .{m.callee, m.member}),
+        .return_ => |r| std.debug.print("return _{d}", .{r}),
+    }
+}

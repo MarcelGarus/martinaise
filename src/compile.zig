@@ -5,17 +5,15 @@ const ast = @import("ast.zig");
 const Name = ast.Name;
 const mono = @import("mono.zig");
 
-pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !void {
-    var types = mono.Types {
-        .types = StringHashMap(mono.Type).init(alloc),
-    };
-    try types.put("U8", .builtin_type);
-
+pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !mono.Mono {
     var monomorphizer = Monomorphizer {
         .alloc = alloc,
         .program = program,
-        .types = types,
+        .context = ArrayList([]const u8).init(alloc),
+        .types = StringHashMap(mono.Type).init(alloc),
+        .funs = StringHashMap(mono.Fun).init(alloc),
     };
+    try monomorphizer.types.put("U8", .builtin_type);
 
     const main = try monomorphizer.lookup("main", ArrayList(Name).init(alloc), ArrayList(Name).init(alloc));
     const main_fun = switch (main) {
@@ -23,13 +21,27 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !void {
         else => return error.MainIsNotAFunction,
     };
 
-    try monomorphizer.compile_function(main_fun, ArrayList(Name).init(alloc));
+    monomorphizer.compile_function(main_fun, ArrayList(Name).init(alloc)) catch |err| {
+        std.debug.print("{any}\n\nContext:\n", .{err});
+        for (monomorphizer.context.items) |context| {
+            std.debug.print("- {s}\n", .{context});
+        }
+    };
+
+    return mono.Mono {
+        .types = monomorphizer.types,
+        .funs = monomorphizer.funs,
+    };
 }
 
 const Monomorphizer = struct {
     alloc: std.mem.Allocator,
     program: ast.Program,
-    types: mono.Types,
+    context: ArrayList([]const u8),
+    // The keys are strings of monomorphized types such as "Maybe[U8]".
+    types: StringHashMap(mono.Type),
+    // The keys are strings of monomorphized function signatures such as "foo(U8)".
+    funs: StringHashMap(mono.Fun),
 
     const Self = @This();
 
@@ -146,6 +158,11 @@ const Monomorphizer = struct {
     }
 
     fn compile_function(self: *Self, fun: ast.Fun, type_args: ArrayList(Name)) !void {
+        var context = ArrayList(u8).init(self.alloc);
+        try context.appendSlice("function ");
+        try context.appendSlice(fun.name);
+        try self.context.append(context.items);
+
         // Make sure all type args are just simple names.
         var fun_type_args = ArrayList(Name).init(self.alloc);
         for (fun.type_args.items) |arg| {
@@ -178,6 +195,15 @@ const Monomorphizer = struct {
         for (fun.body.items) |expr| {
             _ = try self.compile_expression(&mono_fun, type_env, expr);
         }
+
+        var fun_name = ArrayList(u8).init(self.alloc);
+        try fun_name.appendSlice(fun.name);
+        try fun_name.append('(');
+        try fun_name.append(')');
+
+        try self.funs.put(fun_name.items, mono_fun);
+
+        _ = self.context.pop();
     }
 
     fn compile_expression(
@@ -186,14 +212,13 @@ const Monomorphizer = struct {
         type_env: TypeEnv,
         expression: ast.Expression
     ) !mono.ExpressionIndex {
-        std.debug.print("compiling {any}\n", .{expression});
         switch (expression) {
             .number => |n| try fun.put(.{ .number = n }, "U8"),
             .call => |call| {
                 var args = ArrayList(mono.ExpressionIndex).init(self.alloc);
-                // Calls of the form `something.name()` cause `something` to be
-                // treated like an extra argument.
                 switch (call.callee.*) {
+                    // Calls of the form `something.name()` cause `something` to
+                    // be treated like an extra argument.
                     .member => |member| {
                         try args.append(try self.compile_expression(fun, type_env, member.callee.*));
                     },
@@ -213,16 +238,22 @@ const Monomorphizer = struct {
                     type_args = try self.compile_types(ty_args, type_env);
                 }
 
-                const called_fun = switch (call.callee.*) {
+                const called_declaration = switch (call.callee.*) {
                     .reference => |name| try self.lookup(name, type_args, arg_types),
                     .member => |member| try self.lookup(member.member, type_args, arg_types),
                     else => return error.InvalidExpressionCalled,
                 };
-                _ = called_fun;
+                const called_fun = switch (called_declaration) {
+                    .fun => |f| f,
+                    else => return error.CalledNonFunction,
+                };
 
-                try fun.put(.{ .call = .{ .fun = "", .args = args } }, "Nothing");
+                // TODO: compile fun with the type arguments
+
+                try fun.put(.{ .call = .{ .fun = called_fun.name, .args = args } }, "Nothing");
             },
             else => {
+                std.debug.print("compiling {any}\n", .{expression});
                 @panic("expression not handled");
             }
         }

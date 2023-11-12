@@ -420,7 +420,6 @@ const Parser = struct {
         
         self.consume_whitespace();
         if (self.parse_name()) |name| {
-            std.debug.print("This is a member {s}\n", .{name});
             return .{ .member = .{ .callee = heaped, .member = name }};
         } else if (self.consume_prefix("{")) |_| {
             self.consume_whitespace();

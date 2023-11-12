@@ -1,7 +1,8 @@
 const std = @import("std");
-const ast = @import("ast.zig");
 const parse = @import("parse.zig").parse;
+const ast = @import("ast.zig");
 const monomorphize = @import("compile.zig").monomorphize;
+const mono = @import("mono.zig");
 
 pub fn main() !void {
     std.debug.print("Welcome to Martinaise.\n", .{});
@@ -18,8 +19,11 @@ pub fn main() !void {
     const the_ast = parse(alloc, buf[0..len]) orelse return error.ParseError;
     std.debug.print("Parsed:\n", .{});
     ast.print(the_ast);
+    std.debug.print("\n", .{});
     
-    try monomorphize(alloc, the_ast);
+    const the_mono = try monomorphize(alloc, the_ast);
+    mono.print(the_mono);
+    std.debug.print("\n", .{});
 }
 
 test "simple test" {
