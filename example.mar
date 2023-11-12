@@ -13,49 +13,49 @@ fun main() {
   5.foo[U8](3)   # calls the second one as well
 }
 
-struct Foo {
-  bar: U8,
-}
-
-enum Bool { true, false }
-
-
-fun bar() {
-  var bar: U8 = 4
-  var baz: U8 = 5
-  @debug(add(bar, baz))
-  @debug(bar.add(baz))
-}
-
-
-fun fib(n: U8) {
-  if (@less_than(n, 2)) {
-    n
-  } else {
-    fib(@subtract(n, 1), @subtract(n, 2))
-  }
-}
-#fun main() {
-#  @debug(fib(10))
+#struct Foo {
+#  bar: U8,
 #}
-
-fun computed_property(foo: Foo): U8 {
-}
-
-
-fun bar() {
-  var foo: Bool = Bool.true
-  some_higher_order_fun(foo.computed_property())
-}
-
-fun bar() {
-  var foo: Foo = Foo.{ bar = 4 }
-  var also_foo: _ = Foo.{ bar = 4 }
-}
-
-fun and(a: Bool, b: Bool) {}
-
-
+#
+#enum Bool { true, false }
+#
+#
+#fun bar() {
+#  var bar: U8 = 4
+#  var baz: U8 = 5
+#  @debug(add(bar, baz))
+#  @debug(bar.add(baz))
+#}
+#
+#
+#fun fib(n: U8) {
+#  if (@less_than(n, 2)) {
+#    n
+#  } else {
+#    fib(@subtract(n, 1), @subtract(n, 2))
+#  }
+#}
+##fun main() {
+##  @debug(fib(10))
+##}
+#
+#fun computed_property(foo: Foo): U8 {
+#}
+#
+#
+#fun bar() {
+#  var foo: Bool = Bool.true
+#  some_higher_order_fun(foo.computed_property())
+#}
+#
+#fun bar() {
+#  var foo: Foo = Foo.{ bar = 4 }
+#  var also_foo: _ = Foo.{ bar = 4 }
+#}
+#
+#fun and(a: Bool, b: Bool) {}
+#
+#
 #enum Maybe[T] { Some: T, None }
 #
 #fun map[T, X](maybe: Maybe[T], mapper: T -> X): Maybe[X] {
@@ -64,7 +64,7 @@ fun and(a: Bool, b: Bool) {}
 #    case None -> None,
 #  };
 #}
-
-struct String {
-  len: U8,
-}
+#
+#struct String {
+#  len: U8,
+#}

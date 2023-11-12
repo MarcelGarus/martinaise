@@ -75,6 +75,9 @@ const Parser = struct {
                 else => break :loop,
             }
         }
+        if (i >= self.code.len) {
+            i = self.code.len;
+        }
         self.code = self.code[i..];
     }
 
