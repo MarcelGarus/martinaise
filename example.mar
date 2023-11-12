@@ -3,14 +3,14 @@ builtinType U8
 fun foo(): U8 {
   return 5
 }
-fun foo[A](a: A): A {
+fun foo[A](a: A, b: A): A {
   return a
 }
 
 fun main() {
-  foo()        # calls the first one
-  foo[U8](5)   # calls the second one
-  5.foo[U8]()  # calls the second one as well
+  foo()          # calls the first one
+  foo[U8](5, 1)  # calls the second one
+  5.foo[U8](3)   # calls the second one as well
 }
 
 struct Foo {
@@ -29,7 +29,7 @@ fun bar() {
 
 
 fun fib(n: U8) {
-  if (@lessThan(n, 2)) {
+  if (@less_than(n, 2)) {
     n
   } else {
     fib(@subtract(n, 1), @subtract(n, 2))
@@ -39,13 +39,13 @@ fun fib(n: U8) {
 #  @debug(fib(10))
 #}
 
-fun computedProperty(foo: Foo): U8 {
+fun computed_property(foo: Foo): U8 {
 }
 
 
 fun bar() {
   var foo: Bool = Bool.true
-  someHigherOrderFun(foo.computedProperty())
+  some_higher_order_fun(foo.computed_property())
 }
 
 fun bar() {

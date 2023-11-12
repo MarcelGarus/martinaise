@@ -21,11 +21,12 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !mono.Mono {
         else => return error.MainIsNotAFunction,
     };
 
-    monomorphizer.compile_function(main_fun, ArrayList(Name).init(alloc)) catch |err| {
+    _ = monomorphizer.compile_function(main_fun, ArrayList(Name).init(alloc)) catch |err| {
         std.debug.print("{any}\n\nContext:\n", .{err});
         for (monomorphizer.context.items) |context| {
             std.debug.print("- {s}\n", .{context});
         }
+        return err;
     };
 
     return mono.Mono {
@@ -157,7 +158,7 @@ const Monomorphizer = struct {
         return std.mem.eql(u8, a, b);
     }
 
-    fn compile_function(self: *Self, fun: ast.Fun, type_args: ArrayList(Name)) !void {
+    fn compile_function(self: *Self, fun: ast.Fun, type_args: ArrayList(Name)) !Name {
         var context = ArrayList(u8).init(self.alloc);
         try context.appendSlice("function ");
         try context.appendSlice(fun.name);
@@ -190,7 +191,6 @@ const Monomorphizer = struct {
         var mono_fun = mono.Fun {
             .expressions = ArrayList(mono.Expression).init(self.alloc),
             .types = ArrayList(Name).init(self.alloc),
-            .labels = ArrayList(mono.Label).init(self.alloc),
         };
         for (fun.body.items) |expr| {
             _ = try self.compile_expression(&mono_fun, type_env, expr);
@@ -204,6 +204,8 @@ const Monomorphizer = struct {
         try self.funs.put(fun_name.items, mono_fun);
 
         _ = self.context.pop();
+
+        return fun_name.items;
     }
 
     fn compile_expression(
@@ -211,7 +213,13 @@ const Monomorphizer = struct {
         fun: *mono.Fun,
         type_env: TypeEnv,
         expression: ast.Expression
-    ) !mono.ExpressionIndex {
+    ) error{
+        OutOfMemory, MultipleMatches, NoMatch, TypeArgumentCalledWithGenerics,
+        MultipleTypesMatch, NoTypesMatch, StructTypeArgsCannotHaveTypeArgs,
+        EnumTypeArgsCannotHaveTypeArgs, InvalidExpressionCalled,
+        CalledNonFunction, FunctionTypeArgsCannotHaveTypeArgs,
+        ExpressionNotHandled
+    }!mono.ExpressionIndex {
         switch (expression) {
             .number => |n| try fun.put(.{ .number = n }, "U8"),
             .call => |call| {
@@ -247,14 +255,33 @@ const Monomorphizer = struct {
                     .fun => |f| f,
                     else => return error.CalledNonFunction,
                 };
+                var called_fun_type_args = ArrayList(Name).init(self.alloc);
+                for (called_fun.type_args.items) |ty_arg| {
+                if (ty_arg.args.items.len > 0) {
+                    return error.FunctionTypeArgsCannotHaveTypeArgs;
+                }
+                try called_fun_type_args.append(ty_arg.name);
+            }
 
+                // TODO: Unify fun signature with the argument types
+                var unified_type_args = ArrayList(Name).init(self.alloc);
+                if (type_args) |ty_args| {
+                    try unified_type_args.appendSlice(ty_args.items);
+                }
+                
                 // TODO: compile fun with the type arguments
 
-                try fun.put(.{ .call = .{ .fun = called_fun.name, .args = args } }, "Nothing");
+                var fun_type_env = TypeEnv.init(self.alloc);
+                for (called_fun_type_args.items, unified_type_args.items) |from, to| {
+                    try fun_type_env.put(from, to);
+                }
+                const fun_name = try self.compile_function(called_fun, unified_type_args);
+
+                try fun.put(.{ .call = .{ .fun = fun_name, .args = args } }, "Nothing");
             },
             else => {
                 std.debug.print("compiling {any}\n", .{expression});
-                @panic("expression not handled");
+                return error.ExpressionNotHandled;
             }
         }
         const len: isize = @intCast(fun.expressions.items.len);

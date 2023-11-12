@@ -38,7 +38,6 @@ pub const Funs = struct {
 pub const Fun = struct {
     expressions: ArrayList(Expression),
     types: ArrayList(Name),
-    labels: ArrayList(Label),
 
     const Self = @This();
 
@@ -46,10 +45,6 @@ pub const Fun = struct {
         try self.expressions.append(expr);
         try self.types.append(ty);
     }
-};
-pub const Label = struct {
-    name: ?Name,
-    target: usize,
 };
 pub const ExpressionIndex = isize;
 pub const Expression = union(enum) {
