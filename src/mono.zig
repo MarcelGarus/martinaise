@@ -96,7 +96,7 @@ fn print_expression(expr: Expression) void {
     switch (expr) {
         .number => |n| std.debug.print("{d}", .{n}),
         .call => |call| {
-            std.debug.print("{s}(", .{call.fun});
+            std.debug.print("{s} called with (", .{call.fun});
             for (call.args.items, 0..) |arg, i| {
                 if (i > 0) {
                     std.debug.print(", ", .{});

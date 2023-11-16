@@ -46,8 +46,10 @@ const Monomorphizer = struct {
 
     const Self = @This();
 
-    // Maps function or type parameter names to fully monomorphized types.
+    // Maps type parameter names to fully monomorphized types.
     const TypeEnv = StringHashMap(Name);
+    // Maps variable names to their types.
+    const ValueEnv = StringHashMap(Name);
 
     // Looks up the given name with the given number of type args and the args
     // of the given types.
@@ -159,20 +161,22 @@ const Monomorphizer = struct {
     }
 
     fn compile_function(self: *Self, fun: ast.Fun, type_args: ArrayList(Name)) !Name {
-        var context = ArrayList(u8).init(self.alloc);
-        try context.appendSlice("function ");
-        try context.appendSlice(fun.name);
+        var fun_name = ArrayList(u8).init(self.alloc);
+        try fun_name.appendSlice(fun.name);
         if (type_args.items.len > 0) {
-            try context.appendSlice("[");
+            try fun_name.appendSlice("[");
             for (type_args.items, 0..) |arg, i| {
                 if (i > 0) {
-                    try context.appendSlice(", ");
+                    try fun_name.appendSlice(", ");
                 }
-                try context.appendSlice(arg);
+                try fun_name.appendSlice(arg);
             }
-            try context.appendSlice("]");
+            try fun_name.appendSlice("]");
         }
-        try self.context.append(context.items);
+        try fun_name.append('(');
+        // TODO: arg types
+        try fun_name.append(')');
+        try self.context.append(fun_name.items);
 
         // Make sure all type args are just simple names.
         var fun_type_args = ArrayList(Name).init(self.alloc);
@@ -190,7 +194,7 @@ const Monomorphizer = struct {
             try type_env.putNoClobber(expected, given);
         }
         // Maps variables that are in scope to their concrete types.
-        var value_env = TypeEnv.init(self.alloc);
+        var value_env = ValueEnv.init(self.alloc);
         for (fun.args.items) |arg| {
             try value_env.put(
                 arg.name,
@@ -203,13 +207,8 @@ const Monomorphizer = struct {
             .types = ArrayList(Name).init(self.alloc),
         };
         for (fun.body.items) |expr| {
-            _ = try self.compile_expression(&mono_fun, type_env, expr);
+            _ = try self.compile_expression(&mono_fun, type_env, value_env, expr);
         }
-
-        var fun_name = ArrayList(u8).init(self.alloc);
-        try fun_name.appendSlice(fun.name);
-        try fun_name.append('(');
-        try fun_name.append(')');
 
         try self.funs.put(fun_name.items, mono_fun);
 
@@ -222,28 +221,33 @@ const Monomorphizer = struct {
         self: *Self,
         fun: *mono.Fun,
         type_env: TypeEnv,
+        value_env: StringHashMap(Name),
         expression: ast.Expression
     ) error{
         OutOfMemory, MultipleMatches, NoMatch, TypeArgumentCalledWithGenerics,
         MultipleTypesMatch, NoTypesMatch, StructTypeArgsCannotHaveTypeArgs,
         EnumTypeArgsCannotHaveTypeArgs, InvalidExpressionCalled,
         CalledNonFunction, FunctionTypeArgsCannotHaveTypeArgs,
-        ExpressionNotHandled
+        ExpressionNotHandled, VariableNotInScope
     }!mono.ExpressionIndex {
         switch (expression) {
             .number => |n| try fun.put(.{ .number = n }, "U8"),
+            .reference => |name| {
+                _ = value_env.get(name) orelse return error.VariableNotInScope;
+                return 0;
+            },
             .call => |call| {
                 var args = ArrayList(mono.ExpressionIndex).init(self.alloc);
                 switch (call.callee.*) {
                     // Calls of the form `something.name()` cause `something` to
                     // be treated like an extra argument.
                     .member => |member| {
-                        try args.append(try self.compile_expression(fun, type_env, member.callee.*));
+                        try args.append(try self.compile_expression(fun, type_env, value_env, member.callee.*));
                     },
                     else => {},
                 }
                 for (call.args.items) |arg| {
-                    try args.append(try self.compile_expression(fun, type_env, arg));
+                    try args.append(try self.compile_expression(fun, type_env, value_env, arg));
                 }
 
                 var arg_types = ArrayList(Name).init(self.alloc);
@@ -290,7 +294,7 @@ const Monomorphizer = struct {
                 try fun.put(.{ .call = .{ .fun = fun_name, .args = args } }, "Nothing");
             },
             .return_ => |returned| {
-                const index = try self.compile_expression(fun, type_env, returned.*);
+                const index = try self.compile_expression(fun, type_env, value_env, returned.*);
                 try fun.put(.{ .return_ = index }, "Never");
             },
             else => {
