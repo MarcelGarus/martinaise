@@ -21,7 +21,7 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !mono.Mono {
         else => return error.MainIsNotAFunction,
     };
 
-    _ = monomorphizer.compile_function(main_fun, ArrayList(Name).init(alloc)) catch |err| {
+    _ = monomorphizer.compile_function(main_fun, Monomorphizer.TypeEnv.init(alloc)) catch |err| {
         std.debug.print("{any}\n\nContext:\n", .{err});
         for (monomorphizer.context.items) |context| {
             std.debug.print("- {s}\n", .{context});
@@ -160,40 +160,34 @@ const Monomorphizer = struct {
         return std.mem.eql(u8, a, b);
     }
 
-    fn compile_function(self: *Self, fun: ast.Fun, type_args: ArrayList(Name)) !Name {
-        var fun_name = ArrayList(u8).init(self.alloc);
-        try fun_name.appendSlice(fun.name);
-        if (type_args.items.len > 0) {
-            try fun_name.appendSlice("[");
-            for (type_args.items, 0..) |arg, i| {
+    fn compile_function(self: *Self, fun: ast.Fun, type_env: TypeEnv) !Name {
+        var signature = ArrayList(u8).init(self.alloc);
+        var arg_types = ArrayList(Name).init(self.alloc);
+
+        try signature.appendSlice(fun.name);
+        if (fun.type_args.items.len > 0) {
+            try signature.appendSlice("[");
+            for (fun.type_args.items, 0..) |arg, i| {
                 if (i > 0) {
-                    try fun_name.appendSlice(", ");
+                    try signature.appendSlice(", ");
                 }
-                try fun_name.appendSlice(arg);
+                const arg_ty: Name = type_env.get(arg.name) orelse @panic("required type arg doesn't exist in type env");
+                try signature.appendSlice(arg_ty);
             }
-            try fun_name.appendSlice("]");
+            try signature.appendSlice("]");
         }
-        try fun_name.append('(');
-        // TODO: arg types
-        try fun_name.append(')');
-        try self.context.append(fun_name.items);
-
-        // Make sure all type args are just simple names.
-        var fun_type_args = ArrayList(Name).init(self.alloc);
-        for (fun.type_args.items) |arg| {
-            if (arg.args.items.len > 0) {
-                return error.FunctionTypeArgsCannotHaveTypeArgs;
+        try signature.append('(');
+        for (fun.args.items, 0..) |arg, i| {
+            if (i > 0) {
+                try signature.appendSlice(", ");
             }
-            try fun_type_args.append(arg.name);
+            const arg_type = try self.compile_type(arg.type_, type_env);
+            try arg_types.append(arg_type);
+            try signature.appendSlice(arg_type);
         }
-        // TODO: Make sure all type arg names are different.
+        try signature.append(')');
+        try self.context.append(signature.items);
 
-        // Maps types arguments to the concrete types.
-        var type_env = TypeEnv.init(self.alloc);
-        for (fun_type_args.items, type_args.items) |expected, given| {
-            try type_env.putNoClobber(expected, given);
-        }
-        // Maps variables that are in scope to their concrete types.
         var value_env = ValueEnv.init(self.alloc);
         for (fun.args.items) |arg| {
             try value_env.put(
@@ -210,11 +204,11 @@ const Monomorphizer = struct {
             _ = try self.compile_expression(&mono_fun, type_env, value_env, expr);
         }
 
-        try self.funs.put(fun_name.items, mono_fun);
+        try self.funs.put(signature.items, mono_fun);
 
         _ = self.context.pop();
 
-        return fun_name.items;
+        return signature.items;
     }
 
     fn compile_expression(
@@ -255,6 +249,15 @@ const Monomorphizer = struct {
                     try arg_types.append(fun.types.items[@intCast(arg)]);
                 }
 
+                // TODO: Make sure all type args are just simple names.
+                // var fun_type_args = ArrayList(Name).init(self.alloc);
+                // for (fun.type_args.items) |arg| {
+                //     if (arg.args.items.len > 0) {
+                //         return error.FunctionTypeArgsCannotHaveTypeArgs;
+                //     }
+                //     try fun_type_args.append(arg.name);
+                // }
+                // TODO: Make sure all type args are different.
                 var type_args: ?ArrayList(Name) = null;
                 if (call.type_args) |ty_args| {
                     type_args = try self.compile_types(ty_args, type_env);
@@ -289,7 +292,7 @@ const Monomorphizer = struct {
                 for (called_fun_type_args.items, unified_type_args.items) |from, to| {
                     try fun_type_env.put(from, to);
                 }
-                const fun_name = try self.compile_function(called_fun, unified_type_args);
+                const fun_name = try self.compile_function(called_fun, fun_type_env);
 
                 try fun.put(.{ .call = .{ .fun = fun_name, .args = args } }, "Nothing");
             },
