@@ -62,6 +62,7 @@ pub const Expression = union(enum) {
     var_: Var,
     if_: If,
     struct_construction: StructConstruction,
+    return_: *const Expression,
 };
 pub const Call = struct {
     callee: *const Expression,
@@ -232,6 +233,10 @@ fn print_expression(indent: usize, expression: Expression) void {
         .var_ => |var_| print_var(indent, var_),
         .if_ => |if_| print_if(indent, if_),
         .struct_construction => |struct_construction| print_struct_construction(indent, struct_construction),
+        .return_ => |returned| {
+            std.debug.print("return ", .{});
+            print_expression(indent, returned.*);
+        },
     }
 }
 fn print_call(indent: usize, call: Call) void {

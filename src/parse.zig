@@ -313,6 +313,10 @@ const Parser = struct {
                 try statements.append(.{ .var_ = var_ });
                 continue;
             }
+            if (try self.parse_return()) |returned| {
+                try statements.append(.{ .return_ = returned });
+                continue;
+            }
             if (try self.parse_expression()) |expr| {
                 try statements.append(expr);
                 continue;
@@ -474,6 +478,17 @@ const Parser = struct {
         heaped.* = value;
 
         return .{ .name = name, .type_ = type_, .value = heaped };
+    }
+
+    fn parse_return(self: *Self) !?*const ast.Expression {
+        self.consume_keyword("return") orelse return null;
+        self.consume_whitespace();
+
+        var returned = try self.parse_expression() orelse return error.ExpectedExpression;
+        const heaped = try self.alloc.create(ast.Expression);
+        heaped.* = returned;
+
+        return heaped;
     }
 
     fn parse_if(self: *Self) !?ast.If {

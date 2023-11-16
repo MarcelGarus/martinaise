@@ -162,6 +162,16 @@ const Monomorphizer = struct {
         var context = ArrayList(u8).init(self.alloc);
         try context.appendSlice("function ");
         try context.appendSlice(fun.name);
+        if (type_args.items.len > 0) {
+            try context.appendSlice("[");
+            for (type_args.items, 0..) |arg, i| {
+                if (i > 0) {
+                    try context.appendSlice(", ");
+                }
+                try context.appendSlice(arg);
+            }
+            try context.appendSlice("]");
+        }
         try self.context.append(context.items);
 
         // Make sure all type args are just simple names.
@@ -257,11 +267,11 @@ const Monomorphizer = struct {
                 };
                 var called_fun_type_args = ArrayList(Name).init(self.alloc);
                 for (called_fun.type_args.items) |ty_arg| {
-                if (ty_arg.args.items.len > 0) {
-                    return error.FunctionTypeArgsCannotHaveTypeArgs;
+                    if (ty_arg.args.items.len > 0) {
+                        return error.FunctionTypeArgsCannotHaveTypeArgs;
+                    }
+                    try called_fun_type_args.append(ty_arg.name);
                 }
-                try called_fun_type_args.append(ty_arg.name);
-            }
 
                 // TODO: Unify fun signature with the argument types
                 var unified_type_args = ArrayList(Name).init(self.alloc);
@@ -278,6 +288,10 @@ const Monomorphizer = struct {
                 const fun_name = try self.compile_function(called_fun, unified_type_args);
 
                 try fun.put(.{ .call = .{ .fun = fun_name, .args = args } }, "Nothing");
+            },
+            .return_ => |returned| {
+                const index = try self.compile_expression(fun, type_env, returned.*);
+                try fun.put(.{ .return_ = index }, "Never");
             },
             else => {
                 std.debug.print("compiling {any}\n", .{expression});
