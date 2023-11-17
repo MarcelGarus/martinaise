@@ -3,6 +3,7 @@ const parse = @import("parse.zig").parse;
 const ast = @import("ast.zig");
 const monomorphize = @import("compile.zig").monomorphize;
 const mono = @import("mono.zig");
+const compile_to_wasm = @import("wasm.zig").compile_to_wasm;
 
 pub fn main() !void {
     std.debug.print("Welcome to Martinaise.\n", .{});
@@ -20,10 +21,13 @@ pub fn main() !void {
     std.debug.print("Parsed:\n", .{});
     ast.print(the_ast);
     std.debug.print("\n", .{});
-    
+
     const the_mono = try monomorphize(alloc, the_ast);
     mono.print(the_mono);
     std.debug.print("\n", .{});
+
+    const wasm = try compile_to_wasm(alloc, the_mono);
+    std.debug.print("WASM:\n{s}\n", .{wasm.items});
 }
 
 test "simple test" {

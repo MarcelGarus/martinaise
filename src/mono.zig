@@ -36,6 +36,7 @@ pub const Funs = struct {
 };
 
 pub const Fun = struct {
+    num_args: usize,
     expressions: ArrayList(Expression),
     types: ArrayList(Name),
 
@@ -48,6 +49,7 @@ pub const Fun = struct {
 };
 pub const ExpressionIndex = isize;
 pub const Expression = union(enum) {
+    arg,
     number: i128,
     call: Call,
     member: Member,
@@ -94,6 +96,7 @@ fn print_fun(name: Name, fun: Fun) void {
 
 fn print_expression(expr: Expression) void {
     switch (expr) {
+        .arg => std.debug.print("arg", .{}),
         .number => |n| std.debug.print("{d}", .{n}),
         .call => |call| {
             std.debug.print("{s} called with (", .{call.fun});

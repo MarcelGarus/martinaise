@@ -13,6 +13,8 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !mono.Mono {
         .types = StringHashMap(mono.Type).init(alloc),
         .funs = StringHashMap(mono.Fun).init(alloc),
     };
+    try monomorphizer.types.put("Never", .builtin_type);
+    try monomorphizer.types.put("Nothing", .builtin_type);
     try monomorphizer.types.put("U8", .builtin_type);
 
     const main = try monomorphizer.lookup("main", ArrayList(Name).init(alloc), ArrayList(Name).init(alloc));
@@ -197,11 +199,12 @@ const Monomorphizer = struct {
         }
 
         var mono_fun = mono.Fun {
+            .num_args = fun.args.items.len,
             .expressions = ArrayList(mono.Expression).init(self.alloc),
             .types = ArrayList(Name).init(self.alloc),
         };
         for (fun.body.items) |expr| {
-            _ = try self.compile_expression(&mono_fun, type_env, value_env, expr);
+            _ = try self.compile_expression(&mono_fun, type_env, &value_env, expr);
         }
 
         try self.funs.put(signature.items, mono_fun);
@@ -215,7 +218,7 @@ const Monomorphizer = struct {
         self: *Self,
         fun: *mono.Fun,
         type_env: TypeEnv,
-        value_env: StringHashMap(Name),
+        value_env: *StringHashMap(Name),
         expression: ast.Expression
     ) error{
         OutOfMemory, MultipleMatches, NoMatch, TypeArgumentCalledWithGenerics,
@@ -249,15 +252,6 @@ const Monomorphizer = struct {
                     try arg_types.append(fun.types.items[@intCast(arg)]);
                 }
 
-                // TODO: Make sure all type args are just simple names.
-                // var fun_type_args = ArrayList(Name).init(self.alloc);
-                // for (fun.type_args.items) |arg| {
-                //     if (arg.args.items.len > 0) {
-                //         return error.FunctionTypeArgsCannotHaveTypeArgs;
-                //     }
-                //     try fun_type_args.append(arg.name);
-                // }
-                // TODO: Make sure all type args are different.
                 var type_args: ?ArrayList(Name) = null;
                 if (call.type_args) |ty_args| {
                     type_args = try self.compile_types(ty_args, type_env);
@@ -281,20 +275,42 @@ const Monomorphizer = struct {
                 }
 
                 // TODO: Unify fun signature with the argument types
+                // TODO: Make sure all type args are just simple names.
+                // var fun_type_args = ArrayList(Name).init(self.alloc);
+                // for (fun.type_args.items) |arg| {
+                //     try fun_type_args.append(arg.name);
+                //     if (arg.args.items.len > 0) {
+                //         return error.FunctionTypeArgsCannotHaveTypeArgs;
+                //     }
+                // }
+                // TODO: Make sure all type args are different.
                 var unified_type_args = ArrayList(Name).init(self.alloc);
                 if (type_args) |ty_args| {
                     try unified_type_args.appendSlice(ty_args.items);
                 }
-                
-                // TODO: compile fun with the type arguments
 
                 var fun_type_env = TypeEnv.init(self.alloc);
                 for (called_fun_type_args.items, unified_type_args.items) |from, to| {
                     try fun_type_env.put(from, to);
                 }
                 const fun_name = try self.compile_function(called_fun, fun_type_env);
+                const return_type = ret: {
+                    if (called_fun.return_type) |ty| {
+                        break :ret try self.compile_type(ty, fun_type_env);
+                    } else {
+                        break :ret "Nothing";
+                    }
+                };
 
-                try fun.put(.{ .call = .{ .fun = fun_name, .args = args } }, "Nothing");
+                try fun.put(.{ .call = .{ .fun = fun_name, .args = args } }, return_type);
+            },
+            .var_ => |v| {
+                const value = try self.compile_expression(fun, type_env, value_env, v.value.*);
+                if (v.type_) |_| {
+                    // TODO: assert the value has the correct type
+                }
+                try value_env.put(v.name, fun.types.items[@intCast(value)]);
+
             },
             .return_ => |returned| {
                 const index = try self.compile_expression(fun, type_env, value_env, returned.*);
