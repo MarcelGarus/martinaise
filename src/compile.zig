@@ -191,15 +191,18 @@ const Monomorphizer = struct {
         try self.context.append(signature.items);
 
         var value_env = ValueEnv.init(self.alloc);
-        for (fun.args.items) |arg| {
-            try value_env.put(
-                arg.name,
-                try self.compile_type(arg.type_, type_env)
-            );
-        }
 
+        const return_type = ret: {
+            if (fun.return_type) |ty| {
+                break :ret try self.compile_type(ty, type_env);
+            } else {
+                break :ret "Nothing";
+            }
+        };
+        
         var mono_fun = mono.Fun {
-            .num_args = fun.args.items.len,
+            .arg_types = arg_types,
+            .return_type = return_type,
             .expressions = ArrayList(mono.Expression).init(self.alloc),
             .types = ArrayList(Name).init(self.alloc),
         };

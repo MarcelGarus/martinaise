@@ -36,7 +36,8 @@ pub const Funs = struct {
 };
 
 pub const Fun = struct {
-    num_args: usize,
+    arg_types: ArrayList(Name),
+    return_type: Name,
     expressions: ArrayList(Expression),
     types: ArrayList(Name),
 

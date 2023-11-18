@@ -28,6 +28,10 @@ pub fn main() !void {
 
     const wasm = try compile_to_wasm(alloc, the_mono);
     std.debug.print("WASM:\n{s}\n", .{wasm.items});
+
+    var wasm_output = try std.fs.cwd().createFile("output.wat", .{});
+    defer wasm_output.close();
+    try std.fmt.format(wasm_output.writer(), "{s}\n", .{wasm.items});
 }
 
 test "simple test" {

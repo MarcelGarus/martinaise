@@ -4,19 +4,13 @@ const StringHashMap = std.StringHashMap;
 const ast = @import("ast.zig");
 const Name = ast.Name;
 const mono = @import("mono.zig");
+const format = std.fmt.format;
 
 pub fn compile_to_wasm(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8) {
     var out = ArrayList(u8).init(alloc);
+    var writer = out.writer();
 
-    try out.appendSlice("(module");
-
-    { // Types
-        var iter = the_mono.types.keyIterator();
-        while (iter.next()) |ty| {
-            _ = ty;
-        }
-    }
-    var type_index: usize = 0;
+    try format(writer, "(module", .{});
 
     { // Functions
         var ordered_funs = ArrayList(Name).init(alloc);
@@ -30,36 +24,26 @@ pub fn compile_to_wasm(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList
         }
         for (ordered_funs.items) |fun_name| {
             const fun = the_mono.funs.get(fun_name) orelse unreachable;
-            try out.appendSlice("\n  (type (func (param");
-            for (0..fun.num_args) |_| {
-                try out.appendSlice(" u32");
-            }
-            try out.appendSlice(")))");
 
-            try out.appendSlice("\n  (func ");
-            try out.appendSlice((try mangle(alloc, fun_name)).items);
-            try out.appendSlice(" (* ");
-            try out.appendSlice(fun_name);
-            try out.appendSlice(" *) (type ");
-            try std.fmt.format(out.writer(), "{}", .{type_index});
-            type_index += 1;
-            try out.appendSlice(")");
-            try out.appendSlice("\n    (local");
-            for (fun.types.items) |ty| {
-                try compile_type(&out, the_mono, ty);
+            try format(writer, "\n  ;; {s}", .{fun_name});
+            try format(writer, "\n  (func {s} (export \"{s}\")", .{(try mangle(alloc, fun_name)).items, fun_name});
+            for (fun.arg_types.items) |arg_ty| {
+                try format(writer, "\n    (param ${s} i32)", .{arg_ty});
             }
-            try out.appendSlice(")");
+            try format(writer, "\n    (result", .{});
+            for (0..type_size(the_mono, fun.return_type)) |_| {
+                try format(writer, " i32", .{});
+            }
+            try format(writer, ")", .{});
+
             for (fun.expressions.items, fun.types.items) |expr, ty| {
                 switch (expr) {
                     .arg => {},
                     .number => |n| {
-                        try out.appendSlice("\n    i32.const ");
-                        try std.fmt.format(out.writer(), "{}", .{n});
+                        try format(writer, "\n    i32.const {}", .{n});
                     },
                     .call => |call| {
-                        try out.appendSlice("\n    call ");
-                        const fun_index = funs_to_index.get(call.fun) orelse unreachable;
-                        try std.fmt.format(out.writer(), "{}", .{fun_index});
+                        try format(writer, "\n    call {s}", .{(try mangle(alloc, call.fun)).items});
                     },
                     .member => |member| {
                         _ = member;
@@ -70,11 +54,17 @@ pub fn compile_to_wasm(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList
                 }
                 _ = ty;
             }
-            try out.appendSlice(")");
+            try format(writer, ")", .{});
         }
+
+        try format(writer, "\n  ;; entry point into wasm", .{});
+        try format(writer, "\n  (func $_start (export \"_start\")", .{});
+        try format(writer, "\n    (result i32)", .{});
+        try format(writer, "\n    call $main<>", .{});
+        try format(writer, ")", .{});
     }
 
-    try out.appendSlice(")");
+    try format(writer, ")", .{});
 
     return out;
 }
@@ -98,37 +88,72 @@ fn mangle(alloc: std.mem.Allocator, name: Name) !ArrayList(u8) {
     return mangled;
 }
 
-fn compile_type(out: *ArrayList(u8), the_mono: mono.Mono, name: Name) !void {
-    std.debug.print("Type is {s}.\n", .{name});
+fn type_size(the_mono: mono.Mono, name: Name) usize {
     const ty = the_mono.types.get(name) orelse unreachable;
-    try out.appendSlice(" (* ");
-    try out.appendSlice(name);
-    try out.appendSlice(" *)");
     switch (ty) {
         .builtin_type => {
             if (std.mem.eql(u8, name, "Nothing")) {
-                // only one instance, so nothing to save
+                return 0;
             } else if (std.mem.eql(u8, name, "Never")) {
-                // no instance, so nothing to save
+                return 0;
             } else if (std.mem.eql(u8, name, "U8")) {
-                try out.appendSlice(" U8");
+                return 1;
             } else {
                 std.debug.print("Type is {s}.\n", .{name});
                 @panic("Unknown builtin type");
             }
         },
         .struct_ => |s| {
+            var total: usize = 0;
             for (s.fields.items) |field| {
-                try compile_type(out, the_mono, field.type_);
+                total += type_size(the_mono, field.type_);
             }
+            return total;
         },
         .enum_ => |e| {
             // TODO: compile
             _ = e;
+            unreachable;
         },
         .fun => |f| {
             // TODO: compile
             _ = f;
+            unreachable;
         },
     }
 }
+
+// fn compile_type(out: std.io.Writer(u8), the_mono: mono.Mono, name: Name) !void {
+//     std.debug.print("Type is {s}.\n", .{name});
+//     const ty = the_mono.types.get(name) orelse unreachable;
+//     try format(out, " (* {}");
+//     try format(out, name);
+//     try format(out, " *)");
+//     switch (ty) {
+//         .builtin_type => {
+//             if (std.mem.eql(u8, name, "Nothing")) {
+//                 // only one instance, so nothing to save
+//             } else if (std.mem.eql(u8, name, "Never")) {
+//                 // no instance, so nothing to save
+//             } else if (std.mem.eql(u8, name, "U8")) {
+//                 try format(out, " U8");
+//             } else {
+//                 std.debug.print("Type is {s}.\n", .{name});
+//                 @panic("Unknown builtin type");
+//             }
+//         },
+//         .struct_ => |s| {
+//             for (s.fields.items) |field| {
+//                 try compile_type(out, the_mono, field.type_);
+//             }
+//         },
+//         .enum_ => |e| {
+//             // TODO: compile
+//             _ = e;
+//         },
+//         .fun => |f| {
+//             // TODO: compile
+//             _ = f;
+//         },
+//     }
+// }
