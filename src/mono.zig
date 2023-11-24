@@ -49,7 +49,7 @@ pub const Fun = struct {
         try self.types.append(ty);
     }
 };
-pub const ExpressionIndex = isize;
+pub const ExpressionIndex = usize;
 pub const Expression = union(enum) {
     arg,
     number: i128,

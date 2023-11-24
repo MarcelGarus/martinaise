@@ -50,8 +50,13 @@ const Monomorphizer = struct {
 
     // Maps type parameter names to fully monomorphized types.
     const TypeEnv = StringHashMap(Name);
-    // Maps variable names to their types.
-    const ValueEnv = StringHashMap(Name);
+
+    // Maps variable names to their expression index.
+    const VarEnv = StringHashMap(VarInfo);
+    const VarInfo = struct {
+        expr_index: usize,
+        ty: Name,
+    };
 
     // Looks up the given name with the given number of type args and the args
     // of the given types.
@@ -165,7 +170,7 @@ const Monomorphizer = struct {
     fn compile_function(self: *Self, fun: ast.Fun, type_env: TypeEnv) !Name {
         var signature = ArrayList(u8).init(self.alloc);
         var arg_types = ArrayList(Name).init(self.alloc);
-        var value_env = ValueEnv.init(self.alloc);
+        var var_env = VarEnv.init(self.alloc);
 
         try signature.appendSlice(fun.name);
         if (fun.type_args.items.len > 0) {
@@ -187,7 +192,7 @@ const Monomorphizer = struct {
             const arg_type = try self.compile_type(arg.type_, type_env);
             try arg_types.append(arg_type);
             try signature.appendSlice(arg_type);
-            try value_env.put(arg.name, arg_type);
+            try var_env.put(arg.name, .{ .expr_index = i, .ty = arg_type });
         }
         try signature.append(')');
         try self.context.append(signature.items);
@@ -211,7 +216,7 @@ const Monomorphizer = struct {
             try mono_fun.put(.{ .arg = {} }, ty);
         }
         for (fun.body.items) |expr| {
-            _ = try self.compile_expression(&mono_fun, type_env, &value_env, expr);
+            _ = try self.compile_expression(&mono_fun, type_env, &var_env, expr);
         }
 
         try self.funs.put(signature.items, mono_fun);
@@ -225,7 +230,7 @@ const Monomorphizer = struct {
         self: *Self,
         fun: *mono.Fun,
         type_env: TypeEnv,
-        value_env: *StringHashMap(Name),
+        var_env: *VarEnv,
         expression: ast.Expression
     ) error{
         OutOfMemory, MultipleMatches, NoMatch, TypeArgumentCalledWithGenerics,
@@ -237,11 +242,13 @@ const Monomorphizer = struct {
         switch (expression) {
             .number => |n| try fun.put(.{ .number = n }, "Int"),
             .reference => |name| {
-                _ = value_env.get(name) orelse {
-                    std.debug.print("Tried to find `{s}`.\n", .{name});
-                    return error.VariableNotInScope;
-                };
-                return 0;
+                if (var_env.get(name)) |var_info| {
+                    return var_info.expr_index;
+                }
+
+                // TODO: Try to lookup type.
+                std.debug.print("Tried to find `{s}`.\n", .{name});
+                return error.VariableNotInScope;
             },
             .call => |call| {
                 var args = ArrayList(mono.ExpressionIndex).init(self.alloc);
@@ -249,12 +256,12 @@ const Monomorphizer = struct {
                     // Calls of the form `something.name()` cause `something` to
                     // be treated like an extra argument.
                     .member => |member| {
-                        try args.append(try self.compile_expression(fun, type_env, value_env, member.callee.*));
+                        try args.append(try self.compile_expression(fun, type_env, var_env, member.on.*));
                     },
                     else => {},
                 }
                 for (call.args.items) |arg| {
-                    try args.append(try self.compile_expression(fun, type_env, value_env, arg));
+                    try args.append(try self.compile_expression(fun, type_env, var_env, arg));
                 }
 
                 var arg_types = ArrayList(Name).init(self.alloc);
@@ -314,16 +321,22 @@ const Monomorphizer = struct {
 
                 try fun.put(.{ .call = .{ .fun = fun_name, .args = args } }, return_type);
             },
+            .member => |m| {
+                const on = try self.compile_expression(fun, type_env, var_env, m.on.*);
+                std.debug.print("Member on {s}\n", .{fun.types.items[on]});
+            },
             .var_ => |v| {
-                const value = try self.compile_expression(fun, type_env, value_env, v.value.*);
+                const value = try self.compile_expression(fun, type_env, var_env, v.value.*);
                 if (v.type_) |_| {
                     // TODO: assert the value has the correct type
                 }
-                try value_env.put(v.name, fun.types.items[@intCast(value)]);
-
+                try var_env.put(v.name, .{
+                    .expr_index = value,
+                    .ty = fun.types.items[@intCast(value)]
+                });
             },
             .return_ => |returned| {
-                const index = try self.compile_expression(fun, type_env, value_env, returned.*);
+                const index = try self.compile_expression(fun, type_env, var_env, returned.*);
                 try fun.put(.{ .return_ = index }, "Never");
             },
             else => {
@@ -331,8 +344,7 @@ const Monomorphizer = struct {
                 return error.ExpressionNotHandled;
             }
         }
-        const len: isize = @intCast(fun.expressions.items.len);
-        return len - 1;
+        return fun.expressions.items.len - 1;
     }
 
     fn compile_types(self: *Self, tys: ArrayList(ast.Type), type_env: TypeEnv) error{

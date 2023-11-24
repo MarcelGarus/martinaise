@@ -71,7 +71,7 @@ pub const Call = struct {
     args: ArrayList(Expression),
 };
 pub const Member = struct {
-    callee: *const Expression,
+    on: *const Expression,
     member: Name,
 };
 pub const Var = struct {
@@ -255,7 +255,7 @@ fn print_call(indent: usize, call: Call) void {
     std.debug.print(")", .{});
 }
 fn print_member(indent: usize, member: Member) void {
-    print_expression(indent, member.callee.*);
+    print_expression(indent, member.on.*);
     std.debug.print(".{s}", .{member.member});
 }
 fn print_var(indent: usize, var_: Var) void {

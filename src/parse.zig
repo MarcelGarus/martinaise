@@ -59,7 +59,16 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
     program.declarations.append(.{ .builtin_type = .{ .name = "Nothing" } }) catch return null;
     program.declarations.append(.{ .builtin_type = .{ .name = "Never" } }) catch return null;
     program.declarations.append(.{ .builtin_type = .{ .name = "Int" } }) catch return null;
-    program.declarations.append(.{ .builtin_type = .{ .name = "Float" } }) catch return null;
+    { // Bool
+        var variants = ArrayList(ast.Variant).init(alloc);
+        variants.append(.{ .name = "true", .type_ = null }) catch return null;
+        variants.append(.{ .name = "false", .type_ = null }) catch return null;
+        program.declarations.append(.{ .enum_ = .{
+            .name = "Bool",
+            .type_args = ArrayList(ast.Type).init(alloc),
+            .variants = variants,
+        } }) catch return null;
+    }
     { // add(Int, Int)
         const int = .{ .name = "Int", .args = ArrayList(ast.Type).init(alloc) };
         var args = ArrayList(ast.Argument).init(alloc);
@@ -440,7 +449,7 @@ const Parser = struct {
         
         self.consume_whitespace();
         if (self.parse_name()) |name| {
-            return .{ .member = .{ .callee = heaped, .member = name }};
+            return .{ .member = .{ .on = heaped, .member = name }};
         } else if (self.consume_prefix("{")) |_| {
             self.consume_whitespace();
 
