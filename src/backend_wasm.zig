@@ -27,8 +27,9 @@ pub fn compile_to_wasm(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList
 
             try format(writer, "\n  ;; {s}", .{fun_name});
             try format(writer, "\n  (func {s} (export \"{s}\")", .{(try mangle(alloc, fun_name)).items, fun_name});
-            for (fun.arg_types.items) |arg_ty| {
-                try format(writer, "\n    (param ${s} i32)", .{arg_ty});
+            for (fun.arg_types.items, 0..) |arg_ty, i| {
+                _ = arg_ty;
+                try format(writer, "\n    (param $arg{} i32)", .{i});
             }
             try format(writer, "\n    (result", .{});
             for (0..type_size(the_mono, fun.return_type)) |_| {
@@ -36,24 +37,49 @@ pub fn compile_to_wasm(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList
             }
             try format(writer, ")", .{});
 
-            for (fun.expressions.items, fun.types.items) |expr, ty| {
-                switch (expr) {
-                    .arg => {},
-                    .number => |n| {
-                        try format(writer, "\n    i32.const {}", .{n});
-                    },
-                    .call => |call| {
-                        try format(writer, "\n    call {s}", .{(try mangle(alloc, call.fun)).items});
-                    },
-                    .member => |member| {
-                        _ = member;
-                    },
-                    .return_ => |index| {
-                        _ = index;
-                    },
+            fun_body: {
+                if (fun.is_builtin) {
+                    if (std.mem.eql(u8, fun_name, "add(Int, Int)")) {
+                        try format(writer, "\n    local.get $arg0", .{});
+                        try format(writer, "\n    local.get $arg1", .{});
+                        try format(writer, "\n    i32.add", .{});
+                        break :fun_body;
+                    }
+                    std.debug.print("Compiling builtin {s}\n", .{fun_name});
+                    @panic("Unknown builtin function");
                 }
-                _ = ty;
+
+                for (0..fun.expressions.items.len) |i| {
+                    try format(writer, "\n    (local ${} i32)", .{i});
+                }
+
+                for (fun.expressions.items, fun.types.items, 0..) |expr, ty, i| {
+                    switch (expr) {
+                        .arg => {
+                            try format(writer, "\n    local.get $arg{}", .{i});
+                        },
+                        .number => |n| {
+                            try format(writer, "\n    i32.const {}", .{n});
+                        },
+                        .call => |call| {
+                            for (call.args.items) |arg| {
+                                try format(writer, "\n    local.get ${}", .{arg});
+                            }
+                            try format(writer, "\n    call {s}", .{(try mangle(alloc, call.fun)).items});
+                        },
+                        .member => |member| {
+                            _ = member;
+                        },
+                        .return_ => |index| {
+                            _ = index;
+                        },
+                    }
+                    _ = ty;
+                    try format(writer, "\n    local.set ${}", .{i});
+                }
+                try format(writer, "\n    local.get ${}", .{fun.expressions.items.len - 1});
             }
+
             try format(writer, ")", .{});
         }
 
@@ -80,7 +106,8 @@ fn mangle(alloc: std.mem.Allocator, name: Name) !ArrayList(u8) {
             ']' => try mangled.appendSlice(">"),
             '(' => try mangled.appendSlice("<"),
             ')' => try mangled.appendSlice(">"),
-            ',' | ' ' => try mangled.append('.'),
+            ',' => try mangled.append('.'),
+            ' ' => {},
             // 'a'...'z' || 'A'...'Z' | '0'...'9' => try mangled.append(c),
             else => try mangled.append(c),
         }
@@ -88,6 +115,7 @@ fn mangle(alloc: std.mem.Allocator, name: Name) !ArrayList(u8) {
     return mangled;
 }
 
+// in i32, sadly
 fn type_size(the_mono: mono.Mono, name: Name) usize {
     const ty = the_mono.types.get(name) orelse unreachable;
     switch (ty) {
@@ -96,7 +124,7 @@ fn type_size(the_mono: mono.Mono, name: Name) usize {
                 return 0;
             } else if (std.mem.eql(u8, name, "Never")) {
                 return 0;
-            } else if (std.mem.eql(u8, name, "U8")) {
+            } else if (std.mem.eql(u8, name, "Int")) {
                 return 1;
             } else {
                 std.debug.print("Type is {s}.\n", .{name});

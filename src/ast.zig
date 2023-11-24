@@ -47,6 +47,7 @@ pub const Fun = struct {
     type_args: ArrayList(Type),
     args: ArrayList(Argument),
     return_type: ?Type,
+    is_builtin: bool,
     body: Body,
 };
 pub const Argument = struct {

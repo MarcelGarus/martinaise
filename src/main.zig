@@ -3,7 +3,8 @@ const parse = @import("parse.zig").parse;
 const ast = @import("ast.zig");
 const monomorphize = @import("compile.zig").monomorphize;
 const mono = @import("mono.zig");
-const compile_to_wasm = @import("wasm.zig").compile_to_wasm;
+const compile_to_c = @import("backend_c.zig").compile_to_c;
+const compile_to_wasm = @import("backend_wasm.zig").compile_to_wasm;
 
 pub fn main() !void {
     std.debug.print("Welcome to Martinaise.\n", .{});
@@ -26,10 +27,10 @@ pub fn main() !void {
     mono.print(the_mono);
     std.debug.print("\n", .{});
 
-    const wasm = try compile_to_wasm(alloc, the_mono);
-    std.debug.print("WASM:\n{s}\n", .{wasm.items});
+    const wasm = try compile_to_c(alloc, the_mono);
+    std.debug.print("C code:\n{s}\n", .{wasm.items});
 
-    var wasm_output = try std.fs.cwd().createFile("output.wat", .{});
+    var wasm_output = try std.fs.cwd().createFile("output.c", .{});
     defer wasm_output.close();
     try std.fmt.format(wasm_output.writer(), "{s}\n", .{wasm.items});
 }

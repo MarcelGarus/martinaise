@@ -1,10 +1,11 @@
 const std = @import("std");
 const ast = @import("ast.zig");
+const ArrayList = std.ArrayList;
 
 pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
     var parser = Parser{ .code = code, .alloc = alloc };
     // TODO: Handle OOM error differently
-    const program = parser.parse_program() catch |err| {
+    var program = parser.parse_program() catch |err| {
         const offset = code.len - parser.code.len;
 
         var lines = std.ArrayList([]u8).init(alloc);
@@ -53,6 +54,28 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
 
         return null;
     };
+
+    // Add builtins.
+    program.declarations.append(.{ .builtin_type = .{ .name = "Nothing" } }) catch return null;
+    program.declarations.append(.{ .builtin_type = .{ .name = "Never" } }) catch return null;
+    program.declarations.append(.{ .builtin_type = .{ .name = "Int" } }) catch return null;
+    program.declarations.append(.{ .builtin_type = .{ .name = "Float" } }) catch return null;
+    { // add(Int, Int)
+        const int = .{ .name = "Int", .args = ArrayList(ast.Type).init(alloc) };
+        var args = ArrayList(ast.Argument).init(alloc);
+        args.append(.{ .name = "a", .type_ = int}) catch return null;
+        args.append(.{ .name = "b", .type_ = int}) catch return null;
+        program.declarations.append(.{ .fun = .{
+            .name = "add",
+            .type_args = ArrayList(ast.Type).init(alloc),
+            .args = args,
+            .return_type = int,
+            .is_builtin = true,
+            .body = ArrayList(ast.Expression).init(alloc),
+
+        } }) catch return null;
+    }
+
     return program;
 }
 
@@ -117,10 +140,6 @@ const Parser = struct {
         while (true) {
             self.consume_whitespace();
 
-            if (try self.parse_builtin_type()) |bt| {
-                try declarations.append(.{ .builtin_type = bt });
-                continue;
-            }
             if (try self.parse_struct()) |s| {
                 try declarations.append(.{ .struct_ = s });
                 continue;
@@ -167,13 +186,6 @@ const Parser = struct {
         const name = self.code[0..i];
         self.code = self.code[i..];
         return name;
-    }
-
-    fn parse_builtin_type(self: *Self) !?ast.BuiltinType {
-        self.consume_keyword("builtinType") orelse return null;
-        self.consume_whitespace();
-        const name = self.parse_name() orelse return error.ExpectedNameOfBuiltinType;
-        return ast.BuiltinType{ .name = name };
     }
 
     fn parse_type(self: *Self) error{
@@ -298,6 +310,7 @@ const Parser = struct {
             .type_args = type_args,
             .args = args,
             .return_type = return_type,
+            .is_builtin = false,
             .body = body,
         };
     }

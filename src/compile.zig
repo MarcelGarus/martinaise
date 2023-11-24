@@ -15,7 +15,7 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !mono.Mono {
     };
     try monomorphizer.types.put("Never", .builtin_type);
     try monomorphizer.types.put("Nothing", .builtin_type);
-    try monomorphizer.types.put("U8", .builtin_type);
+    try monomorphizer.types.put("Int", .builtin_type);
 
     const main = try monomorphizer.lookup("main", ArrayList(Name).init(alloc), ArrayList(Name).init(alloc));
     const main_fun = switch (main) {
@@ -41,9 +41,9 @@ const Monomorphizer = struct {
     alloc: std.mem.Allocator,
     program: ast.Program,
     context: ArrayList([]const u8),
-    // The keys are strings of monomorphized types such as "Maybe[U8]".
+    // The keys are strings of monomorphized types such as "Maybe[Int]".
     types: StringHashMap(mono.Type),
-    // The keys are strings of monomorphized function signatures such as "foo(U8)".
+    // The keys are strings of monomorphized function signatures such as "foo(Int)".
     funs: StringHashMap(mono.Fun),
 
     const Self = @This();
@@ -165,6 +165,7 @@ const Monomorphizer = struct {
     fn compile_function(self: *Self, fun: ast.Fun, type_env: TypeEnv) !Name {
         var signature = ArrayList(u8).init(self.alloc);
         var arg_types = ArrayList(Name).init(self.alloc);
+        var value_env = ValueEnv.init(self.alloc);
 
         try signature.appendSlice(fun.name);
         if (fun.type_args.items.len > 0) {
@@ -186,11 +187,10 @@ const Monomorphizer = struct {
             const arg_type = try self.compile_type(arg.type_, type_env);
             try arg_types.append(arg_type);
             try signature.appendSlice(arg_type);
+            try value_env.put(arg.name, arg_type);
         }
         try signature.append(')');
         try self.context.append(signature.items);
-
-        var value_env = ValueEnv.init(self.alloc);
 
         const return_type = ret: {
             if (fun.return_type) |ty| {
@@ -203,9 +203,13 @@ const Monomorphizer = struct {
         var mono_fun = mono.Fun {
             .arg_types = arg_types,
             .return_type = return_type,
+            .is_builtin = fun.is_builtin,
             .expressions = ArrayList(mono.Expression).init(self.alloc),
             .types = ArrayList(Name).init(self.alloc),
         };
+        for (arg_types.items) |ty| {
+            try mono_fun.put(.{ .arg = {} }, ty);
+        }
         for (fun.body.items) |expr| {
             _ = try self.compile_expression(&mono_fun, type_env, &value_env, expr);
         }
@@ -231,9 +235,12 @@ const Monomorphizer = struct {
         ExpressionNotHandled, VariableNotInScope
     }!mono.ExpressionIndex {
         switch (expression) {
-            .number => |n| try fun.put(.{ .number = n }, "U8"),
+            .number => |n| try fun.put(.{ .number = n }, "Int"),
             .reference => |name| {
-                _ = value_env.get(name) orelse return error.VariableNotInScope;
+                _ = value_env.get(name) orelse {
+                    std.debug.print("Tried to find `{s}`.\n", .{name});
+                    return error.VariableNotInScope;
+                };
                 return 0;
             },
             .call => |call| {
@@ -341,7 +348,7 @@ const Monomorphizer = struct {
     }
 
     // Specializes a type such as `Maybe[T]` using a type environment such as
-    // `{T: U8}` (resulting in `Maybe[U8]`). Also creates the needed specialized
+    // `{T: Int}` (resulting in `Maybe[Int]`). Also creates the needed specialized
     // types in the `mono.Types`.
     fn compile_type(self: *Self, ty: ast.Type, type_env: TypeEnv) !Name {
         var args = try self.compile_types(ty.args, type_env);

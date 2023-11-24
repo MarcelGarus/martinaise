@@ -38,6 +38,7 @@ pub const Funs = struct {
 pub const Fun = struct {
     arg_types: ArrayList(Name),
     return_type: Name,
+    is_builtin: bool,
     expressions: ArrayList(Expression),
     types: ArrayList(Name),
 
