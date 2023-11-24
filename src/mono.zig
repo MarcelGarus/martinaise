@@ -53,9 +53,14 @@ pub const ExpressionIndex = usize;
 pub const Expression = union(enum) {
     arg,
     number: i128,
+    assign: Assign,
     call: Call,
     member: Member,
     return_: ExpressionIndex,
+};
+pub const Assign = struct {
+    to: ExpressionIndex,
+    value: ExpressionIndex,
 };
 pub const Call = struct {
     fun: Name, // monomorphized function name
@@ -100,6 +105,9 @@ fn print_expression(expr: Expression) void {
     switch (expr) {
         .arg => std.debug.print("arg", .{}),
         .number => |n| std.debug.print("{d}", .{n}),
+        .assign => |assign| {
+            std.debug.print("{} set to {}", .{assign.to, assign.value});
+        },
         .call => |call| {
             std.debug.print("{s} called with (", .{call.fun});
             for (call.args.items, 0..) |arg, i| {

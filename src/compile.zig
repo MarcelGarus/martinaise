@@ -237,7 +237,7 @@ const Monomorphizer = struct {
         MultipleTypesMatch, NoTypesMatch, StructTypeArgsCannotHaveTypeArgs,
         EnumTypeArgsCannotHaveTypeArgs, InvalidExpressionCalled,
         CalledNonFunction, FunctionTypeArgsCannotHaveTypeArgs,
-        ExpressionNotHandled, VariableNotInScope
+        ExpressionNotHandled, VariableNotInScope, CanOnlyAssignToName
     }!mono.ExpressionIndex {
         switch (expression) {
             .number => |n| try fun.put(.{ .number = n }, "Int"),
@@ -334,6 +334,21 @@ const Monomorphizer = struct {
                     .expr_index = value,
                     .ty = fun.types.items[@intCast(value)]
                 });
+            },
+            .assign => |assign| {
+                const to = to: {
+                    switch (assign.to.*) {
+                        .reference => |ref| {
+                            if (var_env.get(ref)) |var_info| {
+                                break :to var_info.expr_index;
+                            }
+                            return error.VariableNotInScope;
+                        },
+                        else => return error.CanOnlyAssignToName,
+                    }
+                };
+                const value = try self.compile_expression(fun, type_env, var_env, assign.value.*);
+                try fun.put(.{ .assign = .{ .to = to, .value = value } }, "Nothing");
             },
             .return_ => |returned| {
                 const index = try self.compile_expression(fun, type_env, var_env, returned.*);

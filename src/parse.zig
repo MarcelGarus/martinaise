@@ -375,6 +375,13 @@ const Parser = struct {
             self.consume_whitespace();
 
             if (expression) |expr| {
+                if (try self.parse_expression_suffix_assign(expr)) |assign| {
+                    expression = .{ .assign = assign };
+                    continue;
+                }
+            }
+
+            if (expression) |expr| {
                 if (try self.parse_expression_suffix_call(expr)) |call| {
                     expression = .{ .call = call };
                     continue;
@@ -417,6 +424,19 @@ const Parser = struct {
         const expr = try self.parse_expression() orelse return error.ExpectedExpression;
         self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
         return expr;
+    }
+
+    fn parse_expression_suffix_assign(self: *Self, current: ast.Expression) !?ast.Assign {
+        self.consume_prefix("=") orelse return null;
+        self.consume_whitespace();
+        const value = try self.parse_expression() orelse return error.ExpectedExpression;
+
+        const heaped_to = try self.alloc.create(ast.Expression);
+        heaped_to.* = current;
+        const heaped_value = try self.alloc.create(ast.Expression);
+        heaped_value.* = value;
+
+        return .{ .to = heaped_to, .value = heaped_value };
     }
 
     fn parse_expression_suffix_call(self: *Self, current: ast.Expression) !?ast.Call {

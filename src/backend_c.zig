@@ -125,6 +125,10 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                             try format(out, "  {s} _{};\n", .{(try mangle(alloc, ty)).items, i});
                             try format(out, "  _{}.value = {};\n", .{i, n});
                         },
+                        .assign => |assign| {
+                            try format(out, "  _{} = _{};\n", .{assign.to, assign.value});
+                            try format(out, "  mar_Nothing _{};\n", .{i});
+                        },
                         .call => |call| {
                             try format(out, "  {s} _{} = {s}(", .{
                                 (try mangle(alloc, ty)).items,

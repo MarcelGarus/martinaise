@@ -61,6 +61,7 @@ pub const Expression = union(enum) {
     call: Call,
     member: Member,
     var_: Var,
+    assign: Assign,
     if_: If,
     struct_construction: StructConstruction,
     return_: *const Expression,
@@ -77,6 +78,10 @@ pub const Member = struct {
 pub const Var = struct {
     name: Name,
     type_: ?Type,
+    value: *Expression,
+};
+pub const Assign = struct {
+    to: *Expression,
     value: *Expression,
 };
 pub const If = struct {
@@ -232,6 +237,7 @@ fn print_expression(indent: usize, expression: Expression) void {
         .call => |call| print_call(indent, call),
         .member => |member| print_member(indent, member),
         .var_ => |var_| print_var(indent, var_),
+        .assign => |assign| print_assign(indent, assign),
         .if_ => |if_| print_if(indent, if_),
         .struct_construction => |struct_construction| print_struct_construction(indent, struct_construction),
         .return_ => |returned| {
@@ -266,6 +272,11 @@ fn print_var(indent: usize, var_: Var) void {
     }
     std.debug.print(" = ", .{});
     print_expression(indent, var_.value.*);
+}
+fn print_assign(indent: usize, assign: Assign) void {
+    print_expression(indent, assign.to.*);
+    std.debug.print(" = ", .{});
+    print_expression(indent, assign.value.*);
 }
 fn print_if(indent: usize, if_: If) void {
     std.debug.print("if ", .{});
