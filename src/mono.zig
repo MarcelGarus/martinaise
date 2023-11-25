@@ -40,15 +40,17 @@ pub const Expr = union(enum) {
     arg,
     num: i128,
     call: Call,
-    struct_construction: StructConstruction,
+    variant_creation: VariantCreation,
+    struct_creation: StructCreation,
     member: Member,
     assign: Assign,
     return_: ExprIndex,
 };
 pub const Call = struct { fun: Name, args: ArrayList(ExprIndex) };
-pub const Assign = struct { to: ExprIndex, value: ExprIndex };
+pub const VariantCreation = struct { enum_ty: Name, variant: Name, value: ?ExprIndex };
+pub const StructCreation = struct { struct_ty: Name, fields: StringHashMap(ExprIndex) };
 pub const Member = struct { of: ExprIndex, name: Name };
-pub const StructConstruction = struct { struct_ty: Name, fields: StringHashMap(ExprIndex) };
+pub const Assign = struct { to: ExprIndex, value: ExprIndex };
 
 pub fn print(writer: anytype, mono: Mono) !void {
     {
@@ -94,7 +96,13 @@ fn print_expr(writer: anytype, expr: Expr) !void {
             }
             try writer.print(")", .{});
         },
-        .struct_construction => |sc| {
+        .variant_creation => |vc| {
+            try writer.print("{s}.{s}", .{vc.enum_ty, vc.variant});
+            if (vc.value) |value| {
+                try writer.print("(_{})", .{value});
+            }
+        },
+        .struct_creation => |sc| {
             try writer.print("{s}.{{", .{sc.struct_ty});
             var iter = sc.fields.iterator();
             while (iter.next()) |field| {

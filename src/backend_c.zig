@@ -46,9 +46,13 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                     }
                     try format(out, "}}", .{});
                 },
-                .enum_ => |_| {
-                    try format(out, "enum {{\n", .{});
-                    try format(out, "  // TODO\n", .{});
+                .enum_ => |e| {
+                    try format(out, "struct {{\n", .{});
+                    try format(out, "  enum {{\n", .{});
+                    for (e.variants.items) |variant| {
+                        try format(out, "    mar_{s},\n", .{variant.name});
+                    }
+                    try format(out, "  }} kind;\n", .{});
                     try format(out, "}}", .{});
                 },
                 .fun => {
@@ -139,7 +143,17 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                             }
                             try format(out, ");\n", .{});
                         },
-                        .struct_construction => |sc| {
+                        .variant_creation => |vc| {
+                            try format(out, "  {s} _{};\n", .{
+                                (try mangle(alloc, vc.enum_ty)).items,
+                                i,
+                            });
+                            try format(out, "  _{}.kind = mar_{s};\n", .{
+                                i,
+                                vc.variant,
+                            });
+                        },
+                        .struct_creation => |sc| {
                             try format(out, "  {s} _{};\n", .{
                                 (try mangle(alloc, sc.struct_ty)).items,
                                 i,

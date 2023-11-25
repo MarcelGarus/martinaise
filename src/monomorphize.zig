@@ -268,9 +268,10 @@ const Monomorphizer = struct {
         NoTypesMatch, StructTypeArgsCannotHaveTypeArgs, EnumTypeArgsCannotHaveTypeArgs,
         InvalidExpressionCalled, CalledNonFunction, FunctionTypeArgsCannotHaveTypeArgs,
         ExpressionNotHandled, VariableNotInScope, CanOnlyAssignToName, YouCanOnlyConstructStructs,
-        TypeArgumentCantHaveGenerics, FieldDoesNotExist, AccessedMemberOnNonStruct
+        TypeArgumentCantHaveGenerics, FieldDoesNotExist, AccessedMemberOnNonStruct,
+        VariantDoesntExist
     }!mono.ExprIndex {
-        switch (expression) {
+        expr_switch:  { switch (expression) {
             .num => |n| try fun.put(.{ .num = n }, "Int"),
             .ref => |name| {
                 if (var_env.get(name)) |var_info| {
@@ -286,6 +287,55 @@ const Monomorphizer = struct {
                 var ty_args: ?ArrayList(Name) = null;
                 var args = ArrayList(mono.ExprIndex).init(self.alloc);
                 var arg_tys = ArrayList(Name).init(self.alloc);
+
+                // This may be an enum variant instantiation such as `Maybe[Int].some(3)`.
+                enum_variant: {
+                    const member = switch (callee) {
+                        .member => |member| member,
+                        else => break :enum_variant,
+                    };
+                    var potential_enum = member.of.*;
+                    const enum_ty_args = ty_args: {
+                        switch(potential_enum) {
+                            .ty_arged => |ta| {
+                                potential_enum = ta.arged.*;
+                                break :ty_args ta.ty_args;
+                            },
+                            .ref => break :ty_args ArrayList(Ty).init(self.alloc),
+                            else => break :enum_variant,
+                        }
+                    };
+                    const enum_name = switch (potential_enum) {
+                        .ref => |ref| ref,
+                        else => break :enum_variant,
+                    };
+                    std.debug.print("Potential enum name: {s}\n", .{enum_name});
+                    if (var_env.contains(enum_name)) {
+                        break :enum_variant;
+                    }
+                    std.debug.print("Not shadowed by local\n", .{});
+                    var compiled_ty_args = try self.compile_types(enum_ty_args, ty_env);
+                    const solution = try self.lookup(enum_name, compiled_ty_args, null);
+                    std.debug.print("Solution: {any}\n", .{solution});
+                    const enum_def = switch (solution.def) {
+                        .enum_ => |e| e,
+                        else => break :enum_variant,
+                    };
+                    const enum_ty = try self.compile_type(.{ .name = enum_name, .args = enum_ty_args }, ty_env);
+                    std.debug.print("compiled enum ty: {s}\n", .{enum_ty});
+                    
+                    find_variant: {
+                        for (enum_def.variants.items) |variant| {
+                            if (std.mem.eql(u8, variant.name, member.name)) {
+                                break :find_variant;
+                            }
+                        }
+                        // Did not find a variant. Restore the sacred timeline.
+                        return error.VariantDoesntExist;
+                    }
+                    try fun.put(.{ .variant_creation = .{ .enum_ty = enum_ty, .variant = member.name, .value = null } }, enum_ty);
+                    break :expr_switch;
+                }
 
                 switch (callee) {
                     .ty_arged => |ta| {
@@ -390,7 +440,7 @@ const Monomorphizer = struct {
                     try fields.put(f.name, try self.compile_expr(fun, ty_env, var_env, f.value));
                 }
 
-                try fun.put(.{ .struct_construction = .{
+                try fun.put(.{ .struct_creation = .{
                     .struct_ty = struct_type,
                     .fields = fields,
                 } }, struct_type);
@@ -403,7 +453,7 @@ const Monomorphizer = struct {
                 std.debug.print("compiling {any}\n", .{expression});
                 return error.ExpressionNotHandled;
             }
-        }
+        } }
         return fun.body.items.len - 1;
     }
 
@@ -485,12 +535,14 @@ const Monomorphizer = struct {
                 });
             },
             .enum_ => |e| {
+                var specialized_args = ArrayList(Ty).init(self.alloc);
                 var inner_ty_env = TyEnv.init(self.alloc);
                 for (e.ty_args.items, args.items) |from, to| {
+                    try specialized_args.append(self.tys.get(to) orelse unreachable);
                     try inner_ty_env.put(from, to);
                 }
 
-                var variants = ArrayList(mono.Field).init(self.alloc);
+                var variants = ArrayList(mono.Variant).init(self.alloc);
                 for (e.variants.items) |variant| {
                     const variant_type = b: {
                         if (variant.ty) |t| {
@@ -499,8 +551,12 @@ const Monomorphizer = struct {
                             break :b "Nothing";
                         }
                     };
-                    try variants.append(.{ .name = name, .ty = variant_type });
+                    try variants.append(.{ .name = variant.name, .ty = variant_type });
                 }
+                try self.put_ty(
+                    .{ .name = ty.name, .args = specialized_args },
+                    .{ .enum_ = .{ .variants = variants },
+                });
             },
             .fun => {
                 unreachable;
