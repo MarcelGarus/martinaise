@@ -20,11 +20,11 @@ pub fn main() !void {
 
     const the_ast = parse(alloc, buf[0..len]) orelse return error.ParseError;
     std.debug.print("Parsed:\n", .{});
-    ast.print(the_ast);
+    try ast.print(std.io.getStdOut().writer(), the_ast);
     std.debug.print("\n", .{});
 
     const the_mono = try monomorphize(alloc, the_ast);
-    mono.print(the_mono);
+    try mono.print(std.io.getStdOut().writer(), the_mono);
     std.debug.print("\n", .{});
 
     const c_code = try compile_to_c(alloc, the_mono);

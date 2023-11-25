@@ -1,137 +1,111 @@
 const std = @import("std");
-const ArrayList = std.ArrayList;
+const ArrayList = std.ArrayList; // TODO: Use slices everywhere instead
 const StringHashMap = std.StringHashMap;
-const Name = @import("ast.zig").Name;
+const Name = @import("ty.zig").Name;
 
 pub const Mono = struct {
-    types: StringHashMap(Type),
+    ty_defs: StringHashMap(TyDef),
     funs: StringHashMap(Fun),
 };
 
-pub const Type = union(enum) {
-    builtin_type,
+pub const TyDef = union(enum) {
+    builtin_ty,
     struct_: Struct,
     enum_: Enum,
     fun,
 };
 
-pub const Struct = struct {
-    fields: ArrayList(Field),
-};
-pub const Field = struct {
-    name: Name,
-    type_: Name,
-};
+pub const Struct = struct { fields: ArrayList(Field) };
+pub const Field = struct { name: Name, ty: Name };
 
-pub const Enum = struct {
-    variants: ArrayList(Variant),
-};
-pub const Variant = struct {
-    name: Name,
-    type_: Name,
-};
-
-pub const Funs = struct {
-    funs: StringHashMap(Fun),
-};
+pub const Enum = struct { variants: ArrayList(Variant) };
+pub const Variant = struct { name: Name, ty: Name };
 
 pub const Fun = struct {
-    arg_types: ArrayList(Name),
-    return_type: Name,
+    arg_tys: ArrayList(Name),
+    return_ty: Name,
     is_builtin: bool,
-    expressions: ArrayList(Expression),
-    types: ArrayList(Name),
+    body: ArrayList(Expr),
+    tys: ArrayList(Name),
 
     const Self = @This();
 
-    pub fn put(self: *Self, expr: Expression, ty: Name) !void {
-        try self.expressions.append(expr);
-        try self.types.append(ty);
+    pub fn put(self: *Self, expr: Expr, ty: Name) !void {
+        try self.body.append(expr);
+        try self.tys.append(ty);
     }
 };
-pub const ExpressionIndex = usize;
-pub const Expression = union(enum) {
+pub const ExprIndex = usize;
+pub const Expr = union(enum) {
     arg,
-    number: i128,
-    assign: Assign,
+    num: i128,
     call: Call,
-    member: Member,
     struct_construction: StructConstruction,
-    return_: ExpressionIndex,
+    member: Member,
+    assign: Assign,
+    return_: ExprIndex,
 };
-pub const Assign = struct {
-    to: ExpressionIndex,
-    value: ExpressionIndex,
-};
-pub const Call = struct {
-    fun: Name, // monomorphized function name
-    args: ArrayList(ExpressionIndex),
-};
-pub const Member = struct {
-    callee: ExpressionIndex,
-    member: Name,
-};
-pub const StructConstruction = struct {
-    struct_type: Name,
-    fields: StringHashMap(ExpressionIndex),
-};
+pub const Call = struct { fun: Name, args: ArrayList(ExprIndex) };
+pub const Assign = struct { to: ExprIndex, value: ExprIndex };
+pub const Member = struct { callee: ExprIndex, member: Name };
+pub const StructConstruction = struct { struct_ty: Name, fields: StringHashMap(ExprIndex) };
 
-pub fn print(mono: Mono) void {
+pub fn print(writer: anytype, mono: Mono) !void {
     {
-        std.debug.print("Types:\n", .{});
-        var iter = mono.types.keyIterator();
+        try writer.print("Types:\n", .{});
+        var iter = mono.ty_defs.keyIterator();
         while (iter.next()) |ty| {
-            std.debug.print("- {s}\n", .{ty.*});
+            try writer.print("- {s}\n", .{ty.*});
         }
     }
     {
-        std.debug.print("Funs:\n", .{});
+        try writer.print("Funs:\n", .{});
         var iter = mono.funs.iterator();
         while (iter.next()) |fun| {
-            print_fun(fun.key_ptr.*, fun.value_ptr.*);
-            std.debug.print("\n", .{});
+            try print_fun(writer, fun.key_ptr.*, fun.value_ptr.*);
+            try writer.print("\n", .{});
         }
     }
 }
 
-fn print_fun(name: Name, fun: Fun) void {
-    std.debug.print("{s}\n", .{name});
-    for (fun.expressions.items, fun.types.items, 0..) |expr, ty, i| {
+fn print_fun(writer: anytype, name: Name, fun: Fun) !void {
+    try writer.print("{s}\n", .{name});
+    for (fun.body.items, fun.tys.items, 0..) |expr, ty, i| {
         if (i > 0) {
-            std.debug.print("\n", .{});
+            try writer.print("\n", .{});
         }
-        std.debug.print("  _{d} = ", .{i});
-        print_expression(expr);
-        std.debug.print(": {s}", .{ty});
+        try writer.print("  _{d} = ", .{i});
+        try print_expr(writer, expr);
+        try writer.print(": {s}", .{ty});
     }
 }
 
-fn print_expression(expr: Expression) void {
+fn print_expr(writer: anytype, expr: Expr) !void {
     switch (expr) {
-        .arg => std.debug.print("arg", .{}),
-        .number => |n| std.debug.print("{d}", .{n}),
-        .assign => |assign| {
-            std.debug.print("{} set to {}", .{assign.to, assign.value});
-        },
+        .arg => try writer.print("arg", .{}),
+        .num => |n| try writer.print("{d}", .{n}),
         .call => |call| {
-            std.debug.print("{s} called with (", .{call.fun});
+            try writer.print("{s} called with (", .{call.fun});
             for (call.args.items, 0..) |arg, i| {
                 if (i > 0) {
-                    std.debug.print(", ", .{});
+                    try writer.print(", ", .{});
                 }
-                std.debug.print("_{d}", .{arg});
+                try writer.print("_{d}", .{arg});
             }
-            std.debug.print(")", .{});
+            try writer.print(")", .{});
         },
         .struct_construction => |sc| {
-            std.debug.print("{s}.{{", .{sc.struct_type});
+            try writer.print("{s}.{{", .{sc.struct_ty});
             var iter = sc.fields.iterator();
             while (iter.next()) |field| {
-                std.debug.print("  {s} = _{},", .{field.key_ptr.*, field.value_ptr.*});
+                try writer.print("  {s} = _{},", .{field.key_ptr.*, field.value_ptr.*});
             }
-            std.debug.print("}}", .{});
+            try writer.print("}}", .{});
         },
-        .member => |m| std.debug.print("_{d}.{s}", .{m.callee, m.member}),
-        .return_ => |r| std.debug.print("return _{d}", .{r}),
+        .member => |m| try writer.print("_{d}.{s}", .{m.callee, m.member}),
+        .assign => |assign| {
+            try writer.print("{} set to {}", .{assign.to, assign.value});
+        },
+        .return_ => |r| try writer.print("return _{d}", .{r}),
     }
 }

@@ -2,7 +2,7 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 const StringHashMap = std.StringHashMap;
 const ast = @import("ast.zig");
-const Name = ast.Name;
+const Name = @import("ty.zig").Name;
 const mono = @import("mono.zig");
 const format = std.fmt.format;
 
@@ -16,14 +16,14 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
     { // Types
         try format(out, "/// Types\n", .{});
     
-        var iter = the_mono.types.iterator();
-        while (iter.next()) |item| {
-            const name = item.key_ptr.*;
-            const ty = item.value_ptr.*;
+        var iter = the_mono.ty_defs.iterator();
+        while (iter.next()) |def| {
+            const name = def.key_ptr.*;
+            const ty = def.value_ptr.*;
             try format(out, "\n// {s}\n", .{name});
             try format(out, "typedef ", .{});
             switch (ty) {
-                .builtin_type => {
+                .builtin_ty => {
                     if (std.mem.eql(u8, name, "Nothing")) {
                         try format(out, "struct {{}}", .{});
                     } else if (std.mem.eql(u8, name, "Never")) {
@@ -42,7 +42,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                 .struct_ => |s| {
                     try format(out, "struct {{\n", .{});
                     for (s.fields.items) |f| {
-                        try format(out, "  {s} {s};\n", .{(try mangle(alloc, f.type_)).items, f.name});
+                        try format(out, "  {s} {s};\n", .{(try mangle(alloc, f.ty)).items, f.name});
                     }
                     try format(out, "}}", .{});
                 },
@@ -76,10 +76,10 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
             const fun = the_mono.funs.get(fun_name) orelse unreachable;
             try format(out, "/* {s} */ {s} {s}(", .{
                 fun_name,
-                (try mangle(alloc, fun.return_type)).items,
+                (try mangle(alloc, fun.return_ty)).items,
                 (try mangle(alloc, fun_name)).items
             });
-            for (fun.arg_types.items, 0..) |arg_ty, i| {
+            for (fun.arg_tys.items, 0..) |arg_ty, i| {
                 if (i > 0) {
                     try format(out, ", ", .{});
                 }
@@ -95,10 +95,10 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
 
             try format(out, "\n// {s}\n", .{fun_name});
             try format(out, "{s} {s}(", .{
-                (try mangle(alloc, fun.return_type)).items,
+                (try mangle(alloc, fun.return_ty)).items,
                 (try mangle(alloc, fun_name)).items
             });
-            for (fun.arg_types.items, 0..) |arg_ty, i| {
+            for (fun.arg_tys.items, 0..) |arg_ty, i| {
                 if (i > 0) {
                     try format(out, ", ", .{});
                 }
@@ -118,16 +118,12 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                     @panic("Unknown builtin function");
                 }
 
-                for (fun.expressions.items, fun.types.items, 0..) |expr, ty, i| {
+                for (fun.body.items, fun.tys.items, 0..) |expr, ty, i| {
                     switch (expr) {
                         .arg => try format(out, "  {s} _{} = arg{};\n", .{(try mangle(alloc, ty)).items, i, i}),
-                        .number => |n| {
+                        .num => |n| {
                             try format(out, "  {s} _{};\n", .{(try mangle(alloc, ty)).items, i});
                             try format(out, "  _{}.value = {};\n", .{i, n});
-                        },
-                        .assign => |assign| {
-                            try format(out, "  _{} = _{};\n", .{assign.to, assign.value});
-                            try format(out, "  mar_Nothing _{};\n", .{i});
                         },
                         .call => |call| {
                             try format(out, "  {s} _{} = {s}(", .{
@@ -145,7 +141,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                         },
                         .struct_construction => |sc| {
                             try format(out, "  {s} _{};\n", .{
-                                (try mangle(alloc, sc.struct_type)).items,
+                                (try mangle(alloc, sc.struct_ty)).items,
                                 i,
                             });
                             var iter = sc.fields.iterator();
@@ -156,19 +152,23 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                         .member => |member| {
                             _ = member;
                         },
+                        .assign => |assign| {
+                            try format(out, "  _{} = _{};\n", .{assign.to, assign.value});
+                            try format(out, "  mar_Nothing _{};\n", .{i});
+                        },
                         .return_ => |index| {
                             // If a Never is returned, the return is not reached
                             // anyway. If we emit it, C complains that Never
                             // doesn't match the function's return type.
-                            if (!std.mem.eql(u8, fun.types.items[@intCast(index)], "Never")) {
+                            if (!std.mem.eql(u8, fun.tys.items[@intCast(index)], "Never")) {
                                 try format(out, "  return _{};\n", .{index});
                             }
                             try format(out, "  mar_Never _{};\n", .{i});
                         },
                     }
                 }
-                const last_expr_index = fun.expressions.items.len - 1;
-                if (!std.mem.eql(u8, fun.types.items[last_expr_index], "Never")) {
+                const last_expr_index = fun.body.items.len - 1;
+                if (!std.mem.eql(u8, fun.tys.items[last_expr_index], "Never")) {
                     try format(out, "  return _{};\n", .{last_expr_index});
                 }
             }
@@ -184,8 +184,6 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
 
     return out_buffer;
 }
-
-// fn compile_fun(alloc: std.mem.Allocator, out: *ArrayList(u8), fun: mono.Fun) {}
 
 fn mangle(alloc: std.mem.Allocator, name: Name) !ArrayList(u8) {
     var mangled = ArrayList(u8).init(alloc);
