@@ -42,14 +42,14 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                 .struct_ => |s| {
                     try format(out, "struct {{\n", .{});
                     for (s.fields.items) |f| {
-                        try format(out, "  {s} {s};\n", .{f.type_, f.name});
+                        try format(out, "  {s} {s};\n", .{(try mangle(alloc, f.type_)).items, f.name});
                     }
-                    try format(out, "}}\n", .{});
+                    try format(out, "}}", .{});
                 },
                 .enum_ => |_| {
                     try format(out, "enum {{\n", .{});
                     try format(out, "  // TODO\n", .{});
-                    try format(out, "}}\n", .{});
+                    try format(out, "}}", .{});
                 },
                 .fun => {
                     try format(out, "// TODO: compile fun types\n", .{});
@@ -142,6 +142,16 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                                 try format(out, "_{}", .{arg});
                             }
                             try format(out, ");\n", .{});
+                        },
+                        .struct_construction => |sc| {
+                            try format(out, "  {s} _{};\n", .{
+                                (try mangle(alloc, sc.struct_type)).items,
+                                i,
+                            });
+                            var iter = sc.fields.iterator();
+                            while (iter.next()) |f| {
+                                try format(out, "  _{}.{s} = _{};\n", .{i, f.key_ptr.*, f.value_ptr.*});
+                            }
                         },
                         .member => |member| {
                             _ = member;

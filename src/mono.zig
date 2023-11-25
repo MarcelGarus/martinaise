@@ -56,6 +56,7 @@ pub const Expression = union(enum) {
     assign: Assign,
     call: Call,
     member: Member,
+    struct_construction: StructConstruction,
     return_: ExpressionIndex,
 };
 pub const Assign = struct {
@@ -69,6 +70,10 @@ pub const Call = struct {
 pub const Member = struct {
     callee: ExpressionIndex,
     member: Name,
+};
+pub const StructConstruction = struct {
+    struct_type: Name,
+    fields: StringHashMap(ExpressionIndex),
 };
 
 pub fn print(mono: Mono) void {
@@ -117,6 +122,14 @@ fn print_expression(expr: Expression) void {
                 std.debug.print("_{d}", .{arg});
             }
             std.debug.print(")", .{});
+        },
+        .struct_construction => |sc| {
+            std.debug.print("{s}.{{", .{sc.struct_type});
+            var iter = sc.fields.iterator();
+            while (iter.next()) |field| {
+                std.debug.print("  {s} = _{},", .{field.key_ptr.*, field.value_ptr.*});
+            }
+            std.debug.print("}}", .{});
         },
         .member => |m| std.debug.print("_{d}.{s}", .{m.callee, m.member}),
         .return_ => |r| std.debug.print("return _{d}", .{r}),

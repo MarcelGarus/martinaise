@@ -58,6 +58,7 @@ pub const Body = ArrayList(Expression);
 pub const Expression = union(enum) {
     number: i128,
     reference: Name,
+    type_arged: TypeArged,
     call: Call,
     member: Member,
     var_: Var,
@@ -66,9 +67,12 @@ pub const Expression = union(enum) {
     struct_construction: StructConstruction,
     return_: *const Expression,
 };
+pub const TypeArged = struct {
+    arged: *const Expression,
+    type_args: ArrayList(Type),
+};
 pub const Call = struct {
     callee: *const Expression,
-    type_args: ?ArrayList(Type),
     args: ArrayList(Expression),
 };
 pub const Member = struct {
@@ -234,6 +238,10 @@ fn print_expression(indent: usize, expression: Expression) void {
     switch (expression) {
         .number => |n| std.debug.print("{}", .{n}),
         .reference => |name| std.debug.print("{s}", .{name}),
+        .type_arged => |type_arged| {
+            print_expression(indent, type_arged.arged.*);
+            print_type_args(type_arged.type_args);
+        },
         .call => |call| print_call(indent, call),
         .member => |member| print_member(indent, member),
         .var_ => |var_| print_var(indent, var_),
@@ -248,8 +256,6 @@ fn print_expression(indent: usize, expression: Expression) void {
 }
 fn print_call(indent: usize, call: Call) void {
     print_expression(indent, call.callee.*);
-
-    print_type_args(call.type_args);
 
     std.debug.print("(", .{});
     for (call.args.items, 0..) |arg, i| {

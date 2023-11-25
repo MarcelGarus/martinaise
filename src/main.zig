@@ -27,12 +27,12 @@ pub fn main() !void {
     mono.print(the_mono);
     std.debug.print("\n", .{});
 
-    const wasm = try compile_to_c(alloc, the_mono);
-    std.debug.print("C code:\n{s}\n", .{wasm.items});
+    const c_code = try compile_to_c(alloc, the_mono);
+    // std.debug.print("C code:\n{s}\n", .{c_code.items});
 
-    var wasm_output = try std.fs.cwd().createFile("output.c", .{});
-    defer wasm_output.close();
-    try std.fmt.format(wasm_output.writer(), "{s}\n", .{wasm.items});
+    var output = try std.fs.cwd().createFile("output.c", .{});
+    defer output.close();
+    try std.fmt.format(output.writer(), "{s}\n", .{c_code.items});
 }
 
 test "simple test" {

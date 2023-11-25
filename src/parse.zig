@@ -26,7 +26,7 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
                 },
             }
         }
-        const num_lines_to_display = 4;
+        const num_lines_to_display = @min(lines.items.len, 4);
         for (lines.items.len - num_lines_to_display + 1..lines.items.len) |number| {
             if (lines.items.len >= number) {
                 std.debug.print("{d:4} | {s}\n", .{ number + 1, lines.items[number] });
@@ -202,12 +202,12 @@ const Parser = struct {
     }!?ast.Type {
         const name = self.parse_name() orelse return null;
         self.consume_whitespace();
-        const type_args = try self.parse_type_args();
+        const type_args = try self.parse_type_args() orelse ArrayList(ast.Type).init(self.alloc);
         return .{ .name = name, .args = type_args };
     }
-    fn parse_type_args(self: *Self) !std.ArrayList(ast.Type) {
+    fn parse_type_args(self: *Self) !?std.ArrayList(ast.Type) {
         var type_args = std.ArrayList(ast.Type).init(self.alloc);
-        self.consume_prefix("[") orelse return type_args;
+        self.consume_prefix("[") orelse return null;
         self.consume_whitespace();
         while (true) {
             const arg = try self.parse_type() orelse return error.ExpectedTypeArgument;
@@ -225,7 +225,7 @@ const Parser = struct {
         self.consume_whitespace();
         const name = self.parse_name() orelse return error.ExpectedNameOfStruct;
         self.consume_whitespace();
-        const type_args = try self.parse_type_args();
+        const type_args = try self.parse_type_args() orelse ArrayList(ast.Type).init(self.alloc);
         self.consume_whitespace();
         self.consume_prefix("{") orelse return error.ExpectedOpeningBrace;
         self.consume_whitespace();
@@ -254,7 +254,7 @@ const Parser = struct {
         self.consume_whitespace();
         const name = self.parse_name() orelse return error.ExpectedNameOfEnum;
         self.consume_whitespace();
-        const type_args = try self.parse_type_args();
+        const type_args = try self.parse_type_args() orelse ArrayList(ast.Type).init(self.alloc);
         self.consume_whitespace();
         self.consume_prefix("{") orelse return error.ExpectedOpeningBrace;
         self.consume_whitespace();
@@ -285,7 +285,7 @@ const Parser = struct {
         self.consume_whitespace();
         const name = self.parse_name() orelse return error.ExpectedNameOfFunction;
         self.consume_whitespace();
-        const type_args = try self.parse_type_args();
+        const type_args = try self.parse_type_args() orelse ArrayList(ast.Type).init(self.alloc);
         self.consume_whitespace();
         var args = std.ArrayList(ast.Argument).init(self.alloc);
         self.consume_prefix("(") orelse return error.ExpectedOpeningParenthesis;
@@ -312,6 +312,7 @@ const Parser = struct {
             return_type = try self.parse_type() orelse return error.ExpectedReturnType;
         }
 
+        self.consume_whitespace();
         const body = try self.parse_body() orelse return error.ExpectedBody;
 
         return .{
@@ -375,6 +376,13 @@ const Parser = struct {
             self.consume_whitespace();
 
             if (expression) |expr| {
+                if (try self.parse_expression_suffix_type_arged(expr)) |type_arged| {
+                    expression = .{ .type_arged = type_arged };
+                    continue;
+                }
+            }
+
+            if (expression) |expr| {
                 if (try self.parse_expression_suffix_assign(expr)) |assign| {
                     expression = .{ .assign = assign };
                     continue;
@@ -426,6 +434,15 @@ const Parser = struct {
         return expr;
     }
 
+    fn parse_expression_suffix_type_arged(self: *Self, current: ast.Expression) !?ast.TypeArged {
+        const type_args = try self.parse_type_args() orelse return null;
+
+        const heaped = try self.alloc.create(ast.Expression);
+        heaped.* = current;
+
+        return .{ .arged = heaped, .type_args = type_args };
+    }
+
     fn parse_expression_suffix_assign(self: *Self, current: ast.Expression) !?ast.Assign {
         self.consume_prefix("=") orelse return null;
         self.consume_whitespace();
@@ -440,8 +457,6 @@ const Parser = struct {
     }
 
     fn parse_expression_suffix_call(self: *Self, current: ast.Expression) !?ast.Call {
-        const type_args = try self.parse_type_args();
-        
         self.consume_prefix("(") orelse return null;
 
         const heaped = try self.alloc.create(ast.Expression);
@@ -458,7 +473,7 @@ const Parser = struct {
         }
         self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
 
-        return .{ .callee = heaped, .type_args = type_args, .args = args };
+        return .{ .callee = heaped, .args = args };
     }
 
     fn parse_expression_suffix_member_or_constructor(self: *Self, current: ast.Expression) !?ast.Expression {

@@ -237,7 +237,8 @@ const Monomorphizer = struct {
         MultipleTypesMatch, NoTypesMatch, StructTypeArgsCannotHaveTypeArgs,
         EnumTypeArgsCannotHaveTypeArgs, InvalidExpressionCalled,
         CalledNonFunction, FunctionTypeArgsCannotHaveTypeArgs,
-        ExpressionNotHandled, VariableNotInScope, CanOnlyAssignToName
+        ExpressionNotHandled, VariableNotInScope, CanOnlyAssignToName,
+        YouCanOnlyConstructStructs
     }!mono.ExpressionIndex {
         switch (expression) {
             .number => |n| try fun.put(.{ .number = n }, "Int"),
@@ -252,7 +253,18 @@ const Monomorphizer = struct {
             },
             .call => |call| {
                 var args = ArrayList(mono.ExpressionIndex).init(self.alloc);
-                switch (call.callee.*) {
+                var callee = call.callee.*;
+                var ast_type_args: ?ArrayList(ast.Type) = null;
+
+                switch (callee) {
+                    .type_arged => |type_arged| {
+                        callee = type_arged.arged.*;
+                        ast_type_args = type_arged.type_args;
+                    },
+                    else => {},
+                }
+
+                switch (callee) {
                     // Calls of the form `something.name()` cause `something` to
                     // be treated like an extra argument.
                     .member => |member| {
@@ -260,6 +272,7 @@ const Monomorphizer = struct {
                     },
                     else => {},
                 }
+
                 for (call.args.items) |arg| {
                     try args.append(try self.compile_expression(fun, type_env, var_env, arg));
                 }
@@ -270,11 +283,11 @@ const Monomorphizer = struct {
                 }
 
                 var type_args: ?ArrayList(Name) = null;
-                if (call.type_args) |ty_args| {
+                if (ast_type_args) |ty_args| {
                     type_args = try self.compile_types(ty_args, type_env);
                 }
 
-                const called_declaration = switch (call.callee.*) {
+                const called_declaration = switch (callee) {
                     .reference => |name| try self.lookup(name, type_args, arg_types),
                     .member => |member| try self.lookup(member.member, type_args, arg_types),
                     else => return error.InvalidExpressionCalled,
@@ -350,6 +363,20 @@ const Monomorphizer = struct {
                 const value = try self.compile_expression(fun, type_env, var_env, assign.value.*);
                 try fun.put(.{ .assign = .{ .to = to, .value = value } }, "Nothing");
             },
+            .struct_construction => |sc| {
+                var ty = self.expr_to_type(sc.type_.*) orelse return error.YouCanOnlyConstructStructs;
+                const struct_type = try self.compile_type(ty, type_env);
+
+                var fields = StringHashMap(mono.ExpressionIndex).init(self.alloc);
+                for (sc.fields.items) |f| {
+                    try fields.put(f.name, try self.compile_expression(fun, type_env, var_env, f.value));
+                }
+
+                try fun.put(.{ .struct_construction = .{
+                    .struct_type = struct_type,
+                    .fields = fields,
+                } }, struct_type);
+            },
             .return_ => |returned| {
                 const index = try self.compile_expression(fun, type_env, var_env, returned.*);
                 try fun.put(.{ .return_ = index }, "Never");
@@ -360,6 +387,22 @@ const Monomorphizer = struct {
             }
         }
         return fun.expressions.items.len - 1;
+    }
+
+    fn expr_to_type(self: *Self, expr: ast.Expression) ?ast.Type {
+        var expression = expr;
+        var type_args = ArrayList(ast.Type).init(self.alloc);
+        switch (expression) {
+            .type_arged => |type_arged| {
+                expression = type_arged.arged.*;
+                type_args = type_arged.type_args;
+            },
+            else => {},
+        }
+        switch (expression) {
+            .reference => |name| return ast.Type { .name = name, .args = type_args },
+            else => return null,
+        }
     }
 
     fn compile_types(self: *Self, tys: ArrayList(ast.Type), type_env: TypeEnv) error{
@@ -424,7 +467,7 @@ const Monomorphizer = struct {
                 for (s.fields.items) |field| {
                     const field_type = try self.compile_type(field.type_, inner_type_env);
                     try fields.append(.{
-                        .name = name,
+                        .name = field.name,
                         .type_ = field_type,
                     });
                 }
