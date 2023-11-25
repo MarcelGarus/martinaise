@@ -1,87 +1,163 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
-
-pub const Program = struct {
-    declarations: ArrayList(Declaration),
-};
-pub const Declaration = union(enum) {
-    builtin_type: BuiltinType,
-    struct_: Struct,
-    enum_: Enum,
-    fun: Fun,
-};
+const FormatOptions = std.fmt.FormatOptions;
 
 pub const Name = []const u8;
 
-pub const BuiltinType = struct {
-    name: Name,
-};
+pub const Program = struct {
+    defs: ArrayList(Def),
 
-pub const Type = struct {
-    name: Name,
-    args: ArrayList(Type),
+    pub fn format(self: @This(), comptime fmt: []const u8, options: FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        for (self.defs) |def| {
+            try writer.print("{}\n", .{def});
+        }
+    }
+};
+pub const Def = union(enum) {
+    builtin_ty: Name,
+    struct_: Struct,
+    enum_: Enum,
+    fun: Fun,
+
+    pub fn format(self: @This(), comptime fmt: []const u8, options: FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        switch (self) {
+            .builtin_ty => |name| try writer.print("builtinType {}", .{name}),
+            .struct_ => |s| print_struct(s),
+            .enum_ => |e| print_enum(e),
+            .fun => |fun| print_fun(fun),
+        }
+    }
 };
 
 pub const Struct = struct {
     name: Name,
-    type_args: ArrayList(Type),
+    ty_args: ArrayList(Name),
     fields: ArrayList(Field),
+
+    pub fn format(self: @This(), comptime fmt: []const u8, options: FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        try writer.print("struct {s}", .{self.name});
+        Ty.write_args(Name, writer, self.ty_args);
+
+        const fields = self.fields.items;
+        if (fields.len == 0) {
+            try writer.print(" {{}}", .{});
+        } else {
+            try writer.print(" {{\n", .{});
+            for (fields) |field| {
+                try writer.print("  {s}: {},\n", .{field.name, field.ty});
+            }
+            try writer.print("}}", .{});
+        }
+    }
 };
-pub const Field = struct {
-    name: Name,
-    type_: Type,
-};
+pub const Field = struct { name: Name, ty: Ty };
 
 pub const Enum = struct {
     name: Name,
-    type_args: ArrayList(Type),
+    ty_args: ArrayList(Name),
     variants: ArrayList(Variant),
+
+    pub fn format(self: @This(), comptime fmt: []const u8, options: FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        try writer.print("enum {s}", .{self.name});
+        Ty.write_args(Name, writer, self.ty_args);
+
+        const variants = e.variants.items;
+        if (variants.len == 0) {
+            try writer.print(" {{}}", .{e.name});
+        } else {
+            try writer.print(" {{\n", .{e.name});
+            for (variants) |variant| {
+                try writer.print("  {s}", .{variant.name});
+                if (variant.type_) |t| {
+                    try writer.print(": {}", .{t});
+                }
+                try writer.print(",\n", .{});
+            }
+            try writer.print("}}", .{});
+        }
+    }
 };
-pub const Variant = struct {
-    name: Name,
-    type_: ?Type,
-};
+pub const Variant = struct { name: Name, type_: ?Ty };
 
 pub const Fun = struct {
     name: Name,
-    type_args: ArrayList(Type),
+    type_args: ArrayList(Ty),
     args: ArrayList(Argument),
-    return_type: ?Type,
+    return_type: ?Ty,
     is_builtin: bool,
     body: Body,
+
+    pub fn format(self: @This(), comptime fmt: []const u8, options: FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        try writer.print("enum {s}", .{self.name});
+        Ty.write_args(Name, writer, self.ty_args);
+
+        const variants = e.variants.items;
+        if (variants.len == 0) {
+            try writer.print(" {{}}", .{e.name});
+        } else {
+            try writer.print(" {{\n", .{e.name});
+            for (variants) |variant| {
+                try writer.print("  {s}", .{variant.name});
+                if (variant.type_) |t| {
+                    try writer.print(": {}", .{t});
+                }
+                try writer.print(",\n", .{});
+            }
+            try writer.print("}}", .{});
+        }
+    }
 };
-pub const Argument = struct {
-    name: Name,
-    type_: Type,
-};
+pub const Argument = struct { name: Name, type_: Ty };
+
 pub const Body = ArrayList(Expression);
 pub const Expression = union(enum) {
-    number: i128,
-    reference: Name,
-    type_arged: TypeArged,
+    num: i128,
+    ref: Name,
+    ty_arged: TyArged,
     call: Call,
+    struct_construction: StructConstruction,
     member: Member,
     var_: Var,
     assign: Assign,
     if_: If,
-    struct_construction: StructConstruction,
     return_: *const Expression,
 };
-pub const TypeArged = struct {
+pub const TyArged = struct {
     arged: *const Expression,
-    type_args: ArrayList(Type),
+    type_args: ArrayList(Ty),
 };
 pub const Call = struct {
     callee: *const Expression,
     args: ArrayList(Expression),
 };
+pub const StructConstruction = struct {
+    type_: *const Expression,
+    fields: ArrayList(ConstructionField),
+};
+pub const ConstructionField = struct {
+    name: Name,
+    value: Expression,
+};
 pub const Member = struct {
-    on: *const Expression,
-    member: Name,
+    of: *const Expression,
+    name: Name,
 };
 pub const Var = struct {
     name: Name,
-    type_: ?Type,
+    type_: ?Ty,
     value: *Expression,
 };
 pub const Assign = struct {
@@ -93,23 +169,15 @@ pub const If = struct {
     then: Body,
     else_: ?Body,
 };
-pub const StructConstruction = struct {
-    type_: *const Expression,
-    fields: ArrayList(ConstructionField),
-};
-pub const ConstructionField = struct {
-    name: Name,
-    value: Expression,
-};
 
 pub fn print(program: Program) void {
-    const decls = program.declarations.items;
+    const decls = program.def.items;
     for (decls) |decl| {
-        print_declaration(decl);
+        print_definition(decl);
         std.debug.print("\n", .{});
     }
 }
-pub fn print_declaration(declaration: Declaration) void {
+pub fn print_definition(declaration: Def) void {
     switch (declaration) {
         .builtin_type => |bt| print_builtin_type(bt),
         .struct_ => |s| print_struct(s),
@@ -117,7 +185,7 @@ pub fn print_declaration(declaration: Declaration) void {
         .fun => |fun| print_fun(fun),
     }
 }
-pub fn print_signature(declaration: Declaration) void {
+pub fn print_signature(declaration: Def) void {
     switch (declaration) {
         .builtin_type => |bt| std.debug.print("{s}", .{bt.name}),
         .struct_ => |s| {
@@ -142,42 +210,8 @@ pub fn print_signature(declaration: Declaration) void {
         },
     }
 }
-fn print_builtin_type(bt: BuiltinType) void {
-    std.debug.print("builtinType {s}", .{bt.name});
-}
-fn print_type(type_: Type) void {
-    std.debug.print("{s}", .{type_.name});
-    print_type_args(type_.args);
-}
-pub fn print_type_args(type_args: ?ArrayList(Type)) void {
-    if (type_args) |ty_args| {
-        if (ty_args.items.len > 0) {
-            std.debug.print("[", .{});
-            for (ty_args.items, 0..) |arg, i| {
-                if (i > 0) {
-                    std.debug.print(", ", .{});
-                }
-                print_type(arg);
-            }
-            std.debug.print("]", .{});
-        }
-    }
-}
-fn print_struct(s: Struct) void {
-    // TODO: print type args
-    const fields = s.fields.items;
-    if (fields.len == 0) {
-        std.debug.print("struct {s} {{}}", .{s.name});
-    } else {
-        std.debug.print("struct {s} {{\n", .{s.name});
-        for (fields) |field| {
-            std.debug.print("  {s}: ", .{field.name});
-            print_type(field.type_);
-            std.debug.print(",\n", .{});
-        }
-        std.debug.print("}}", .{});
-    }
-}
+
+
 fn print_enum(e: Enum) void {
     // TODO: print type args
     const variants = e.variants.items;
@@ -238,9 +272,9 @@ fn print_expression(indent: usize, expression: Expression) void {
     switch (expression) {
         .number => |n| std.debug.print("{}", .{n}),
         .reference => |name| std.debug.print("{s}", .{name}),
-        .type_arged => |type_arged| {
-            print_expression(indent, type_arged.arged.*);
-            print_type_args(type_arged.type_args);
+        .ty_arged => |ty_arged| {
+            print_expression(indent, ty_arged.arged.*);
+            print_type_args(ty_arged.type_args);
         },
         .call => |call| print_call(indent, call),
         .member => |member| print_member(indent, member),
