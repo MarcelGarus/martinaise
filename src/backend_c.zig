@@ -150,7 +150,12 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                             }
                         },
                         .member => |member| {
-                            _ = member;
+                            try format(out, "  {s} _{} = _{}.{s};\n", .{
+                                (try mangle(alloc, ty)).items,
+                                i,
+                                member.of,
+                                member.name,
+                            });
                         },
                         .assign => |assign| {
                             try format(out, "  _{} = _{};\n", .{assign.to, assign.value});

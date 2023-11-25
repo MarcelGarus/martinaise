@@ -268,7 +268,7 @@ const Monomorphizer = struct {
         NoTypesMatch, StructTypeArgsCannotHaveTypeArgs, EnumTypeArgsCannotHaveTypeArgs,
         InvalidExpressionCalled, CalledNonFunction, FunctionTypeArgsCannotHaveTypeArgs,
         ExpressionNotHandled, VariableNotInScope, CanOnlyAssignToName, YouCanOnlyConstructStructs,
-        TypeArgumentCantHaveGenerics
+        TypeArgumentCantHaveGenerics, FieldDoesNotExist, AccessedMemberOnNonStruct
     }!mono.ExprIndex {
         switch (expression) {
             .num => |n| try fun.put(.{ .num = n }, "Int"),
@@ -294,14 +294,20 @@ const Monomorphizer = struct {
                     },
                     else => {},
                 }
-                switch (callee) {
-                    // Calls of the form `something.name()` cause `something` to
-                    // be treated like an extra argument.
-                    .member => |member| {
-                        try args.append(try self.compile_expr(fun, ty_env, var_env, member.of.*));
-                    },
-                    else => {},
-                }
+                const name = find_name: {
+                    switch (callee) {
+                        // Calls of the form `something.name()` cause `something` to
+                        // be treated like an extra argument.
+                        .member => |member| {
+                            const expr = try self.compile_expr(fun, ty_env, var_env, member.of.*);
+                            try args.append(expr);
+                            try arg_tys.append(fun.tys.items[@intCast(expr)]);
+                            break :find_name member.name;
+                        },
+                        .ref => |name| break :find_name name,
+                        else => return error.InvalidExpressionCalled,
+                    }
+                };
                 for (call.args.items) |arg| {
                     const expr = try self.compile_expr(fun, ty_env, var_env, arg);
                     try args.append(expr);
@@ -311,11 +317,7 @@ const Monomorphizer = struct {
                 // We have lowered the explicit type arguments and the value
                 // arguments. Let's look for matching functions!
 
-                const lookup_solution = switch (callee) {
-                    .ref => |name| try self.lookup(name, ty_args, arg_tys),
-                    .member => |member| try self.lookup(member.name, ty_args, arg_tys),
-                    else => return error.InvalidExpressionCalled,
-                };
+                const lookup_solution = try self.lookup(name, ty_args, arg_tys);
                 const called_fun = switch (lookup_solution.def) {
                     .fun => |f| f,
                     else => unreachable,
@@ -337,7 +339,22 @@ const Monomorphizer = struct {
             },
             .member => |m| {
                 const of = try self.compile_expr(fun, ty_env, var_env, m.of.*);
-                std.debug.print("Member of {s}\n", .{fun.tys.items[of]});
+                const of_type_def = self.ty_defs.get(fun.tys.items[of]) orelse unreachable;
+                std.debug.print("Accessed member of {s}.\n", .{fun.tys.items[of]});
+                const field_ty = get_field_ty: {
+                    switch (of_type_def) {
+                        .struct_ => |s| {
+                            for (s.fields.items) |field| {
+                                if (std.mem.eql(u8, field.name, m.name)) {
+                                    break :get_field_ty field.ty;
+                                }
+                            }
+                            return error.FieldDoesNotExist;
+                        },
+                        else => return error.AccessedMemberOnNonStruct,
+                    }
+                };
+                try fun.put(.{ .member = .{ .of = of, .name = m.name } }, field_ty);
             },
             .var_ => |v| {
                 const value = try self.compile_expr(fun, ty_env, var_env, v.value.*);

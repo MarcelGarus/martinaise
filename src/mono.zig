@@ -47,7 +47,7 @@ pub const Expr = union(enum) {
 };
 pub const Call = struct { fun: Name, args: ArrayList(ExprIndex) };
 pub const Assign = struct { to: ExprIndex, value: ExprIndex };
-pub const Member = struct { callee: ExprIndex, member: Name };
+pub const Member = struct { of: ExprIndex, name: Name };
 pub const StructConstruction = struct { struct_ty: Name, fields: StringHashMap(ExprIndex) };
 
 pub fn print(writer: anytype, mono: Mono) !void {
@@ -102,7 +102,7 @@ fn print_expr(writer: anytype, expr: Expr) !void {
             }
             try writer.print("}}", .{});
         },
-        .member => |m| try writer.print("_{d}.{s}", .{m.callee, m.member}),
+        .member => |m| try writer.print("_{d}.{s}", .{m.of, m.name}),
         .assign => |assign| {
             try writer.print("{} set to {}", .{assign.to, assign.value});
         },
