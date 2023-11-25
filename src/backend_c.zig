@@ -74,8 +74,8 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
         try format(out, "\n/// Function declarations\n\n", .{});
         for (ordered_funs.items) |fun_name| {
             const fun = the_mono.funs.get(fun_name) orelse unreachable;
-            try format(out, "// {s}\n", .{fun_name});
-            try format(out, "{s} {s}(", .{
+            try format(out, "/* {s} */ {s} {s}(", .{
+                fun_name,
                 (try mangle(alloc, fun.return_type)).items,
                 (try mangle(alloc, fun_name)).items
             });
