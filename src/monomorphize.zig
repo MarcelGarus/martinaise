@@ -416,9 +416,6 @@ const Monomorphizer = struct {
             },
             .var_ => |v| {
                 const value = try self.compile_expr(fun, ty_env, var_env, v.value.*);
-                if (v.ty) |_| {
-                    // TODO: assert the value has the correct type
-                }
                 try var_env.put(v.name, .{
                     .expr_index = value,
                     .ty = fun.tys.items[@intCast(value)]

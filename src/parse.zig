@@ -114,7 +114,7 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) !?ast.Program {
         const nothing = .{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) };
         var args = ArrayList(ast.Argument).init(alloc);
         try args.append(.{ .name = "c", .ty = u8_});
-        program.add_builtin_fun(alloc, "print", null, args, nothing);
+        program.add_builtin_fun(alloc, "printToStdout", null, args, nothing);
     }
 
     return program;
@@ -561,12 +561,6 @@ const Parser = struct {
         const name = self.parse_name() orelse return error.ExpectedNameOfVar;
         self.consume_whitespace();
 
-        self.consume_prefix(":") orelse return error.ExpectedColon;
-        self.consume_whitespace();
-
-        const ty = try self.parse_type() orelse return error.ExpectedTypeOfVar;
-
-        self.consume_whitespace();
         self.consume_prefix("=") orelse return error.ExpectedEquals;
         self.consume_whitespace();
 
@@ -574,7 +568,7 @@ const Parser = struct {
         const heaped = try self.alloc.create(ast.Expr);
         heaped.* = value;
 
-        return .{ .name = name, .ty = ty, .value = heaped };
+        return .{ .name = name, .value = heaped };
     }
 
     fn parse_return(self: *Self) !?*const ast.Expr {

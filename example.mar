@@ -1,62 +1,118 @@
-builtinType U8
+# Welcome to Martinaise!
+# This is the standard library. Be careful when deleting code here because this
+# may crash the compiler.
 
-fun foo(): U8 {
-  return 5
-}
-fun foo[A](a: A, b: A): A {
-  return a
+# Nothing
+# A type with only one instance. Functions that don't explicitly return a value
+# return Nothing instead.
+struct Nothing {}
+
+# Never
+# Some expressions always abort control flow, for example `return 3`. These
+# evaluate to the Never type.
+struct Never {} # TODO: Make this an enum
+
+# Printing
+# Only the function `printToStdout(U8)` is builtin. Here, we define the concept
+# of writers (types that have a `write` function). The `print` function expects
+# a value with a dump function, which is used to serialize the value.
+struct StdoutWriter {}
+fun write(sow: StdoutWriter, c: U8) { printToStdout(c) }
+fun print[T](value: T) { value.dump(StdoutWriter.{}) }
+fun dump[W](c: U8, writer: W) { writer.write(c) }
+
+# Int
+# Integers are built into the language. There are several types with different
+# signedness and bit amount available as `{'U', 'I'} x {8, 16, 32, 64}`. For
+# example, U64 is an unsigned integer of 64 bits.
+# All integers also support the following mathematical operations:
+# - add(Int, Int): Int
+# - to<OtherInt>(Int): OtherInt, e.g. toU8() for non-U8 ints
+
+# Bool
+enum Bool { true, false }
+fun not(a: Bool): Bool { if a { return Bool.false() } return Bool.true() }
+fun and(a: Bool, b: Bool): Bool { if a { return b } return a }
+fun or(a: Bool, b: Bool): Bool { if a { return Bool.true() } return b }
+fun xor(a: Bool, b: Bool): Bool { if a { return not(b) } return b }
+fun implies(a: Bool, b: Bool): Bool { if a { return b } return Bool.true() }
+
+# Ref
+# Martinaise has no concept of pointers, but these two builtin functions exist:
+# - addressOf[T](T): U64
+# - followAddress[T](U64): T
+# Here, we build some type-safe abstractions on top.
+struct Ref[T] { address: U64 }
+fun ref[T](value: T): Ref[T] { Ref[T].{ address = addressOf(value) } }
+fun deref[T](ptr: Ref[T]): T { followAddress[T](ptr.address) }
+fun malloc[T](): T { malloc[T]() }
+fun cast[T, U](value: Ref[T]): Ref[U] { Ref[U].{ address = value.address } }
+# fun size[T](): U64 {}
+
+struct Point[T] { x: T, y: T }
+fun add[T](a: Point[T], b: Point[T]): Point[T] {
+  return Point[T].{ x = a.x.add(b.x), y = a.y.add(b.y) }
 }
 
-fun main() {
-  foo()          # calls the first one
-  foo[U8](5, 1)  # calls the second one
-  5.foo[U8](3)   # calls the second one as well
+struct Vec[T] {
+  len: U64,
+}
+fun push[T](vec: Ref[Vec[T]], item: T) {
+  #vec.len = vec.len.deref().add(1.toU64())
+  Nothing.{}
 }
 
-#struct Foo {
-#  bar: U8,
+enum Maybe[T] { some: T, none }
+fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] {
+  #if maybe is some inner {
+  #  return inner
+  #}
+  return Maybe[T].none()
+}
+
+# TODO: string, printing, result, vec, segment tree, treap
+
+#struct Slice[T] { data: Box[T], len: U64 }
+#fun get[T](slice: Slice[T], index: U64): T {
+#  (data)
 #}
-#
-#enum Bool { true, false }
-#
-#
-#fun bar() {
-#  var bar: U8 = 4
-#  var baz: U8 = 5
-#  @debug(add(bar, baz))
-#  @debug(bar.add(baz))
-#}
-#
-#
+
+##########
+
+fun main(): I64 {
+  var vec = Vec[I64].{ len = 0.toU64() }
+  vec.ref().push(3)
+  print(vec.len.toU8().add(48.toU8()))
+
+  print(72.toU8())
+  print(101.toU8())
+  print(108.toU8())
+  print(108.toU8())
+  print(111.toU8())
+  print(44.toU8())
+  print(32.toU8())
+  print(119.toU8())
+  print(111.toU8())
+  print(114.toU8())
+  print(108.toU8())
+  print(100.toU8())
+  print(33.toU8())
+  print(10.toU8())
+  return 0
+}
+
+############################
+
 #fun fib(n: U8) {
-#  if (@less_than(n, 2)) {
+#  if (less_than(n, 2)) {
 #    n
 #  } else {
-#    fib(@subtract(n, 1), @subtract(n, 2))
+#    fib(subtract(n, 1), subtract(n, 2))
 #  }
 #}
 ##fun main() {
-##  @debug(fib(10))
+##  print(fib(10))
 ##}
-#
-#fun computed_property(foo: Foo): U8 {
-#}
-#
-#
-#fun bar() {
-#  var foo: Bool = Bool.true
-#  some_higher_order_fun(foo.computed_property())
-#}
-#
-#fun bar() {
-#  var foo: Foo = Foo.{ bar = 4 }
-#  var also_foo: _ = Foo.{ bar = 4 }
-#}
-#
-#fun and(a: Bool, b: Bool) {}
-#
-#
-#enum Maybe[T] { Some: T, None }
 #
 #fun map[T, X](maybe: Maybe[T], mapper: T -> X): Maybe[X] {
 #  return match maybe {

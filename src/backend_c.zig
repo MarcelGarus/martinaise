@@ -66,13 +66,13 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
             }
         }
 
-        { // print(U8)
+        { // printToStdout(U8)
             var body = ArrayList(u8).init(alloc);
             // TODO: Check the return value of putc
             try format(body.writer(), "  putc(arg0.value, stdout);\n", .{});
             try format(body.writer(), "  mar_Nothing n;\n", .{});
             try format(body.writer(), "  return n;\n", .{});
-            try builtin_funs.put("print(U8)", body.items);
+            try builtin_funs.put("printToStdout(U8)", body.items);
         }
     }
 

@@ -90,7 +90,6 @@ pub const Member = struct {
 };
 pub const Var = struct {
     name: Name,
-    ty: ?Ty,
     value: *Expr,
 };
 pub const Assign = struct {
@@ -256,9 +255,6 @@ fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
         },
         .var_ => |v| {
             try writer.print("var {s}", .{v.name});
-            if (v.ty) |ty| {
-                try writer.print(": {ty}", .{ty});
-            }
             try writer.print(" = ", .{});
             try print_expr(writer, indent, v.value.*);
         },
