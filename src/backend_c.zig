@@ -49,6 +49,46 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                 try builtin_funs.put(signature.items, body.items);
             }
 
+            { // subtract(Int, Int)
+                var signature = ArrayList(u8).init(alloc);
+                try format(signature.writer(), "subtract({s}, {s})", .{ty, ty});
+                var body = ArrayList(u8).init(alloc);
+                try format(body.writer(), "  mar_{s} i;\n", .{ty});
+                try format(body.writer(), "  i.value = arg0.value - arg1.value;\n", .{});
+                try format(body.writer(), "  return i;\n", .{});
+                try builtin_funs.put(signature.items, body.items);
+            }
+
+            { // multiply(Int, Int)
+                var signature = ArrayList(u8).init(alloc);
+                try format(signature.writer(), "multiply({s}, {s})", .{ty, ty});
+                var body = ArrayList(u8).init(alloc);
+                try format(body.writer(), "  mar_{s} i;\n", .{ty});
+                try format(body.writer(), "  i.value = arg0.value * arg1.value;\n", .{});
+                try format(body.writer(), "  return i;\n", .{});
+                try builtin_funs.put(signature.items, body.items);
+            }
+
+            { // divide(Int, Int)
+                var signature = ArrayList(u8).init(alloc);
+                try format(signature.writer(), "divide({s}, {s})", .{ty, ty});
+                var body = ArrayList(u8).init(alloc);
+                try format(body.writer(), "  mar_{s} i;\n", .{ty});
+                try format(body.writer(), "  i.value = arg0.value / arg1.value;\n", .{});
+                try format(body.writer(), "  return i;\n", .{});
+                try builtin_funs.put(signature.items, body.items);
+            }
+
+            { // modulo(Int, Int)
+                var signature = ArrayList(u8).init(alloc);
+                try format(signature.writer(), "modulo({s}, {s})", .{ty, ty});
+                var body = ArrayList(u8).init(alloc);
+                try format(body.writer(), "  mar_{s} i;\n", .{ty});
+                try format(body.writer(), "  i.value = arg0.value % arg1.value;\n", .{});
+                try format(body.writer(), "  return i;\n", .{});
+                try builtin_funs.put(signature.items, body.items);
+            }
+
             // Conversion functions
             for (utils.all_int_configs()) |target_config| {
                 if (config.signedness == target_config.signedness and config.bits == target_config.bits) {

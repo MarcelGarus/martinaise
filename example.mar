@@ -20,7 +20,6 @@ struct StdoutWriter {}
 fun write(sow: StdoutWriter, c: U8) { printToStdout(c) }
 fun print[T](value: T) { value.dump(StdoutWriter.{}) }
 fun println[T](value: T) { print(value) StdoutWriter.{}.write(10.toU8()) }
-fun dump[W](c: U8, writer: W) { writer.write(c) }
 
 # Int
 # Integers are built into the language. There are several types with different
@@ -28,7 +27,25 @@ fun dump[W](c: U8, writer: W) { writer.write(c) }
 # example, U64 is an unsigned integer of 64 bits.
 # All integers also support the following mathematical operations:
 # - add(Int, Int): Int
+# - subtract(Int, Int): Int
+# - multiply(Int, Int): Int
+# - divide(Int, Int): Int
+# - modulo(Int, Int): Int
 # - to<OtherInt>(Int): OtherInt, e.g. toU8() for non-U8 ints
+fun dump[W](i: U8, writer: W) {
+  writer.write(i.divide(100.toU8()).modulo(10.toU8()).add(48.toU8()))
+  writer.write(i.divide(10.toU8()).modulo(10.toU8()).add(48.toU8()))
+  writer.write(i.modulo(10.toU8()).add(48.toU8()))
+}
+fun dump[W](i: i16, writer: W) {
+  # TODO: implement
+  writer.write(i.divide(10).toU8().add(48.toU8()))
+  writer.write(i.modulo(10).toU8().add(48.toU8()))
+}
+
+# Order
+# An ordering between numbers.
+enum Order { less, equal, greater }
 
 # Bool
 enum Bool { true, false }
@@ -85,7 +102,7 @@ fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] {
   return Maybe[T].none()
 }
 
-# TODO: string, printing, result, vec, segment tree, treap
+# TODO: string, result, vec, hash map, segment tree, treap
 
 #struct Slice[T] { data: Box[T], len: U64 }
 #fun get[T](slice: Slice[T], index: U64): T {
@@ -104,21 +121,21 @@ fun main(): I64 {
   #}
   println(Bool.false().or(Bool.true()))
 
-  #print(72.toU8())
-  #print(101.toU8())
-  #print(108.toU8())
-  #print(108.toU8())
-  #print(111.toU8())
-  #print(44.toU8())
-  #print(32.toU8())
-  #print(119.toU8())
-  #print(111.toU8())
-  #print(114.toU8())
-  #print(108.toU8())
-  #print(100.toU8())
-  #print(33.toU8())
-  #print(10.toU8())
-  return 0
+  print(72.toU8())  # H
+  #print(101.toU8()) # e
+  #print(108.toU8()) # l
+  #print(108.toU8()) # l
+  #print(111.toU8()) # o
+  #print(44.toU8())  # ,
+  #print(32.toU8())  # <space>
+  #print(119.toU8()) # w
+  #print(111.toU8()) # o
+  #print(114.toU8()) # r
+  #print(108.toU8()) # l
+  #print(100.toU8()) # d
+  #print(33.toU8())  # !
+  #print(10.toU8())  # <newline>
+  return multiply(add(3, 4), divide(4, 2)).modulo(10)
 }
 
 ############################
