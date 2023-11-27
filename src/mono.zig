@@ -31,9 +31,14 @@ pub const Fun = struct {
 
     const Self = @This();
 
-    pub fn put(self: *Self, expr: Expr, ty: Name) !void {
+    pub fn next_index(self: Self) ExprIndex {
+        return self.body.items.len;
+    }
+    pub fn put(self: *Self, expr: Expr, ty: Name) !ExprIndex {
+        const index = self.body.items.len;
         try self.body.append(expr);
         try self.tys.append(ty);
+        return index;
     }
 };
 pub const ExprIndex = usize;
@@ -45,6 +50,8 @@ pub const Expr = union(enum) {
     struct_creation: StructCreation,
     member: Member,
     assign: Assign,
+    jump: Jump,
+    jump_if: JumpIf,
     return_: ExprIndex,
 };
 pub const Call = struct { fun: Name, args: ArrayList(ExprIndex) };
@@ -52,6 +59,8 @@ pub const VariantCreation = struct { enum_ty: Name, variant: Name, value: ?ExprI
 pub const StructCreation = struct { struct_ty: Name, fields: StringHashMap(ExprIndex) };
 pub const Member = struct { of: ExprIndex, name: Name };
 pub const Assign = struct { to: ExprIndex, value: ExprIndex };
+pub const Jump = struct { target: ExprIndex };
+pub const JumpIf = struct { condition: ExprIndex, target: ExprIndex };
 
 pub fn print(writer: anytype, mono: Mono) !void {
     {
@@ -72,6 +81,10 @@ pub fn print(writer: anytype, mono: Mono) !void {
 
 fn print_fun(writer: anytype, name: Name, fun: Fun) !void {
     try writer.print("{s}\n", .{name});
+    if (fun.is_builtin) {
+        try writer.print("  <builtin>", .{});
+        return;
+    }
     for (fun.body.items, fun.tys.items, 0..) |expr, ty, i| {
         if (i > 0) {
             try writer.print("\n", .{});
@@ -114,6 +127,8 @@ fn print_expr(writer: anytype, expr: Expr) !void {
         .assign => |assign| {
             try writer.print("{} set to {}", .{assign.to, assign.value});
         },
+        .jump => |jump| try writer.print("jump to _{}", .{jump.target}),
+        .jump_if => |jump| try writer.print("if _{} jump to _{}", .{jump.condition, jump.target}),
         .return_ => |r| try writer.print("return _{d}", .{r}),
     }
 }

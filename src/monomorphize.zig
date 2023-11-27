@@ -258,7 +258,7 @@ const Monomorphizer = struct {
             .tys = ArrayList(Name).init(self.alloc),
         };
         for (arg_tys.items) |ty| {
-            try mono_fun.put(.{ .arg = {} }, ty);
+            _ = try mono_fun.put(.{ .arg = {} }, ty);
         }
         for (fun.body.items) |expr| {
             _ = try self.compile_expr(&mono_fun, ty_env, &var_env, expr);
@@ -277,10 +277,10 @@ const Monomorphizer = struct {
         InvalidExpressionCalled, CalledNonFunction, FunctionTypeArgsCannotHaveTypeArgs,
         ExpressionNotHandled, VariableNotInScope, CanOnlyAssignToName, YouCanOnlyConstructStructs,
         TypeArgumentCantHaveGenerics, FieldDoesNotExist, AccessedMemberOnNonStruct,
-        VariantDoesntExist
+        VariantDoesntExist, IfConditionMustBeBool
     }!mono.ExprIndex {
-        expr_switch:  { switch (expression) {
-            .num => |n| try fun.put(.{ .num = n }, "I64"),
+        switch (expression) {
+            .num => |n| return try fun.put(.{ .num = n }, "I64"),
             .ref => |name| {
                 if (var_env.get(name)) |var_info| {
                     return var_info.expr_index;
@@ -341,8 +341,7 @@ const Monomorphizer = struct {
                         // Did not find a variant. Restore the sacred timeline.
                         return error.VariantDoesntExist;
                     }
-                    try fun.put(.{ .variant_creation = .{ .enum_ty = enum_ty, .variant = member.name, .value = null } }, enum_ty);
-                    break :expr_switch;
+                    return try fun.put(.{ .variant_creation = .{ .enum_ty = enum_ty, .variant = member.name, .value = null } }, enum_ty);
                 }
 
                 switch (callee) {
@@ -393,9 +392,17 @@ const Monomorphizer = struct {
                     }
                 };
 
-                try fun.put(.{ .call = .{ .fun = fun_name, .args = args } }, return_type);
+                return try fun.put(.{ .call = .{ .fun = fun_name, .args = args } }, return_type);
             },
             .member => |m| {
+                // Some members such as Bool.true are actually enum variant instantiations.
+                // enum_handling: {
+                //     switch (m.of.*) {
+                //         .ref => ||
+                //     }
+                // }
+                
+                // Struct field access.
                 const of = try self.compile_expr(fun, ty_env, var_env, m.of.*);
                 const of_type_def = self.ty_defs.get(fun.tys.items[of]) orelse unreachable;
                 std.debug.print("Accessed member of {s}.\n", .{fun.tys.items[of]});
@@ -412,7 +419,7 @@ const Monomorphizer = struct {
                         else => return error.AccessedMemberOnNonStruct,
                     }
                 };
-                try fun.put(.{ .member = .{ .of = of, .name = m.name } }, field_ty);
+                return try fun.put(.{ .member = .{ .of = of, .name = m.name } }, field_ty);
             },
             .var_ => |v| {
                 const value = try self.compile_expr(fun, ty_env, var_env, v.value.*);
@@ -420,6 +427,7 @@ const Monomorphizer = struct {
                     .expr_index = value,
                     .ty = fun.tys.items[@intCast(value)]
                 });
+                return value;
             },
             .assign => |assign| {
                 const to = to: {
@@ -434,7 +442,7 @@ const Monomorphizer = struct {
                     }
                 };
                 const value = try self.compile_expr(fun, ty_env, var_env, assign.value.*);
-                try fun.put(.{ .assign = .{ .to = to, .value = value } }, "Nothing");
+                return try fun.put(.{ .assign = .{ .to = to, .value = value } }, "Nothing");
             },
             .struct_construction => |sc| {
                 var ty = self.expr_to_type(sc.ty.*) orelse return error.YouCanOnlyConstructStructs;
@@ -445,21 +453,59 @@ const Monomorphizer = struct {
                     try fields.put(f.name, try self.compile_expr(fun, ty_env, var_env, f.value));
                 }
 
-                try fun.put(.{ .struct_creation = .{
+                return try fun.put(.{ .struct_creation = .{
                     .struct_ty = struct_type,
                     .fields = fields,
                 } }, struct_type);
             },
+            .if_ => |if_| {
+                const condition = try self.compile_expr(fun, ty_env, var_env, if_.condition.*);
+                if (!std.mem.eql(u8, fun.tys.items[condition], "Bool")) {
+                    return error.IfConditionMustBeBool;
+                }
+                const jump_if_true = try fun.put(.{ .arg = {} }, "Nothing"); // Will be replaced with jump_if
+                const jump_if_false = try fun.put(.{ .arg = {} }, "Never"); // Will be replaced with jump
+
+                const then_body = fun.next_index();
+                for (if_.then.items) |expr| {
+                    _ = try self.compile_expr(fun, ty_env, var_env, expr);
+                }
+                const jump_after_then = try fun.put(.{ .arg = {} }, "Never"); // Will be replaced with jump
+
+                if (if_.else_) |else_| {
+                    const else_body = fun.next_index();
+                    for (else_.items) |expr| {
+                        _ = try self.compile_expr(fun, ty_env, var_env, expr);
+                    }
+                    const jump_after_else = try fun.put(.{ .arg = {} }, "Never"); // Will be replaced with jump
+                    const after_if = fun.next_index();
+
+                    // Fill in jumps
+                    fun.body.items[jump_if_true] = .{ .jump_if = .{ .condition = condition, .target = then_body } };
+                    fun.body.items[jump_if_false] = .{ .jump = .{ .target = else_body } };
+                    fun.body.items[jump_after_then] = .{ .jump = .{ .target = after_if } };
+                    fun.body.items[jump_after_else] = .{ .jump = .{ .target = after_if } };
+                } else {
+                    const after_if = fun.next_index();
+
+                    // Fill in jumps
+                    fun.body.items[jump_if_true] = .{ .jump_if = .{ .condition = condition, .target = then_body } };
+                    fun.body.items[jump_if_false] = .{ .jump = .{ .target = after_if } };
+                    fun.body.items[jump_after_then] = .{ .jump = .{ .target = after_if } };
+                }
+
+                // TODO: Make if evaluate to its body's result
+                return condition;
+            },
             .return_ => |returned| {
                 const index = try self.compile_expr(fun, ty_env, var_env, returned.*);
-                try fun.put(.{ .return_ = index }, "Never");
+                return try fun.put(.{ .return_ = index }, "Never");
             },
             else => {
                 std.debug.print("compiling {any}\n", .{expression});
                 return error.ExpressionNotHandled;
             }
-        } }
-        return fun.body.items.len - 1;
+        }
     }
 
     fn expr_to_type(self: *Self, expr: ast.Expr) ?Ty {

@@ -181,6 +181,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                 }
 
                 for (fun.body.items, fun.tys.items, 0..) |expr, ty, i| {
+                    try format(out, "  expr_{}:\n", .{i});
                     switch (expr) {
                         .arg => try format(out, "  {s} _{} = arg{};\n", .{(try mangle(alloc, ty)).items, i, i}),
                         .num => |n| {
@@ -233,6 +234,14 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                             try format(out, "  _{} = _{};\n", .{assign.to, assign.value});
                             try format(out, "  mar_Nothing _{};\n", .{i});
                         },
+                        .jump => |jump| {
+                            try format(out, "  goto expr_{};\n", .{jump.target});
+                        },
+                        .jump_if => |jump| {
+                            try format(out, "  if (_{}.kind == mar_true) {{\n", .{jump.condition});
+                            try format(out, "    goto expr_{};\n", .{jump.target});
+                            try format(out, "  }}\n", .{});
+                        },
                         .return_ => |index| {
                             // If a Never is returned, the return is not reached anyway. If we emit
                             // it, C complains that Never doesn't match the function's return type.
@@ -243,6 +252,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                         },
                     }
                 }
+                try format(out, "  expr_{}:", .{fun.body.items.len});
                 const last_expr_index = fun.body.items.len - 1;
                 if (!std.mem.eql(u8, fun.tys.items[last_expr_index], "Never")) {
                     try format(out, "  return _{};\n", .{last_expr_index});
