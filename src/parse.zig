@@ -58,9 +58,10 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
     };
 
     // Add builtins.
+
     program.defs.append(.{ .builtin_ty = "Nothing" }) catch return null;
     program.defs.append(.{ .builtin_ty = "Never" }) catch return null;
-    program.defs.append(.{ .builtin_ty = "Int" }) catch return null;
+
     { // Bool
         var variants = ArrayList(ast.Variant).init(alloc);
         variants.append(.{ .name = "true", .ty = null }) catch return null;
@@ -71,20 +72,35 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
             .variants = variants,
         } }) catch return null;
     }
-    { // add(Int, Int)
-        const int = .{ .name = "Int", .args = ArrayList(Ty).init(alloc) };
-        var args = ArrayList(ast.Argument).init(alloc);
-        args.append(.{ .name = "a", .ty = int}) catch return null;
-        args.append(.{ .name = "b", .ty = int}) catch return null;
-        program.defs.append(.{ .fun = .{
-            .name = "add",
-            .ty_args = ArrayList(Name).init(alloc),
-            .args = args,
-            .returns = int,
-            .is_builtin = true,
-            .body = ArrayList(ast.Expr).init(alloc),
 
-        } }) catch return null;
+    // Number stuff.
+    for ("IU") |signedness| {
+        for ([_]u8{8, 16, 32, 64}) |bits| {
+            var name_buf = ArrayList(u8).init(alloc);
+            std.fmt.format(name_buf.writer(), "{c}{}", .{signedness, bits}) catch return null;
+            const name = name_buf.items;
+
+            program.defs.append(.{ .builtin_ty = name }) catch return null;
+
+            const ty = .{ .name = name, .args = ArrayList(Ty).init(alloc) };
+
+            var two_args = ArrayList(ast.Argument).init(alloc);
+            two_args.append(.{ .name = "a", .ty = ty}) catch return null;
+            two_args.append(.{ .name = "b", .ty = ty}) catch return null;
+
+            program.add_builtin_fun(alloc, "add", two_args, ty);
+            program.add_builtin_fun(alloc, "subtract", two_args, ty);
+            program.add_builtin_fun(alloc, "multiply", two_args, ty);
+            program.add_builtin_fun(alloc, "divide", two_args, ty);
+            program.add_builtin_fun(alloc, "modulo", two_args, ty);
+            program.add_builtin_fun(alloc, "compareTo", two_args, ty);
+            // program.add_builtin_fun(alloc, "shiftLeft", two_args, ty);
+            // program.add_builtin_fun(alloc, "shiftRight", two_args, ty);
+            // program.add_builtin_fun(alloc, "bitLength", two_args, ty);
+            // program.add_builtin_fun(alloc, "and", two_args, ty);
+            // program.add_builtin_fun(alloc, "or", two_args, ty);
+            // program.add_builtin_fun(alloc, "xor", two_args, ty);
+        }
     }
 
     return program;

@@ -18,7 +18,14 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !mono.Mono {
     };
     try monomorphizer.put_ty(.{ .name = "Never", .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
     try monomorphizer.put_ty(.{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
-    try monomorphizer.put_ty(.{ .name = "Int", .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
+    for ("IU") |signedness| {
+        for ([_]u8{8, 16, 32, 64}) |bits| {
+            var name_buf = ArrayList(u8).init(alloc);
+            try std.fmt.format(name_buf.writer(), "{c}{}", .{signedness, bits});
+            const name = name_buf.items;
+            try monomorphizer.put_ty(.{ .name = name, .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
+        }
+    }
 
     const main = try monomorphizer.lookup("main", ArrayList(Name).init(alloc), ArrayList(Name).init(alloc));
     const main_fun = switch (main.def) {
@@ -272,7 +279,7 @@ const Monomorphizer = struct {
         VariantDoesntExist
     }!mono.ExprIndex {
         expr_switch:  { switch (expression) {
-            .num => |n| try fun.put(.{ .num = n }, "Int"),
+            .num => |n| try fun.put(.{ .num = n }, "I64"),
             .ref => |name| {
                 if (var_env.get(name)) |var_info| {
                     return var_info.expr_index;

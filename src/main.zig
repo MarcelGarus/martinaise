@@ -12,7 +12,7 @@ pub fn main() !void {
     var my_file = try std.fs.cwd().openFile("example.mar", .{});
     defer my_file.close();
 
-    var buf: [1024]u8 = undefined;
+    var buf: [8 * 1024]u8 = undefined;
     const len = try my_file.read(&buf);
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};

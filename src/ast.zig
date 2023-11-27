@@ -5,6 +5,23 @@ const Ty = @import("ty.zig").Ty;
 
 pub const Program = struct {
     defs: ArrayList(Def),
+
+    pub fn add_builtin_fun(
+        self: *@This(),
+        alloc: std.mem.Allocator,
+        name: Name,
+        args: ArrayList(Argument),
+        returns: Ty
+    ) void {
+        self.defs.append(.{ .fun = .{
+            .name = name,
+            .ty_args = ArrayList(Name).init(alloc),
+            .args = args,
+            .returns = returns,
+            .is_builtin = true,
+            .body = ArrayList(Expr).init(alloc),
+        } }) catch return;
+    }
 };
 pub const Def = union(enum) {
     builtin_ty: Name,
@@ -173,7 +190,11 @@ pub fn print_fun(writer: anytype, fun: Fun) !void {
     }
 
     try writer.print(" ", .{});
-    try print_body(writer, 0, fun.body);
+    if (fun.is_builtin) {
+        try writer.print("{{ ... }}", .{});
+    } else {
+        try print_body(writer, 0, fun.body);
+    }
 }
 fn print_indent(writer: anytype, indent: usize) !void {
     for (0..indent) |_| {
