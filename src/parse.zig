@@ -3,8 +3,9 @@ const ast = @import("ast.zig");
 const ArrayList = std.ArrayList;
 const Name = @import("ty.zig").Name;
 const Ty = @import("ty.zig").Ty;
+const utils = @import("utils.zig");
 
-pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
+pub fn parse(alloc: std.mem.Allocator, code: []u8) !?ast.Program {
     var parser = Parser{ .code = code, .alloc = alloc };
     // TODO: Handle OOM error differently
     var program = parser.parse_program() catch |err| {
@@ -59,48 +60,61 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
 
     // Add builtins.
 
-    program.defs.append(.{ .builtin_ty = "Nothing" }) catch return null;
-    program.defs.append(.{ .builtin_ty = "Never" }) catch return null;
-
-    { // Bool
-        var variants = ArrayList(ast.Variant).init(alloc);
-        variants.append(.{ .name = "true", .ty = null }) catch return null;
-        variants.append(.{ .name = "false", .ty = null }) catch return null;
-        program.defs.append(.{ .enum_ = .{
-            .name = "Bool",
-            .ty_args = ArrayList(Name).init(alloc),
-            .variants = variants,
-        } }) catch return null;
+    { // addressOf[T](T): U64
+        const t: Ty = .{ .name = "T", .args = ArrayList(Ty).init(alloc) };
+        const u64_: Ty = .{ .name = "U64", .args = ArrayList(Ty).init(alloc) };
+        var ty_args = ArrayList(Name).init(alloc);
+        try ty_args.append("T");
+        var args = ArrayList(ast.Argument).init(alloc);
+        try args.append(.{ .name = "a", .ty = t});
+        program.add_builtin_fun(alloc, "addressOf", ty_args, args, u64_);
     }
 
-    // Number stuff.
-    for ("IU") |signedness| {
-        for ([_]u8{8, 16, 32, 64}) |bits| {
-            var name_buf = ArrayList(u8).init(alloc);
-            std.fmt.format(name_buf.writer(), "{c}{}", .{signedness, bits}) catch return null;
-            const name = name_buf.items;
+    // Int stuff.
+    for (utils.all_int_configs()) |config| {
+        try program.defs.append(.{ .builtin_ty = try utils.int_ty_name(alloc, config) });
+        const ty = try utils.int_ty(alloc, config);
 
-            program.defs.append(.{ .builtin_ty = name }) catch return null;
+        var two_args = ArrayList(ast.Argument).init(alloc);
+        try two_args.append(.{ .name = "a", .ty = ty});
+        try two_args.append(.{ .name = "b", .ty = ty});
 
-            const ty = .{ .name = name, .args = ArrayList(Ty).init(alloc) };
+        program.add_builtin_fun(alloc, "add", null, two_args, ty);
+        // program.add_builtin_fun(alloc, "subtract", two_args, ty);
+        // program.add_builtin_fun(alloc, "multiply", two_args, ty);
+        // program.add_builtin_fun(alloc, "divide", two_args, ty);
+        // program.add_builtin_fun(alloc, "modulo", two_args, ty);
+        // program.add_builtin_fun(alloc, "compareTo", two_args, ty);
+        // program.add_builtin_fun(alloc, "shiftLeft", two_args, ty);
+        // program.add_builtin_fun(alloc, "shiftRight", two_args, ty);
+        // program.add_builtin_fun(alloc, "bitLength", two_args, ty);
+        // program.add_builtin_fun(alloc, "and", two_args, ty);
+        // program.add_builtin_fun(alloc, "or", two_args, ty);
+        // program.add_builtin_fun(alloc, "xor", two_args, ty);
 
-            var two_args = ArrayList(ast.Argument).init(alloc);
-            two_args.append(.{ .name = "a", .ty = ty}) catch return null;
-            two_args.append(.{ .name = "b", .ty = ty}) catch return null;
+        // Conversion functions
+        for (utils.all_int_configs()) |target_config| {
+            // if (config == target_config) {
+            if (config.signedness == target_config.signedness and config.bits == target_config.bits) {
+                continue;
+            }
 
-            program.add_builtin_fun(alloc, "add", two_args, ty);
-            // program.add_builtin_fun(alloc, "subtract", two_args, ty);
-            // program.add_builtin_fun(alloc, "multiply", two_args, ty);
-            // program.add_builtin_fun(alloc, "divide", two_args, ty);
-            // program.add_builtin_fun(alloc, "modulo", two_args, ty);
-            // program.add_builtin_fun(alloc, "compareTo", two_args, ty);
-            // program.add_builtin_fun(alloc, "shiftLeft", two_args, ty);
-            // program.add_builtin_fun(alloc, "shiftRight", two_args, ty);
-            // program.add_builtin_fun(alloc, "bitLength", two_args, ty);
-            // program.add_builtin_fun(alloc, "and", two_args, ty);
-            // program.add_builtin_fun(alloc, "or", two_args, ty);
-            // program.add_builtin_fun(alloc, "xor", two_args, ty);
+            var fun_name = ArrayList(u8).init(alloc);
+            try std.fmt.format(fun_name.writer(), "to{s}", .{try utils.int_ty_name(alloc, target_config)});
+
+            var args = ArrayList(ast.Argument).init(alloc);
+            try args.append(.{ .name = "i", .ty = ty });
+
+            program.add_builtin_fun(alloc, fun_name.items, null, args, try utils.int_ty(alloc, target_config));
         }
+    }
+
+    { // print(U8)
+        const u8_ = .{ .name = "U8", .args = ArrayList(Ty).init(alloc) };
+        const nothing = .{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) };
+        var args = ArrayList(ast.Argument).init(alloc);
+        try args.append(.{ .name = "c", .ty = u8_});
+        program.add_builtin_fun(alloc, "print", null, args, nothing);
     }
 
     return program;

@@ -18,10 +18,10 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var alloc = gpa.allocator();
 
-    const the_ast = parse(alloc, buf[0..len]) orelse return error.ParseError;
-    // std.debug.print("Parsed:\n", .{});
-    // try ast.print(std.io.getStdOut().writer(), the_ast);
-    // std.debug.print("\n", .{});
+    const the_ast = try parse(alloc, buf[0..len]) orelse return error.ParseError;
+    std.debug.print("Parsed:\n", .{});
+    try ast.print(std.io.getStdOut().writer(), the_ast);
+    std.debug.print("\n", .{});
 
     const the_mono = try monomorphize(alloc, the_ast);
     try mono.print(std.io.getStdOut().writer(), the_mono);

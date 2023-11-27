@@ -10,12 +10,13 @@ pub const Program = struct {
         self: *@This(),
         alloc: std.mem.Allocator,
         name: Name,
+        ty_args: ?ArrayList(Name),
         args: ArrayList(Argument),
         returns: Ty
     ) void {
         self.defs.append(.{ .fun = .{
             .name = name,
-            .ty_args = ArrayList(Name).init(alloc),
+            .ty_args = ty_args orelse ArrayList(Name).init(alloc),
             .args = args,
             .returns = returns,
             .is_builtin = true,

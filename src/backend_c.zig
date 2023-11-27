@@ -1,10 +1,11 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
 const StringHashMap = std.StringHashMap;
+const format = std.fmt.format;
 const ast = @import("ast.zig");
 const Name = @import("ty.zig").Name;
 const mono = @import("mono.zig");
-const format = std.fmt.format;
+const utils = @import("utils.zig");
 
 pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8) {
     var out_buffer = ArrayList(u8).init(alloc);
@@ -20,36 +21,58 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
         try builtin_tys.put("Nothing", "struct {}");
         try builtin_tys.put("Never", "struct {\n  // TODO: Is this needed?\n}");
 
-        for ("IU") |signedness| {
-            for ([_]u8{8, 16, 32, 64}) |bits| {
-                var name_buf = ArrayList(u8).init(alloc);
-                try std.fmt.format(name_buf.writer(), "{c}{}", .{signedness, bits});
-                const ty = name_buf.items;
+        for (utils.all_int_configs()) |config| {
+            const ty = try utils.int_ty_name(alloc, config);
 
-                { // Generate type
-                    var impl = ArrayList(u8).init(alloc);
-                    try format(impl.writer(), "struct {{\n", .{});
-                    try format(impl.writer(), "  {s}int{}_t value;\n", .{
-                        switch (signedness) {
-                            'U' => "u",
-                            else => "",
-                        },
-                        bits,
-                    });
-                    try format(impl.writer(), "}}", .{});
-                    try builtin_tys.put(ty, impl.items);
-                }
-
-                { // add(Int, Int)
-                    var signature = ArrayList(u8).init(alloc);
-                    try format(signature.writer(), "add({s}, {s})", .{ty, ty});
-                    var body = ArrayList(u8).init(alloc);
-                    try format(body.writer(), "  mar_{s} i;\n", .{ty});
-                    try format(body.writer(), "  i.value = arg0.value + arg1.value;\n", .{});
-                    try format(body.writer(), "  return i;\n", .{});
-                    try builtin_funs.put(signature.items, body.items);
-                }
+            { // Generate type
+                var impl = ArrayList(u8).init(alloc);
+                try format(impl.writer(), "struct {{\n", .{});
+                try format(impl.writer(), "  {s}int{}_t value;\n", .{
+                    switch (config.signedness) {
+                        .signed => "",
+                        .unsigned => "u",
+                    },
+                    config.bits,
+                });
+                try format(impl.writer(), "}}", .{});
+                try builtin_tys.put(ty, impl.items);
             }
+
+
+            { // add(Int, Int)
+                var signature = ArrayList(u8).init(alloc);
+                try format(signature.writer(), "add({s}, {s})", .{ty, ty});
+                var body = ArrayList(u8).init(alloc);
+                try format(body.writer(), "  mar_{s} i;\n", .{ty});
+                try format(body.writer(), "  i.value = arg0.value + arg1.value;\n", .{});
+                try format(body.writer(), "  return i;\n", .{});
+                try builtin_funs.put(signature.items, body.items);
+            }
+
+            // Conversion functions
+            for (utils.all_int_configs()) |target_config| {
+                if (config.signedness == target_config.signedness and config.bits == target_config.bits) {
+                    continue;
+                }
+
+                const target_ty = try utils.int_ty_name(alloc, target_config);
+                var signature = ArrayList(u8).init(alloc);
+                try format(signature.writer(), "to{s}({s})", .{target_ty, ty});
+                var body = ArrayList(u8).init(alloc);
+                try format(body.writer(), "  mar_{s} i;\n", .{target_ty});
+                try format(body.writer(), "  i.value = arg0.value;\n", .{});
+                try format(body.writer(), "  return i;\n", .{});
+                try builtin_funs.put(signature.items, body.items);
+            }
+        }
+
+        { // print(U8)
+            var body = ArrayList(u8).init(alloc);
+            // TODO: Check the return value of putc
+            try format(body.writer(), "  putc(arg0.value, stdout);\n", .{});
+            try format(body.writer(), "  mar_Nothing n;\n", .{});
+            try format(body.writer(), "  return n;\n", .{});
+            try builtin_funs.put("print(U8)", body.items);
         }
     }
 
@@ -146,6 +169,10 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                 if (fun.is_builtin) {
                     if (builtin_funs.get(fun_name)) |body| {
                         try format(out, "{s}", .{body});
+                    } else if (utils.starts_with(fun_name, "addressOf")) {
+                        try format(out, "  mar_U64 address;\n", .{});
+                        try format(out, "  address.value = (uint64_t)&arg0;\n", .{});
+                        try format(out, "  return address;\n", .{});
                     } else {
                         std.debug.print("Fun is {s}.\n", .{fun_name});
                         @panic("Unknown builtin fun");
