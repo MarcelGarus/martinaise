@@ -1,10 +1,11 @@
 const std = @import("std");
 const ArrayList = std.ArrayList; // TODO: Use slices everywhere instead
+const StringArrayHashMap = std.StringArrayHashMap;
 const StringHashMap = std.StringHashMap;
 const Name = @import("ty.zig").Name;
 
 pub const Mono = struct {
-    ty_defs: StringHashMap(TyDef),
+    ty_defs: StringArrayHashMap(TyDef),
     funs: StringHashMap(Fun),
 };
 
@@ -55,9 +56,8 @@ pub const Assign = struct { to: ExprIndex, value: ExprIndex };
 pub fn print(writer: anytype, mono: Mono) !void {
     {
         try writer.print("Types:\n", .{});
-        var iter = mono.ty_defs.keyIterator();
-        while (iter.next()) |ty| {
-            try writer.print("- {s}\n", .{ty.*});
+        for (mono.ty_defs.keys()) |ty| {
+            try writer.print("- {s}\n", .{ty});
         }
     }
     {

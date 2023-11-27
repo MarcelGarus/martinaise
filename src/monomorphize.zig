@@ -1,5 +1,6 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
+const StringArrayHashMap = std.StringArrayHashMap;
 const StringHashMap = std.StringHashMap;
 const format = std.fmt.format;
 const Ty = @import("ty.zig").Ty;
@@ -13,7 +14,7 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !mono.Mono {
         .program = program,
         .context = ArrayList([]const u8).init(alloc),
         .tys = StringHashMap(Ty).init(alloc),
-        .ty_defs = StringHashMap(mono.TyDef).init(alloc),
+        .ty_defs = StringArrayHashMap(mono.TyDef).init(alloc),
         .funs = StringHashMap(mono.Fun).init(alloc),
     };
     try monomorphizer.put_ty(.{ .name = "Never", .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
@@ -53,7 +54,7 @@ const Monomorphizer = struct {
     context: ArrayList([]const u8),
     // The keys are strings of monomorphized types such as "Maybe[Int]".
     tys: StringHashMap(Ty),
-    ty_defs: StringHashMap(mono.TyDef),
+    ty_defs: StringArrayHashMap(mono.TyDef),
     // The keys are strings of monomorphized function signatures such as "foo(Int)".
     funs: StringHashMap(mono.Fun),
 

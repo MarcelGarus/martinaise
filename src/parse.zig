@@ -89,11 +89,11 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) ?ast.Program {
             two_args.append(.{ .name = "b", .ty = ty}) catch return null;
 
             program.add_builtin_fun(alloc, "add", two_args, ty);
-            program.add_builtin_fun(alloc, "subtract", two_args, ty);
-            program.add_builtin_fun(alloc, "multiply", two_args, ty);
-            program.add_builtin_fun(alloc, "divide", two_args, ty);
-            program.add_builtin_fun(alloc, "modulo", two_args, ty);
-            program.add_builtin_fun(alloc, "compareTo", two_args, ty);
+            // program.add_builtin_fun(alloc, "subtract", two_args, ty);
+            // program.add_builtin_fun(alloc, "multiply", two_args, ty);
+            // program.add_builtin_fun(alloc, "divide", two_args, ty);
+            // program.add_builtin_fun(alloc, "modulo", two_args, ty);
+            // program.add_builtin_fun(alloc, "compareTo", two_args, ty);
             // program.add_builtin_fun(alloc, "shiftLeft", two_args, ty);
             // program.add_builtin_fun(alloc, "shiftRight", two_args, ty);
             // program.add_builtin_fun(alloc, "bitLength", two_args, ty);

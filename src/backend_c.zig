@@ -14,6 +14,45 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
     try format(out, "#include <stdio.h>\n\n", .{});
     try format(out, "#include <stdint.h>\n\n", .{});
 
+    var builtin_tys = StringHashMap([] const u8).init(alloc);
+    var builtin_funs = StringHashMap([]const u8).init(alloc);
+    { // Generate code for builtins
+        try builtin_tys.put("Nothing", "struct {}");
+        try builtin_tys.put("Never", "struct {\n  // TODO: Is this needed?\n}");
+
+        for ("IU") |signedness| {
+            for ([_]u8{8, 16, 32, 64}) |bits| {
+                var name_buf = ArrayList(u8).init(alloc);
+                try std.fmt.format(name_buf.writer(), "{c}{}", .{signedness, bits});
+                const ty = name_buf.items;
+
+                { // Generate type
+                    var impl = ArrayList(u8).init(alloc);
+                    try format(impl.writer(), "struct {{\n", .{});
+                    try format(impl.writer(), "  {s}int{}_t value;\n", .{
+                        switch (signedness) {
+                            'U' => "u",
+                            else => "",
+                        },
+                        bits,
+                    });
+                    try format(impl.writer(), "}}", .{});
+                    try builtin_tys.put(ty, impl.items);
+                }
+
+                { // add(Int, Int)
+                    var signature = ArrayList(u8).init(alloc);
+                    try format(signature.writer(), "add({s}, {s})", .{ty, ty});
+                    var body = ArrayList(u8).init(alloc);
+                    try format(body.writer(), "  mar_{s} i;\n", .{ty});
+                    try format(body.writer(), "  i.value = arg0.value + arg1.value;\n", .{});
+                    try format(body.writer(), "  return i;\n", .{});
+                    try builtin_funs.put(signature.items, body.items);
+                }
+            }
+        }
+    }
+
     { // Types
         try format(out, "/// Types\n", .{});
     
@@ -25,42 +64,9 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
             try format(out, "typedef ", .{});
             switch (ty) {
                 .builtin_ty => {
-                    generate_builtin: {
-                        if (std.mem.eql(u8, name, "Nothing")) {
-                            try format(out, "struct {{}}", .{});
-                            break :generate_builtin;
-                        }
-                        if (std.mem.eql(u8, name, "Never")) {
-                            try format(out, "struct {{\n", .{});
-                            try format(out, "  // TODO: Is this needed?\n", .{});
-                            try format(out, "}}", .{});
-                            break :generate_builtin;
-                        }
-                        if (std.mem.eql(u8, name, "Int")) {
-                            try format(out, "struct {{\n", .{});
-                            try format(out, "  int value;\n", .{});
-                            try format(out, "}}", .{});
-                            break :generate_builtin;
-                        }
-                        for ("IU") |signedness| {
-                            for ([_]u8{8, 16, 32, 64}) |bits| {
-                                var candidate = ArrayList(u8).init(alloc);
-                                try std.fmt.format(candidate.writer(), "{c}{}", .{signedness, bits});
-
-                                if (std.mem.eql(u8, name, candidate.items)) {
-                                    var c_type = ArrayList(u8).init(alloc);
-                                    if (signedness == 'U') {
-                                        try c_type.append('u');
-                                    }
-                                    try std.fmt.format(c_type.writer(), "int{}_t", .{bits});
-                                    
-                                    try format(out, "struct {{\n", .{});
-                                    try format(out, "  {s} value;\n", .{c_type.items});
-                                    try format(out, "}}", .{});
-                                    break :generate_builtin;
-                                }
-                            }
-                        }
+                    if (builtin_tys.get(name)) |impl| {
+                        try format(out, "{s}", .{impl});
+                    } else {
                         std.debug.print("Type is {s}.\n", .{name});
                         @panic("Unknown builtin type");
                     }
@@ -138,14 +144,13 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
 
             fun_body: {
                 if (fun.is_builtin) {
-                    if (fun_name.len > 4 and std.mem.eql(u8, fun_name[0..4], "add(")) {
-                        try format(out, "  mar_Int i;\n", .{});
-                        try format(out, "  i.value = arg0.value + arg1.value;\n", .{});
-                        try format(out, "  return i;\n", .{});
-                        break :fun_body;
+                    if (builtin_funs.get(fun_name)) |body| {
+                        try format(out, "{s}", .{body});
+                    } else {
+                        std.debug.print("Fun is {s}.\n", .{fun_name});
+                        @panic("Unknown builtin fun");
                     }
-                    std.debug.print("Compiling builtin {s}\n", .{fun_name});
-                    @panic("Unknown builtin function");
+                    break :fun_body;
                 }
 
                 for (fun.body.items, fun.tys.items, 0..) |expr, ty, i| {
@@ -202,9 +207,8 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                             try format(out, "  mar_Nothing _{};\n", .{i});
                         },
                         .return_ => |index| {
-                            // If a Never is returned, the return is not reached
-                            // anyway. If we emit it, C complains that Never
-                            // doesn't match the function's return type.
+                            // If a Never is returned, the return is not reached anyway. If we emit
+                            // it, C complains that Never doesn't match the function's return type.
                             if (!std.mem.eql(u8, fun.tys.items[@intCast(index)], "Never")) {
                                 try format(out, "  return _{};\n", .{index});
                             }
@@ -221,7 +225,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
             try format(out, "}}\n", .{});
         }
 
-        try format(out, "// actual main function\n", .{});
+        try format(out, "\n// actual main function\n", .{});
         try format(out, "int main() {{\n", .{});
         try format(out, "  return mar_main_po__pc_().value;\n", .{});
         try format(out, "}}", .{});
