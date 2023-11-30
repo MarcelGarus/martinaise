@@ -60,14 +60,14 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) !?ast.Program {
 
     // Add builtins.
 
-    { // addressOf[T](T): U64
+    { // address_of[T](T): U64
         const t: Ty = .{ .name = "T", .args = ArrayList(Ty).init(alloc) };
         const u64_: Ty = .{ .name = "U64", .args = ArrayList(Ty).init(alloc) };
         var ty_args = ArrayList(Name).init(alloc);
         try ty_args.append("T");
         var args = ArrayList(ast.Argument).init(alloc);
         try args.append(.{ .name = "a", .ty = t});
-        program.add_builtin_fun(alloc, "addressOf", ty_args, args, u64_);
+        program.add_builtin_fun(alloc, "address_of", ty_args, args, u64_);
     }
 
     // Int stuff.
@@ -84,7 +84,8 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) !?ast.Program {
         program.add_builtin_fun(alloc, "multiply", null, two_args, ty);
         program.add_builtin_fun(alloc, "divide", null, two_args, ty);
         program.add_builtin_fun(alloc, "modulo", null, two_args, ty);
-        // program.add_builtin_fun(alloc, "compareTo", two_args, ty);
+        program.add_builtin_fun(alloc, "compare_to", null, two_args,
+            .{ .name = "Ordering", .args = ArrayList(Ty).init(alloc) });
         // program.add_builtin_fun(alloc, "shiftLeft", two_args, ty);
         // program.add_builtin_fun(alloc, "shiftRight", two_args, ty);
         // program.add_builtin_fun(alloc, "bitLength", two_args, ty);
@@ -100,7 +101,7 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) !?ast.Program {
             }
 
             var fun_name = ArrayList(u8).init(alloc);
-            try std.fmt.format(fun_name.writer(), "to{s}", .{try utils.int_ty_name(alloc, target_config)});
+            try std.fmt.format(fun_name.writer(), "to_{s}", .{try utils.int_ty_name(alloc, target_config)});
 
             var args = ArrayList(ast.Argument).init(alloc);
             try args.append(.{ .name = "i", .ty = ty });
@@ -114,7 +115,7 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) !?ast.Program {
         const nothing = .{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) };
         var args = ArrayList(ast.Argument).init(alloc);
         try args.append(.{ .name = "c", .ty = u8_});
-        program.add_builtin_fun(alloc, "printToStdout", null, args, nothing);
+        program.add_builtin_fun(alloc, "print_to_stdout", null, args, nothing);
     }
 
     return program;

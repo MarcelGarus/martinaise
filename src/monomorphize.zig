@@ -317,21 +317,17 @@ const Monomorphizer = struct {
                         .ref => |ref| ref,
                         else => break :enum_variant,
                     };
-                    std.debug.print("Potential enum name: {s}\n", .{enum_name});
                     if (var_env.contains(enum_name)) {
                         break :enum_variant;
                     }
-                    std.debug.print("Not shadowed by local\n", .{});
                     var compiled_ty_args = try self.compile_types(enum_ty_args, ty_env);
                     const solution = try self.lookup(enum_name, compiled_ty_args, null);
-                    std.debug.print("Solution: {any}\n", .{solution});
                     const enum_def = switch (solution.def) {
                         .enum_ => |e| e,
                         else => break :enum_variant,
                     };
                     const enum_ty = try self.compile_type(.{ .name = enum_name, .args = enum_ty_args }, ty_env);
-                    std.debug.print("compiled enum ty: {s}\n", .{enum_ty});
-                    
+
                     find_variant: {
                         for (enum_def.variants.items) |variant| {
                             if (std.mem.eql(u8, variant.name, member.name)) {

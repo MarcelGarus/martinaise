@@ -13,13 +13,13 @@ struct Nothing {}
 struct Never {} # TODO: Make this an enum
 
 # Printing
-# Only the function `printToStdout(U8)` is builtin. Here, we define the concept
-# of writers (types that have a `write` function). The `print` function expects
-# a value with a dump function, which is used to serialize the value.
+# Only the function `print_to_stdout(U8)` is builtin. Here, we define the
+# concept of writers (types that have a `write` function). The `print` function
+# expects a value with a dump function, which is used to serialize the value.
 struct StdoutWriter {}
-fun write(sow: StdoutWriter, c: U8) { printToStdout(c) }
+fun write(sow: StdoutWriter, c: U8) { print_to_stdout(c) }
 fun print[T](value: T) { value.dump(StdoutWriter.{}) }
-fun println[T](value: T) { print(value) StdoutWriter.{}.write(10.toU8()) }
+fun println[T](value: T) { print(value) StdoutWriter.{}.write(10.to_U8()) }
 
 # Int
 # Integers are built into the language. There are several types with different
@@ -31,21 +31,70 @@ fun println[T](value: T) { print(value) StdoutWriter.{}.write(10.toU8()) }
 # - multiply(Int, Int): Int
 # - divide(Int, Int): Int
 # - modulo(Int, Int): Int
-# - to<OtherInt>(Int): OtherInt, e.g. toU8() for non-U8 ints
+# - compare_to(Int, Int): Ordering
+# - to_<OtherInt>(Int): OtherInt, e.g. to_U8() for non-U8 ints
+fun is_less_than(a: U8, b: U8): Bool { return a.compare_to(b).is_less() }
+fun equals(a: U8, b: U8): Bool { return a.compare_to(b).is_equal() }
+fun is_greater_than(a: U8, b: U8): Bool { return a.compare_to(b).is_greater() }
+fun is_at_least(a: U8, b: U8): Bool { return a.compare_to(b).is_greater_or_equal() }
+fun is_at_most(a: U8, b: U8): Bool { return a.compare_to(b).is_less_or_equal() }
+fun is_less_than(a: U16, b: U16): Bool { return a.compare_to(b).is_less() }
+fun equals(a: U16, b: U16): Bool { return a.compare_to(b).is_equal() }
+fun is_greater_than(a: U16, b: U16): Bool { return a.compare_to(b).is_greater() }
+fun is_at_least(a: U16, b: U16): Bool { return a.compare_to(b).is_greater_or_equal() }
+fun is_at_most(a: U16, b: U16): Bool { return a.compare_to(b).is_less_or_equal() }
+fun is_less_than(a: U32, b: U32): Bool { return a.compare_to(b).is_less() }
+fun equals(a: U32, b: U32): Bool { return a.compare_to(b).is_equal() }
+fun is_greater_than(a: U32, b: U32): Bool { return a.compare_to(b).is_greater() }
+fun is_at_least(a: U32, b: U32): Bool { return a.compare_to(b).is_greater_or_equal() }
+fun is_at_most(a: U32, b: U32): Bool { return a.compare_to(b).is_less_or_equal() }
+fun is_less_than(a: U64, b: U64): Bool { return a.compare_to(b).is_less() }
+fun equals(a: U64, b: U64): Bool { return a.compare_to(b).is_equal() }
+fun is_greater_than(a: U64, b: U64): Bool { return a.compare_to(b).is_greater() }
+fun is_at_least(a: U64, b: U64): Bool { return a.compare_to(b).is_greater_or_equal() }
+fun is_at_most(a: U64, b: U64): Bool { return a.compare_to(b).is_less_or_equal() }
+fun is_less_than(a: I8, b: I8): Bool { return a.compare_to(b).is_less() }
+fun equals(a: I8, b: I8): Bool { return a.compare_to(b).is_equal() }
+fun is_greater_than(a: I8, b: I8): Bool { return a.compare_to(b).is_greater() }
+fun is_at_least(a: I8, b: I8): Bool { return a.compare_to(b).is_greater_or_equal() }
+fun is_at_most(a: I8, b: I8): Bool { return a.compare_to(b).is_less_or_equal() }
+fun is_less_than(a: I16, b: I16): Bool { return a.compare_to(b).is_less() }
+fun equals(a: I16, b: I16): Bool { return a.compare_to(b).is_equal() }
+fun is_greater_than(a: I16, b: I16): Bool { return a.compare_to(b).is_greater() }
+fun is_at_least(a: I16, b: I16): Bool { return a.compare_to(b).is_greater_or_equal() }
+fun is_at_most(a: I16, b: I16): Bool { return a.compare_to(b).is_less_or_equal() }
+fun is_less_than(a: I32, b: I32): Bool { return a.compare_to(b).is_less() }
+fun equals(a: I32, b: I32): Bool { return a.compare_to(b).is_equal() }
+fun is_greater_than(a: I32, b: I32): Bool { return a.compare_to(b).is_greater() }
+fun is_at_least(a: I32, b: I32): Bool { return a.compare_to(b).is_greater_or_equal() }
+fun is_at_most(a: I32, b: I32): Bool { return a.compare_to(b).is_less_or_equal() }
+fun is_less_than(a: I64, b: I64): Bool { return a.compare_to(b).is_less() }
+fun equals(a: I64, b: I64): Bool { return a.compare_to(b).is_equal() }
+fun is_greater_than(a: I64, b: I64): Bool { return a.compare_to(b).is_greater() }
+fun is_at_least(a: I64, b: I64): Bool { return a.compare_to(b).is_greater_or_equal() }
+fun is_at_most(a: I64, b: I64): Bool { return a.compare_to(b).is_less_or_equal() }
 fun dump[W](i: U8, writer: W) {
-  writer.write(i.divide(100.toU8()).modulo(10.toU8()).add(48.toU8()))
-  writer.write(i.divide(10.toU8()).modulo(10.toU8()).add(48.toU8()))
-  writer.write(i.modulo(10.toU8()).add(48.toU8()))
+  if i.is_at_least(100.to_U8()) {
+    writer.write(i.divide(100.to_U8()).modulo(10.to_U8()).add(48.to_U8()))
+  }
+  if i.is_at_least(10.to_U8()) {
+    writer.write(i.divide(10.to_U8()).modulo(10.to_U8()).add(48.to_U8()))
+  }
+  writer.write(i.modulo(10.to_U8()).add(48.to_U8()))
 }
 fun dump[W](i: i16, writer: W) {
   # TODO: implement
-  writer.write(i.divide(10).toU8().add(48.toU8()))
-  writer.write(i.modulo(10).toU8().add(48.toU8()))
+  writer.write(i.divide(10).to_U8().add(48.to_U8()))
+  writer.write(i.modulo(10).to_U8().add(48.to_U8()))
 }
 
-# Order
-# An ordering between numbers.
-enum Order { less, equal, greater }
+# Ordering
+enum Ordering { less, equal, greater }
+fun is_less(o: Ordering): Bool { return o is less }
+fun is_equal(o: Ordering): Bool { return o is less }
+fun is_greater(o: Ordering): Bool { return o is less }
+fun is_less_or_equal(o: Ordering): Bool { return o.is_less().or(o.is_equal()) }
+fun is_greater_or_equal(o: Ordering): Bool { return o.is_greater().or(o.is_equal()) }
 
 # Bool
 enum Bool { true, false }
@@ -56,27 +105,27 @@ fun xor(a: Bool, b: Bool): Bool { if a { return not(b) } return b }
 fun implies(a: Bool, b: Bool): Bool { if a { return b } return Bool.true() }
 fun dump[W](b: Bool, writer: W) {
   if b { 
-    writer.write(116.toU8()) # t
-    writer.write(114.toU8()) # r
-    writer.write(117.toU8()) # u
-    writer.write(101.toU8()) # e
+    writer.write(116.to_U8()) # t
+    writer.write(114.to_U8()) # r
+    writer.write(117.to_U8()) # u
+    writer.write(101.to_U8()) # e
   } else {
-    writer.write(102.toU8()) # f
-    writer.write(97.toU8())  # a
-    writer.write(108.toU8()) # l
-    writer.write(115.toU8()) # s
-    writer.write(101.toU8()) # e
+    writer.write(102.to_U8()) # f
+    writer.write(97.to_U8())  # a
+    writer.write(108.to_U8()) # l
+    writer.write(115.to_U8()) # s
+    writer.write(101.to_U8()) # e
   }
 }
 
 # Ref
 # Martinaise has no typed pointers, but these two builtin functions exist:
-# - addressOf[T](T): U64
-# - followAddress[T](U64): T
+# - address_of[T](T): U64
+# - follow_address[T](U64): T
 # Here, we build some type-safe abstractions on top.
 struct Ref[T] { address: U64 }
-fun ref[T](value: T): Ref[T] { Ref[T].{ address = addressOf(value) } }
-fun deref[T](ptr: Ref[T]): T { followAddress[T](ptr.address) }
+fun ref[T](value: T): Ref[T] { Ref[T].{ address = address_of(value) } }
+fun deref[T](ptr: Ref[T]): T { follow_address[T](ptr.address) }
 fun cast[T, U](value: Ref[T]): Ref[U] { Ref[U].{ address = value.address } }
 # fun malloc[T](): T { malloc[T]() }
 # fun size[T](): U64 {}
@@ -90,7 +139,7 @@ struct Vec[T] {
   len: U64,
 }
 fun push[T](vec: Ref[Vec[T]], item: T) {
-  #vec.len = vec.len.deref().add(1.toU64())
+  #vec.len = vec.len.deref().add(1.to_U64())
   Nothing.{}
 }
 
@@ -112,29 +161,29 @@ fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] {
 ##########
 
 fun main(): I64 {
-  #var vec = Vec[I64].{ len = 0.toU64() }
+  #var vec = Vec[I64].{ len = 0.to_U64() }
   #vec.ref().push(3)
-  #print(vec.len.toU8().add(48.toU8()))
+  #print(vec.len.to_U8().add(48.to_U8()))
 
   #if Bool.true() {
-  #  print(108.toU8())
+  #  print(108.to_U8())
   #}
   println(Bool.false().or(Bool.true()))
 
-  print(72.toU8())  # H
-  #print(101.toU8()) # e
-  #print(108.toU8()) # l
-  #print(108.toU8()) # l
-  #print(111.toU8()) # o
-  #print(44.toU8())  # ,
-  #print(32.toU8())  # <space>
-  #print(119.toU8()) # w
-  #print(111.toU8()) # o
-  #print(114.toU8()) # r
-  #print(108.toU8()) # l
-  #print(100.toU8()) # d
-  #print(33.toU8())  # !
-  #print(10.toU8())  # <newline>
+  print(72.to_U8())  # H
+  #print(101.to_U8()) # e
+  #print(108.to_U8()) # l
+  #print(108.to_U8()) # l
+  #print(111.to_U8()) # o
+  #print(44.to_U8())  # ,
+  #print(32.to_U8())  # <space>
+  #print(119.to_U8()) # w
+  #print(111.to_U8()) # o
+  #print(114.to_U8()) # r
+  #print(108.to_U8()) # l
+  #print(100.to_U8()) # d
+  #print(33.to_U8())  # !
+  #print(10.to_U8())  # <newline>
   return multiply(add(3, 4), divide(4, 2)).modulo(10)
 }
 

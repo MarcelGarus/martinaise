@@ -97,7 +97,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
 
                 const target_ty = try utils.int_ty_name(alloc, target_config);
                 var signature = ArrayList(u8).init(alloc);
-                try format(signature.writer(), "to{s}({s})", .{target_ty, ty});
+                try format(signature.writer(), "to_{s}({s})", .{target_ty, ty});
                 var body = ArrayList(u8).init(alloc);
                 try format(body.writer(), "  mar_{s} i;\n", .{target_ty});
                 try format(body.writer(), "  i.value = arg0.value;\n", .{});
@@ -106,13 +106,13 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
             }
         }
 
-        { // printToStdout(U8)
+        { // print_to_stdout(U8)
             var body = ArrayList(u8).init(alloc);
             // TODO: Check the return value of putc
             try format(body.writer(), "  putc(arg0.value, stdout);\n", .{});
             try format(body.writer(), "  mar_Nothing n;\n", .{});
             try format(body.writer(), "  return n;\n", .{});
-            try builtin_funs.put("printToStdout(U8)", body.items);
+            try builtin_funs.put("print_to_stdout(U8)", body.items);
         }
     }
 
