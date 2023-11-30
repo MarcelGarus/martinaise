@@ -123,9 +123,9 @@ fn print_expr(writer: anytype, expr: Expr) !void {
             try writer.print("{s}.{{", .{sc.struct_ty});
             var iter = sc.fields.iterator();
             while (iter.next()) |field| {
-                try writer.print("  {s} = _{},", .{field.key_ptr.*, field.value_ptr.*});
+                try writer.print(" {s} = _{},", .{field.key_ptr.*, field.value_ptr.*});
             }
-            try writer.print("}}", .{});
+            try writer.print(" }}", .{});
         },
         .member => |m| try writer.print("_{d}.{s}", .{m.of, m.name}),
         .assign => |assign| {

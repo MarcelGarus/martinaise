@@ -22,11 +22,11 @@ fun println[T](value: T) { print(value) StdoutWriter.{}.write(10_u8) }
 
 | Bool
 enum Bool { true, false }
-fun not(a: Bool): Bool { if a { return Bool.false() } return Bool.true() }
+fun not(a: Bool): Bool { if a { return Bool.false } return Bool.true }
 fun and(a: Bool, b: Bool): Bool { if a { return b } return a }
-fun or(a: Bool, b: Bool): Bool { if a { return Bool.true() } return b }
+fun or(a: Bool, b: Bool): Bool { if a { return Bool.true } return b }
 fun xor(a: Bool, b: Bool): Bool { if a { return not(b) } return b }
-fun implies(a: Bool, b: Bool): Bool { if a { return b } return Bool.true() }
+fun implies(a: Bool, b: Bool): Bool { if a { return b } return Bool.true }
 fun dump[W](b: Bool, writer: W) {
   if b {
     't.dump(writer)
@@ -73,37 +73,37 @@ fun dump[T, W](maybe: Maybe[T], writer: W) {
 enum Ordering { less, equal, greater }
 fun is_less(o: Ordering): Bool {
   switch o {
-    less { Bool.true() }
-    equal { Bool.false() }
-    greater { Bool.false() }
+    less { Bool.true }
+    equal { Bool.false }
+    greater { Bool.false }
   }
 }
 fun is_equal(o: Ordering): Bool {
   switch o {
-    less { Bool.false() }
-    equal { Bool.true() }
-    greater { Bool.false() }
+    less { Bool.false }
+    equal { Bool.true }
+    greater { Bool.false }
   }
 }
 fun is_greater(o: Ordering): Bool {
   switch o {
-    less { Bool.false() }
-    equal { Bool.false() }
-    greater { Bool.true() }
+    less { Bool.false }
+    equal { Bool.false }
+    greater { Bool.true }
   }
 }
 fun is_less_or_equal(o: Ordering): Bool {
   switch o {
-    less { Bool.true() }
-    equal { Bool.true() }
-    greater { Bool.false() }
+    less { Bool.true }
+    equal { Bool.true }
+    greater { Bool.false }
   }
 }
 fun is_greater_or_equal(o: Ordering): Bool {
   switch o {
-    less { Bool.false() }
-    equal { Bool.true() }
-    greater { Bool.true() }
+    less { Bool.false }
+    equal { Bool.true }
+    greater { Bool.true }
   }
 }
 fun dump[W](o: Ordering, writer: W) {
@@ -239,38 +239,36 @@ fun dump[W](c: Char, writer: W) { writer.write(c.value) }
 |  (data)
 |}
 
-|
-
-struct Foo {}
-struct Bar[T] {}
-fun foo[A](foo: Foo, a: A): Nothing { Nothing.{} }
-fun foo[A, B](a: A, bar: Bar[B]): Nothing { Nothing.{} }
-
 fun main(): I64 {
-  |Foo.{}.foo(Bar[Foo].{})
-
-  println(Maybe[U8].some(2_u8))
+  |println(Maybe[U8].some(2_u8))
   |return 0_i64
 
   |var vec = Vec[I64].{ len = 0.to_U64() }
   |vec.ref().push(3)
   |print(vec.len_u8.add(48_u8))
 
-  print('H)
-  print('e)
-  print('l)
-  print('l)
-  print('o)
-  print(',)
-  print(' )
-  print('w)
-  print('o)
-  print('r)
-  print('l)
-  print('d)
-  print('!)
-  print('
-  )
+  println(switch Bool.true {
+    true { 3_u8 }
+    false { 4_u8 }
+  })
+
+  |println(Bool.true.implies(Bool.true.or(Bool.false)))
+
+  |print('H)
+  |print('e)
+  |print('l)
+  |print('l)
+  |print('o)
+  |print(',)
+  |print(' )
+  |print('w)
+  |print('o)
+  |print('r)
+  |print('l)
+  |print('d)
+  |print('!)
+  |print('
+  |)
 
   |print(44_u8)  | ,
   |print(32_u8)  | <space>
