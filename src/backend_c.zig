@@ -16,12 +16,27 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
     try format(out, "// This file is a compiler target.\n", .{});
     try format(out, "#include <stdio.h>\n\n", .{});
     try format(out, "#include <stdint.h>\n\n", .{});
+    try format(out, "#include <stdlib.h>\n\n", .{});
 
     var builtin_tys = StringHashMap(Str).init(alloc);
     var builtin_funs = StringHashMap(Str).init(alloc);
     { // Generate code for builtins
         try builtin_tys.put("Nothing", "struct {}");
         try builtin_tys.put("Never", "struct {\n  // TODO: Is this needed?\n}");
+
+        { // malloc(U64)
+            var signature = String.init(alloc);
+            try format(signature.writer(), "malloc(U64)", .{});
+            var body = String.init(alloc);
+            try format(body.writer(), "  mar_U64 address;\n", .{});
+            try format(body.writer(), "  address.value = (uint64_t)malloc(arg0.value);\n", .{});
+            try format(body.writer(), "  if (!address.value) {{\n", .{});
+            try format(body.writer(), "    printf(\"OOM\");\n", .{});
+            try format(body.writer(), "    exit(-1);\n", .{});
+            try format(body.writer(), "  }}\n", .{});
+            try format(body.writer(), "  return address;\n", .{});
+            try builtin_funs.put(signature.items, body.items);
+        }
 
         for (numbers.all_int_configs()) |config| {
             const ty = try numbers.int_ty_name(alloc, config);
@@ -240,6 +255,12 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                             (try mangle(alloc, fun.ty_args.items[0])).items,
                         });
                         try format(out, "  return size;\n", .{});
+                    } else if (string_mod.starts_with(fun_name, "follow_address")) {
+                        try format(out, "  {s} object = *(({s}*) arg0.value);\n", .{
+                            (try mangle(alloc, fun.ty_args.items[0])).items,
+                            (try mangle(alloc, fun.ty_args.items[0])).items,
+                        });
+                        try format(out, "  return object;\n", .{});
                     } else {
                         std.debug.print("Fun is {s}.\n", .{fun_name});
                         @panic("Unknown builtin fun");

@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include <stdlib.h>
+
 /// Types
 
 // Never
@@ -54,26 +56,15 @@ typedef struct {
   uint64_t value;
 } mar_U64;
 
-// Maybe[U8]
+// Point[U8]
 typedef struct {
-  enum {
-    mar_some,
-    mar_none,
-  } variant;
-  union {
-    mar_U8 mar_some;
-    mar_Nothing mar_none;
-  } as;
-} mar_Maybe_bo_U8_bc_;
+  mar_U8 x;
+  mar_U8 y;
+} mar_Point_bo_U8_bc_;
 
 // StdoutWriter
 typedef struct {
 } mar_StdoutWriter;
-
-// Char
-typedef struct {
-  mar_U8 value;
-} mar_Char;
 
 // Bool
 typedef struct {
@@ -101,40 +92,59 @@ typedef struct {
   } as;
 } mar_Ordering;
 
+// Char
+typedef struct {
+  mar_U8 value;
+} mar_Char;
+
+// Ref[Point[U8]]
+typedef struct {
+  mar_U64 address;
+} mar_Ref_bo_Point_bo_U8_bc__bc_;
+
 /// Function declarations
 
 /* add(I64, I64) */ mar_I64 mar_add_po_I64_c_I64_pc_(mar_I64 arg0, mar_I64 arg1);
 /* add(U8, U8) */ mar_U8 mar_add_po_U8_c_U8_pc_(mar_U8 arg0, mar_U8 arg1);
 /* compare_to(U64, U64) */ mar_Ordering mar_compare__to_po_U64_c_U64_pc_(mar_U64 arg0, mar_U64 arg1);
 /* compare_to(U8, U8) */ mar_Ordering mar_compare__to_po_U8_c_U8_pc_(mar_U8 arg0, mar_U8 arg1);
+/* deref[Point[U8]](Ref[Point[U8]]) */ mar_Point_bo_U8_bc_ mar_deref_bo_Point_bo_U8_bc__bc__po_Ref_bo_Point_bo_U8_bc__bc__pc_(mar_Ref_bo_Point_bo_U8_bc__bc_ arg0);
 /* divide(I64, I64) */ mar_I64 mar_divide_po_I64_c_I64_pc_(mar_I64 arg0, mar_I64 arg1);
 /* divide(U64, U64) */ mar_U64 mar_divide_po_U64_c_U64_pc_(mar_U64 arg0, mar_U64 arg1);
 /* divide(U8, U8) */ mar_U8 mar_divide_po_U8_c_U8_pc_(mar_U8 arg0, mar_U8 arg1);
+/* dumpHexDigit[StdoutWriter](U8, StdoutWriter) */ mar_Nothing mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(mar_U8 arg0, mar_StdoutWriter arg1);
+/* dump[Point[U8], StdoutWriter](Ref[Point[U8]], StdoutWriter) */ mar_Nothing mar_dump_bo_Point_bo_U8_bc__c_StdoutWriter_bc__po_Ref_bo_Point_bo_U8_bc__bc__c_StdoutWriter_pc_(mar_Ref_bo_Point_bo_U8_bc__bc_ arg0, mar_StdoutWriter arg1);
 /* dump[StdoutWriter](Bool, StdoutWriter) */ mar_Nothing mar_dump_bo_StdoutWriter_bc__po_Bool_c_StdoutWriter_pc_(mar_Bool arg0, mar_StdoutWriter arg1);
 /* dump[StdoutWriter](Char, StdoutWriter) */ mar_Nothing mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(mar_Char arg0, mar_StdoutWriter arg1);
 /* dump[StdoutWriter](U64, StdoutWriter) */ mar_Nothing mar_dump_bo_StdoutWriter_bc__po_U64_c_StdoutWriter_pc_(mar_U64 arg0, mar_StdoutWriter arg1);
 /* dump[StdoutWriter](U8, StdoutWriter) */ mar_Nothing mar_dump_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(mar_U8 arg0, mar_StdoutWriter arg1);
-/* dump[U8, StdoutWriter](Maybe[U8], StdoutWriter) */ mar_Nothing mar_dump_bo_U8_c_StdoutWriter_bc__po_Maybe_bo_U8_bc__c_StdoutWriter_pc_(mar_Maybe_bo_U8_bc_ arg0, mar_StdoutWriter arg1);
+/* dump[U8, StdoutWriter](Point[U8], StdoutWriter) */ mar_Nothing mar_dump_bo_U8_c_StdoutWriter_bc__po_Point_bo_U8_bc__c_StdoutWriter_pc_(mar_Point_bo_U8_bc_ arg0, mar_StdoutWriter arg1);
+/* follow_address[Point[U8]](U64) */ mar_Point_bo_U8_bc_ mar_follow__address_bo_Point_bo_U8_bc__bc__po_U64_pc_(mar_U64 arg0);
 /* implies(Bool, Bool) */ mar_Bool mar_implies_po_Bool_c_Bool_pc_(mar_Bool arg0, mar_Bool arg1);
 /* is_at_least(U64, U64) */ mar_Bool mar_is__at__least_po_U64_c_U64_pc_(mar_U64 arg0, mar_U64 arg1);
 /* is_at_least(U8, U8) */ mar_Bool mar_is__at__least_po_U8_c_U8_pc_(mar_U8 arg0, mar_U8 arg1);
+/* is_greater(Ordering) */ mar_Bool mar_is__greater_po_Ordering_pc_(mar_Ordering arg0);
 /* is_greater_or_equal(Ordering) */ mar_Bool mar_is__greater__or__equal_po_Ordering_pc_(mar_Ordering arg0);
+/* is_greater_than(U8, U8) */ mar_Bool mar_is__greater__than_po_U8_c_U8_pc_(mar_U8 arg0, mar_U8 arg1);
 /* main() */ mar_I64 mar_main_po__pc_();
+/* malloc(U64) */ mar_U64 mar_malloc_po_U64_pc_(mar_U64 arg0);
 /* modulo(I64, I64) */ mar_I64 mar_modulo_po_I64_c_I64_pc_(mar_I64 arg0, mar_I64 arg1);
 /* modulo(U64, U64) */ mar_U64 mar_modulo_po_U64_c_U64_pc_(mar_U64 arg0, mar_U64 arg1);
 /* modulo(U8, U8) */ mar_U8 mar_modulo_po_U8_c_U8_pc_(mar_U8 arg0, mar_U8 arg1);
 /* multiply(I64, I64) */ mar_I64 mar_multiply_po_I64_c_I64_pc_(mar_I64 arg0, mar_I64 arg1);
+/* new[Point[U8]]() */ mar_Ref_bo_Point_bo_U8_bc__bc_ mar_new_bo_Point_bo_U8_bc__bc__po__pc_();
 /* or(Bool, Bool) */ mar_Bool mar_or_po_Bool_c_Bool_pc_(mar_Bool arg0, mar_Bool arg1);
 /* print[Bool](Bool) */ mar_Nothing mar_print_bo_Bool_bc__po_Bool_pc_(mar_Bool arg0);
-/* print[Maybe[U8]](Maybe[U8]) */ mar_Nothing mar_print_bo_Maybe_bo_U8_bc__bc__po_Maybe_bo_U8_bc__pc_(mar_Maybe_bo_U8_bc_ arg0);
+/* print[Point[U8]](Point[U8]) */ mar_Nothing mar_print_bo_Point_bo_U8_bc__bc__po_Point_bo_U8_bc__pc_(mar_Point_bo_U8_bc_ arg0);
+/* print[Ref[Point[U8]]](Ref[Point[U8]]) */ mar_Nothing mar_print_bo_Ref_bo_Point_bo_U8_bc__bc__bc__po_Ref_bo_Point_bo_U8_bc__bc__pc_(mar_Ref_bo_Point_bo_U8_bc__bc_ arg0);
 /* print[U64](U64) */ mar_Nothing mar_print_bo_U64_bc__po_U64_pc_(mar_U64 arg0);
-/* print[U8](U8) */ mar_Nothing mar_print_bo_U8_bc__po_U8_pc_(mar_U8 arg0);
 /* print_to_stdout(U8) */ mar_Nothing mar_print__to__stdout_po_U8_pc_(mar_U8 arg0);
 /* println[Bool](Bool) */ mar_Nothing mar_println_bo_Bool_bc__po_Bool_pc_(mar_Bool arg0);
-/* println[Maybe[U8]](Maybe[U8]) */ mar_Nothing mar_println_bo_Maybe_bo_U8_bc__bc__po_Maybe_bo_U8_bc__pc_(mar_Maybe_bo_U8_bc_ arg0);
+/* println[Point[U8]](Point[U8]) */ mar_Nothing mar_println_bo_Point_bo_U8_bc__bc__po_Point_bo_U8_bc__pc_(mar_Point_bo_U8_bc_ arg0);
+/* println[Ref[Point[U8]]](Ref[Point[U8]]) */ mar_Nothing mar_println_bo_Ref_bo_Point_bo_U8_bc__bc__bc__po_Ref_bo_Point_bo_U8_bc__bc__pc_(mar_Ref_bo_Point_bo_U8_bc__bc_ arg0);
 /* println[U64](U64) */ mar_Nothing mar_println_bo_U64_bc__po_U64_pc_(mar_U64 arg0);
-/* println[U8](U8) */ mar_Nothing mar_println_bo_U8_bc__po_U8_pc_(mar_U8 arg0);
-/* size_of_type[I64]() */ mar_U64 mar_size__of__type_bo_I64_bc__po__pc_();
+/* size_of_type[Point[U8]]() */ mar_U64 mar_size__of__type_bo_Point_bo_U8_bc__bc__po__pc_();
+/* subtract(U8, U8) */ mar_U8 mar_subtract_po_U8_c_U8_pc_(mar_U8 arg0, mar_U8 arg1);
 /* to_U8(U64) */ mar_U8 mar_to__U8_po_U64_pc_(mar_U64 arg0);
 /* write(StdoutWriter, U8) */ mar_Nothing mar_write_po_StdoutWriter_c_U8_pc_(mar_StdoutWriter arg0, mar_U8 arg1);
 
@@ -172,6 +182,15 @@ mar_Ordering mar_compare__to_po_U8_c_U8_pc_(mar_U8 arg0, mar_U8 arg1) {
   return ordering;
 }
 
+// deref[Point[U8]](Ref[Point[U8]])
+mar_Point_bo_U8_bc_ mar_deref_bo_Point_bo_U8_bc__bc__po_Ref_bo_Point_bo_U8_bc__bc__pc_(mar_Ref_bo_Point_bo_U8_bc__bc_ arg0) {
+  expr_0: mar_Ref_bo_Point_bo_U8_bc__bc_ _0 = arg0;
+  expr_1: mar_U64 _1 = _0.address;
+  expr_2: mar_Point_bo_U8_bc_ _2 = mar_follow__address_bo_Point_bo_U8_bc__bc__po_U64_pc_(_1);
+  expr_3: // end
+  return _2;
+}
+
 // divide(I64, I64)
 mar_I64 mar_divide_po_I64_c_I64_pc_(mar_I64 arg0, mar_I64 arg1) {
   mar_I64 i;
@@ -191,6 +210,158 @@ mar_U8 mar_divide_po_U8_c_U8_pc_(mar_U8 arg0, mar_U8 arg1) {
   mar_U8 i;
   i.value = arg0.value / arg1.value;
   return i;
+}
+
+// dumpHexDigit[StdoutWriter](U8, StdoutWriter)
+mar_Nothing mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(mar_U8 arg0, mar_StdoutWriter arg1) {
+  expr_0: mar_U8 _0 = arg0;
+  expr_1: mar_StdoutWriter _1 = arg1;
+  expr_2: mar_U8 _2;
+  expr_3: mar_U8 _3; _3.value = 9ULL;
+  expr_4: mar_Bool _4 = mar_is__greater__than_po_U8_c_U8_pc_(_0, _3);
+  expr_5: if (_4.variant == mar_true) goto expr_7;
+  expr_6: goto expr_15;
+  expr_7: mar_U8 _7; _7.value = 10ULL;
+  expr_8: mar_U8 _8 = mar_subtract_po_U8_c_U8_pc_(_0, _7);
+  expr_9: mar_U8 _9; _9.value = 97ULL;
+  expr_10: mar_Char _10; _10.value = _9;
+  expr_11: mar_U8 _11 = _10.value;
+  expr_12: mar_U8 _12 = mar_add_po_U8_c_U8_pc_(_8, _11);
+  expr_13: _2 = _12; mar_Nothing _13;
+  expr_14: goto expr_21;
+  expr_15: mar_U8 _15; _15.value = 48ULL;
+  expr_16: mar_Char _16; _16.value = _15;
+  expr_17: mar_U8 _17 = _16.value;
+  expr_18: mar_U8 _18 = mar_add_po_U8_c_U8_pc_(_0, _17);
+  expr_19: _2 = _18; mar_Nothing _19;
+  expr_20: goto expr_21;
+  expr_21: mar_Nothing _21 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _2);
+  expr_22: // end
+  return _21;
+}
+
+// dump[Point[U8], StdoutWriter](Ref[Point[U8]], StdoutWriter)
+mar_Nothing mar_dump_bo_Point_bo_U8_bc__c_StdoutWriter_bc__po_Ref_bo_Point_bo_U8_bc__bc__c_StdoutWriter_pc_(mar_Ref_bo_Point_bo_U8_bc__bc_ arg0, mar_StdoutWriter arg1) {
+  expr_0: mar_Ref_bo_Point_bo_U8_bc__bc_ _0 = arg0;
+  expr_1: mar_StdoutWriter _1 = arg1;
+  expr_2: mar_U8 _2; _2.value = 48ULL;
+  expr_3: mar_Char _3; _3.value = _2;
+  expr_4: mar_Nothing _4 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_3, _1);
+  expr_5: mar_U8 _5; _5.value = 120ULL;
+  expr_6: mar_Char _6; _6.value = _5;
+  expr_7: mar_Nothing _7 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_6, _1);
+  expr_8: mar_U64 _8 = _0.address;
+  expr_9: mar_U64 _9; _9.value = 1152921504606846976ULL;
+  expr_10: mar_U64 _10 = mar_divide_po_U64_c_U64_pc_(_8, _9);
+  expr_11: mar_U64 _11; _11.value = 16ULL;
+  expr_12: mar_U64 _12 = mar_modulo_po_U64_c_U64_pc_(_10, _11);
+  expr_13: mar_U8 _13 = mar_to__U8_po_U64_pc_(_12);
+  expr_14: mar_Nothing _14 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_13, _1);
+  expr_15: mar_U64 _15 = _0.address;
+  expr_16: mar_U64 _16; _16.value = 72057594037927936ULL;
+  expr_17: mar_U64 _17 = mar_divide_po_U64_c_U64_pc_(_15, _16);
+  expr_18: mar_U64 _18; _18.value = 16ULL;
+  expr_19: mar_U64 _19 = mar_modulo_po_U64_c_U64_pc_(_17, _18);
+  expr_20: mar_U8 _20 = mar_to__U8_po_U64_pc_(_19);
+  expr_21: mar_Nothing _21 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_20, _1);
+  expr_22: mar_U64 _22 = _0.address;
+  expr_23: mar_U64 _23; _23.value = 4503599627370496ULL;
+  expr_24: mar_U64 _24 = mar_divide_po_U64_c_U64_pc_(_22, _23);
+  expr_25: mar_U64 _25; _25.value = 16ULL;
+  expr_26: mar_U64 _26 = mar_modulo_po_U64_c_U64_pc_(_24, _25);
+  expr_27: mar_U8 _27 = mar_to__U8_po_U64_pc_(_26);
+  expr_28: mar_Nothing _28 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_27, _1);
+  expr_29: mar_U64 _29 = _0.address;
+  expr_30: mar_U64 _30; _30.value = 281474976710656ULL;
+  expr_31: mar_U64 _31 = mar_divide_po_U64_c_U64_pc_(_29, _30);
+  expr_32: mar_U64 _32; _32.value = 16ULL;
+  expr_33: mar_U64 _33 = mar_modulo_po_U64_c_U64_pc_(_31, _32);
+  expr_34: mar_U8 _34 = mar_to__U8_po_U64_pc_(_33);
+  expr_35: mar_Nothing _35 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_34, _1);
+  expr_36: mar_U64 _36 = _0.address;
+  expr_37: mar_U64 _37; _37.value = 17592186044416ULL;
+  expr_38: mar_U64 _38 = mar_divide_po_U64_c_U64_pc_(_36, _37);
+  expr_39: mar_U64 _39; _39.value = 16ULL;
+  expr_40: mar_U64 _40 = mar_modulo_po_U64_c_U64_pc_(_38, _39);
+  expr_41: mar_U8 _41 = mar_to__U8_po_U64_pc_(_40);
+  expr_42: mar_Nothing _42 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_41, _1);
+  expr_43: mar_U64 _43 = _0.address;
+  expr_44: mar_U64 _44; _44.value = 1099511627776ULL;
+  expr_45: mar_U64 _45 = mar_divide_po_U64_c_U64_pc_(_43, _44);
+  expr_46: mar_U64 _46; _46.value = 16ULL;
+  expr_47: mar_U64 _47 = mar_modulo_po_U64_c_U64_pc_(_45, _46);
+  expr_48: mar_U8 _48 = mar_to__U8_po_U64_pc_(_47);
+  expr_49: mar_Nothing _49 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_48, _1);
+  expr_50: mar_U64 _50 = _0.address;
+  expr_51: mar_U64 _51; _51.value = 68719476736ULL;
+  expr_52: mar_U64 _52 = mar_divide_po_U64_c_U64_pc_(_50, _51);
+  expr_53: mar_U64 _53; _53.value = 16ULL;
+  expr_54: mar_U64 _54 = mar_modulo_po_U64_c_U64_pc_(_52, _53);
+  expr_55: mar_U8 _55 = mar_to__U8_po_U64_pc_(_54);
+  expr_56: mar_Nothing _56 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_55, _1);
+  expr_57: mar_U64 _57 = _0.address;
+  expr_58: mar_U64 _58; _58.value = 4294967296ULL;
+  expr_59: mar_U64 _59 = mar_divide_po_U64_c_U64_pc_(_57, _58);
+  expr_60: mar_U64 _60; _60.value = 16ULL;
+  expr_61: mar_U64 _61 = mar_modulo_po_U64_c_U64_pc_(_59, _60);
+  expr_62: mar_U8 _62 = mar_to__U8_po_U64_pc_(_61);
+  expr_63: mar_Nothing _63 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_62, _1);
+  expr_64: mar_U64 _64 = _0.address;
+  expr_65: mar_U64 _65; _65.value = 268435456ULL;
+  expr_66: mar_U64 _66 = mar_divide_po_U64_c_U64_pc_(_64, _65);
+  expr_67: mar_U64 _67; _67.value = 16ULL;
+  expr_68: mar_U64 _68 = mar_modulo_po_U64_c_U64_pc_(_66, _67);
+  expr_69: mar_U8 _69 = mar_to__U8_po_U64_pc_(_68);
+  expr_70: mar_Nothing _70 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_69, _1);
+  expr_71: mar_U64 _71 = _0.address;
+  expr_72: mar_U64 _72; _72.value = 16777216ULL;
+  expr_73: mar_U64 _73 = mar_divide_po_U64_c_U64_pc_(_71, _72);
+  expr_74: mar_U64 _74; _74.value = 16ULL;
+  expr_75: mar_U64 _75 = mar_modulo_po_U64_c_U64_pc_(_73, _74);
+  expr_76: mar_U8 _76 = mar_to__U8_po_U64_pc_(_75);
+  expr_77: mar_Nothing _77 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_76, _1);
+  expr_78: mar_U64 _78 = _0.address;
+  expr_79: mar_U64 _79; _79.value = 1048576ULL;
+  expr_80: mar_U64 _80 = mar_divide_po_U64_c_U64_pc_(_78, _79);
+  expr_81: mar_U64 _81; _81.value = 16ULL;
+  expr_82: mar_U64 _82 = mar_modulo_po_U64_c_U64_pc_(_80, _81);
+  expr_83: mar_U8 _83 = mar_to__U8_po_U64_pc_(_82);
+  expr_84: mar_Nothing _84 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_83, _1);
+  expr_85: mar_U64 _85 = _0.address;
+  expr_86: mar_U64 _86; _86.value = 65536ULL;
+  expr_87: mar_U64 _87 = mar_divide_po_U64_c_U64_pc_(_85, _86);
+  expr_88: mar_U64 _88; _88.value = 16ULL;
+  expr_89: mar_U64 _89 = mar_modulo_po_U64_c_U64_pc_(_87, _88);
+  expr_90: mar_U8 _90 = mar_to__U8_po_U64_pc_(_89);
+  expr_91: mar_Nothing _91 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_90, _1);
+  expr_92: mar_U64 _92 = _0.address;
+  expr_93: mar_U64 _93; _93.value = 4096ULL;
+  expr_94: mar_U64 _94 = mar_divide_po_U64_c_U64_pc_(_92, _93);
+  expr_95: mar_U64 _95; _95.value = 16ULL;
+  expr_96: mar_U64 _96 = mar_modulo_po_U64_c_U64_pc_(_94, _95);
+  expr_97: mar_U8 _97 = mar_to__U8_po_U64_pc_(_96);
+  expr_98: mar_Nothing _98 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_97, _1);
+  expr_99: mar_U64 _99 = _0.address;
+  expr_100: mar_U64 _100; _100.value = 256ULL;
+  expr_101: mar_U64 _101 = mar_divide_po_U64_c_U64_pc_(_99, _100);
+  expr_102: mar_U64 _102; _102.value = 16ULL;
+  expr_103: mar_U64 _103 = mar_modulo_po_U64_c_U64_pc_(_101, _102);
+  expr_104: mar_U8 _104 = mar_to__U8_po_U64_pc_(_103);
+  expr_105: mar_Nothing _105 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_104, _1);
+  expr_106: mar_U64 _106 = _0.address;
+  expr_107: mar_U64 _107; _107.value = 16ULL;
+  expr_108: mar_U64 _108 = mar_divide_po_U64_c_U64_pc_(_106, _107);
+  expr_109: mar_U64 _109; _109.value = 16ULL;
+  expr_110: mar_U64 _110 = mar_modulo_po_U64_c_U64_pc_(_108, _109);
+  expr_111: mar_U8 _111 = mar_to__U8_po_U64_pc_(_110);
+  expr_112: mar_Nothing _112 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_111, _1);
+  expr_113: mar_U64 _113 = _0.address;
+  expr_114: mar_U64 _114; _114.value = 16ULL;
+  expr_115: mar_U64 _115 = mar_modulo_po_U64_c_U64_pc_(_113, _114);
+  expr_116: mar_U8 _116 = mar_to__U8_po_U64_pc_(_115);
+  expr_117: mar_Nothing _117 = mar_dumpHexDigit_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_116, _1);
+  expr_118: // end
+  return _117;
 }
 
 // dump[StdoutWriter](Bool, StdoutWriter)
@@ -630,52 +801,34 @@ mar_Nothing mar_dump_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(mar_U8 arg0, m
   return _40;
 }
 
-// dump[U8, StdoutWriter](Maybe[U8], StdoutWriter)
-mar_Nothing mar_dump_bo_U8_c_StdoutWriter_bc__po_Maybe_bo_U8_bc__c_StdoutWriter_pc_(mar_Maybe_bo_U8_bc_ arg0, mar_StdoutWriter arg1) {
-  expr_0: mar_Maybe_bo_U8_bc_ _0 = arg0;
+// dump[U8, StdoutWriter](Point[U8], StdoutWriter)
+mar_Nothing mar_dump_bo_U8_c_StdoutWriter_bc__po_Point_bo_U8_bc__c_StdoutWriter_pc_(mar_Point_bo_U8_bc_ arg0, mar_StdoutWriter arg1) {
+  expr_0: mar_Point_bo_U8_bc_ _0 = arg0;
   expr_1: mar_StdoutWriter _1 = arg1;
-  expr_2: mar_Nothing _2;
-  expr_3: if (_0.variant == mar_some) goto expr_6;
-  expr_4: if (_0.variant == mar_none) goto expr_28;
-  expr_5: goto expr_3;
-  expr_6: mar_U8 _6 = _0.as.mar_some;
-  expr_7: mar_U8 _7; _7.value = 115ULL;
+  expr_2: mar_U8 _2; _2.value = 40ULL;
+  expr_3: mar_Char _3; _3.value = _2;
+  expr_4: mar_Nothing _4 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_3, _1);
+  expr_5: mar_U8 _5 = _0.x;
+  expr_6: mar_Nothing _6 = mar_dump_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_5, _1);
+  expr_7: mar_U8 _7; _7.value = 44ULL;
   expr_8: mar_Char _8; _8.value = _7;
   expr_9: mar_Nothing _9 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_8, _1);
-  expr_10: mar_U8 _10; _10.value = 111ULL;
+  expr_10: mar_U8 _10; _10.value = 32ULL;
   expr_11: mar_Char _11; _11.value = _10;
   expr_12: mar_Nothing _12 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_11, _1);
-  expr_13: mar_U8 _13; _13.value = 109ULL;
-  expr_14: mar_Char _14; _14.value = _13;
-  expr_15: mar_Nothing _15 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_14, _1);
-  expr_16: mar_U8 _16; _16.value = 101ULL;
-  expr_17: mar_Char _17; _17.value = _16;
-  expr_18: mar_Nothing _18 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_17, _1);
-  expr_19: mar_U8 _19; _19.value = 40ULL;
-  expr_20: mar_Char _20; _20.value = _19;
-  expr_21: mar_Nothing _21 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_20, _1);
-  expr_22: mar_Nothing _22 = mar_dump_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_6, _1);
-  expr_23: mar_U8 _23; _23.value = 41ULL;
-  expr_24: mar_Char _24; _24.value = _23;
-  expr_25: mar_Nothing _25 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_24, _1);
-  expr_26: _2 = _25; mar_Nothing _26;
-  expr_27: goto expr_43;
-  expr_28: mar_Nothing _28 = _0.as.mar_none;
-  expr_29: mar_U8 _29; _29.value = 110ULL;
-  expr_30: mar_Char _30; _30.value = _29;
-  expr_31: mar_Nothing _31 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_30, _1);
-  expr_32: mar_U8 _32; _32.value = 111ULL;
-  expr_33: mar_Char _33; _33.value = _32;
-  expr_34: mar_Nothing _34 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_33, _1);
-  expr_35: mar_U8 _35; _35.value = 110ULL;
-  expr_36: mar_Char _36; _36.value = _35;
-  expr_37: mar_Nothing _37 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_36, _1);
-  expr_38: mar_U8 _38; _38.value = 101ULL;
-  expr_39: mar_Char _39; _39.value = _38;
-  expr_40: mar_Nothing _40 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_39, _1);
-  expr_41: _2 = _40; mar_Nothing _41;
-  expr_42: goto expr_43;
-  expr_43: // end
+  expr_13: mar_U8 _13 = _0.y;
+  expr_14: mar_Nothing _14 = mar_dump_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_13, _1);
+  expr_15: mar_U8 _15; _15.value = 41ULL;
+  expr_16: mar_Char _16; _16.value = _15;
+  expr_17: mar_Nothing _17 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_16, _1);
+  expr_18: // end
+  return _17;
+}
+
+// follow_address[Point[U8]](U64)
+mar_Point_bo_U8_bc_ mar_follow__address_bo_Point_bo_U8_bc__bc__po_U64_pc_(mar_U64 arg0) {
+  mar_Point_bo_U8_bc_ object = *((mar_Point_bo_U8_bc_*) arg0.value);
+  return object;
 }
 
 // implies(Bool, Bool)
@@ -714,6 +867,32 @@ mar_Bool mar_is__at__least_po_U8_c_U8_pc_(mar_U8 arg0, mar_U8 arg1) {
   expr_5: // end
 }
 
+// is_greater(Ordering)
+mar_Bool mar_is__greater_po_Ordering_pc_(mar_Ordering arg0) {
+  expr_0: mar_Ordering _0 = arg0;
+  expr_1: mar_Bool _1;
+  expr_2: if (_0.variant == mar_less) goto expr_6;
+  expr_3: if (_0.variant == mar_equal) goto expr_11;
+  expr_4: if (_0.variant == mar_greater) goto expr_16;
+  expr_5: goto expr_2;
+  expr_6: mar_Nothing _6 = _0.as.mar_less;
+  expr_7: mar_Nothing _7;
+  expr_8: mar_Bool _8; _8.variant = mar_false; _8.as.mar_false = _7;
+  expr_9: _1 = _8; mar_Nothing _9;
+  expr_10: goto expr_21;
+  expr_11: mar_Nothing _11 = _0.as.mar_equal;
+  expr_12: mar_Nothing _12;
+  expr_13: mar_Bool _13; _13.variant = mar_false; _13.as.mar_false = _12;
+  expr_14: _1 = _13; mar_Nothing _14;
+  expr_15: goto expr_21;
+  expr_16: mar_Nothing _16 = _0.as.mar_greater;
+  expr_17: mar_Nothing _17;
+  expr_18: mar_Bool _18; _18.variant = mar_true; _18.as.mar_true = _17;
+  expr_19: _1 = _18; mar_Nothing _19;
+  expr_20: goto expr_21;
+  expr_21: // end
+}
+
 // is_greater_or_equal(Ordering)
 mar_Bool mar_is__greater__or__equal_po_Ordering_pc_(mar_Ordering arg0) {
   expr_0: mar_Ordering _0 = arg0;
@@ -740,50 +919,55 @@ mar_Bool mar_is__greater__or__equal_po_Ordering_pc_(mar_Ordering arg0) {
   expr_21: // end
 }
 
+// is_greater_than(U8, U8)
+mar_Bool mar_is__greater__than_po_U8_c_U8_pc_(mar_U8 arg0, mar_U8 arg1) {
+  expr_0: mar_U8 _0 = arg0;
+  expr_1: mar_U8 _1 = arg1;
+  expr_2: mar_Ordering _2 = mar_compare__to_po_U8_c_U8_pc_(_0, _1);
+  expr_3: mar_Bool _3 = mar_is__greater_po_Ordering_pc_(_2);
+  expr_4: return _3; mar_Never _4;
+  expr_5: // end
+}
+
 // main()
 mar_I64 mar_main_po__pc_() {
-  expr_0: mar_U8 _0; _0.value = 2ULL;
-  expr_1: mar_Maybe_bo_U8_bc_ _1; _1.variant = mar_some; _1.as.mar_some = _0;
-  expr_2: mar_Nothing _2 = mar_println_bo_Maybe_bo_U8_bc__bc__po_Maybe_bo_U8_bc__pc_(_1);
-  expr_3: mar_U8 _3;
-  expr_4: mar_Nothing _4;
-  expr_5: mar_Bool _5; _5.variant = mar_true; _5.as.mar_true = _4;
-  expr_6: if (_5.variant == mar_true) goto expr_9;
-  expr_7: if (_5.variant == mar_false) goto expr_13;
-  expr_8: goto expr_6;
-  expr_9: mar_Nothing _9 = _5.as.mar_true;
-  expr_10: mar_U8 _10; _10.value = 3ULL;
-  expr_11: _3 = _10; mar_Nothing _11;
-  expr_12: goto expr_17;
-  expr_13: mar_Nothing _13 = _5.as.mar_false;
-  expr_14: mar_U8 _14; _14.value = 4ULL;
-  expr_15: _3 = _14; mar_Nothing _15;
-  expr_16: goto expr_17;
-  expr_17: mar_Nothing _17 = mar_println_bo_U8_bc__po_U8_pc_(_3);
-  expr_18: mar_U64 _18; _18.value = 18446744073709551615ULL;
-  expr_19: mar_Nothing _19 = mar_println_bo_U64_bc__po_U64_pc_(_18);
-  expr_20: mar_U64 _20 = mar_size__of__type_bo_I64_bc__po__pc_();
-  expr_21: mar_Nothing _21 = mar_println_bo_U64_bc__po_U64_pc_(_20);
-  expr_22: mar_Nothing _22;
-  expr_23: mar_Bool _23; _23.variant = mar_true; _23.as.mar_true = _22;
-  expr_24: mar_Nothing _24;
-  expr_25: mar_Bool _25; _25.variant = mar_true; _25.as.mar_true = _24;
-  expr_26: mar_Nothing _26;
-  expr_27: mar_Bool _27; _27.variant = mar_false; _27.as.mar_false = _26;
-  expr_28: mar_Bool _28 = mar_or_po_Bool_c_Bool_pc_(_25, _27);
-  expr_29: mar_Bool _29 = mar_implies_po_Bool_c_Bool_pc_(_23, _28);
-  expr_30: mar_Nothing _30 = mar_println_bo_Bool_bc__po_Bool_pc_(_29);
-  expr_31: mar_I64 _31; _31.value = 3;
-  expr_32: mar_I64 _32; _32.value = 4;
-  expr_33: mar_I64 _33 = mar_add_po_I64_c_I64_pc_(_31, _32);
-  expr_34: mar_I64 _34; _34.value = 4;
-  expr_35: mar_I64 _35; _35.value = 2;
-  expr_36: mar_I64 _36 = mar_divide_po_I64_c_I64_pc_(_34, _35);
-  expr_37: mar_I64 _37 = mar_multiply_po_I64_c_I64_pc_(_33, _36);
-  expr_38: mar_I64 _38; _38.value = 10;
-  expr_39: mar_I64 _39 = mar_modulo_po_I64_c_I64_pc_(_37, _38);
-  expr_40: return _39; mar_Never _40;
-  expr_41: // end
+  expr_0: mar_U64 _0 = mar_size__of__type_bo_Point_bo_U8_bc__bc__po__pc_();
+  expr_1: mar_Nothing _1 = mar_println_bo_U64_bc__po_U64_pc_(_0);
+  expr_2: mar_Ref_bo_Point_bo_U8_bc__bc_ _2 = mar_new_bo_Point_bo_U8_bc__bc__po__pc_();
+  expr_3: mar_Nothing _3 = mar_println_bo_Ref_bo_Point_bo_U8_bc__bc__bc__po_Ref_bo_Point_bo_U8_bc__bc__pc_(_2);
+  expr_4: mar_Point_bo_U8_bc_ _4 = mar_deref_bo_Point_bo_U8_bc__bc__po_Ref_bo_Point_bo_U8_bc__bc__pc_(_2);
+  expr_5: mar_Nothing _5 = mar_println_bo_Point_bo_U8_bc__bc__po_Point_bo_U8_bc__pc_(_4);
+  expr_6: mar_Nothing _6;
+  expr_7: mar_Bool _7; _7.variant = mar_true; _7.as.mar_true = _6;
+  expr_8: mar_Nothing _8;
+  expr_9: mar_Bool _9; _9.variant = mar_true; _9.as.mar_true = _8;
+  expr_10: mar_Nothing _10;
+  expr_11: mar_Bool _11; _11.variant = mar_false; _11.as.mar_false = _10;
+  expr_12: mar_Bool _12 = mar_or_po_Bool_c_Bool_pc_(_9, _11);
+  expr_13: mar_Bool _13 = mar_implies_po_Bool_c_Bool_pc_(_7, _12);
+  expr_14: mar_Nothing _14 = mar_println_bo_Bool_bc__po_Bool_pc_(_13);
+  expr_15: mar_I64 _15; _15.value = 3;
+  expr_16: mar_I64 _16; _16.value = 4;
+  expr_17: mar_I64 _17 = mar_add_po_I64_c_I64_pc_(_15, _16);
+  expr_18: mar_I64 _18; _18.value = 4;
+  expr_19: mar_I64 _19; _19.value = 2;
+  expr_20: mar_I64 _20 = mar_divide_po_I64_c_I64_pc_(_18, _19);
+  expr_21: mar_I64 _21 = mar_multiply_po_I64_c_I64_pc_(_17, _20);
+  expr_22: mar_I64 _22; _22.value = 10;
+  expr_23: mar_I64 _23 = mar_modulo_po_I64_c_I64_pc_(_21, _22);
+  expr_24: return _23; mar_Never _24;
+  expr_25: // end
+}
+
+// malloc(U64)
+mar_U64 mar_malloc_po_U64_pc_(mar_U64 arg0) {
+  mar_U64 address;
+  address.value = (uint64_t)malloc(arg0.value);
+  if (!address.value) {
+    printf("OOM");
+    exit(-1);
+  }
+  return address;
 }
 
 // modulo(I64, I64)
@@ -814,6 +998,15 @@ mar_I64 mar_multiply_po_I64_c_I64_pc_(mar_I64 arg0, mar_I64 arg1) {
   return i;
 }
 
+// new[Point[U8]]()
+mar_Ref_bo_Point_bo_U8_bc__bc_ mar_new_bo_Point_bo_U8_bc__bc__po__pc_() {
+  expr_0: mar_U64 _0 = mar_size__of__type_bo_Point_bo_U8_bc__bc__po__pc_();
+  expr_1: mar_U64 _1 = mar_malloc_po_U64_pc_(_0);
+  expr_2: mar_Ref_bo_Point_bo_U8_bc__bc_ _2; _2.address = _1;
+  expr_3: // end
+  return _2;
+}
+
 // or(Bool, Bool)
 mar_Bool mar_or_po_Bool_c_Bool_pc_(mar_Bool arg0, mar_Bool arg1) {
   expr_0: mar_Bool _0 = arg0;
@@ -839,11 +1032,20 @@ mar_Nothing mar_print_bo_Bool_bc__po_Bool_pc_(mar_Bool arg0) {
   return _2;
 }
 
-// print[Maybe[U8]](Maybe[U8])
-mar_Nothing mar_print_bo_Maybe_bo_U8_bc__bc__po_Maybe_bo_U8_bc__pc_(mar_Maybe_bo_U8_bc_ arg0) {
-  expr_0: mar_Maybe_bo_U8_bc_ _0 = arg0;
+// print[Point[U8]](Point[U8])
+mar_Nothing mar_print_bo_Point_bo_U8_bc__bc__po_Point_bo_U8_bc__pc_(mar_Point_bo_U8_bc_ arg0) {
+  expr_0: mar_Point_bo_U8_bc_ _0 = arg0;
   expr_1: mar_StdoutWriter _1;
-  expr_2: mar_Nothing _2 = mar_dump_bo_U8_c_StdoutWriter_bc__po_Maybe_bo_U8_bc__c_StdoutWriter_pc_(_0, _1);
+  expr_2: mar_Nothing _2 = mar_dump_bo_U8_c_StdoutWriter_bc__po_Point_bo_U8_bc__c_StdoutWriter_pc_(_0, _1);
+  expr_3: // end
+  return _2;
+}
+
+// print[Ref[Point[U8]]](Ref[Point[U8]])
+mar_Nothing mar_print_bo_Ref_bo_Point_bo_U8_bc__bc__bc__po_Ref_bo_Point_bo_U8_bc__bc__pc_(mar_Ref_bo_Point_bo_U8_bc__bc_ arg0) {
+  expr_0: mar_Ref_bo_Point_bo_U8_bc__bc_ _0 = arg0;
+  expr_1: mar_StdoutWriter _1;
+  expr_2: mar_Nothing _2 = mar_dump_bo_Point_bo_U8_bc__c_StdoutWriter_bc__po_Ref_bo_Point_bo_U8_bc__bc__c_StdoutWriter_pc_(_0, _1);
   expr_3: // end
   return _2;
 }
@@ -853,15 +1055,6 @@ mar_Nothing mar_print_bo_U64_bc__po_U64_pc_(mar_U64 arg0) {
   expr_0: mar_U64 _0 = arg0;
   expr_1: mar_StdoutWriter _1;
   expr_2: mar_Nothing _2 = mar_dump_bo_StdoutWriter_bc__po_U64_c_StdoutWriter_pc_(_0, _1);
-  expr_3: // end
-  return _2;
-}
-
-// print[U8](U8)
-mar_Nothing mar_print_bo_U8_bc__po_U8_pc_(mar_U8 arg0) {
-  expr_0: mar_U8 _0 = arg0;
-  expr_1: mar_StdoutWriter _1;
-  expr_2: mar_Nothing _2 = mar_dump_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_0, _1);
   expr_3: // end
   return _2;
 }
@@ -884,10 +1077,21 @@ mar_Nothing mar_println_bo_Bool_bc__po_Bool_pc_(mar_Bool arg0) {
   return _4;
 }
 
-// println[Maybe[U8]](Maybe[U8])
-mar_Nothing mar_println_bo_Maybe_bo_U8_bc__bc__po_Maybe_bo_U8_bc__pc_(mar_Maybe_bo_U8_bc_ arg0) {
-  expr_0: mar_Maybe_bo_U8_bc_ _0 = arg0;
-  expr_1: mar_Nothing _1 = mar_print_bo_Maybe_bo_U8_bc__bc__po_Maybe_bo_U8_bc__pc_(_0);
+// println[Point[U8]](Point[U8])
+mar_Nothing mar_println_bo_Point_bo_U8_bc__bc__po_Point_bo_U8_bc__pc_(mar_Point_bo_U8_bc_ arg0) {
+  expr_0: mar_Point_bo_U8_bc_ _0 = arg0;
+  expr_1: mar_Nothing _1 = mar_print_bo_Point_bo_U8_bc__bc__po_Point_bo_U8_bc__pc_(_0);
+  expr_2: mar_StdoutWriter _2;
+  expr_3: mar_U8 _3; _3.value = 10ULL;
+  expr_4: mar_Nothing _4 = mar_write_po_StdoutWriter_c_U8_pc_(_2, _3);
+  expr_5: // end
+  return _4;
+}
+
+// println[Ref[Point[U8]]](Ref[Point[U8]])
+mar_Nothing mar_println_bo_Ref_bo_Point_bo_U8_bc__bc__bc__po_Ref_bo_Point_bo_U8_bc__bc__pc_(mar_Ref_bo_Point_bo_U8_bc__bc_ arg0) {
+  expr_0: mar_Ref_bo_Point_bo_U8_bc__bc_ _0 = arg0;
+  expr_1: mar_Nothing _1 = mar_print_bo_Ref_bo_Point_bo_U8_bc__bc__bc__po_Ref_bo_Point_bo_U8_bc__bc__pc_(_0);
   expr_2: mar_StdoutWriter _2;
   expr_3: mar_U8 _3; _3.value = 10ULL;
   expr_4: mar_Nothing _4 = mar_write_po_StdoutWriter_c_U8_pc_(_2, _3);
@@ -906,22 +1110,18 @@ mar_Nothing mar_println_bo_U64_bc__po_U64_pc_(mar_U64 arg0) {
   return _4;
 }
 
-// println[U8](U8)
-mar_Nothing mar_println_bo_U8_bc__po_U8_pc_(mar_U8 arg0) {
-  expr_0: mar_U8 _0 = arg0;
-  expr_1: mar_Nothing _1 = mar_print_bo_U8_bc__po_U8_pc_(_0);
-  expr_2: mar_StdoutWriter _2;
-  expr_3: mar_U8 _3; _3.value = 10ULL;
-  expr_4: mar_Nothing _4 = mar_write_po_StdoutWriter_c_U8_pc_(_2, _3);
-  expr_5: // end
-  return _4;
+// size_of_type[Point[U8]]()
+mar_U64 mar_size__of__type_bo_Point_bo_U8_bc__bc__po__pc_() {
+  mar_U64 size;
+  size.value = (uint64_t)sizeof(mar_Point_bo_U8_bc_);
+  return size;
 }
 
-// size_of_type[I64]()
-mar_U64 mar_size__of__type_bo_I64_bc__po__pc_() {
-  mar_U64 size;
-  size.value = (uint64_t)sizeof(mar_I64);
-  return size;
+// subtract(U8, U8)
+mar_U8 mar_subtract_po_U8_c_U8_pc_(mar_U8 arg0, mar_U8 arg1) {
+  mar_U8 i;
+  i.value = arg0.value - arg1.value;
+  return i;
 }
 
 // to_U8(U64)

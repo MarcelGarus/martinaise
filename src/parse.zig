@@ -77,6 +77,24 @@ pub fn parse(alloc: std.mem.Allocator, code: Str) !?ast.Program {
         program.add_builtin_fun(alloc, "size_of_type", ty_args, args, u64_);
     }
 
+    { // malloc(U64): U64
+        const u64_: Ty = .{ .name = "U64", .args = ArrayList(Ty).init(alloc) };
+        var ty_args = ArrayList(Str).init(alloc);
+        var args = ArrayList(ast.Argument).init(alloc);
+        try args.append(.{ .name = "size", .ty = u64_});
+        program.add_builtin_fun(alloc, "malloc", ty_args, args, u64_);
+    }
+
+    { // follow_address[T](U64): T
+        const u64_: Ty = .{ .name = "U64", .args = ArrayList(Ty).init(alloc) };
+        var ty_args = ArrayList(Str).init(alloc);
+        try ty_args.append("T");
+        var args = ArrayList(ast.Argument).init(alloc);
+        try args.append(.{ .name = "address", .ty = u64_});
+        const t: Ty = .{ .name = "T", .args = ArrayList(Ty).init(alloc) };
+        program.add_builtin_fun(alloc, "follow_address", ty_args, args, t);
+    }
+
     // Int stuff.
     for (numbers.all_int_configs()) |config| {
         try program.defs.append(.{ .builtin_ty = try numbers.int_ty_name(alloc, config) });

@@ -227,10 +227,46 @@ fun ref[T](value: T): Ref[T] { Ref[T].{ address = address_of(value) } }
 fun deref[T](ptr: Ref[T]): T { follow_address[T](ptr.address) }
 fun cast[T, U](value: Ref[T]): Ref[U] { Ref[U].{ address = value.address } }
 fun new[T](): Ref[T] { Ref[T].{ address = malloc(size_of_type[T]()) } }
+fun dump[T, W](ref: Ref[T], writer: W) {
+  | note: max u64 is 18446744073709551615
+  '0.dump(writer)
+  'x.dump(writer)
+  ref.address.divide(1152921504606846976_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
+  ref.address.divide(72057594037927936_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
+  ref.address.divide(4503599627370496_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
+  ref.address.divide(281474976710656_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
+  ref.address.divide(17592186044416_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
+  ref.address.divide(1099511627776_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
+  ref.address.divide(68719476736_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
+  ref.address.divide(4294967296_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
+  ref.address.divide(268435456_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
+  ref.address.divide(16777216_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
+  ref.address.divide(1048576_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
+  ref.address.divide(65536_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
+  ref.address.divide(4096_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
+  ref.address.divide(256_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
+  ref.address.divide(16_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
+  ref.address.modulo(16_u64).to_U8().dumpHexDigit(writer)
+}
+fun dumpHexDigit[W](val: U8, writer: W) {
+  writer.write(if val.is_greater_than(9_u8) {
+    val.subtract(10_u8).add('a.value)
+  } else {
+    val.add('0.value)
+  })
+}
 
 struct Point[T] { x: T, y: T }
 fun add[T](a: Point[T], b: Point[T]): Point[T] {
   return Point[T].{ x = a.x.add(b.x), y = a.y.add(b.y) }
+}
+fun dump[T, W](point: Point[T], writer: W) {
+  '(.dump(writer)
+  point.x.dump(writer)
+  ',.dump(writer)
+  ' .dump(writer)
+  point.y.dump(writer)
+  ').dump(writer)
 }
 
 struct Vec[T] {
@@ -264,15 +300,23 @@ fun foo[A, B](foo: A, b: Bar[B]) {}
 fun main(): I64 {
   |Foo.{}.foo(Bar[Foo].{})
 
-  println(Maybe[U8].some(2_u8))
+  |println(Maybe[U8].some(2_u8))
 
-  println(switch Bool.true {
-    true { 3_u8 }
-    false { 4_u8 }
-  })
-  println(18446744073709551615_u64)
+  |println(switch Bool.true {
+  |  true { 3_u8 }
+  |  false { 4_u8 }
+  |})
+  |println(18446744073709551615_u64)
 
-  println(size_of_type[I64]())
+  println(size_of_type[Point[U8]]())
+  var point = new[Point[U8]]()
+  println(point)
+  println(point.deref())
+
+  |var point = Point[U8].{ x = 3_u8, y = 2_u8 }
+  |point.x = 5_u8
+  |println(point)
+  
 
   println(Bool.true.implies(Bool.true.or(Bool.false)))
 
