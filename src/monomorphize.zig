@@ -267,9 +267,10 @@ const Monomorphizer = struct {
         for (arg_tys.items) |ty| {
             _ = try mono_fun.put(.{ .arg = {} }, ty);
         }
-        for (fun.body.items) |expr| {
-            _ = try self.compile_expr(&mono_fun, ty_env, &var_env, expr);
-        }
+
+        const body_result = try self.compile_body(&mono_fun, ty_env, &var_env, fun.body.items);
+        _ = try mono_fun.put(.{ .return_ = body_result }, "Never");
+        // TODO: Make sure body has the correct type
 
         try self.funs.put(signature.items, mono_fun);
 
@@ -505,7 +506,7 @@ const Monomorphizer = struct {
                     if (case.binding) |binding| {
                         try var_env.put(binding, .{ .expr_index = unpacked, .ty = ty });
                     }
-                    
+
                     const body_result = try self.compile_body(fun, ty_env, var_env, case.body.items);
                     if (i == 0) {
                         fun.tys.items[result] = fun.tys.items[body_result];
@@ -527,6 +528,7 @@ const Monomorphizer = struct {
             },
             .return_ => |returned| {
                 const index = try self.compile_expr(fun, ty_env, var_env, returned.*);
+                // TODO: Make sure return has correct type
                 return try fun.put(.{ .return_ = index }, "Never");
             },
             else => {
