@@ -230,10 +230,16 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                 if (fun.is_builtin) {
                     if (builtin_funs.get(fun_name)) |body| {
                         try format(out, "{s}", .{body});
-                    } else if (string_mod.starts_with(fun_name, "addressOf")) {
+                    } else if (string_mod.starts_with(fun_name, "address_of")) {
                         try format(out, "  mar_U64 address;\n", .{});
                         try format(out, "  address.value = (uint64_t)&arg0;\n", .{});
                         try format(out, "  return address;\n", .{});
+                    } else if (string_mod.starts_with(fun_name, "size_of_type")) {
+                        try format(out, "  mar_U64 size;\n", .{});
+                        try format(out, "  size.value = (uint64_t)sizeof({s});\n", .{
+                            (try mangle(alloc, fun.ty_args.items[0])).items,
+                        });
+                        try format(out, "  return size;\n", .{});
                     } else {
                         std.debug.print("Fun is {s}.\n", .{fun_name});
                         @panic("Unknown builtin fun");

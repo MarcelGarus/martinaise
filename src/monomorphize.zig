@@ -218,6 +218,7 @@ const Monomorphizer = struct {
 
     fn compile_function(self: *Self, fun: ast.Fun, ty_env: TyEnv) !Str {
         var signature = String.init(self.alloc);
+        var ty_args = ArrayList(Str).init(self.alloc);
         var arg_tys = ArrayList(Str).init(self.alloc);
         var var_env = VarEnv.init(self.alloc);
 
@@ -229,6 +230,7 @@ const Monomorphizer = struct {
                     try signature.appendSlice(", ");
                 }
                 const arg_ty: Str = ty_env.get(arg) orelse @panic("required type arg doesn't exist in type env");
+                try ty_args.append(arg_ty);
                 try signature.appendSlice(arg_ty);
             }
             try signature.appendSlice("]");
@@ -255,6 +257,7 @@ const Monomorphizer = struct {
         };
         
         var mono_fun = mono.Fun {
+            .ty_args = ty_args,
             .arg_tys = arg_tys,
             .return_ty = return_ty,
             .is_builtin = fun.is_builtin,

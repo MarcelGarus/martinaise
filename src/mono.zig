@@ -24,6 +24,7 @@ pub const Enum = struct { variants: ArrayList(Variant) };
 pub const Variant = struct { name: Str, ty: Str };
 
 pub const Fun = struct {
+    ty_args: ArrayList(Str),
     arg_tys: ArrayList(Str),
     return_ty: Str,
     is_builtin: bool,

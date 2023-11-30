@@ -211,7 +211,6 @@ fun dump[W](int: U64, writer: W) {
   if int.is_at_least(10000_u64) { writer.write(int.divide(10000_u64).modulo(10_u64).to_U8().add('0.value)) }
   if int.is_at_least(1000_u64) { writer.write(int.divide(1000_u64).modulo(10_u64).to_U8().add('0.value)) }
   if int.is_at_least(100_u64) { writer.write(int.divide(100_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(100_u64) { writer.write(int.divide(100_u64).modulo(10_u64).to_U8().add('0.value)) }
   if int.is_at_least(10_u64) { writer.write(int.divide(10_u64).modulo(10_u64).to_U8().add('0.value)) }
   writer.write(int.modulo(10_u64).to_U8().add('0.value))
 }
@@ -254,13 +253,18 @@ fun dump[W](c: Char, writer: W) { writer.write(c.value) }
 |  (data)
 |}
 
-fun main(): I64 {
-  |println(Maybe[U8].some(2_u8))
-  |return 0_i64
 
-  |var vec = Vec[I64].{ len = 0.to_U64() }
-  |vec.ref().push(3)
-  |print(vec.len_u8.add(48_u8))
+| ##########
+
+struct Foo {}
+struct Bar[T] {}
+fun foo[A](foo: Foo, a: A) {}
+fun foo[A, B](foo: A, b: Bar[B]) {}
+
+fun main(): I64 {
+  |Foo.{}.foo(Bar[Foo].{})
+
+  println(Maybe[U8].some(2_u8))
 
   println(switch Bool.true {
     true { 3_u8 }
@@ -268,7 +272,17 @@ fun main(): I64 {
   })
   println(18446744073709551615_u64)
 
-  |println(Bool.true.implies(Bool.true.or(Bool.false)))
+  println(size_of_type[I64]())
+
+  println(Bool.true.implies(Bool.true.or(Bool.false)))
+
+
+  |return 0_i64
+
+  |var vec = Vec[I64].{ len = 0.to_U64() }
+  |vec.ref().push(3)
+  |print(vec.len_u8.add(48_u8))
+
 
   |print('H)
   |print('e)
