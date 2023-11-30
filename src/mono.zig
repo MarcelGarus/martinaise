@@ -2,7 +2,7 @@ const std = @import("std");
 const ArrayList = std.ArrayList; // TODO: Use slices everywhere instead
 const StringArrayHashMap = std.StringArrayHashMap;
 const StringHashMap = std.StringHashMap;
-const Name = @import("ty.zig").Name;
+const Str = @import("string.zig").Str;
 
 pub const Mono = struct {
     ty_defs: StringArrayHashMap(TyDef),
@@ -17,24 +17,24 @@ pub const TyDef = union(enum) {
 };
 
 pub const Struct = struct { fields: ArrayList(Field) };
-pub const Field = struct { name: Name, ty: Name };
+pub const Field = struct { name: Str, ty: Str };
 
 pub const Enum = struct { variants: ArrayList(Variant) };
-pub const Variant = struct { name: Name, ty: Name };
+pub const Variant = struct { name: Str, ty: Str };
 
 pub const Fun = struct {
-    arg_tys: ArrayList(Name),
-    return_ty: Name,
+    arg_tys: ArrayList(Str),
+    return_ty: Str,
     is_builtin: bool,
     body: ArrayList(Expr),
-    tys: ArrayList(Name),
+    tys: ArrayList(Str),
 
     const Self = @This();
 
     pub fn next_index(self: Self) ExprIndex {
         return self.body.items.len;
     }
-    pub fn put(self: *Self, expr: Expr, ty: Name) !ExprIndex {
+    pub fn put(self: *Self, expr: Expr, ty: Str) !ExprIndex {
         const index = self.body.items.len;
         try self.body.append(expr);
         try self.tys.append(ty);
@@ -56,15 +56,15 @@ pub const Expr = union(enum) {
     get_enum_value: GetEnumValue,
     return_: ExprIndex,
 };
-pub const Call = struct { fun: Name, args: ArrayList(ExprIndex) };
-pub const VariantCreation = struct { enum_ty: Name, variant: Name, value: ExprIndex };
-pub const StructCreation = struct { struct_ty: Name, fields: StringHashMap(ExprIndex) };
-pub const Member = struct { of: ExprIndex, name: Name };
+pub const Call = struct { fun: Str, args: ArrayList(ExprIndex) };
+pub const VariantCreation = struct { enum_ty: Str, variant: Str, value: ExprIndex };
+pub const StructCreation = struct { struct_ty: Str, fields: StringHashMap(ExprIndex) };
+pub const Member = struct { of: ExprIndex, name: Str };
 pub const Assign = struct { to: ExprIndex, value: ExprIndex };
 pub const Jump = struct { target: ExprIndex };
 pub const JumpIf = struct { condition: ExprIndex, target: ExprIndex };
-pub const JumpIfVariant = struct { condition: ExprIndex, variant: Name, target: ExprIndex };
-pub const GetEnumValue = struct { of: ExprIndex, variant: Name, ty: Name };
+pub const JumpIfVariant = struct { condition: ExprIndex, variant: Str, target: ExprIndex };
+pub const GetEnumValue = struct { of: ExprIndex, variant: Str, ty: Str };
 
 pub fn print(writer: anytype, mono: Mono) !void {
     {
@@ -83,7 +83,7 @@ pub fn print(writer: anytype, mono: Mono) !void {
     }
 }
 
-fn print_fun(writer: anytype, name: Name, fun: Fun) !void {
+fn print_fun(writer: anytype, name: Str, fun: Fun) !void {
     try writer.print("{s}\n", .{name});
     if (fun.is_builtin) {
         try writer.print("  <builtin>", .{});

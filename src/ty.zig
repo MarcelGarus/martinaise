@@ -2,12 +2,13 @@ const std = @import("std");
 const Alloc = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const StringHashMap = std.StringHashMap;
-
-pub const Name = []const u8;
+const string_mod = @import("string.zig");
+const String = string_mod.String;
+const Str = string_mod.Str;
 
 /// A type such as `Int` or `Maybe[T]`.
 pub const Ty = struct {
-    name: Name,
+    name: Str,
     args: ArrayList(Ty),
 
     // Type arguments to concrete types, for example `T` to `Int`.
@@ -96,8 +97,8 @@ pub const Ty = struct {
     pub fn print_args_of_tys(writer: anytype, args: ?ArrayList(Ty)) !void {
         try print_args(Ty, "{any}", writer, args);
     }
-    pub fn print_args_of_names(writer: anytype, args: ?ArrayList(Name)) !void {
-        try print_args(Name, "{s}", writer, args);
+    pub fn print_args_of_strs(writer: anytype, args: ?ArrayList(Str)) !void {
+        try print_args(Str, "{s}", writer, args);
     }
     fn print_args(comptime T: type, comptime fmt: []const u8, writer: anytype, args: ?ArrayList(T)) !void {
         if (args) |ty_args| {

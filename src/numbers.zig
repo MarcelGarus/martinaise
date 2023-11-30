@@ -2,19 +2,9 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const Ty = @import("ty.zig").Ty;
-const Name = @import("ty.zig").Name;
-
-pub fn starts_with(buf: []const u8, prefix: []const u8) bool {
-    return buf.len >= prefix.len and std.mem.eql(u8, buf[0..prefix.len], prefix);
-}
-
-pub fn cmpNames(context: void, a: []const u8, b: []const u8) bool {
-    _ = context;
-    switch (std.mem.order(u8, a, b)) {
-        .lt => return true,
-        else => return false,
-    }
-}
+const string_mod = @import("string.zig");
+const String = string_mod.String;
+const Str = string_mod.Str;
 
 pub const Signedness = enum { signed, unsigned };
 
@@ -37,8 +27,8 @@ pub fn all_int_configs() [num_ints]IntConfig {
     return configs;
 }
 
-pub fn int_ty_name(alloc: Allocator, config: IntConfig) !Name {
-    var name = ArrayList(u8).init(alloc);
+pub fn int_ty_name(alloc: Allocator, config: IntConfig) !Str {
+    var name = String.init(alloc);
     const signedness_char: u8 = switch (config.signedness) {
         .signed => 'I',
         .unsigned => 'U',

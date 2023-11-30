@@ -3,29 +3,31 @@ const ArrayList = std.ArrayList;
 const StringHashMap = std.StringHashMap;
 const format = std.fmt.format;
 const ast = @import("ast.zig");
-const Name = @import("ty.zig").Name;
+const string_mod = @import("string.zig");
+const String = string_mod.String;
+const Str = string_mod.Str;
 const mono = @import("mono.zig");
-const utils = @import("utils.zig");
+const numbers = @import("numbers.zig");
 
-pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8) {
-    var out_buffer = ArrayList(u8).init(alloc);
+pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
+    var out_buffer = String.init(alloc);
     var out = out_buffer.writer();
 
     try format(out, "// This file is a compiler target.\n", .{});
     try format(out, "#include <stdio.h>\n\n", .{});
     try format(out, "#include <stdint.h>\n\n", .{});
 
-    var builtin_tys = StringHashMap([] const u8).init(alloc);
-    var builtin_funs = StringHashMap([]const u8).init(alloc);
+    var builtin_tys = StringHashMap(Str).init(alloc);
+    var builtin_funs = StringHashMap(Str).init(alloc);
     { // Generate code for builtins
         try builtin_tys.put("Nothing", "struct {}");
         try builtin_tys.put("Never", "struct {\n  // TODO: Is this needed?\n}");
 
-        for (utils.all_int_configs()) |config| {
-            const ty = try utils.int_ty_name(alloc, config);
+        for (numbers.all_int_configs()) |config| {
+            const ty = try numbers.int_ty_name(alloc, config);
 
             { // Generate type
-                var impl = ArrayList(u8).init(alloc);
+                var impl = String.init(alloc);
                 try format(impl.writer(), "struct {{\n", .{});
                 try format(impl.writer(), "  {s}int{}_t value;\n", .{
                     switch (config.signedness) {
@@ -40,9 +42,9 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
 
 
             { // add(Int, Int)
-                var signature = ArrayList(u8).init(alloc);
+                var signature = String.init(alloc);
                 try format(signature.writer(), "add({s}, {s})", .{ty, ty});
-                var body = ArrayList(u8).init(alloc);
+                var body = String.init(alloc);
                 try format(body.writer(), "  mar_{s} i;\n", .{ty});
                 try format(body.writer(), "  i.value = arg0.value + arg1.value;\n", .{});
                 try format(body.writer(), "  return i;\n", .{});
@@ -50,9 +52,9 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
             }
 
             { // subtract(Int, Int)
-                var signature = ArrayList(u8).init(alloc);
+                var signature = String.init(alloc);
                 try format(signature.writer(), "subtract({s}, {s})", .{ty, ty});
-                var body = ArrayList(u8).init(alloc);
+                var body = String.init(alloc);
                 try format(body.writer(), "  mar_{s} i;\n", .{ty});
                 try format(body.writer(), "  i.value = arg0.value - arg1.value;\n", .{});
                 try format(body.writer(), "  return i;\n", .{});
@@ -60,9 +62,9 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
             }
 
             { // multiply(Int, Int)
-                var signature = ArrayList(u8).init(alloc);
+                var signature = String.init(alloc);
                 try format(signature.writer(), "multiply({s}, {s})", .{ty, ty});
-                var body = ArrayList(u8).init(alloc);
+                var body = String.init(alloc);
                 try format(body.writer(), "  mar_{s} i;\n", .{ty});
                 try format(body.writer(), "  i.value = arg0.value * arg1.value;\n", .{});
                 try format(body.writer(), "  return i;\n", .{});
@@ -70,9 +72,9 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
             }
 
             { // divide(Int, Int)
-                var signature = ArrayList(u8).init(alloc);
+                var signature = String.init(alloc);
                 try format(signature.writer(), "divide({s}, {s})", .{ty, ty});
-                var body = ArrayList(u8).init(alloc);
+                var body = String.init(alloc);
                 try format(body.writer(), "  mar_{s} i;\n", .{ty});
                 try format(body.writer(), "  i.value = arg0.value / arg1.value;\n", .{});
                 try format(body.writer(), "  return i;\n", .{});
@@ -80,9 +82,9 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
             }
 
             { // modulo(Int, Int)
-                var signature = ArrayList(u8).init(alloc);
+                var signature = String.init(alloc);
                 try format(signature.writer(), "modulo({s}, {s})", .{ty, ty});
-                var body = ArrayList(u8).init(alloc);
+                var body = String.init(alloc);
                 try format(body.writer(), "  mar_{s} i;\n", .{ty});
                 try format(body.writer(), "  i.value = arg0.value % arg1.value;\n", .{});
                 try format(body.writer(), "  return i;\n", .{});
@@ -90,15 +92,15 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
             }
 
             // Conversion functions
-            for (utils.all_int_configs()) |target_config| {
+            for (numbers.all_int_configs()) |target_config| {
                 if (config.signedness == target_config.signedness and config.bits == target_config.bits) {
                     continue;
                 }
 
-                const target_ty = try utils.int_ty_name(alloc, target_config);
-                var signature = ArrayList(u8).init(alloc);
+                const target_ty = try numbers.int_ty_name(alloc, target_config);
+                var signature = String.init(alloc);
                 try format(signature.writer(), "to_{s}({s})", .{target_ty, ty});
-                var body = ArrayList(u8).init(alloc);
+                var body = String.init(alloc);
                 try format(body.writer(), "  mar_{s} i;\n", .{target_ty});
                 try format(body.writer(), "  i.value = arg0.value;\n", .{});
                 try format(body.writer(), "  return i;\n", .{});
@@ -107,7 +109,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
         }
 
         { // print_to_stdout(U8)
-            var body = ArrayList(u8).init(alloc);
+            var body = String.init(alloc);
             // TODO: Check the return value of putc
             try format(body.writer(), "  putc(arg0.value, stdout);\n", .{});
             try format(body.writer(), "  mar_Nothing n;\n", .{});
@@ -164,13 +166,13 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
     }
 
     { // Functions
-        var ordered_funs_ = ArrayList(Name).init(alloc);
+        var ordered_funs_ = ArrayList(Str).init(alloc);
         var key_iter = the_mono.funs.keyIterator();
         while (key_iter.next()) |fun| {
             try ordered_funs_.append(fun.*);
         }
         var ordered_funs = try ordered_funs_.toOwnedSlice();
-        std.mem.sort(Name, ordered_funs, {}, utils.cmpNames);
+        std.mem.sort(Str, ordered_funs, {}, string_mod.cmp);
         var funs_to_index = StringHashMap(usize).init(alloc);
         for (ordered_funs, 0..) |fun_name, index| {
             try funs_to_index.put(fun_name, index);
@@ -216,7 +218,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                 if (fun.is_builtin) {
                     if (builtin_funs.get(fun_name)) |body| {
                         try format(out, "{s}", .{body});
-                    } else if (utils.starts_with(fun_name, "addressOf")) {
+                    } else if (string_mod.starts_with(fun_name, "addressOf")) {
                         try format(out, "  mar_U64 address;\n", .{});
                         try format(out, "  address.value = (uint64_t)&arg0;\n", .{});
                         try format(out, "  return address;\n", .{});
@@ -301,8 +303,8 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
     return out_buffer;
 }
 
-fn mangle(alloc: std.mem.Allocator, name: Name) !ArrayList(u8) {
-    var mangled = ArrayList(u8).init(alloc);
+fn mangle(alloc: std.mem.Allocator, name: Str) !String {
+    var mangled = String.init(alloc);
     try mangled.appendSlice("mar_");
     for (name) |c| {
         switch (c) {

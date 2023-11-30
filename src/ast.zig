@@ -1,6 +1,6 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
-const Name = @import("ty.zig").Name;
+const Str = @import("string.zig").Str;
 const Ty = @import("ty.zig").Ty;
 
 pub const Program = struct {
@@ -9,14 +9,14 @@ pub const Program = struct {
     pub fn add_builtin_fun(
         self: *@This(),
         alloc: std.mem.Allocator,
-        name: Name,
-        ty_args: ?ArrayList(Name),
+        name: Str,
+        ty_args: ?ArrayList(Str),
         args: ArrayList(Argument),
         returns: Ty
     ) void {
         self.defs.append(.{ .fun = .{
             .name = name,
-            .ty_args = ty_args orelse ArrayList(Name).init(alloc),
+            .ty_args = ty_args orelse ArrayList(Str).init(alloc),
             .args = args,
             .returns = returns,
             .is_builtin = true,
@@ -25,40 +25,40 @@ pub const Program = struct {
     }
 };
 pub const Def = union(enum) {
-    builtin_ty: Name,
+    builtin_ty: Str,
     struct_: Struct,
     enum_: Enum,
     fun: Fun,
 };
 
 pub const Struct = struct {
-    name: Name,
-    ty_args: ArrayList(Name),
+    name: Str,
+    ty_args: ArrayList(Str),
     fields: ArrayList(Field),
 };
-pub const Field = struct { name: Name, ty: Ty };
+pub const Field = struct { name: Str, ty: Ty };
 
 pub const Enum = struct {
-    name: Name,
-    ty_args: ArrayList(Name),
+    name: Str,
+    ty_args: ArrayList(Str),
     variants: ArrayList(Variant),
 };
-pub const Variant = struct { name: Name, ty: ?Ty };
+pub const Variant = struct { name: Str, ty: ?Ty };
 
 pub const Fun = struct {
-    name: Name,
-    ty_args: ArrayList(Name),
+    name: Str,
+    ty_args: ArrayList(Str),
     args: ArrayList(Argument),
     returns: ?Ty,
     is_builtin: bool,
     body: Body,
 };
-pub const Argument = struct { name: Name, ty: Ty };
+pub const Argument = struct { name: Str, ty: Ty };
 
 pub const Body = ArrayList(Expr);
 pub const Expr = union(enum) {
     num: i128,
-    ref: Name,
+    ref: Str,
     ty_arged: TyArged,
     call: Call,
     struct_construction: StructConstruction,
@@ -69,48 +69,16 @@ pub const Expr = union(enum) {
     switch_: Switch,
     return_: *const Expr,
 };
-pub const TyArged = struct {
-    arged: *const Expr,
-    ty_args: ArrayList(Ty),
-};
-pub const Call = struct {
-    callee: *const Expr,
-    args: ArrayList(Expr),
-};
-pub const StructConstruction = struct {
-    ty: *const Expr,
-    fields: ArrayList(ConstructionField),
-};
-pub const ConstructionField = struct {
-    name: Name,
-    value: Expr,
-};
-pub const Member = struct {
-    of: *const Expr,
-    name: Name,
-};
-pub const Var = struct {
-    name: Name,
-    value: *Expr,
-};
-pub const Assign = struct {
-    to: *Expr,
-    value: *Expr,
-};
-pub const If = struct {
-    condition: *const Expr,
-    then: Body,
-    else_: ?Body,
-};
-pub const Switch = struct {
-    value: *const Expr,
-    cases: ArrayList(Case),
-};
-pub const Case = struct {
-    variant: Name,
-    binding: ?Name,
-    body: Body,
-};
+pub const TyArged = struct { arged: *const Expr, ty_args: ArrayList(Ty) };
+pub const Call = struct { callee: *const Expr, args: ArrayList(Expr) };
+pub const StructConstruction = struct { ty: *const Expr, fields: ArrayList(ConstructionField) };
+pub const ConstructionField = struct { name: Str, value: Expr };
+pub const Member = struct { of: *const Expr, name: Str };
+pub const Var = struct { name: Str, value: *Expr };
+pub const Assign = struct { to: *Expr, value: *Expr };
+pub const If = struct { condition: *const Expr, then: Body, else_: ?Body };
+pub const Switch = struct { value: *const Expr, cases: ArrayList(Case) };
+pub const Case = struct { variant: Str, binding: ?Str, body: Body };
 
 pub fn print(writer: anytype, program: Program) !void {
     for (program.defs.items) |def| {
@@ -123,7 +91,7 @@ pub fn print_definition(writer: anytype, definition: Def) !void {
         .builtin_ty => |name| try writer.print("builtinType {s}", .{name}),
         .struct_ => |s| {
             try writer.print("struct {s}", .{s.name});
-            try Ty.print_args_of_names(writer, s.ty_args);
+            try Ty.print_args_of_strs(writer, s.ty_args);
             const fields = s.fields.items;
             if (fields.len == 0) {
                 try writer.print(" {{}}", .{});
@@ -137,7 +105,7 @@ pub fn print_definition(writer: anytype, definition: Def) !void {
         },
         .enum_ => |e| {
             try writer.print("enum {s}", .{e.name});
-            try Ty.print_args_of_names(writer, e.ty_args);
+            try Ty.print_args_of_strs(writer, e.ty_args);
             const variants = e.variants.items;
             if (variants.len == 0) {
                 try writer.print(" {{}}", .{});
@@ -161,15 +129,15 @@ pub fn print_signature(writer: anytype, definition: Def) !void {
         .builtin_ty => |bt| try writer.print("{s}", .{bt}),
         .struct_ => |s| {
             try writer.print("{s}", .{s.name});
-            try Ty.print_args_of_names(writer, s.ty_args);
+            try Ty.print_args_of_strs(writer, s.ty_args);
         },
         .enum_ => |e| {
             try writer.print("{s}", .{e.name});
-            try Ty.print_args_of_names(writer, e.ty_args);
+            try Ty.print_args_of_strs(writer, e.ty_args);
         },
         .fun => |fun| {
             try writer.print("{s}", .{fun.name});
-            try Ty.print_args_of_names(writer, fun.ty_args);
+            try Ty.print_args_of_strs(writer, fun.ty_args);
             try writer.print("(", .{});
             for (fun.args.items, 0..) |arg, i| {
                 if (i > 0) {
@@ -183,7 +151,7 @@ pub fn print_signature(writer: anytype, definition: Def) !void {
 }
 pub fn print_fun(writer: anytype, fun: Fun) !void {
     try writer.print("fun {s}", .{fun.name});
-    try Ty.print_args_of_names(writer, fun.ty_args);
+    try Ty.print_args_of_strs(writer, fun.ty_args);
 
     const args = fun.args.items;
     try writer.print("(", .{});

@@ -4,7 +4,6 @@ const ast = @import("ast.zig");
 const monomorphize = @import("monomorphize.zig").monomorphize;
 const mono = @import("mono.zig");
 const compile_to_c = @import("backend_c.zig").compile_to_c;
-const compile_to_wasm = @import("backend_wasm.zig").compile_to_wasm;
 
 pub fn main() !void {
     std.debug.print("Welcome to Martinaise.\n", .{});

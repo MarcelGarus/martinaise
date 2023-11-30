@@ -106,7 +106,7 @@ fun is_greater_or_equal(o: Ordering): Bool {
     greater { Bool.true() }
   }
 }
-fun dump[W](o: Odering, writer: W) {
+fun dump[W](o: Ordering, writer: W) {
   switch o {
     less {
       writer.write(108.to_U8()) # l
@@ -205,13 +205,14 @@ fun dump[W](i: i16, writer: W) {
 # Martinaise has no typed pointers, but these two builtin functions exist:
 # - address_of[T](T): U64
 # - follow_address[T](U64): T
+# - malloc(U64): U64
+# - size_of_type[T](): U64
 # Here, we build some type-safe abstractions on top.
 struct Ref[T] { address: U64 }
 fun ref[T](value: T): Ref[T] { Ref[T].{ address = address_of(value) } }
 fun deref[T](ptr: Ref[T]): T { follow_address[T](ptr.address) }
 fun cast[T, U](value: Ref[T]): Ref[U] { Ref[U].{ address = value.address } }
-# fun malloc[T](): T { malloc[T]() }
-# fun size[T](): U64 {}
+fun new[T](): Ref[T] { Ref[T].{ address = malloc(size_of_type[T]()) } }
 
 struct Point[T] { x: T, y: T }
 fun add[T](a: Point[T], b: Point[T]): Point[T] {
@@ -235,7 +236,14 @@ fun push[T](vec: Ref[Vec[T]], item: T) {
 
 ##########
 
+struct Foo {}
+struct Bar[T] {}
+fun foo[A](foo: Foo, a: A): Nothing { Nothing.{} }
+fun foo[A, B](a: A, bar: Bar[B]): Nothing { Nothing.{} }
+
 fun main(): I64 {
+  #Foo.{}.foo(Bar[Foo].{})
+
   println(Maybe[U8].some(2.to_U8()))
   return 0
 

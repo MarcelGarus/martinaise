@@ -4,7 +4,9 @@ const StringArrayHashMap = std.StringArrayHashMap;
 const StringHashMap = std.StringHashMap;
 const format = std.fmt.format;
 const Ty = @import("ty.zig").Ty;
-const Name = @import("ty.zig").Name;
+const string_mod = @import("string.zig");
+const String = string_mod.String;
+const Str = string_mod.Str;
 const ast = @import("ast.zig");
 const mono = @import("mono.zig");
 
@@ -12,7 +14,7 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !mono.Mono {
     var monomorphizer = Monomorphizer {
         .alloc = alloc,
         .program = program,
-        .context = ArrayList([]const u8).init(alloc),
+        .context = ArrayList(Str).init(alloc),
         .tys = StringHashMap(Ty).init(alloc),
         .ty_defs = StringArrayHashMap(mono.TyDef).init(alloc),
         .funs = StringHashMap(mono.Fun).init(alloc),
@@ -21,14 +23,14 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !mono.Mono {
     try monomorphizer.put_ty(.{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
     for ("IU") |signedness| {
         for ([_]u8{8, 16, 32, 64}) |bits| {
-            var name_buf = ArrayList(u8).init(alloc);
+            var name_buf = String.init(alloc);
             try std.fmt.format(name_buf.writer(), "{c}{}", .{signedness, bits});
             const name = name_buf.items;
             try monomorphizer.put_ty(.{ .name = name, .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
         }
     }
 
-    const main = try monomorphizer.lookup("main", ArrayList(Name).init(alloc), ArrayList(Name).init(alloc));
+    const main = try monomorphizer.lookup("main", ArrayList(Str).init(alloc), ArrayList(Str).init(alloc));
     const main_fun = switch (main.def) {
         .fun => |f| f,
         else => return error.MainIsNotAFunction,
@@ -61,25 +63,25 @@ const Monomorphizer = struct {
     const Self = @This();
 
     // Maps type parameter names to fully monomorphized types.
-    const TyEnv = StringHashMap(Name);
+    const TyEnv = StringHashMap(Str);
 
     // Maps variable names to their expression index.
     const VarEnv = StringHashMap(VarInfo);
     // TODO: Type is already available as fun.types, no need for it here
-    const VarInfo = struct { expr_index: usize, ty: Name };
+    const VarInfo = struct { expr_index: usize, ty: Str };
 
     fn put_ty(self: *Self, ty: Ty, ty_def: mono.TyDef) !void {
-        var name = ArrayList(u8).init(self.alloc);
-        try name.writer().print("{}", .{ty});
+        var ty_name = String.init(self.alloc);
+        try ty_name.writer().print("{}", .{ty});
 
-        try self.tys.put(name.items, ty);
-        try self.ty_defs.put(name.items, ty_def);
+        try self.tys.put(ty_name.items, ty);
+        try self.ty_defs.put(ty_name.items, ty_def);
     }
 
     // Looks up the given name with the given number of type args and the args
     // of the given types.
     const LookupSolution = struct { def: ast.Def, ty_env: TyEnv };
-    fn lookup(self: *Self, name: Name, ty_args: ?ArrayList(Name), args: ?ArrayList(Name)) error{
+    fn lookup(self: *Self, name: Str, ty_args: ?ArrayList(Str), args: ?ArrayList(Str)) error{
         OutOfMemory, TypeArgumentCantHaveGenerics, TypeArgumentCalledWithGenerics,
         MultipleTypesMatch, NoTypesMatch, StructTypeArgsCannotHaveTypeArgs,
         EnumTypeArgsCannotHaveTypeArgs, MultipleMatches, NoMatch
@@ -132,7 +134,7 @@ const Monomorphizer = struct {
                 // TODO: Check if there are still unbound type parameters.
 
                 // Compile types from solver ty env into mono ty env.
-                var ty_env = StringHashMap(Name).init(self.alloc);
+                var ty_env = StringHashMap(Str).init(self.alloc);
                 {
                     var iter = solver_ty_env.iterator();
                     while (iter.next()) |constraint| {
@@ -143,14 +145,14 @@ const Monomorphizer = struct {
                 try full_matches.append(.{ .def = .{ .fun = fun }, .ty_env = ty_env });
 
             } else {
-                var ty_env = StringHashMap(Name).init(self.alloc);
+                var ty_env = StringHashMap(Str).init(self.alloc);
                 const ty_params = switch (def) {
-                    .builtin_ty => |_| ArrayList(Name).init(self.alloc).items,
+                    .builtin_ty => |_| ArrayList(Str).init(self.alloc).items,
                     .struct_ => |s| s.ty_args.items,
                     .enum_ => |e| e.ty_args.items,
                     .fun => |f| f.ty_args.items,
                 };
-                const ty_args_ = (ty_args orelse ArrayList(Name).init(self.alloc)).items;
+                const ty_args_ = (ty_args orelse ArrayList(Str).init(self.alloc)).items;
                 if (ty_args_.len != ty_params.len) {
                     continue :defs;
                 }
@@ -164,7 +166,7 @@ const Monomorphizer = struct {
 
         if (full_matches.items.len != 1) {
             std.debug.print("Looked for a definition that matches `{s}", .{name});
-            Ty.print_args_of_names(std.io.getStdOut().writer(), ty_args) catch @panic("couldn't write to stdout");
+            Ty.print_args_of_strs(std.io.getStdOut().writer(), ty_args) catch @panic("couldn't write to stdout");
             if (args) |args_| {
                 std.debug.print("(", .{});
                 for (args_.items, 0..) |arg, i| {
@@ -213,9 +215,9 @@ const Monomorphizer = struct {
         return full_matches.items[0];
     }
 
-    fn compile_function(self: *Self, fun: ast.Fun, ty_env: TyEnv) !Name {
-        var signature = ArrayList(u8).init(self.alloc);
-        var arg_tys = ArrayList(Name).init(self.alloc);
+    fn compile_function(self: *Self, fun: ast.Fun, ty_env: TyEnv) !Str {
+        var signature = String.init(self.alloc);
+        var arg_tys = ArrayList(Str).init(self.alloc);
         var var_env = VarEnv.init(self.alloc);
 
         try signature.appendSlice(fun.name);
@@ -225,7 +227,7 @@ const Monomorphizer = struct {
                 if (i > 0) {
                     try signature.appendSlice(", ");
                 }
-                const arg_ty: Name = ty_env.get(arg) orelse @panic("required type arg doesn't exist in type env");
+                const arg_ty: Str = ty_env.get(arg) orelse @panic("required type arg doesn't exist in type env");
                 try signature.appendSlice(arg_ty);
             }
             try signature.appendSlice("]");
@@ -256,7 +258,7 @@ const Monomorphizer = struct {
             .return_ty = return_ty,
             .is_builtin = fun.is_builtin,
             .body = ArrayList(mono.Expr).init(self.alloc),
-            .tys = ArrayList(Name).init(self.alloc),
+            .tys = ArrayList(Str).init(self.alloc),
         };
         for (arg_tys.items) |ty| {
             _ = try mono_fun.put(.{ .arg = {} }, ty);
@@ -294,9 +296,9 @@ const Monomorphizer = struct {
             },
             .call => |call| {
                 var callee = call.callee.*;
-                var ty_args: ?ArrayList(Name) = null;
+                var ty_args: ?ArrayList(Str) = null;
                 var args = ArrayList(mono.ExprIndex).init(self.alloc);
-                var arg_tys = ArrayList(Name).init(self.alloc);
+                var arg_tys = ArrayList(Str).init(self.alloc);
 
                 // This may be an enum variant instantiation such as `Maybe[Int].some(3)`.
                 enum_variant: {
@@ -597,8 +599,8 @@ const Monomorphizer = struct {
         OutOfMemory, TypeArgumentCalledWithGenerics, MultipleTypesMatch,
         NoTypesMatch, StructTypeArgsCannotHaveTypeArgs, EnumTypeArgsCannotHaveTypeArgs,
         MultipleMatches, NoMatch, TypeArgumentCantHaveGenerics
-    }!ArrayList(Name) {
-        var args = ArrayList(Name).init(self.alloc);
+    }!ArrayList(Str) {
+        var args = ArrayList(Str).init(self.alloc);
         for (tys.items) |arg| {
             try args.append(try self.compile_type(arg, ty_env));
         }
@@ -608,7 +610,7 @@ const Monomorphizer = struct {
     // Specializes a type such as `Maybe[T]` using a type environment such as
     // `{T: Int}` (resulting in `Maybe[Int]`). Also creates the needed specialized
     // types in the `mono.Types`.
-    fn compile_type(self: *Self, ty: Ty, ty_env: TyEnv) !Name {
+    fn compile_type(self: *Self, ty: Ty, ty_env: TyEnv) !Str {
         var args = try self.compile_types(ty.args, ty_env);
 
         if (ty_env.get(ty.name)) |name| {
@@ -618,7 +620,7 @@ const Monomorphizer = struct {
             return name;
         }
 
-        var name_buf = ArrayList(u8).init(self.alloc);
+        var name_buf = String.init(self.alloc);
         try name_buf.appendSlice(ty.name);
         if (args.items.len > 0) {
             try name_buf.append('[');

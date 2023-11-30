@@ -1,32 +1,31 @@
 const std = @import("std");
-const ast = @import("ast.zig");
 const ArrayList = std.ArrayList;
-const Name = @import("ty.zig").Name;
+const Allocator = std.mem.Allocator;
+const ast = @import("ast.zig");
+const string_mod = @import("string.zig");
+const String = string_mod.String;
+const Str = string_mod.Str;
 const Ty = @import("ty.zig").Ty;
-const utils = @import("utils.zig");
+const numbers = @import("numbers.zig");
 
-pub fn parse(alloc: std.mem.Allocator, code: []u8) !?ast.Program {
+pub fn parse(alloc: std.mem.Allocator, code: Str) !?ast.Program {
     var parser = Parser{ .code = code, .alloc = alloc };
     // TODO: Handle OOM error differently
     var program = parser.parse_program() catch |err| {
         const offset = code.len - parser.code.len;
 
-        var lines = std.ArrayList([]u8).init(alloc);
-        var current_line = std.ArrayList(u8).init(alloc);
+        var lines = ArrayList(Str).init(alloc);
+        var current_line = String.init(alloc);
         for (code, 0..) |c, i| {
             if (offset == i) {
                 break;
             }
             switch (c) {
                 '\n' => {
-                    lines.append(current_line.items) catch {
-                        unreachable;
-                    };
-                    current_line = std.ArrayList(u8).init(alloc);
+                    lines.append(current_line.items) catch unreachable;
+                    current_line = String.init(alloc);
                 },
-                else => |a| current_line.append(a) catch {
-                    unreachable;
-                },
+                else => |a| current_line.append(a) catch unreachable,
             }
         }
         const num_lines_to_display = @min(lines.items.len, 4);
@@ -63,7 +62,7 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) !?ast.Program {
     { // address_of[T](T): U64
         const t: Ty = .{ .name = "T", .args = ArrayList(Ty).init(alloc) };
         const u64_: Ty = .{ .name = "U64", .args = ArrayList(Ty).init(alloc) };
-        var ty_args = ArrayList(Name).init(alloc);
+        var ty_args = ArrayList(Str).init(alloc);
         try ty_args.append("T");
         var args = ArrayList(ast.Argument).init(alloc);
         try args.append(.{ .name = "a", .ty = t});
@@ -71,9 +70,9 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) !?ast.Program {
     }
 
     // Int stuff.
-    for (utils.all_int_configs()) |config| {
-        try program.defs.append(.{ .builtin_ty = try utils.int_ty_name(alloc, config) });
-        const ty = try utils.int_ty(alloc, config);
+    for (numbers.all_int_configs()) |config| {
+        try program.defs.append(.{ .builtin_ty = try numbers.int_ty_name(alloc, config) });
+        const ty = try numbers.int_ty(alloc, config);
 
         var two_args = ArrayList(ast.Argument).init(alloc);
         try two_args.append(.{ .name = "a", .ty = ty});
@@ -94,23 +93,23 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) !?ast.Program {
         // program.add_builtin_fun(alloc, "xor", two_args, ty);
 
         // Conversion functions
-        for (utils.all_int_configs()) |target_config| {
+        for (numbers.all_int_configs()) |target_config| {
             // if (config == target_config) {
             if (config.signedness == target_config.signedness and config.bits == target_config.bits) {
                 continue;
             }
 
             var fun_name = ArrayList(u8).init(alloc);
-            try std.fmt.format(fun_name.writer(), "to_{s}", .{try utils.int_ty_name(alloc, target_config)});
+            try std.fmt.format(fun_name.writer(), "to_{s}", .{try numbers.int_ty_name(alloc, target_config)});
 
             var args = ArrayList(ast.Argument).init(alloc);
             try args.append(.{ .name = "i", .ty = ty });
 
-            program.add_builtin_fun(alloc, fun_name.items, null, args, try utils.int_ty(alloc, target_config));
+            program.add_builtin_fun(alloc, fun_name.items, null, args, try numbers.int_ty(alloc, target_config));
         }
     }
 
-    { // print(U8)
+    { // print_to_stdout(U8)
         const u8_ = .{ .name = "U8", .args = ArrayList(Ty).init(alloc) };
         const nothing = .{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) };
         var args = ArrayList(ast.Argument).init(alloc);
@@ -122,7 +121,7 @@ pub fn parse(alloc: std.mem.Allocator, code: []u8) !?ast.Program {
 }
 
 const Parser = struct {
-    code: []u8,
+    code: []const u8,
     alloc: std.mem.Allocator,
 
     const Self = @This();
@@ -178,7 +177,7 @@ const Parser = struct {
     }
 
     fn parse_program(self: *Self) !ast.Program {
-        var defs = std.ArrayList(ast.Def).init(self.alloc);
+        var defs = ArrayList(ast.Def).init(self.alloc);
         while (true) {
             self.consume_whitespace();
 
@@ -204,7 +203,7 @@ const Parser = struct {
         return .{ .defs = defs };
     }
 
-    fn parse_name(self: *Self) ?Name {
+    fn parse_name(self: *Self) ?Str {
         var i: usize = 0;
         loop: while (true) {
             switch (self.code[i]) {
@@ -238,8 +237,8 @@ const Parser = struct {
         const type_args = try self.parse_type_args() orelse ArrayList(Ty).init(self.alloc);
         return .{ .name = name, .args = type_args };
     }
-    fn parse_type_args(self: *Self) !?std.ArrayList(Ty) {
-        var type_args = std.ArrayList(Ty).init(self.alloc);
+    fn parse_type_args(self: *Self) !?ArrayList(Ty) {
+        var type_args = ArrayList(Ty).init(self.alloc);
         self.consume_prefix("[") orelse return null;
         self.consume_whitespace();
         while (true) {
@@ -252,8 +251,8 @@ const Parser = struct {
         self.consume_prefix("]") orelse return error.ExpectedClosingBracket;
         return type_args;
     }
-    fn parse_type_params(self: *Self) !?std.ArrayList(Name) {
-        var type_params = std.ArrayList(Name).init(self.alloc);
+    fn parse_type_params(self: *Self) !?ArrayList(Str) {
+        var type_params = ArrayList(Str).init(self.alloc);
         self.consume_prefix("[") orelse return null;
         self.consume_whitespace();
         while (true) {
@@ -272,12 +271,12 @@ const Parser = struct {
         self.consume_whitespace();
         const name = self.parse_name() orelse return error.ExpectedNameOfStruct;
         self.consume_whitespace();
-        const type_args = try self.parse_type_params() orelse ArrayList(Name).init(self.alloc);
+        const type_args = try self.parse_type_params() orelse ArrayList(Str).init(self.alloc);
         self.consume_whitespace();
         self.consume_prefix("{") orelse return error.ExpectedOpeningBrace;
         self.consume_whitespace();
 
-        var fields = std.ArrayList(ast.Field).init(self.alloc);
+        var fields = ArrayList(ast.Field).init(self.alloc);
         while (true) {
             const field_name = self.parse_name() orelse break;
             self.consume_whitespace();
@@ -301,12 +300,12 @@ const Parser = struct {
         self.consume_whitespace();
         const name = self.parse_name() orelse return error.ExpectedNameOfEnum;
         self.consume_whitespace();
-        const type_args = try self.parse_type_params() orelse ArrayList(Name).init(self.alloc);
+        const type_args = try self.parse_type_params() orelse ArrayList(Str).init(self.alloc);
         self.consume_whitespace();
         self.consume_prefix("{") orelse return error.ExpectedOpeningBrace;
         self.consume_whitespace();
 
-        var variants = std.ArrayList(ast.Variant).init(self.alloc);
+        var variants = ArrayList(ast.Variant).init(self.alloc);
         while (true) {
             const variant_name = self.parse_name() orelse break;
             var variant_type: ?Ty = null;
@@ -332,9 +331,9 @@ const Parser = struct {
         self.consume_whitespace();
         const name = self.parse_name() orelse return error.ExpectedNameOfFunction;
         self.consume_whitespace();
-        const type_args = try self.parse_type_params() orelse ArrayList(Name).init(self.alloc);
+        const type_args = try self.parse_type_params() orelse ArrayList(Str).init(self.alloc);
         self.consume_whitespace();
-        var args = std.ArrayList(ast.Argument).init(self.alloc);
+        var args = ArrayList(ast.Argument).init(self.alloc);
         self.consume_prefix("(") orelse return error.ExpectedOpeningParenthesis;
         self.consume_whitespace();
         while (true) {
@@ -375,7 +374,7 @@ const Parser = struct {
     fn parse_body(self: *Self) !?ast.Body {
         self.consume_prefix("{") orelse return null;
 
-        var statements = std.ArrayList(ast.Expr).init(self.alloc);
+        var statements = ArrayList(ast.Expr).init(self.alloc);
         while (true) {
             self.consume_whitespace();
 
@@ -511,7 +510,7 @@ const Parser = struct {
         const heaped = try self.alloc.create(ast.Expr);
         heaped.* = current;
 
-        var args = std.ArrayList(ast.Expr).init(self.alloc);
+        var args = ArrayList(ast.Expr).init(self.alloc);
         self.consume_whitespace();
         while (true) {
             const arg = try self.parse_expression() orelse break;
@@ -537,7 +536,7 @@ const Parser = struct {
         } else if (self.consume_prefix("{")) |_| {
             self.consume_whitespace();
 
-            var fields = std.ArrayList(ast.ConstructionField).init(self.alloc);
+            var fields = ArrayList(ast.ConstructionField).init(self.alloc);
             while (true) {
                 const name = self.parse_name() orelse break;
                 self.consume_whitespace();
@@ -623,7 +622,7 @@ const Parser = struct {
             const variant = self.parse_name() orelse break;
             self.consume_whitespace();
             
-            var binding: ?Name = null;
+            var binding: ?Str = null;
             if (self.consume_prefix("(")) |_| {
                 self.consume_whitespace();
                 binding = self.parse_name() orelse return error.ExpectedBinding;
