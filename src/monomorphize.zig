@@ -462,7 +462,7 @@ const Monomorphizer = struct {
                 const value = try self.compile_expr(fun, ty_env, var_env, assign.value.*);
                 return try fun.put(.{ .assign = .{ .to = to, .value = value } }, "Nothing");
             },
-            .struct_construction => |sc| {
+            .struct_creation => |sc| {
                 var ty = self.expr_to_type(sc.ty.*) orelse return error.YouCanOnlyConstructStructs;
                 const struct_type = try self.compile_type(ty, ty_env);
 

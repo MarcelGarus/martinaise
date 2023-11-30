@@ -404,16 +404,29 @@ const Parser = struct {
         ExpectedClosingBracket, ExpectedNameOfVar, ExpectedTypeOfVar, ExpectedEquals,
         ExpectedValueOfVar, ExpectedStatementOrClosingBrace, ExpectedClosingBrace,
         ExpectedValueOfField, ExpectedExpression, ExpectedOpeningBrace, ExpectedBody,
-        ExpectedBinding, ExpectedSignedness, ExpectedBits, InvalidBits
+        ExpectedBinding, ExpectedSignedness, ExpectedBits, InvalidBits, ExpectedUnderscore,
+        ExpectedChar
     }!?ast.Expr {
         var expression: ?ast.Expr = null;
-        
+
         if (try self.parse_if()) |if_| {
             expression = .{ .if_ = if_ };
         } else if (try self.parse_switch()) |switch_| {
             expression = .{ .switch_ = switch_ };
         } else if (try self.parse_int()) |int| {
             expression = .{ .int = int };
+        } else if (try self.parse_char()) |c| {
+            // Construct an instance of Char.
+            const char_name = try self.alloc.create(ast.Expr);
+            char_name.* = .{ .ref = "Char" };
+
+            const ty = try self.alloc.create(ast.Expr);
+            ty.* = .{ .ty_arged = .{ .arged = char_name, .ty_args = ArrayList(Ty).init(self.alloc) } };
+
+            var fields = ArrayList(ast.StructCreationField).init(self.alloc);
+            const int = .{ .int = .{ .value = c, .signedness = .unsigned, .bits = 8 } };
+            try fields.append(.{ .name = "value", .value = int });
+            expression = .{ .struct_creation = .{ .ty = ty, .fields = fields } };
         } else if (self.parse_name()) |name| {
             expression = .{ .ref = name };
         } else if (try self.parse_parenthesized()) |expr| {
@@ -458,6 +471,7 @@ const Parser = struct {
 
     fn parse_int(self: *Self) !?ast.Int {
         const value = self.parse_digits() orelse return null;
+        self.consume_prefix("_") orelse return error.ExpectedUnderscore;
         const signedness: numbers.Signedness = sign: {
             if (self.consume_prefix("i")) |_| { break :sign .signed; }
             if (self.consume_prefix("u")) |_| { break :sign .unsigned; }
@@ -487,6 +501,14 @@ const Parser = struct {
         }
         self.code = self.code[i..];
         return num;
+    }
+
+    fn parse_char(self: *Self) !?u8 {
+        self.consume_prefix("'") orelse return null;
+        if (self.code.len == 0) return error.ExpectedChar;
+        const c = self.code[0];
+        self.code = self.code[1..];
+        return c;
     }
 
     fn parse_parenthesized(self: *Self) !?ast.Expr {
@@ -550,7 +572,7 @@ const Parser = struct {
         } else if (self.consume_prefix("{")) |_| {
             self.consume_whitespace();
 
-            var fields = ArrayList(ast.ConstructionField).init(self.alloc);
+            var fields = ArrayList(ast.StructCreationField).init(self.alloc);
             while (true) {
                 const name = self.parse_name() orelse break;
                 self.consume_whitespace();
@@ -564,9 +586,7 @@ const Parser = struct {
             }
             self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
 
-            return .{
-                .struct_construction = .{ .ty = heaped, .fields = fields }
-            };
+            return .{ .struct_creation = .{ .ty = heaped, .fields = fields } };
         } else return error.ExpectedMemberOrConstructor;
     }
 

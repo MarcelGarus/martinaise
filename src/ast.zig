@@ -62,7 +62,7 @@ pub const Expr = union(enum) {
     ref: Str,
     ty_arged: TyArged,
     call: Call,
-    struct_construction: StructConstruction,
+    struct_creation: StructCreation,
     member: Member,
     var_: Var,
     assign: Assign,
@@ -73,8 +73,8 @@ pub const Expr = union(enum) {
 pub const Int = struct { value: i128, signedness: numbers.Signedness, bits: numbers.Bits };
 pub const TyArged = struct { arged: *const Expr, ty_args: ArrayList(Ty) };
 pub const Call = struct { callee: *const Expr, args: ArrayList(Expr) };
-pub const StructConstruction = struct { ty: *const Expr, fields: ArrayList(ConstructionField) };
-pub const ConstructionField = struct { name: Str, value: Expr };
+pub const StructCreation = struct { ty: *const Expr, fields: ArrayList(StructCreationField) };
+pub const StructCreationField = struct { name: Str, value: Expr };
 pub const Member = struct { of: *const Expr, name: Str };
 pub const Var = struct { name: Str, value: *Expr };
 pub const Assign = struct { to: *Expr, value: *Expr };
@@ -215,7 +215,7 @@ fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
             }
             try writer.print(")", .{});
         },
-        .struct_construction => |sc| {
+        .struct_creation => |sc| {
             try print_expr(writer, indent, sc.ty.*);
             try writer.print(".{{", .{});
             for (sc.fields.items) |field| {
