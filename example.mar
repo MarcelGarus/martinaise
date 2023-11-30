@@ -13,9 +13,8 @@ struct Nothing {}
 struct Never {} # TODO: Make this an enum
 
 # Printing
-# Only the function print_to_stdout(U8) is builtin. Here, we define the concept
-# of writers (types that have a write function). The print function expects a
-# value with a dump function, which is used to serialize the value.
+# Values with a dump(writer) function can be printed. Writers are anything with
+# a write(U8) function. The print function writes the dumped values to stdout.
 struct StdoutWriter {}
 fun write(sow: StdoutWriter, c: U8) { print_to_stdout(c) }
 fun print[T](value: T) { value.dump(StdoutWriter.{}) }
@@ -57,9 +56,9 @@ fun dump[T, W](maybe: Maybe[T], writer: W) {
       writer.write(111.to_U8()) # o
       writer.write(109.to_U8()) # m
       writer.write(101.to_U8()) # e
-      writer.write(28.to_U8()) # (
+      writer.write(40.to_U8()) # (
       val.dump(writer)
-      writer.write(29.to_U8()) # )
+      writer.write(41.to_U8()) # )
     }
     none {
       writer.write(110.to_U8()) # n
@@ -72,38 +71,68 @@ fun dump[T, W](maybe: Maybe[T], writer: W) {
 
 # Ordering
 enum Ordering { less, equal, greater }
-fun is_less(o: Ordering): Bool { return o is less }
-fun is_equal(o: Ordering): Bool { return o is less }
-fun is_greater(o: Ordering): Bool { return o is less }
-fun is_less_or_equal(o: Ordering): Bool { return o.is_less().or(o.is_equal()) }
-fun is_greater_or_equal(o: Ordering): Bool { return o.is_greater().or(o.is_equal()) }
-#fun dump[W](o: Odering, writer: W) {
-#  switch o {
-#    less {
-#      writer.write(108.to_U8()) # l
-#      writer.write(101.to_U8()) # e
-#      writer.write(115.to_U8()) # s
-#      writer.write(115.to_U8()) # s
-#    }
-#    equal {
-#      writer.write(101.to_U8()) # e
-#      writer.write(113.to_U8()) # q
-#      writer.write(117.to_U8()) # u
-#      writer.write(97.to_U8())  # a
-#      writer.write(108.to_U8()) # l
-#      writer.write(115.to_U8()) # s
-#    }
-#    greater {
-#      writer.write(103.to_U8()) # g
-#      writer.write(114.to_U8()) # r
-#      writer.write(101.to_U8()) # e
-#      writer.write(97.to_U8())  # a
-#      writer.write(116.to_U8()) # t
-#      writer.write(101.to_U8()) # e
-#      writer.write(114.to_U8()) # r
-#    }
-#  }
-#}
+fun is_less(o: Ordering): Bool {
+  switch o {
+    less { Bool.true() }
+    equal { Bool.false() }
+    greater { Bool.false() }
+  }
+}
+fun is_equal(o: Ordering): Bool {
+  switch o {
+    less { Bool.false() }
+    equal { Bool.true() }
+    greater { Bool.false() }
+  }
+}
+fun is_greater(o: Ordering): Bool {
+  switch o {
+    less { Bool.false() }
+    equal { Bool.false() }
+    greater { Bool.true() }
+  }
+}
+fun is_less_or_equal(o: Ordering): Bool {
+  switch o {
+    less { Bool.true() }
+    equal { Bool.true() }
+    greater { Bool.false() }
+  }
+}
+fun is_greater_or_equal(o: Ordering): Bool {
+  switch o {
+    less { Bool.false() }
+    equal { Bool.true() }
+    greater { Bool.true() }
+  }
+}
+fun dump[W](o: Odering, writer: W) {
+  switch o {
+    less {
+      writer.write(108.to_U8()) # l
+      writer.write(101.to_U8()) # e
+      writer.write(115.to_U8()) # s
+      writer.write(115.to_U8()) # s
+    }
+    equal {
+      writer.write(101.to_U8()) # e
+      writer.write(113.to_U8()) # q
+      writer.write(117.to_U8()) # u
+      writer.write(97.to_U8())  # a
+      writer.write(108.to_U8()) # l
+      writer.write(115.to_U8()) # s
+    }
+    greater {
+      writer.write(103.to_U8()) # g
+      writer.write(114.to_U8()) # r
+      writer.write(101.to_U8()) # e
+      writer.write(97.to_U8())  # a
+      writer.write(116.to_U8()) # t
+      writer.write(101.to_U8()) # e
+      writer.write(114.to_U8()) # r
+    }
+  }
+}
 
 # Int
 # Integers are built into the language. There are several types with different
@@ -158,12 +187,12 @@ fun is_greater_than(a: I64, b: I64): Bool { return a.compare_to(b).is_greater() 
 fun is_at_least(a: I64, b: I64): Bool { return a.compare_to(b).is_greater_or_equal() }
 fun is_at_most(a: I64, b: I64): Bool { return a.compare_to(b).is_less_or_equal() }
 fun dump[W](i: U8, writer: W) {
-  if i.is_at_least(100.to_U8()) {
+  #if i.is_at_least(100.to_U8()) {
     writer.write(i.divide(100.to_U8()).modulo(10.to_U8()).add(48.to_U8()))
-  }
-  if i.is_at_least(10.to_U8()) {
+  #}
+  #if i.is_at_least(10.to_U8()) {
     writer.write(i.divide(10.to_U8()).modulo(10.to_U8()).add(48.to_U8()))
-  }
+  #}
   writer.write(i.modulo(10.to_U8()).add(48.to_U8()))
 }
 fun dump[W](i: i16, writer: W) {
@@ -207,17 +236,14 @@ fun push[T](vec: Ref[Vec[T]], item: T) {
 ##########
 
 fun main(): I64 {
+  println(Maybe[U8].some(2.to_U8()))
+  return 0
+
   #var vec = Vec[I64].{ len = 0.to_U64() }
   #vec.ref().push(3)
   #print(vec.len.to_U8().add(48.to_U8()))
 
-  #if Bool.true() {
-  #  print(108.to_U8())
-  #}
-  #println(Bool.false().or(Bool.true()))
-  println(Maybe[U8].some(72))
-
-  print(72.to_U8())  # H
+  #print(72.to_U8())  # H
   #print(101.to_U8()) # e
   #print(108.to_U8()) # l
   #print(108.to_U8()) # l

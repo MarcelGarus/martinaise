@@ -65,6 +65,7 @@ const Monomorphizer = struct {
 
     // Maps variable names to their expression index.
     const VarEnv = StringHashMap(VarInfo);
+    // TODO: Type is already available as fun.types, no need for it here
     const VarInfo = struct { expr_index: usize, ty: Name };
 
     fn put_ty(self: *Self, ty: Ty, ty_def: mono.TyDef) !void {
@@ -277,7 +278,8 @@ const Monomorphizer = struct {
         InvalidExpressionCalled, CalledNonFunction, FunctionTypeArgsCannotHaveTypeArgs,
         ExpressionNotHandled, VariableNotInScope, CanOnlyAssignToName, YouCanOnlyConstructStructs,
         TypeArgumentCantHaveGenerics, FieldDoesNotExist, AccessedMemberOnNonStruct,
-        VariantDoesntExist, IfConditionMustBeBool
+        VariantDoesntExist, IfConditionMustBeBool, SwitchOnNonEnum, UnknownVariant,
+        TooManyArgumentsForVariant
     }!mono.ExprIndex {
         switch (expression) {
             .num => |n| return try fun.put(.{ .num = n }, "I64"),
@@ -337,7 +339,21 @@ const Monomorphizer = struct {
                         // Did not find a variant. Restore the sacred timeline.
                         return error.VariantDoesntExist;
                     }
-                    return try fun.put(.{ .variant_creation = .{ .enum_ty = enum_ty, .variant = member.name, .value = null } }, enum_ty);
+
+                    const value = variant_value: {
+                        if (call.args.items.len == 0) {
+                            break :variant_value try fun.put(.{ .struct_creation = .{
+                                .struct_ty = "Nothing",
+                                .fields = StringHashMap(mono.ExprIndex).init(self.alloc)
+                            } }, "Nothing");
+                        }
+                        if (call.args.items.len == 1) {
+                            break :variant_value try self.compile_expr(fun, ty_env, var_env, call.args.items[0]);
+                        }
+                        return error.TooManyArgumentsForVariant;
+                    };
+                    
+                    return try fun.put(.{ .variant_creation = .{ .enum_ty = enum_ty, .variant = member.name, .value = value } }, enum_ty);
                 }
 
                 switch (callee) {
@@ -497,6 +513,11 @@ const Monomorphizer = struct {
             },
             .switch_ => |switch_| {
                 const value = try self.compile_expr(fun, ty_env, var_env, switch_.value.*);
+                const enum_ty = fun.tys.items[value];
+                const enum_def = switch (self.ty_defs.get(enum_ty) orelse unreachable) {
+                    .enum_ => |e| e,
+                    else => return error.SwitchOnNonEnum,
+                };
 
                 // Jump table
                 const jump_table_start = fun.next_index();
@@ -504,27 +525,41 @@ const Monomorphizer = struct {
                     _ = try fun.put(.{ .arg = {} }, "Nothing"); // Will be replaced with jump_if_variant
                 }
                 // TODO: instead of looping, ensure all cases are matched
+                // TODO: ensure cases aren't handled multiple times
                 _ = try fun.put(.{ .jump = .{ .target = jump_table_start } }, "Never"); // unreachable
 
                 // Case bodies
-                var after_switch_jumps = ArrayList(ast.ExprIndex).init(self.alloc);
-                for (switch_.cases, 0..) |case, i| {
+                var after_switch_jumps = ArrayList(mono.ExprIndex).init(self.alloc);
+                for (switch_.cases.items, 0..) |case, i| {
                     fun.body.items[jump_table_start + i] = .{ .jump_if_variant = .{
                         .condition = value,
                         .variant = case.variant,
                         .target = fun.next_index(),
                     } };
-                    try fun.put(.{ .get_enum_value = .{ .of = value } });
+                    const ty = find_ty: {
+                        for (enum_def.variants.items) |variant| {
+                            if (std.mem.eql(u8, variant.name, case.variant)) {
+                                break :find_ty variant.ty;
+                            }
+                        }
+                        return error.UnknownVariant;
+                    };
+                    const unpacked = try fun.put(.{
+                        .get_enum_value = .{ .of = value, .variant = case.variant, .ty = ty } 
+                    }, ty);
                     // TODO: Create inner var env
                     // const inner_var_env = var_env.clone();
+                    if (case.binding) |binding| {
+                        try var_env.put(binding, .{ .expr_index = unpacked, .ty = ty });
+                    }
+                    
                     for (case.body.items) |expr| {
                         _ = try self.compile_expr(fun, ty_env, var_env, expr);
                     }
-                    try after_switch_jumps.append(fun.next_index());
-                    try fun.put(.{ .arg = {} }); // will be replaced with jump to after switch
+                    try after_switch_jumps.append(try fun.put(.{ .arg = {} }, "Never")); // will be replaced with jump to after switch
                 }
                 const after_switch = fun.next_index();
-                for (after_switch_jumps) |jump| {
+                for (after_switch_jumps.items) |jump| {
                     fun.body.items[jump] = .{ .jump = .{ .target = after_switch } };
                 }
 

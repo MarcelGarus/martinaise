@@ -8,6 +8,14 @@ pub fn starts_with(buf: []const u8, prefix: []const u8) bool {
     return buf.len >= prefix.len and std.mem.eql(u8, buf[0..prefix.len], prefix);
 }
 
+pub fn cmpNames(context: void, a: []const u8, b: []const u8) bool {
+    _ = context;
+    switch (std.mem.order(u8, a, b)) {
+        .lt => return true,
+        else => return false,
+    }
+}
+
 pub const Signedness = enum { signed, unsigned };
 
 const all_signednesses = [_]Signedness{ .signed, .unsigned };

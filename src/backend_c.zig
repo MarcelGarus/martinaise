@@ -148,6 +148,11 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                         try format(out, "    mar_{s},\n", .{variant.name});
                     }
                     try format(out, "  }} variant;\n", .{});
+                    try format(out, "  union {{\n", .{});
+                    for (e.variants.items) |variant| {
+                        try format(out, "    {s} mar_{s};\n", .{(try mangle(alloc, variant.ty)).items, variant.name});
+                    }
+                    try format(out, "  }} as;\n", .{});
                     try format(out, "}}", .{});
                 },
                 .fun => {
@@ -159,19 +164,21 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
     }
 
     { // Functions
-        var ordered_funs = ArrayList(Name).init(alloc);
+        var ordered_funs_ = ArrayList(Name).init(alloc);
         var key_iter = the_mono.funs.keyIterator();
         while (key_iter.next()) |fun| {
-            try ordered_funs.append(fun.*);
+            try ordered_funs_.append(fun.*);
         }
+        var ordered_funs = try ordered_funs_.toOwnedSlice();
+        std.mem.sort(Name, ordered_funs, {}, utils.cmpNames);
         var funs_to_index = StringHashMap(usize).init(alloc);
-        for (ordered_funs.items, 0..) |fun_name, index| {
+        for (ordered_funs, 0..) |fun_name, index| {
             try funs_to_index.put(fun_name, index);
         }
 
         // Declarations
         try format(out, "\n/// Function declarations\n\n", .{});
-        for (ordered_funs.items) |fun_name| {
+        for (ordered_funs) |fun_name| {
             const fun = the_mono.funs.get(fun_name) orelse unreachable;
             try format(out, "/* {s} */ {s} {s}(", .{
                 fun_name,
@@ -189,7 +196,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
 
         // Defintions
         try format(out, "\n/// Function definitions\n", .{});
-        for (ordered_funs.items) |fun_name| {
+        for (ordered_funs) |fun_name| {
             const fun = the_mono.funs.get(fun_name) orelse unreachable;
 
             try format(out, "\n// {s}\n", .{fun_name});
@@ -221,15 +228,12 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                 }
 
                 for (fun.body.items, fun.tys.items, 0..) |expr, ty, i| {
-                    try format(out, "  expr_{}:\n", .{i});
+                    try format(out, "  expr_{}: ", .{i});
                     switch (expr) {
-                        .arg => try format(out, "  {s} _{} = arg{};\n", .{(try mangle(alloc, ty)).items, i, i}),
-                        .num => |n| {
-                            try format(out, "  {s} _{};\n", .{(try mangle(alloc, ty)).items, i});
-                            try format(out, "  _{}.value = {};\n", .{i, n});
-                        },
+                        .arg => try format(out, "{s} _{} = arg{};\n", .{(try mangle(alloc, ty)).items, i, i}),
+                        .num => |n| try format(out, "{s} _{}; _{}.value = {};\n", .{(try mangle(alloc, ty)).items, i, i, n}),
                         .call => |call| {
-                            try format(out, "  {s} _{} = {s}(", .{
+                            try format(out, "{s} _{} = {s}(", .{
                                 (try mangle(alloc, ty)).items,
                                 i,
                                 (try mangle(alloc, call.fun)).items
@@ -242,65 +246,43 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                             }
                             try format(out, ");\n", .{});
                         },
-                        .variant_creation => |vc| {
-                            try format(out, "  {s} _{};\n", .{
-                                (try mangle(alloc, vc.enum_ty)).items,
-                                i,
-                            });
-                            try format(out, "  _{}.variant = mar_{s};\n", .{
-                                i,
-                                vc.variant,
-                            });
-                        },
+                        .variant_creation => |vc| try format(out, "{s} _{}; _{}.variant = mar_{s}; _{}.as.mar_{s} = _{};\n", .{
+                            (try mangle(alloc, vc.enum_ty)).items, i, i, vc.variant, i, vc.variant, vc.value
+                        }),
                         .struct_creation => |sc| {
-                            try format(out, "  {s} _{};\n", .{
+                            try format(out, "{s} _{};", .{
                                 (try mangle(alloc, sc.struct_ty)).items,
                                 i,
                             });
                             var iter = sc.fields.iterator();
                             while (iter.next()) |f| {
-                                try format(out, "  _{}.{s} = _{};\n", .{i, f.key_ptr.*, f.value_ptr.*});
+                                try format(out, " _{}.{s} = _{};", .{i, f.key_ptr.*, f.value_ptr.*});
                             }
+                            try format(out, "\n", .{});
                         },
-                        .member => |member| {
-                            try format(out, "  {s} _{} = _{}.{s};\n", .{
-                                (try mangle(alloc, ty)).items,
-                                i,
-                                member.of,
-                                member.name,
-                            });
-                        },
-                        .assign => |assign| {
-                            try format(out, "  _{} = _{};\n", .{assign.to, assign.value});
-                            try format(out, "  mar_Nothing _{};\n", .{i});
-                        },
-                        .jump => |jump| {
-                            try format(out, "  goto expr_{};\n", .{jump.target});
-                        },
-                        .jump_if => |jump| {
-                            try format(out, "  if (_{}.variant == mar_true) {{\n", .{jump.condition});
-                            try format(out, "    goto expr_{};\n", .{jump.target});
-                            try format(out, "  }}\n", .{});
-                        },
-                        .jump_if_variant => |jump| {
-                            try format(out, "  if (_{}.variant == mar_{}) {{", .{jump.condition, jump.variant});
-                            try format(out, "    goto expr_{};\n", .{jump.target});
-                            try format(out, "  }}\n", .{});
-                        },
-                        .get_enum_value => |gev| {
-                            try format(out, "  _{} = _{}.value;\n", .{i, gev.of});
-                        },
+                        .member => |member| try format(out, "{s} _{} = _{}.{s};\n", .{
+                            (try mangle(alloc, ty)).items, i, member.of, member.name,
+                        }),
+                        .assign => |assign| try format(out, "_{} = _{}; mar_Nothing _{};\n", .{assign.to, assign.value, i}),
+                        .jump => |jump| try format(out, "goto expr_{};\n", .{jump.target}),
+                        .jump_if => |jump| try format(out, "if (_{}.variant == mar_true) goto expr_{};\n", .{jump.condition, jump.target}),
+                        .jump_if_variant => |jump| try format(out, "if (_{}.variant == mar_{s}) goto expr_{};\n", .{
+                            jump.condition, jump.variant, jump.target
+                        }),
+                        .get_enum_value => |gev| try format(out, "{s} _{} = _{}.as.mar_{s};\n", .{
+                            (try mangle(alloc, gev.ty)).items, i, gev.of, gev.variant
+                        }),
                         .return_ => |index| {
                             // If a Never is returned, the return is not reached anyway. If we emit
                             // it, C complains that Never doesn't match the function's return type.
                             if (!std.mem.eql(u8, fun.tys.items[@intCast(index)], "Never")) {
-                                try format(out, "  return _{};\n", .{index});
+                                try format(out, "return _{}; ", .{index});
                             }
-                            try format(out, "  mar_Never _{};\n", .{i});
+                            try format(out, "mar_Never _{};\n", .{i});
                         },
                     }
                 }
-                try format(out, "  expr_{}:", .{fun.body.items.len});
+                try format(out, "  expr_{}: // end\n", .{fun.body.items.len});
                 const last_expr_index = fun.body.items.len - 1;
                 if (!std.mem.eql(u8, fun.tys.items[last_expr_index], "Never")) {
                     try format(out, "  return _{};\n", .{last_expr_index});

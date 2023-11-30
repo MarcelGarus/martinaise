@@ -286,16 +286,17 @@ fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
         .switch_ => |switch_| {
             try writer.print("switch ", .{});
             try print_expr(writer, indent, switch_.value.*);
-            try writer.print(" {\n", .{});
+            try writer.print(" {{\n", .{});
             for (switch_.cases.items) |case| {
-                try writer.print("  {}", .{case.variant});
+                try writer.print("  {s}", .{case.variant});
                 if (case.binding) |binding| {
-                    try writer.print("({})", .{binding});
+                    try writer.print("({s})", .{binding});
                 }
                 try writer.print(" ", .{});
                 try print_body(writer, indent + 1, case.body);
                 try writer.print("\n", .{});
             }
+            try writer.print("}}", .{});
         },
         .return_ => |returned| {
             try writer.print("return ", .{});
