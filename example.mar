@@ -1,26 +1,26 @@
-# Welcome to Martinaise!
-# This is the standard library. Be careful when deleting code here because this
-# may crash the compiler.
+| Welcome to Martinaise!
+| This is the standard library. Be careful when deleting code here because this
+| may crash the compiler.
 
-# Nothing
-# A type with only one instance. Functions that don't explicitly return a value
-# return Nothing instead.
+| Nothing
+| A type with only one instance. Functions that don't explicitly return a value
+| return Nothing instead.
 struct Nothing {}
 
-# Never
-# Some expressions always abort control flow, for example `return 3`. These
-# evaluate to the Never type.
-struct Never {} # TODO: Make this an enum
+| Never
+| Some expressions always abort control flow, for example `return 3`. These
+| evaluate to the Never type.
+struct Never {} | TODO: Make this an enum
 
-# Printing
-# Values with a dump(writer) function can be printed. Writers are anything with
-# a write(U8) function. The print function writes the dumped values to stdout.
+| Printing
+| Values with a dump(writer) function can be printed. Writers are anything with
+| a write(U8) function. The print function writes the dumped values to stdout.
 struct StdoutWriter {}
 fun write(sow: StdoutWriter, c: U8) { print_to_stdout(c) }
 fun print[T](value: T) { value.dump(StdoutWriter.{}) }
 fun println[T](value: T) { print(value) StdoutWriter.{}.write(10_u8) }
 
-# Bool
+| Bool
 enum Bool { true, false }
 fun not(a: Bool): Bool { if a { return Bool.false() } return Bool.true() }
 fun and(a: Bool, b: Bool): Bool { if a { return b } return a }
@@ -29,16 +29,16 @@ fun xor(a: Bool, b: Bool): Bool { if a { return not(b) } return b }
 fun implies(a: Bool, b: Bool): Bool { if a { return b } return Bool.true() }
 fun dump[W](b: Bool, writer: W) {
   if b {
-    writer.write(116_u8) # t
-    writer.write(114_u8) # r
-    writer.write(117_u8) # u
-    writer.write(101_u8) # e
+    't.dump(writer)
+    'r.dump(writer)
+    'u.dump(writer)
+    'e.dump(writer)
   } else {
-    writer.write(102_u8) # f
-    writer.write(97_u8)  # a
-    writer.write(108_u8) # l
-    writer.write(115_u8) # s
-    writer.write(101_u8) # e
+    'f.dump(writer)
+    'a.dump(writer)
+    'l.dump(writer)
+    's.dump(writer)
+    'e.dump(writer)
   }
 }
 
@@ -52,24 +52,24 @@ fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] {
 fun dump[T, W](maybe: Maybe[T], writer: W) {
   switch maybe {
     some(val) {
-      writer.write(115_u8) # s
-      writer.write(111_u8) # o
-      writer.write(109_u8) # m
-      writer.write(101_u8) # e
-      writer.write(40_u8) # (
+      's.dump(writer)
+      'o.dump(writer)
+      'm.dump(writer)
+      'e.dump(writer)
+      '(.dump(writer)
       val.dump(writer)
-      writer.write(41_u8) # )
+      ').dump(writer)
     }
     none {
-      writer.write(110_u8) # n
-      writer.write(111_u8) # o
-      writer.write(110_u8) # n
-      writer.write(101_u8) # e
+      'n.dump(writer)
+      'o.dump(writer)
+      'n.dump(writer)
+      'e.dump(writer)
     }
   }
 }
 
-# Ordering
+| Ordering
 enum Ordering { less, equal, greater }
 fun is_less(o: Ordering): Bool {
   switch o {
@@ -109,43 +109,43 @@ fun is_greater_or_equal(o: Ordering): Bool {
 fun dump[W](o: Ordering, writer: W) {
   switch o {
     less {
-      writer.write(108_u8) # l
-      writer.write(101_u8) # e
-      writer.write(115_u8) # s
-      writer.write(115_u8) # s
+      'l.dump(writer)
+      'e.dump(writer)
+      's.dump(writer)
+      's.dump(writer)
     }
     equal {
-      writer.write(101_u8) # e
-      writer.write(113_u8) # q
-      writer.write(117_u8) # u
-      writer.write(97_u8)  # a
-      writer.write(108_u8) # l
-      writer.write(115_u8) # s
+      'e.dump(writer)
+      'q.dump(writer)
+      'u.dump(writer)
+      'a.dump(writer)
+      'l.dump(writer)
+      's.dump(writer)
     }
     greater {
-      writer.write(103_u8) # g
-      writer.write(114_u8) # r
-      writer.write(101_u8) # e
-      writer.write(97_u8)  # a
-      writer.write(116_u8) # t
-      writer.write(101_u8) # e
-      writer.write(114_u8) # r
+      'g.dump(writer)
+      'r.dump(writer)
+      'e.dump(writer)
+      'a.dump(writer)
+      't.dump(writer)
+      'e.dump(writer)
+      'r.dump(writer)
     }
   }
 }
 
-# Int
-# Integers are built into the language. There are several types with different
-# signedness and bit amount available as `{'U', 'I'} x {8, 16, 32, 64}`. For
-# example, U64 is an unsigned integer of 64 bits.
-# All integers also support the following mathematical operations:
-# - add(Int, Int): Int
-# - subtract(Int, Int): Int
-# - multiply(Int, Int): Int
-# - divide(Int, Int): Int
-# - modulo(Int, Int): Int
-# - compare_to(Int, Int): Ordering
-# - to_<OtherInt>(Int): OtherInt, e.g. to_U8() for non-U8 ints
+| Int
+| Integers are built into the language. There are several types with different
+| signedness and bit amount available as `{U, I} x {8, 16, 32, 64}`. For
+| example, U64 is an unsigned integer of 64 bits.
+| All integers also support the following mathematical operations:
+| - add(Int, Int): Int
+| - subtract(Int, Int): Int
+| - multiply(Int, Int): Int
+| - divide(Int, Int): Int
+| - modulo(Int, Int): Int
+| - compare_to(Int, Int): Ordering
+| - to_<OtherInt>(Int): OtherInt, e.g. to_U8() for non-U8 ints
 fun is_less_than(a: U8, b: U8): Bool { return a.compare_to(b).is_less() }
 fun equals(a: U8, b: U8): Bool { return a.compare_to(b).is_equal() }
 fun is_greater_than(a: U8, b: U8): Bool { return a.compare_to(b).is_greater() }
@@ -186,28 +186,28 @@ fun equals(a: I64, b: I64): Bool { return a.compare_to(b).is_equal() }
 fun is_greater_than(a: I64, b: I64): Bool { return a.compare_to(b).is_greater() }
 fun is_at_least(a: I64, b: I64): Bool { return a.compare_to(b).is_greater_or_equal() }
 fun is_at_most(a: I64, b: I64): Bool { return a.compare_to(b).is_less_or_equal() }
-fun dump[W](i: U8, writer: W) {
-  #if i.is_at_least(100_u8) {
-    writer.write(i.divide(100_u8).modulo(10_u8).add(48_u8))
-  #}
-  #if i.is_at_least(10_u8) {
-    writer.write(i.divide(10_u8).modulo(10_u8).add(48_u8))
-  #}
-  writer.write(i.modulo(10_u8).add(48_u8))
+fun dump[W](int: U8, writer: W) {
+  |if int.is_at_least(100_u8) {
+    writer.write(int.divide(100_u8).modulo(10_u8).add('0.value))
+  |}
+  |if int.is_at_least(10_u8) {
+    writer.write(int.divide(10_u8).modulo(10_u8).add('0.value))
+  |}
+  writer.write(int.modulo(10_u8).add('0.value))
 }
 fun dump[W](i: I16, writer: W) {
-  # TODO: implement
-  writer.write(i.divide(10_i16).to_U8().add(48_u8))
-  writer.write(i.modulo(10_i16).to_U8().add(48_u8))
+  | TODO: implement
+  writer.write(i.divide(10_i16).to_U8().add('0.value))
+  writer.write(i.modulo(10_i16).to_U8().add('0.value))
 }
 
-# Ref
-# Martinaise has no typed pointers, but these two builtin functions exist:
-# - address_of[T](T): U64
-# - follow_address[T](U64): T
-# - malloc(U64): U64
-# - size_of_type[T](): U64
-# Here, we build some type-safe abstractions on top.
+| Ref
+| Martinaise has no typed pointers, but these two builtin functions exist:
+| - address_of[T](T): U64
+| - follow_address[T](U64): T
+| - malloc(U64): U64
+| - size_of_type[T](): U64
+| Here, we build some type-safe abstractions on top.
 struct Ref[T] { address: U64 }
 fun ref[T](value: T): Ref[T] { Ref[T].{ address = address_of(value) } }
 fun deref[T](ptr: Ref[T]): T { follow_address[T](ptr.address) }
@@ -223,22 +223,23 @@ struct Vec[T] {
   len: U64,
 }
 fun push[T](vec: Ref[Vec[T]], item: T) {
-  #vec.len = vec.len.deref().add(1.to_U64())
+  |vec.len = vec.len.deref().add(1.to_U64())
   Nothing.{}
 }
 
-# Char
+| Char
+| Essentially just a U8, but it's formatted differently.
 struct Char { value: U8 }
 fun dump[W](c: Char, writer: W) { writer.write(c.value) }
 
-# TODO: string, result, vec, hash map, segment tree, treap
+| TODO: string, result, vec, hash map, segment tree, treap
 
-#struct Slice[T] { data: Box[T], len: U64 }
-#fun get[T](slice: Slice[T], index: U64): T {
-#  (data)
-#}
+|struct Slice[T] { data: Box[T], len: U64 }
+|fun get[T](slice: Slice[T], index: U64): T {
+|  (data)
+|}
 
-##########
+|
 
 struct Foo {}
 struct Bar[T] {}
@@ -246,14 +247,14 @@ fun foo[A](foo: Foo, a: A): Nothing { Nothing.{} }
 fun foo[A, B](a: A, bar: Bar[B]): Nothing { Nothing.{} }
 
 fun main(): I64 {
-  #Foo.{}.foo(Bar[Foo].{})
+  |Foo.{}.foo(Bar[Foo].{})
 
   println(Maybe[U8].some(2_u8))
-  #return 0_i64
+  |return 0_i64
 
-  #var vec = Vec[I64].{ len = 0.to_U64() }
-  #vec.ref().push(3)
-  #print(vec.len_u8.add(48_u8))
+  |var vec = Vec[I64].{ len = 0.to_U64() }
+  |vec.ref().push(3)
+  |print(vec.len_u8.add(48_u8))
 
   print('H)
   print('e)
@@ -271,38 +272,38 @@ fun main(): I64 {
   print('
   )
 
-  #print(44_u8)  # ,
-  #print(32_u8)  # <space>
-  #print(119_u8) # w
-  #print(111_u8) # o
-  #print(114_u8) # r
-  #print(108_u8) # l
-  #print(100_u8) # d
-  #print(33_u8)  # !
-  #print(10_u8)  # <newline>
+  |print(44_u8)  | ,
+  |print(32_u8)  | <space>
+  |print(119_u8) | w
+  |print(111_u8) | o
+  |print(114_u8) | r
+  |print(108_u8) | l
+  |print(100_u8) | d
+  |print(33_u8)  | !
+  |print(10_u8)  | <newline>
   return multiply(add(3_i64, 4_i64), divide(4_i64, 2_i64)).modulo(10_i64)
 }
 
-############################
+|
 
-#fun fib(n: U8) {
-#  if (less_than(n, 2)) {
-#    n
-#  } else {
-#    fib(subtract(n, 1), subtract(n, 2))
-#  }
-#}
-##fun main() {
-##  print(fib(10))
-##}
-#
-#fun map[T, X](maybe: Maybe[T], mapper: T -> X): Maybe[X] {
-#  return match maybe {
-#    case Some t -> Some mapper(t),
-#    case None -> None,
-#  };
-#}
-#
-#struct String {
-#  len: U8,
-#}
+|fun fib(n: U8) {
+|  if (less_than(n, 2)) {
+|    n
+|  } else {
+|    fib(subtract(n, 1), subtract(n, 2))
+|  }
+|}
+|fun main() {
+|  print(fib(10))
+|}
+|
+|fun map[T, X](maybe: Maybe[T], mapper: T -> X): Maybe[X] {
+|  return match maybe {
+|    case Some t -> Some mapper(t),
+|    case None -> None,
+|  };
+|}
+|
+|struct String {
+|  len: U8,
+|}

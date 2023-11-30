@@ -131,7 +131,7 @@ const Parser = struct {
         loop: while (i < self.code.len) : (i += 1) {
             switch (self.code[i]) {
                 ' ', '\t', '\n' => {},
-                '#' => while (i < self.code.len) : (i += 1) {
+                '|' => while (i < self.code.len) : (i += 1) {
                     if (self.code[i] == '\n') {
                         break;
                     }

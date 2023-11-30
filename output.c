@@ -143,22 +143,28 @@ mar_Nothing mar_dump_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(mar_U8 arg0, m
   expr_4: mar_U8 _4; _4.value = 10;
   expr_5: mar_U8 _5 = mar_modulo_po_U8_c_U8_pc_(_3, _4);
   expr_6: mar_U8 _6; _6.value = 48;
-  expr_7: mar_U8 _7 = mar_add_po_U8_c_U8_pc_(_5, _6);
-  expr_8: mar_Nothing _8 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _7);
-  expr_9: mar_U8 _9; _9.value = 10;
-  expr_10: mar_U8 _10 = mar_divide_po_U8_c_U8_pc_(_0, _9);
+  expr_7: mar_Char _7; _7.value = _6;
+  expr_8: mar_U8 _8 = _7.value;
+  expr_9: mar_U8 _9 = mar_add_po_U8_c_U8_pc_(_5, _8);
+  expr_10: mar_Nothing _10 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _9);
   expr_11: mar_U8 _11; _11.value = 10;
-  expr_12: mar_U8 _12 = mar_modulo_po_U8_c_U8_pc_(_10, _11);
-  expr_13: mar_U8 _13; _13.value = 48;
-  expr_14: mar_U8 _14 = mar_add_po_U8_c_U8_pc_(_12, _13);
-  expr_15: mar_Nothing _15 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _14);
-  expr_16: mar_U8 _16; _16.value = 10;
-  expr_17: mar_U8 _17 = mar_modulo_po_U8_c_U8_pc_(_0, _16);
-  expr_18: mar_U8 _18; _18.value = 48;
-  expr_19: mar_U8 _19 = mar_add_po_U8_c_U8_pc_(_17, _18);
-  expr_20: mar_Nothing _20 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _19);
-  expr_21: // end
-  return _20;
+  expr_12: mar_U8 _12 = mar_divide_po_U8_c_U8_pc_(_0, _11);
+  expr_13: mar_U8 _13; _13.value = 10;
+  expr_14: mar_U8 _14 = mar_modulo_po_U8_c_U8_pc_(_12, _13);
+  expr_15: mar_U8 _15; _15.value = 48;
+  expr_16: mar_Char _16; _16.value = _15;
+  expr_17: mar_U8 _17 = _16.value;
+  expr_18: mar_U8 _18 = mar_add_po_U8_c_U8_pc_(_14, _17);
+  expr_19: mar_Nothing _19 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _18);
+  expr_20: mar_U8 _20; _20.value = 10;
+  expr_21: mar_U8 _21 = mar_modulo_po_U8_c_U8_pc_(_0, _20);
+  expr_22: mar_U8 _22; _22.value = 48;
+  expr_23: mar_Char _23; _23.value = _22;
+  expr_24: mar_U8 _24 = _23.value;
+  expr_25: mar_U8 _25 = mar_add_po_U8_c_U8_pc_(_21, _24);
+  expr_26: mar_Nothing _26 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _25);
+  expr_27: // end
+  return _26;
 }
 
 // dump[U8, StdoutWriter](Maybe[U8], StdoutWriter)
@@ -166,34 +172,44 @@ mar_Nothing mar_dump_bo_U8_c_StdoutWriter_bc__po_Maybe_bo_U8_bc__c_StdoutWriter_
   expr_0: mar_Maybe_bo_U8_bc_ _0 = arg0;
   expr_1: mar_StdoutWriter _1 = arg1;
   expr_2: if (_0.variant == mar_some) goto expr_5;
-  expr_3: if (_0.variant == mar_none) goto expr_20;
+  expr_3: if (_0.variant == mar_none) goto expr_26;
   expr_4: goto expr_2;
   expr_5: mar_U8 _5 = _0.as.mar_some;
   expr_6: mar_U8 _6; _6.value = 115;
-  expr_7: mar_Nothing _7 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _6);
-  expr_8: mar_U8 _8; _8.value = 111;
-  expr_9: mar_Nothing _9 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _8);
-  expr_10: mar_U8 _10; _10.value = 109;
-  expr_11: mar_Nothing _11 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _10);
-  expr_12: mar_U8 _12; _12.value = 101;
-  expr_13: mar_Nothing _13 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _12);
-  expr_14: mar_U8 _14; _14.value = 40;
-  expr_15: mar_Nothing _15 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _14);
-  expr_16: mar_Nothing _16 = mar_dump_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_5, _1);
-  expr_17: mar_U8 _17; _17.value = 41;
-  expr_18: mar_Nothing _18 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _17);
-  expr_19: goto expr_30;
-  expr_20: mar_Nothing _20 = _0.as.mar_none;
-  expr_21: mar_U8 _21; _21.value = 110;
-  expr_22: mar_Nothing _22 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _21);
-  expr_23: mar_U8 _23; _23.value = 111;
-  expr_24: mar_Nothing _24 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _23);
-  expr_25: mar_U8 _25; _25.value = 110;
-  expr_26: mar_Nothing _26 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _25);
-  expr_27: mar_U8 _27; _27.value = 101;
-  expr_28: mar_Nothing _28 = mar_write_po_StdoutWriter_c_U8_pc_(_1, _27);
-  expr_29: goto expr_30;
-  expr_30: // end
+  expr_7: mar_Char _7; _7.value = _6;
+  expr_8: mar_Nothing _8 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_7, _1);
+  expr_9: mar_U8 _9; _9.value = 111;
+  expr_10: mar_Char _10; _10.value = _9;
+  expr_11: mar_Nothing _11 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_10, _1);
+  expr_12: mar_U8 _12; _12.value = 109;
+  expr_13: mar_Char _13; _13.value = _12;
+  expr_14: mar_Nothing _14 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_13, _1);
+  expr_15: mar_U8 _15; _15.value = 101;
+  expr_16: mar_Char _16; _16.value = _15;
+  expr_17: mar_Nothing _17 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_16, _1);
+  expr_18: mar_U8 _18; _18.value = 40;
+  expr_19: mar_Char _19; _19.value = _18;
+  expr_20: mar_Nothing _20 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_19, _1);
+  expr_21: mar_Nothing _21 = mar_dump_bo_StdoutWriter_bc__po_U8_c_StdoutWriter_pc_(_5, _1);
+  expr_22: mar_U8 _22; _22.value = 41;
+  expr_23: mar_Char _23; _23.value = _22;
+  expr_24: mar_Nothing _24 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_23, _1);
+  expr_25: goto expr_40;
+  expr_26: mar_Nothing _26 = _0.as.mar_none;
+  expr_27: mar_U8 _27; _27.value = 110;
+  expr_28: mar_Char _28; _28.value = _27;
+  expr_29: mar_Nothing _29 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_28, _1);
+  expr_30: mar_U8 _30; _30.value = 111;
+  expr_31: mar_Char _31; _31.value = _30;
+  expr_32: mar_Nothing _32 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_31, _1);
+  expr_33: mar_U8 _33; _33.value = 110;
+  expr_34: mar_Char _34; _34.value = _33;
+  expr_35: mar_Nothing _35 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_34, _1);
+  expr_36: mar_U8 _36; _36.value = 101;
+  expr_37: mar_Char _37; _37.value = _36;
+  expr_38: mar_Nothing _38 = mar_dump_bo_StdoutWriter_bc__po_Char_c_StdoutWriter_pc_(_37, _1);
+  expr_39: goto expr_40;
+  expr_40: // end
 }
 
 // main()
