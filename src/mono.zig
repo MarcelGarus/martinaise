@@ -45,6 +45,7 @@ pub const Fun = struct {
 pub const ExprIndex = usize;
 pub const Expr = union(enum) {
     arg,
+    uninitialized,
     int: Int,
     call: Call,
     variant_creation: VariantCreation,
@@ -104,6 +105,7 @@ fn print_fun(writer: anytype, name: Str, fun: Fun) !void {
 fn print_expr(writer: anytype, expr: Expr) !void {
     switch (expr) {
         .arg => try writer.print("arg", .{}),
+        .uninitialized => try writer.print("uninitialized", .{}),
         .int => |int| try writer.print("{d}{c}{d}", .{int.value, int.signedness.to_char(), int.bits}),
         .call => |call| {
             try writer.print("{s} called with (", .{call.fun});

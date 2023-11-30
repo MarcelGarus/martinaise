@@ -233,6 +233,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                     try format(out, "  expr_{}: ", .{i});
                     switch (expr) {
                         .arg => try format(out, "{s} _{} = arg{};\n", .{(try mangle(alloc, ty)).items, i, i}),
+                        .uninitialized => try format(out, "{s} _{};\n", .{(try mangle(alloc, ty)).items, i}),
                         .int => |int| try format(out, "{s} _{}; _{}.value = {};\n", .{(try mangle(alloc, ty)).items, i, i, int.value}),
                         .call => |call| {
                             try format(out, "{s} _{} = {s}(", .{

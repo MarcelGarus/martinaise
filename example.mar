@@ -249,7 +249,7 @@ fun main(): I64 {
 
   println(switch Bool.true {
     true { 3_u8 }
-    false { 4_u8 }
+    false { 4_u16 }
   })
 
   |println(Bool.true.implies(Bool.true.or(Bool.false)))

@@ -282,7 +282,7 @@ const Monomorphizer = struct {
         ExpressionNotHandled, VariableNotInScope, CanOnlyAssignToName, YouCanOnlyConstructStructs,
         TypeArgumentCantHaveGenerics, FieldDoesNotExist, AccessedMemberOnNonStruct,
         VariantDoesntExist, IfConditionMustBeBool, SwitchOnNonEnum, UnknownVariant,
-        TooManyArgumentsForVariant
+        TooManyArgumentsForVariant, IfWithMismatchedTypes
     }!mono.ExprIndex {
         // This may be an enum variant instantiation such as `Maybe[Int].some(3)`.
         if (try self.compile_enum_creation(fun, ty_env, var_env, expression)) |index| {
@@ -415,6 +415,7 @@ const Monomorphizer = struct {
                 } }, struct_type);
             },
             .if_ => |if_| {
+                const result = try fun.put(.{ .uninitialized = {} }, "Something"); // Type will be replaced later
                 const condition = try self.compile_expr(fun, ty_env, var_env, if_.condition.*);
                 if (!std.mem.eql(u8, fun.tys.items[condition], "Bool")) {
                     return error.IfConditionMustBeBool;
@@ -424,17 +425,22 @@ const Monomorphizer = struct {
 
                 // TODO: Create inner var env
                 const then_body = fun.next_index();
-                for (if_.then.items) |expr| {
-                    _ = try self.compile_expr(fun, ty_env, var_env, expr);
-                }
+                const then_result = try self.compile_body(fun, ty_env, var_env, if_.then.items);
+                fun.tys.items[result] = fun.tys.items[then_result];
+                _ = try fun.put(.{ .assign = .{ .to = result, .value = then_result } }, "Nothing");
                 const jump_after_then = try fun.put(.{ .arg = {} }, "Never"); // Will be replaced with jump
 
                 if (if_.else_) |else_| {
                     // TODO: Create inner var env
                     const else_body = fun.next_index();
-                    for (else_.items) |expr| {
-                        _ = try self.compile_expr(fun, ty_env, var_env, expr);
+                    const else_result = try self.compile_body(fun, ty_env, var_env, else_.items);
+                    if (!std.mem.eql(u8, fun.tys.items[then_result], fun.tys.items[else_result])) {
+                        std.debug.print("The then body returns {s}, else body returns {s}.\n", .{
+                            fun.tys.items[then_result], fun.tys.items[else_result]
+                        });
+                        return error.IfWithMismatchedTypes;
                     }
+                    _ = try fun.put(.{ .assign = .{ .to = result, .value = else_result } }, "Nothing");
                     const jump_after_else = try fun.put(.{ .arg = {} }, "Never"); // Will be replaced with jump
                     const after_if = fun.next_index();
 
@@ -452,10 +458,10 @@ const Monomorphizer = struct {
                     fun.body.items[jump_after_then] = .{ .jump = .{ .target = after_if } };
                 }
 
-                // TODO: Make if evaluate to its body's result
-                return condition;
+                return result;
             },
             .switch_ => |switch_| {
+                const result = try fun.put(.{ .uninitialized = {} }, "Something"); // Type will be replaced later
                 const value = try self.compile_expr(fun, ty_env, var_env, switch_.value.*);
                 const enum_ty = fun.tys.items[value];
                 const enum_def = switch (self.ty_defs.get(enum_ty) orelse unreachable) {
@@ -497,9 +503,16 @@ const Monomorphizer = struct {
                         try var_env.put(binding, .{ .expr_index = unpacked, .ty = ty });
                     }
                     
-                    for (case.body.items) |expr| {
-                        _ = try self.compile_expr(fun, ty_env, var_env, expr);
+                    const body_result = try self.compile_body(fun, ty_env, var_env, case.body.items);
+                    if (i == 0) {
+                        fun.tys.items[result] = fun.tys.items[body_result];
+                    } else if (!std.mem.eql(u8, fun.tys.items[result], fun.tys.items[body_result])) {
+                        std.debug.print("Previous switch cases return {s}, but the case for {s} returns {s}.\n", .{
+                            fun.tys.items[result], case.variant, fun.tys.items[body_result]
+                        });
+                        return error.IfWithMismatchedTypes;
                     }
+                    _ = try fun.put(.{ .assign = .{ .to = result, .value = body_result } }, "Nothing");
                     try after_switch_jumps.append(try fun.put(.{ .arg = {} }, "Never")); // will be replaced with jump to after switch
                 }
                 const after_switch = fun.next_index();
@@ -507,8 +520,7 @@ const Monomorphizer = struct {
                     fun.body.items[jump] = .{ .jump = .{ .target = after_switch } };
                 }
 
-                // TODO: Make it evaluate to the cases' bodies results
-                return value;
+                return result;
             },
             .return_ => |returned| {
                 const index = try self.compile_expr(fun, ty_env, var_env, returned.*);
@@ -519,6 +531,25 @@ const Monomorphizer = struct {
                 return error.ExpressionNotHandled;
             }
         }
+    }
+
+    fn compile_body(self: *Self, fun: *mono.Fun, ty_env: TyEnv, var_env: *VarEnv, body: []const ast.Expr) !mono.ExprIndex {
+        var last_index: ?mono.ExprIndex = null;
+        for (body) |expr| {
+            last_index = try self.compile_expr(fun, ty_env, var_env, expr);
+        }
+        if (last_index) |last| {
+            return last;
+        } else {
+            return try self.compile_nothing_instance(fun);
+        }
+    }
+
+    fn compile_nothing_instance(self: *Self, fun: *mono.Fun) !mono.ExprIndex {
+        return try fun.put(.{ .struct_creation = .{
+            .struct_ty = "Nothing",
+            .fields = StringHashMap(mono.ExprIndex).init(self.alloc)
+        } }, "Nothing");
     }
 
     // Some calls and some members may be enum creations. For example, `Maybe[U8].some(4_u8)` and
@@ -587,10 +618,7 @@ const Monomorphizer = struct {
             if (value) |val| {
                 break :variant_value try self.compile_expr(fun, ty_env, var_env, val);
             } else {
-                break :variant_value try fun.put(.{ .struct_creation = .{
-                    .struct_ty = "Nothing",
-                    .fields = StringHashMap(mono.ExprIndex).init(self.alloc)
-                } }, "Nothing");
+                break :variant_value try self.compile_nothing_instance(fun);
             }
             return error.TooManyArgumentsForVariant;
         };
