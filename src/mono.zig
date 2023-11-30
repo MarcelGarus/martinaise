@@ -117,10 +117,7 @@ fn print_expr(writer: anytype, expr: Expr) !void {
             }
             try writer.print(")", .{});
         },
-        .variant_creation => |vc| {
-            try writer.print("{s}.{s}", .{vc.enum_ty, vc.variant});
-            try writer.print("(_{})", .{vc.value});
-        },
+        .variant_creation => |vc| try writer.print("{s}.{s}(_{})", .{vc.enum_ty, vc.variant, vc.value}),
         .struct_creation => |sc| {
             try writer.print("{s}.{{", .{sc.struct_ty});
             var iter = sc.fields.iterator();
@@ -130,9 +127,7 @@ fn print_expr(writer: anytype, expr: Expr) !void {
             try writer.print(" }}", .{});
         },
         .member => |m| try writer.print("_{d}.{s}", .{m.of, m.name}),
-        .assign => |assign| {
-            try writer.print("{} set to {}", .{assign.to, assign.value});
-        },
+        .assign => |assign| try writer.print("_{} set to _{}", .{assign.to, assign.value}),
         .jump => |jump| try writer.print("jump to _{}", .{jump.target}),
         // TODO: remove in favor of jump_if_variant
         .jump_if => |jump| try writer.print("if _{}, jump to _{}", .{jump.condition, jump.target}),

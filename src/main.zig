@@ -23,8 +23,8 @@ pub fn main() !void {
     // std.debug.print("\n", .{});
 
     const the_mono = try monomorphize(alloc, the_ast);
-    try mono.print(std.io.getStdOut().writer(), the_mono);
-    std.debug.print("\n", .{});
+    // try mono.print(std.io.getStdOut().writer(), the_mono);
+    // std.debug.print("\n", .{});
 
     const c_code = try compile_to_c(alloc, the_mono);
     // std.debug.print("C code:\n{s}\n", .{c_code.items});

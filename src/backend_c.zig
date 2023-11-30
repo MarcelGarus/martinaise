@@ -91,6 +91,18 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                 try builtin_funs.put(signature.items, body.items);
             }
 
+            { // compare_to(Int, Int)
+                var signature = String.init(alloc);
+                try format(signature.writer(), "compare_to({s}, {s})", .{ty, ty});
+                var body = String.init(alloc);
+                try format(body.writer(), "  mar_Ordering ordering;\n", .{});
+                try format(body.writer(), "  ordering.variant = (arg0.value == arg1.value) ? mar_equal : (arg0.value > arg1.value) ? mar_greater : mar_less;\n", .{});
+                try format(body.writer(), "  mar_Nothing nothing;\n", .{});
+                try format(body.writer(), "  ordering.as.mar_equal = nothing;\n", .{});
+                try format(body.writer(), "  return ordering;\n", .{});
+                try builtin_funs.put(signature.items, body.items);
+            }
+
             // Conversion functions
             for (numbers.all_int_configs()) |target_config| {
                 if (config.signedness == target_config.signedness and config.bits == target_config.bits) {
@@ -234,7 +246,16 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                     switch (expr) {
                         .arg => try format(out, "{s} _{} = arg{};\n", .{(try mangle(alloc, ty)).items, i, i}),
                         .uninitialized => try format(out, "{s} _{};\n", .{(try mangle(alloc, ty)).items, i}),
-                        .int => |int| try format(out, "{s} _{}; _{}.value = {};\n", .{(try mangle(alloc, ty)).items, i, i, int.value}),
+                        .int => |int| try format(out, "{s} _{}; _{}.value = {}{s};\n", .{
+                            (try mangle(alloc, ty)).items, i, i, int.value,
+                            suffix: {
+                                if (int.signedness == .unsigned) {
+                                    break :suffix "ULL";
+                                } else {
+                                    break :suffix "";
+                                }
+                            }
+                        }),
                         .call => |call| {
                             try format(out, "{s} _{} = {s}(", .{
                                 (try mangle(alloc, ty)).items,

@@ -187,18 +187,33 @@ fun is_greater_than(a: I64, b: I64): Bool { return a.compare_to(b).is_greater() 
 fun is_at_least(a: I64, b: I64): Bool { return a.compare_to(b).is_greater_or_equal() }
 fun is_at_most(a: I64, b: I64): Bool { return a.compare_to(b).is_less_or_equal() }
 fun dump[W](int: U8, writer: W) {
-  |if int.is_at_least(100_u8) {
-    writer.write(int.divide(100_u8).modulo(10_u8).add('0.value))
-  |}
-  |if int.is_at_least(10_u8) {
-    writer.write(int.divide(10_u8).modulo(10_u8).add('0.value))
-  |}
+  if int.is_at_least(100_u8) { writer.write(int.divide(100_u8).modulo(10_u8).add('0.value)) }
+  if int.is_at_least(10_u8) { writer.write(int.divide(10_u8).modulo(10_u8).add('0.value)) }
   writer.write(int.modulo(10_u8).add('0.value))
 }
-fun dump[W](i: I16, writer: W) {
-  | TODO: implement
-  writer.write(i.divide(10_i16).to_U8().add('0.value))
-  writer.write(i.modulo(10_i16).to_U8().add('0.value))
+fun dump[W](int: U64, writer: W) {
+  | note: max u64 is 18446744073709551615
+  if int.is_at_least(10000000000000000000_u64) { writer.write(int.divide(10000000000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(1000000000000000000_u64) { writer.write(int.divide(1000000000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(100000000000000000_u64) { writer.write(int.divide(100000000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(10000000000000000_u64) { writer.write(int.divide(10000000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(1000000000000000_u64) { writer.write(int.divide(1000000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(100000000000000_u64) { writer.write(int.divide(100000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(10000000000000_u64) { writer.write(int.divide(10000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(1000000000000_u64) { writer.write(int.divide(1000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(100000000000_u64) { writer.write(int.divide(100000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(10000000000_u64) { writer.write(int.divide(10000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(1000000000_u64) { writer.write(int.divide(1000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(100000000_u64) { writer.write(int.divide(100000000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(10000000_u64) { writer.write(int.divide(10000000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(1000000_u64) { writer.write(int.divide(1000000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(100000_u64) { writer.write(int.divide(100000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(10000_u64) { writer.write(int.divide(10000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(1000_u64) { writer.write(int.divide(1000_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(100_u64) { writer.write(int.divide(100_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(100_u64) { writer.write(int.divide(100_u64).modulo(10_u64).to_U8().add('0.value)) }
+  if int.is_at_least(10_u64) { writer.write(int.divide(10_u64).modulo(10_u64).to_U8().add('0.value)) }
+  writer.write(int.modulo(10_u64).to_U8().add('0.value))
 }
 
 | Ref
@@ -249,8 +264,9 @@ fun main(): I64 {
 
   println(switch Bool.true {
     true { 3_u8 }
-    false { 4_u16 }
+    false { 4_u8 }
   })
+  println(18446744073709551615_u64)
 
   |println(Bool.true.implies(Bool.true.or(Bool.false)))
 
