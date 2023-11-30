@@ -18,7 +18,7 @@ struct Never {} # TODO: Make this an enum
 struct StdoutWriter {}
 fun write(sow: StdoutWriter, c: U8) { print_to_stdout(c) }
 fun print[T](value: T) { value.dump(StdoutWriter.{}) }
-fun println[T](value: T) { print(value) StdoutWriter.{}.write(10.to_U8()) }
+fun println[T](value: T) { print(value) StdoutWriter.{}.write(10u8) }
 
 # Bool
 enum Bool { true, false }
@@ -29,16 +29,16 @@ fun xor(a: Bool, b: Bool): Bool { if a { return not(b) } return b }
 fun implies(a: Bool, b: Bool): Bool { if a { return b } return Bool.true() }
 fun dump[W](b: Bool, writer: W) {
   if b {
-    writer.write(116.to_U8()) # t
-    writer.write(114.to_U8()) # r
-    writer.write(117.to_U8()) # u
-    writer.write(101.to_U8()) # e
+    writer.write(116u8) # t
+    writer.write(114u8) # r
+    writer.write(117u8) # u
+    writer.write(101u8) # e
   } else {
-    writer.write(102.to_U8()) # f
-    writer.write(97.to_U8())  # a
-    writer.write(108.to_U8()) # l
-    writer.write(115.to_U8()) # s
-    writer.write(101.to_U8()) # e
+    writer.write(102u8) # f
+    writer.write(97u8)  # a
+    writer.write(108u8) # l
+    writer.write(115u8) # s
+    writer.write(101u8) # e
   }
 }
 
@@ -52,19 +52,19 @@ fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] {
 fun dump[T, W](maybe: Maybe[T], writer: W) {
   switch maybe {
     some(val) {
-      writer.write(115.to_U8()) # s
-      writer.write(111.to_U8()) # o
-      writer.write(109.to_U8()) # m
-      writer.write(101.to_U8()) # e
-      writer.write(40.to_U8()) # (
+      writer.write(115u8) # s
+      writer.write(111u8) # o
+      writer.write(109u8) # m
+      writer.write(101u8) # e
+      writer.write(40u8) # (
       val.dump(writer)
-      writer.write(41.to_U8()) # )
+      writer.write(41u8) # )
     }
     none {
-      writer.write(110.to_U8()) # n
-      writer.write(111.to_U8()) # o
-      writer.write(110.to_U8()) # n
-      writer.write(101.to_U8()) # e
+      writer.write(110u8) # n
+      writer.write(111u8) # o
+      writer.write(110u8) # n
+      writer.write(101u8) # e
     }
   }
 }
@@ -109,27 +109,27 @@ fun is_greater_or_equal(o: Ordering): Bool {
 fun dump[W](o: Ordering, writer: W) {
   switch o {
     less {
-      writer.write(108.to_U8()) # l
-      writer.write(101.to_U8()) # e
-      writer.write(115.to_U8()) # s
-      writer.write(115.to_U8()) # s
+      writer.write(108u8) # l
+      writer.write(101u8) # e
+      writer.write(115u8) # s
+      writer.write(115u8) # s
     }
     equal {
-      writer.write(101.to_U8()) # e
-      writer.write(113.to_U8()) # q
-      writer.write(117.to_U8()) # u
-      writer.write(97.to_U8())  # a
-      writer.write(108.to_U8()) # l
-      writer.write(115.to_U8()) # s
+      writer.write(101u8) # e
+      writer.write(113u8) # q
+      writer.write(117u8) # u
+      writer.write(97u8)  # a
+      writer.write(108u8) # l
+      writer.write(115u8) # s
     }
     greater {
-      writer.write(103.to_U8()) # g
-      writer.write(114.to_U8()) # r
-      writer.write(101.to_U8()) # e
-      writer.write(97.to_U8())  # a
-      writer.write(116.to_U8()) # t
-      writer.write(101.to_U8()) # e
-      writer.write(114.to_U8()) # r
+      writer.write(103u8) # g
+      writer.write(114u8) # r
+      writer.write(101u8) # e
+      writer.write(97u8)  # a
+      writer.write(116u8) # t
+      writer.write(101u8) # e
+      writer.write(114u8) # r
     }
   }
 }
@@ -187,18 +187,18 @@ fun is_greater_than(a: I64, b: I64): Bool { return a.compare_to(b).is_greater() 
 fun is_at_least(a: I64, b: I64): Bool { return a.compare_to(b).is_greater_or_equal() }
 fun is_at_most(a: I64, b: I64): Bool { return a.compare_to(b).is_less_or_equal() }
 fun dump[W](i: U8, writer: W) {
-  #if i.is_at_least(100.to_U8()) {
-    writer.write(i.divide(100.to_U8()).modulo(10.to_U8()).add(48.to_U8()))
+  #if i.is_at_least(100u8) {
+    writer.write(i.divide(100u8).modulo(10u8).add(48u8))
   #}
-  #if i.is_at_least(10.to_U8()) {
-    writer.write(i.divide(10.to_U8()).modulo(10.to_U8()).add(48.to_U8()))
+  #if i.is_at_least(10u8) {
+    writer.write(i.divide(10u8).modulo(10u8).add(48u8))
   #}
-  writer.write(i.modulo(10.to_U8()).add(48.to_U8()))
+  writer.write(i.modulo(10u8).add(48u8))
 }
 fun dump[W](i: i16, writer: W) {
   # TODO: implement
-  writer.write(i.divide(10).to_U8().add(48.to_U8()))
-  writer.write(i.modulo(10).to_U8().add(48.to_U8()))
+  writer.write(i.divide(10i16).to_U8().add(48u8))
+  writer.write(i.modulo(10i16).to_U8().add(48u8))
 }
 
 # Ref
@@ -244,28 +244,28 @@ fun foo[A, B](a: A, bar: Bar[B]): Nothing { Nothing.{} }
 fun main(): I64 {
   #Foo.{}.foo(Bar[Foo].{})
 
-  println(Maybe[U8].some(2.to_U8()))
-  return 0
+  println(Maybe[U8].some(2u8))
+  return 0i64
 
   #var vec = Vec[I64].{ len = 0.to_U64() }
   #vec.ref().push(3)
-  #print(vec.len.to_U8().add(48.to_U8()))
+  #print(vec.lenu8.add(48u8))
 
-  #print(72.to_U8())  # H
-  #print(101.to_U8()) # e
-  #print(108.to_U8()) # l
-  #print(108.to_U8()) # l
-  #print(111.to_U8()) # o
-  #print(44.to_U8())  # ,
-  #print(32.to_U8())  # <space>
-  #print(119.to_U8()) # w
-  #print(111.to_U8()) # o
-  #print(114.to_U8()) # r
-  #print(108.to_U8()) # l
-  #print(100.to_U8()) # d
-  #print(33.to_U8())  # !
-  #print(10.to_U8())  # <newline>
-  return multiply(add(3, 4), divide(4, 2)).modulo(10)
+  #print(72u8)  # H
+  #print(101u8) # e
+  #print(108u8) # l
+  #print(108u8) # l
+  #print(111u8) # o
+  #print(44u8)  # ,
+  #print(32u8)  # <space>
+  #print(119u8) # w
+  #print(111u8) # o
+  #print(114u8) # r
+  #print(108u8) # l
+  #print(100u8) # d
+  #print(33u8)  # !
+  #print(10u8)  # <newline>
+  return multiply(add(3i64, 4i64), divide(4i64, 2i64)).modulo(10i64)
 }
 
 ############################

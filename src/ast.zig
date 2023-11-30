@@ -2,6 +2,7 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 const Str = @import("string.zig").Str;
 const Ty = @import("ty.zig").Ty;
+const numbers = @import("numbers.zig");
 
 pub const Program = struct {
     defs: ArrayList(Def),
@@ -57,7 +58,7 @@ pub const Argument = struct { name: Str, ty: Ty };
 
 pub const Body = ArrayList(Expr);
 pub const Expr = union(enum) {
-    num: i128,
+    int: Int,
     ref: Str,
     ty_arged: TyArged,
     call: Call,
@@ -69,6 +70,7 @@ pub const Expr = union(enum) {
     switch_: Switch,
     return_: *const Expr,
 };
+pub const Int = struct { value: i128, signedness: numbers.Signedness, bits: numbers.Bits };
 pub const TyArged = struct { arged: *const Expr, ty_args: ArrayList(Ty) };
 pub const Call = struct { callee: *const Expr, args: ArrayList(Expr) };
 pub const StructConstruction = struct { ty: *const Expr, fields: ArrayList(ConstructionField) };

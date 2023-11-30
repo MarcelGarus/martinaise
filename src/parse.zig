@@ -121,7 +121,7 @@ pub fn parse(alloc: std.mem.Allocator, code: Str) !?ast.Program {
 }
 
 const Parser = struct {
-    code: []const u8,
+    code: Str,
     alloc: std.mem.Allocator,
 
     const Self = @This();
@@ -145,7 +145,7 @@ const Parser = struct {
         self.code = self.code[i..];
     }
 
-    fn consume_prefix(self: *Self, prefix: []const u8) ?void {
+    fn consume_prefix(self: *Self, prefix: Str) ?void {
         if (self.code.len < prefix.len) {
             return null;
         }
@@ -158,7 +158,7 @@ const Parser = struct {
     }
     // Also makes sure there's a whitespace following, so
     // `consume_keyword("fun")` doesn't match the code `funny`.
-    fn consume_keyword(self: *Self, keyword: []const u8) ?void {
+    fn consume_keyword(self: *Self, keyword: Str) ?void {
         if (self.code.len < keyword.len) {
             return null;
         }
@@ -404,7 +404,7 @@ const Parser = struct {
         ExpectedClosingBracket, ExpectedNameOfVar, ExpectedTypeOfVar, ExpectedEquals,
         ExpectedValueOfVar, ExpectedStatementOrClosingBrace, ExpectedClosingBrace,
         ExpectedValueOfField, ExpectedExpression, ExpectedOpeningBrace, ExpectedBody,
-        ExpectedBinding
+        ExpectedBinding, ExpectedSignedness, ExpectedBits, InvalidBits
     }!?ast.Expr {
         var expression: ?ast.Expr = null;
         
@@ -412,8 +412,8 @@ const Parser = struct {
             expression = .{ .if_ = if_ };
         } else if (try self.parse_switch()) |switch_| {
             expression = .{ .switch_ = switch_ };
-        } else if (self.parse_number()) |number| {
-            expression = .{ .num = number };
+        } else if (try self.parse_int()) |int| {
+            expression = .{ .int = int };
         } else if (self.parse_name()) |name| {
             expression = .{ .ref = name };
         } else if (try self.parse_parenthesized()) |expr| {
@@ -456,7 +456,21 @@ const Parser = struct {
         return expression;
     }
 
-    fn parse_number(self: *Self) ?i128 {
+    fn parse_int(self: *Self) !?ast.Int {
+        const value = self.parse_digits() orelse return null;
+        const signedness: numbers.Signedness = sign: {
+            if (self.consume_prefix("i")) |_| { break :sign .signed; }
+            if (self.consume_prefix("u")) |_| { break :sign .unsigned; }
+            return error.ExpectedSignedness;
+        };
+        const bits_ = self.parse_digits() orelse return error.ExpectedBits;
+        const bits: numbers.Bits = @intCast(bits_);
+        if (std.mem.count(u8, &numbers.all_bits, &[_]numbers.Bits{bits}) == 0) {
+            return error.InvalidBits;
+        }
+        return .{ .value = value, .signedness = signedness, .bits = bits };
+    }
+    fn parse_digits(self: *Self) ?i128 {
         var i: usize = 0;
         var num: i128 = 0;
         loop: while (true) {

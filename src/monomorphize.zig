@@ -9,6 +9,7 @@ const String = string_mod.String;
 const Str = string_mod.Str;
 const ast = @import("ast.zig");
 const mono = @import("mono.zig");
+const numbers = @import("numbers.zig");
 
 pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !mono.Mono {
     var monomorphizer = Monomorphizer {
@@ -284,7 +285,10 @@ const Monomorphizer = struct {
         TooManyArgumentsForVariant
     }!mono.ExprIndex {
         switch (expression) {
-            .num => |n| return try fun.put(.{ .num = n }, "I64"),
+            .int => |int| return try fun.put(
+                .{ .int = .{ .value = int.value, .signedness = int.signedness, .bits = int.bits} },
+                try numbers.int_ty_name(self.alloc, .{ .signedness = int.signedness, .bits = int.bits }),
+            ),
             .ref => |name| {
                 if (var_env.get(name)) |var_info| {
                     return var_info.expr_index;

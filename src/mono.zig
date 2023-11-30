@@ -3,6 +3,7 @@ const ArrayList = std.ArrayList; // TODO: Use slices everywhere instead
 const StringArrayHashMap = std.StringArrayHashMap;
 const StringHashMap = std.StringHashMap;
 const Str = @import("string.zig").Str;
+const numbers = @import("numbers.zig");
 
 pub const Mono = struct {
     ty_defs: StringArrayHashMap(TyDef),
@@ -44,7 +45,7 @@ pub const Fun = struct {
 pub const ExprIndex = usize;
 pub const Expr = union(enum) {
     arg,
-    num: i128,
+    int: Int,
     call: Call,
     variant_creation: VariantCreation,
     struct_creation: StructCreation,
@@ -56,6 +57,7 @@ pub const Expr = union(enum) {
     get_enum_value: GetEnumValue,
     return_: ExprIndex,
 };
+pub const Int = struct { value: i128, signedness: numbers.Signedness, bits: numbers.Bits };
 pub const Call = struct { fun: Str, args: ArrayList(ExprIndex) };
 pub const VariantCreation = struct { enum_ty: Str, variant: Str, value: ExprIndex };
 pub const StructCreation = struct { struct_ty: Str, fields: StringHashMap(ExprIndex) };
@@ -102,7 +104,7 @@ fn print_fun(writer: anytype, name: Str, fun: Fun) !void {
 fn print_expr(writer: anytype, expr: Expr) !void {
     switch (expr) {
         .arg => try writer.print("arg", .{}),
-        .num => |n| try writer.print("{d}", .{n}),
+        .int => |int| try writer.print("{d}{c}{d}", .{int.value, int.signedness.to_char(), int.bits}),
         .call => |call| {
             try writer.print("{s} called with (", .{call.fun});
             for (call.args.items, 0..) |arg, i| {
