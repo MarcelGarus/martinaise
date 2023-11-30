@@ -66,6 +66,7 @@ pub const Expr = union(enum) {
     var_: Var,
     assign: Assign,
     if_: If,
+    switch_: Switch,
     return_: *const Expr,
 };
 pub const TyArged = struct {
@@ -100,6 +101,15 @@ pub const If = struct {
     condition: *const Expr,
     then: Body,
     else_: ?Body,
+};
+pub const Switch = struct {
+    value: *const Expr,
+    cases: ArrayList(Case),
+};
+pub const Case = struct {
+    variant: Name,
+    binding: ?Name,
+    body: Body,
 };
 
 pub fn print(writer: anytype, program: Program) !void {
@@ -271,6 +281,20 @@ fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
             if (if_.else_) |e| {
                 try writer.print(" else ", .{});
                 try print_body(writer, indent, e);
+            }
+        },
+        .switch_ => |switch_| {
+            try writer.print("switch ", .{});
+            try print_expr(writer, indent, switch_.value.*);
+            try writer.print(" {\n", .{});
+            for (switch_.cases.items) |case| {
+                try writer.print("  {}", .{case.variant});
+                if (case.binding) |binding| {
+                    try writer.print("({})", .{binding});
+                }
+                try writer.print(" ", .{});
+                try print_body(writer, indent + 1, case.body);
+                try writer.print("\n", .{});
             }
         },
         .return_ => |returned| {

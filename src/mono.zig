@@ -52,6 +52,8 @@ pub const Expr = union(enum) {
     assign: Assign,
     jump: Jump,
     jump_if: JumpIf,
+    jump_if_variant: JumpIfVariant,
+    get_enum_value: GetEnumValue,
     return_: ExprIndex,
 };
 pub const Call = struct { fun: Name, args: ArrayList(ExprIndex) };
@@ -61,6 +63,8 @@ pub const Member = struct { of: ExprIndex, name: Name };
 pub const Assign = struct { to: ExprIndex, value: ExprIndex };
 pub const Jump = struct { target: ExprIndex };
 pub const JumpIf = struct { condition: ExprIndex, target: ExprIndex };
+pub const JumpIfVariant = struct { condition: ExprIndex, variant: Name, target: ExprIndex };
+pub const GetEnumValue = struct { of: ExprIndex };
 
 pub fn print(writer: anytype, mono: Mono) !void {
     {
@@ -128,7 +132,10 @@ fn print_expr(writer: anytype, expr: Expr) !void {
             try writer.print("{} set to {}", .{assign.to, assign.value});
         },
         .jump => |jump| try writer.print("jump to _{}", .{jump.target}),
-        .jump_if => |jump| try writer.print("if _{} jump to _{}", .{jump.condition, jump.target}),
+        // TODO: remove in favor of jump_if_variant
+        .jump_if => |jump| try writer.print("if _{}, jump to _{}", .{jump.condition, jump.target}),
+        .jump_if_variant => |jump| try writer.print("if _{} is {}, jump to _{}", .{jump.condition, jump.variant, jump.target}),
+        .get_enum_value => |gev| try writer.print("get value of _{}", .{gev.of}),
         .return_ => |r| try writer.print("return _{d}", .{r}),
     }
 }

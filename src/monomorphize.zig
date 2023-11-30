@@ -462,6 +462,7 @@ const Monomorphizer = struct {
                 const jump_if_true = try fun.put(.{ .arg = {} }, "Nothing"); // Will be replaced with jump_if
                 const jump_if_false = try fun.put(.{ .arg = {} }, "Never"); // Will be replaced with jump
 
+                // TODO: Create inner var env
                 const then_body = fun.next_index();
                 for (if_.then.items) |expr| {
                     _ = try self.compile_expr(fun, ty_env, var_env, expr);
@@ -469,6 +470,7 @@ const Monomorphizer = struct {
                 const jump_after_then = try fun.put(.{ .arg = {} }, "Never"); // Will be replaced with jump
 
                 if (if_.else_) |else_| {
+                    // TODO: Create inner var env
                     const else_body = fun.next_index();
                     for (else_.items) |expr| {
                         _ = try self.compile_expr(fun, ty_env, var_env, expr);
@@ -492,6 +494,42 @@ const Monomorphizer = struct {
 
                 // TODO: Make if evaluate to its body's result
                 return condition;
+            },
+            .switch_ => |switch_| {
+                const value = try self.compile_expr(fun, ty_env, var_env, switch_.value.*);
+
+                // Jump table
+                const jump_table_start = fun.next_index();
+                for (switch_.cases.items) |_| {
+                    _ = try fun.put(.{ .arg = {} }, "Nothing"); // Will be replaced with jump_if_variant
+                }
+                // TODO: instead of looping, ensure all cases are matched
+                _ = try fun.put(.{ .jump = .{ .target = jump_table_start } }, "Never"); // unreachable
+
+                // Case bodies
+                var after_switch_jumps = ArrayList(ast.ExprIndex).init(self.alloc);
+                for (switch_.cases, 0..) |case, i| {
+                    fun.body.items[jump_table_start + i] = .{ .jump_if_variant = .{
+                        .condition = value,
+                        .variant = case.variant,
+                        .target = fun.next_index(),
+                    } };
+                    try fun.put(.{ .get_enum_value = .{ .of = value } });
+                    // TODO: Create inner var env
+                    // const inner_var_env = var_env.clone();
+                    for (case.body.items) |expr| {
+                        _ = try self.compile_expr(fun, ty_env, var_env, expr);
+                    }
+                    try after_switch_jumps.append(fun.next_index());
+                    try fun.put(.{ .arg = {} }); // will be replaced with jump to after switch
+                }
+                const after_switch = fun.next_index();
+                for (after_switch_jumps) |jump| {
+                    fun.body.items[jump] = .{ .jump = .{ .target = after_switch } };
+                }
+
+                // TODO: Make it evaluate to the cases' bodies results
+                return value;
             },
             .return_ => |returned| {
                 const index = try self.compile_expr(fun, ty_env, var_env, returned.*);

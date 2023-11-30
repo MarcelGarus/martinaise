@@ -400,17 +400,19 @@ const Parser = struct {
     }
 
     fn parse_expression(self: *Self) error{
-        ExpectedClosingParenthesis, OutOfMemory, ExpectedMemberOrConstructor,
-        ExpectedCondition, ExpectedThenBody, ExpectedElseBody, ExpectedColon,
-        ExpectedTypeArgument, ExpectedClosingBracket, ExpectedNameOfVar,
-        ExpectedTypeOfVar, ExpectedEquals, ExpectedValueOfVar,
-        ExpectedStatementOrClosingBrace, ExpectedClosingBrace,
-        ExpectedValueOfField, ExpectedExpression
+        ExpectedClosingParenthesis, OutOfMemory, ExpectedMemberOrConstructor, ExpectedCondition,
+        ExpectedThenBody, ExpectedElseBody, ExpectedColon, ExpectedTypeArgument,
+        ExpectedClosingBracket, ExpectedNameOfVar, ExpectedTypeOfVar, ExpectedEquals,
+        ExpectedValueOfVar, ExpectedStatementOrClosingBrace, ExpectedClosingBrace,
+        ExpectedValueOfField, ExpectedExpression, ExpectedOpeningBrace, ExpectedBody,
+        ExpectedBinding
     }!?ast.Expr {
         var expression: ?ast.Expr = null;
         
         if (try self.parse_if()) |if_| {
             expression = .{ .if_ = if_ };
+        } else if (try self.parse_switch()) |switch_| {
+            expression = .{ .switch_ = switch_ };
         } else if (self.parse_number()) |number| {
             expression = .{ .num = number };
         } else if (self.parse_name()) |name| {
@@ -602,5 +604,42 @@ const Parser = struct {
         }
 
         return .{ .condition = heaped, .then = then, .else_ = else_ };
+    }
+
+    fn parse_switch(self: *Self) !?ast.Switch {
+        self.consume_keyword("switch") orelse return null;
+        self.consume_whitespace();
+
+        const value = try self.parse_expression() orelse return error.ExpectedExpression;
+        self.consume_whitespace();
+        const heaped_value = try self.alloc.create(ast.Expr);
+        heaped_value.* = value;
+
+        self.consume_prefix("{") orelse return error.ExpectedOpeningBrace;
+        self.consume_whitespace();
+
+        var cases = ArrayList(ast.Case).init(self.alloc);
+        while (true) {
+            const variant = self.parse_name() orelse break;
+            self.consume_whitespace();
+            
+            var binding: ?Name = null;
+            if (self.consume_prefix("(")) |_| {
+                self.consume_whitespace();
+                binding = self.parse_name() orelse return error.ExpectedBinding;
+                self.consume_whitespace();
+                self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
+                self.consume_whitespace();
+            }
+
+            const body = try self.parse_body() orelse return error.ExpectedBody;
+            self.consume_whitespace();
+
+            try cases.append(.{ .variant = variant, .binding = binding, .body = body });
+        }
+
+        self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
+
+        return .{ .value = heaped_value, .cases = cases };
     }
 };

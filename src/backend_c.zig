@@ -147,7 +147,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                     for (e.variants.items) |variant| {
                         try format(out, "    mar_{s},\n", .{variant.name});
                     }
-                    try format(out, "  }} kind;\n", .{});
+                    try format(out, "  }} variant;\n", .{});
                     try format(out, "}}", .{});
                 },
                 .fun => {
@@ -247,7 +247,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                                 (try mangle(alloc, vc.enum_ty)).items,
                                 i,
                             });
-                            try format(out, "  _{}.kind = mar_{s};\n", .{
+                            try format(out, "  _{}.variant = mar_{s};\n", .{
                                 i,
                                 vc.variant,
                             });
@@ -278,9 +278,17 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !ArrayList(u8
                             try format(out, "  goto expr_{};\n", .{jump.target});
                         },
                         .jump_if => |jump| {
-                            try format(out, "  if (_{}.kind == mar_true) {{\n", .{jump.condition});
+                            try format(out, "  if (_{}.variant == mar_true) {{\n", .{jump.condition});
                             try format(out, "    goto expr_{};\n", .{jump.target});
                             try format(out, "  }}\n", .{});
+                        },
+                        .jump_if_variant => |jump| {
+                            try format(out, "  if (_{}.variant == mar_{}) {{", .{jump.condition, jump.variant});
+                            try format(out, "    goto expr_{};\n", .{jump.target});
+                            try format(out, "  }}\n", .{});
+                        },
+                        .get_enum_value => |gev| {
+                            try format(out, "  _{} = _{}.value;\n", .{i, gev.of});
                         },
                         .return_ => |index| {
                             // If a Never is returned, the return is not reached anyway. If we emit
