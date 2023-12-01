@@ -314,7 +314,10 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                         .member => |member| try format(out, "{s} _{} = _{}.{s};\n", .{
                             (try mangle(alloc, ty)).items, i, member.of, member.name,
                         }),
-                        .assign => |assign| try format(out, "_{} = _{}; mar_Nothing _{};\n", .{assign.to, assign.value, i}),
+                        .assign => |assign| {
+                            try format_left_expr(alloc, out, assign.to);
+                            try format(out, " = _{}; mar_Nothing _{};\n", .{assign.value, i});
+                        },
                         .jump => |jump| try format(out, "goto expr_{};\n", .{jump.target}),
                         .jump_if => |jump| try format(out, "if (_{}.variant == mar_true) goto expr_{};\n", .{jump.condition, jump.target}),
                         .jump_if_variant => |jump| try format(out, "if (_{}.variant == mar_{s}) goto expr_{};\n", .{
@@ -350,6 +353,21 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
     }
 
     return out_buffer;
+}
+
+fn format_left_expr(alloc: std.mem.Allocator, out: anytype, expr: mono.LeftExpr) !void {
+    switch (expr.kind) {
+        .ref => |index| try format(out, "_{}", .{index}),
+        .member => |member| {
+            try format_left_expr(alloc, out, member.of.*);
+            try format(out, ".{s}", .{member.name});
+        },
+        .deref => |of| {
+            try format(out, "(*(({s}*) ", .{(try mangle(alloc, expr.ty)).items});
+            try format_left_expr(alloc, out, of.*);
+            try format(out, ".address.value))", .{});
+        },
+    }
 }
 
 fn mangle(alloc: std.mem.Allocator, name: Str) !String {

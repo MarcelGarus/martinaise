@@ -42,6 +42,8 @@ fun dump[W](b: Bool, writer: W) {
   }
 }
 
+| Maybe
+| Like Option in Rust, but with the cooler Haskell name.
 enum Maybe[T] { some: T, none }
 fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] {
   switch maybe {
@@ -71,43 +73,23 @@ fun dump[T, W](maybe: Maybe[T], writer: W) {
 
 | Ordering
 enum Ordering { less, equal, greater }
-fun is_less(o: Ordering): Bool {
-  switch o {
-    less { Bool.true }
-    equal { Bool.false }
-    greater { Bool.false }
-  }
+fun is_less(ord: Ordering): Bool {
+  switch ord { less { Bool.true } equal { Bool.false } greater { Bool.false } }
 }
-fun is_equal(o: Ordering): Bool {
-  switch o {
-    less { Bool.false }
-    equal { Bool.true }
-    greater { Bool.false }
-  }
+fun is_equal(ord: Ordering): Bool {
+  switch ord { less { Bool.false } equal { Bool.true } greater { Bool.false } }
 }
-fun is_greater(o: Ordering): Bool {
-  switch o {
-    less { Bool.false }
-    equal { Bool.false }
-    greater { Bool.true }
-  }
+fun is_greater(ord: Ordering): Bool {
+  switch ord { less { Bool.false } equal { Bool.false } greater { Bool.true } }
 }
-fun is_less_or_equal(o: Ordering): Bool {
-  switch o {
-    less { Bool.true }
-    equal { Bool.true }
-    greater { Bool.false }
-  }
+fun is_less_or_equal(ord: Ordering): Bool {
+  switch ord { less { Bool.true } equal { Bool.true } greater { Bool.false } }
 }
-fun is_greater_or_equal(o: Ordering): Bool {
-  switch o {
-    less { Bool.false }
-    equal { Bool.true }
-    greater { Bool.true }
-  }
+fun is_greater_or_equal(ord: Ordering): Bool {
+  switch ord { less { Bool.false } equal { Bool.true } greater { Bool.true } }
 }
-fun dump[W](o: Ordering, writer: W) {
-  switch o {
+fun dump[W](ord: Ordering, writer: W) {
+  switch ord {
     less {
       'l.dump(writer)
       'e.dump(writer)
@@ -216,17 +198,24 @@ fun dump[W](int: U64, writer: W) {
 }
 
 | Ref
-| Martinaise has no typed pointers, but these two builtin functions exist:
+| Martinaise has no typed pointers, but these builtin functions exist:
 | - address_of[T](T): U64
 | - follow_address[T](U64): T
-| - malloc(U64): U64
 | - size_of_type[T](): U64
-| Here, we build some type-safe abstractions on top.
+| - malloc(U64): U64
+| Here, we build some type-safe abstractions on top. The Ref type is special to
+| the compiler. In particular, you can access members on a Ref that the ref
+| itself doesn't have, if its wrapped type has those members. Also, when
+| assigning a T to a Ref[T], the memory pointed to by the Ref is changed.
 struct Ref[T] { address: U64 }
 fun ref[T](value: T): Ref[T] { Ref[T].{ address = address_of(value) } }
 fun deref[T](ref: Ref[T]): T { follow_address[T](ref.address) }
 fun cast[T, U](value: Ref[T]): Ref[U] { Ref[U].{ address = value.address } }
-fun new[T](): Ref[T] { Ref[T].{ address = malloc(size_of_type[T]()) } }
+fun new[T](value: T): Ref[T] {
+  var ref = Ref[T].{ address = malloc(size_of_type[T]()) }
+  ref = value
+  ref
+}
 | TODO: new should take a value
 fun dump[T, W](ref: Ref[T], writer: W) {
   | note: max u64 is 18446744073709551615
@@ -270,6 +259,7 @@ fun dump[T, W](point: Point[T], writer: W) {
   ').dump(writer)
 }
 
+| Vec
 struct Vec[T] {
   len: U64,
 }
@@ -283,7 +273,7 @@ fun push[T](vec: Ref[Vec[T]], item: T) {
 struct Char { value: U8 }
 fun dump[W](c: Char, writer: W) { writer.write(c.value) }
 
-| TODO: string, result, vec, hash map, segment tree, treap
+| TODO: string, result, hash map, segment tree, treap
 
 |struct Slice[T] { data: Box[T], len: U64 }
 |fun get[T](slice: Slice[T], index: U64): T {
@@ -298,28 +288,25 @@ struct Bar[T] {}
 fun foo[A](foo: Foo, a: A) {}
 fun foo[A, B](foo: A, b: Bar[B]) {}
 
+struct Box[T] { val: T }
+fun dump[T, W](box: Box[T], writer: W) { box.val.dump(writer) }
+
 fun main(): I64 {
   |Foo.{}.foo(Bar[Foo].{}) | fails when uncommented (two matching functions)
 
   |println(Maybe[U8].some(2_u8))
   |println(fib(10_u64))
 
-  |println(switch Bool.true {
-  |  true { 3_u8 }
-  |  false { 4_u8 }
-  |})
-  |println(18446744073709551615_u64)
+  var box = new(Box[U8].{ val = 3_u8 })
+  |box.val = 5_u8
+  println(box.deref())
 
-  println(size_of_type[Point[U8]]())
-  var point = new[Point[U8]]()
-  println(point)
-  println(point.deref())
+  |var point_ref = new(Point[U8].{ x = 3_u8, y = 2_u8 })
+  |println(point_ref)
+  |println(point_ref.deref())
+  |point_ref.x = 5_u8
 
-  |var point = Point[U8].{ x = 3_u8, y = 2_u8 }
-  |point.x = 5_u8
-  |println(point)
-
-  println(Bool.true.implies(Bool.true.or(Bool.false)))
+  |println(Bool.true.implies(Bool.true.or(Bool.false)))
 
   |return 0_i64
 
@@ -343,7 +330,8 @@ fun main(): I64 {
   |print('
   |)
 
-  return multiply(add(3_i64, 4_i64), divide(4_i64, 2_i64)).modulo(10_i64)
+  |return multiply(add(3_i64, 4_i64), divide(4_i64, 2_i64)).modulo(10_i64)
+  return 0_i64
 }
 
 fun fib(n: U64): U64 {

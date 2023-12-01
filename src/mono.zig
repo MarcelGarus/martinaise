@@ -3,6 +3,7 @@ const ArrayList = std.ArrayList; // TODO: Use slices everywhere instead
 const StringArrayHashMap = std.StringArrayHashMap;
 const StringHashMap = std.StringHashMap;
 const Str = @import("string.zig").Str;
+const Ty = @import("ty.zig").Ty;
 const numbers = @import("numbers.zig");
 
 pub const Mono = struct {
@@ -64,11 +65,22 @@ pub const Call = struct { fun: Str, args: ArrayList(ExprIndex) };
 pub const VariantCreation = struct { enum_ty: Str, variant: Str, value: ExprIndex };
 pub const StructCreation = struct { struct_ty: Str, fields: StringHashMap(ExprIndex) };
 pub const Member = struct { of: ExprIndex, name: Str };
-pub const Assign = struct { to: ExprIndex, value: ExprIndex };
+pub const Assign = struct { to: LeftExpr, value: ExprIndex };
 pub const Jump = struct { target: ExprIndex };
 pub const JumpIf = struct { condition: ExprIndex, target: ExprIndex };
 pub const JumpIfVariant = struct { condition: ExprIndex, variant: Str, target: ExprIndex };
 pub const GetEnumValue = struct { of: ExprIndex, variant: Str, ty: Str };
+
+pub const LeftExpr = struct {
+    ty: Str,
+    kind: LeftExprKind,
+};
+pub const LeftExprKind = union(enum) {
+    ref: ExprIndex,
+    member: LeftMember,
+    deref: *const LeftExpr,
+};
+pub const LeftMember = struct { of: *const LeftExpr, name: Str };
 
 pub fn print(writer: anytype, mono: Mono) !void {
     {

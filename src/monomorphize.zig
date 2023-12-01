@@ -286,7 +286,7 @@ const Monomorphizer = struct {
         ExpressionNotHandled, VariableNotInScope, CanOnlyAssignToName, YouCanOnlyConstructStructs,
         TypeArgumentCantHaveGenerics, FieldDoesNotExist, AccessedMemberOnNonStruct,
         VariantDoesntExist, IfConditionMustBeBool, SwitchOnNonEnum, UnknownVariant,
-        TooManyArgumentsForVariant, IfWithMismatchedTypes
+        TooManyArgumentsForVariant, IfWithMismatchedTypes, CannotAssignToThis
     }!mono.ExprIndex {
         // This may be an enum variant instantiation such as `Maybe[Int].some(3)`.
         if (try self.compile_enum_creation(fun, ty_env, var_env, expression)) |index| {
@@ -390,18 +390,8 @@ const Monomorphizer = struct {
                 return value;
             },
             .assign => |assign| {
-                const to = to: {
-                    switch (assign.to.*) {
-                        .ref => |ref| {
-                            if (var_env.get(ref)) |var_info| {
-                                break :to var_info.expr_index;
-                            }
-                            return error.VariableNotInScope;
-                        },
-                        else => return error.CanOnlyAssignToName,
-                    }
-                };
                 const value = try self.compile_expr(fun, ty_env, var_env, assign.value.*);
+                const to = try self.compile_left_expr(fun, var_env.*, assign.to.*, fun.tys.items[value]);
                 return try fun.put(.{ .assign = .{ .to = to, .value = value } }, "Nothing");
             },
             .struct_creation => |sc| {
@@ -431,7 +421,10 @@ const Monomorphizer = struct {
                 const then_body = fun.next_index();
                 const then_result = try self.compile_body(fun, ty_env, var_env, if_.then.items);
                 fun.tys.items[result] = fun.tys.items[then_result];
-                _ = try fun.put(.{ .assign = .{ .to = result, .value = then_result } }, "Nothing");
+                _ = try fun.put(.{ .assign = .{
+                    .to = .{ .ty = fun.tys.items[result], .kind = .{ .ref = result } },
+                    .value = then_result
+                } }, "Nothing");
                 const jump_after_then = try fun.put(.{ .arg = {} }, "Never"); // Will be replaced with jump
 
                 if (if_.else_) |else_| {
@@ -444,7 +437,10 @@ const Monomorphizer = struct {
                         });
                         return error.IfWithMismatchedTypes;
                     }
-                    _ = try fun.put(.{ .assign = .{ .to = result, .value = else_result } }, "Nothing");
+                    _ = try fun.put(.{ .assign = .{
+                        .to = .{ .ty = fun.tys.items[result], .kind = .{ .ref = result } },
+                        .value = else_result
+                    } }, "Nothing");
                     const jump_after_else = try fun.put(.{ .arg = {} }, "Never"); // Will be replaced with jump
                     const after_if = fun.next_index();
 
@@ -516,7 +512,10 @@ const Monomorphizer = struct {
                         });
                         return error.IfWithMismatchedTypes;
                     }
-                    _ = try fun.put(.{ .assign = .{ .to = result, .value = body_result } }, "Nothing");
+                    _ = try fun.put(.{ .assign = .{
+                        .to = .{ .ty = fun.tys.items[result], .kind = .{ .ref = result } },
+                        .value = body_result
+                    } }, "Nothing");
                     try after_switch_jumps.append(try fun.put(.{ .arg = {} }, "Never")); // will be replaced with jump to after switch
                 }
                 const after_switch = fun.next_index();
@@ -535,6 +534,62 @@ const Monomorphizer = struct {
                 std.debug.print("compiling {any}\n", .{expression});
                 return error.ExpressionNotHandled;
             }
+        }
+    }
+
+    fn compile_left_expr(self: *Self, fun: *mono.Fun, var_env: VarEnv, expr: ast.Expr, right_ty: Str) !mono.LeftExpr {
+        var left = try self.compile_left_expr_rec(fun, var_env, expr);
+        while (!std.mem.eql(u8, left.ty, right_ty)
+            and std.mem.eql(u8, (self.tys.get(left.ty) orelse unreachable).name, "Ref")) {
+            // TODO: This is so horrible.
+            const derefed_ty = left.ty["Ref[".len..left.ty.len - "]".len];
+            const heaped = try self.alloc.create(mono.LeftExpr);
+            heaped.* = left;
+            left = .{ .ty = derefed_ty, .kind = .{ .deref = heaped } };
+        }
+        return left;
+    }
+    fn compile_left_expr_rec(self: *Self, fun: *mono.Fun, var_env: VarEnv, expr: ast.Expr) !mono.LeftExpr {
+        switch (expr) {
+            .ref => |ref| {
+                if (var_env.get(ref)) |var_info| {
+                    return .{
+                        .ty = fun.tys.items[var_info.expr_index],
+                        .kind = .{ .ref = var_info.expr_index },
+                    };
+                }
+                return error.VariableNotInScope;
+            },
+            .member => |member| {
+                var of = try self.compile_left_expr_rec(fun, var_env, member.of.*);
+                while (std.mem.eql(u8, (self.tys.get(of.ty) orelse unreachable).name, "Ref")) {
+                    // TODO: This is so horrible.
+                    const derefed_ty = of.ty["Ref[".len..of.ty.len - "]".len];
+                    const heaped = try self.alloc.create(mono.LeftExpr);
+                    heaped.* = of;
+                    of = .{ .ty = derefed_ty, .kind = .{ .deref = heaped } };
+                }
+
+                const of_type_def = self.ty_defs.get(of.ty) orelse unreachable;
+                const field_ty = get_field_ty: {
+                    switch (of_type_def) {
+                        .struct_ => |s| {
+                            for (s.fields.items) |field| {
+                                if (std.mem.eql(u8, field.name, member.name)) {
+                                    break :get_field_ty field.ty;
+                                }
+                            }
+                            return error.FieldDoesNotExist;
+                        },
+                        else => return error.AccessedMemberOnNonStruct,
+                    }
+                };
+
+                const heaped = try self.alloc.create(mono.LeftExpr);
+                heaped.* = of;
+                return .{ .ty = field_ty, .kind = .{ .member = .{ .of = heaped, .name = member.name } } };
+            },
+            else => return error.CannotAssignToThis,
         }
     }
 
