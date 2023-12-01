@@ -317,15 +317,17 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                             try format_left_expr(alloc, out, assign.to);
                             try format(out, " = _{}; mar_Nothing _{};\n", .{ assign.value, i });
                         },
-                        .jump => |jump| try format(out, "goto expr_{};\n", .{jump.target}),
-                        .jump_if => |jump| try format(out, "if (_{}.variant == mar_true) goto expr_{};\n", .{
+                        .jump => |jump| try format(out, "goto expr_{}; mar_Never _{};\n", .{ jump.target, i }),
+                        .jump_if => |jump| try format(out, "if (_{}.variant == mar_true) goto expr_{}; mar_Never _{};\n", .{
                             jump.condition,
                             jump.target,
+                            i,
                         }),
-                        .jump_if_variant => |jump| try format(out, "if (_{}.variant == {s}) goto expr_{};\n", .{
+                        .jump_if_variant => |jump| try format(out, "if (_{}.variant == {s}) goto expr_{}; mar_Never _{};\n", .{
                             jump.condition,
                             try mangle(alloc, jump.variant),
                             jump.target,
+                            i,
                         }),
                         .get_enum_value => |gev| try format(out, "{s} _{} = _{}.as.{s};\n", .{
                             try mangle(alloc, gev.ty),

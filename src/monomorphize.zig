@@ -301,6 +301,15 @@ const FunMonomorphizer = struct {
     ty_env: TyEnv,
     var_env: *VarEnv,
 
+    // When lowering loops, breaks don't know where to jump to yet. Instead,
+    // they fill this structure.
+    breakable_scopes: ArrayList(BreakableScope), // used like a stack
+    const BreakableScope = struct {
+        result: mono.ExprIndex,
+        result_ty: ?Str,
+        breaks: ArrayList(mono.ExprIndex),
+    };
+
     const Self = @This();
 
     // Maps variable names to their expression index.
@@ -368,6 +377,7 @@ const FunMonomorphizer = struct {
             .fun = &mono_fun,
             .ty_env = ty_env,
             .var_env = &var_env,
+            .breakable_scopes = ArrayList(BreakableScope).init(alloc),
         };
 
         const body_result = try fun_monomorphizer.compile_body(fun.body.items);
@@ -407,7 +417,12 @@ const FunMonomorphizer = struct {
         TooManyArgumentsForVariant,
         IfWithMismatchedTypes,
         CannotAssignToThis,
+        BreakCanOnlyTakeOneArgument,
+        BreaksReturnInconsistentTypes,
     }!mono.ExprIndex {
+        if (try self.compile_break(expression)) |index| {
+            return index;
+        }
         // This may be an enum variant instantiation such as `Maybe[Int].some(3)`.
         if (try self.compile_enum_creation(expression)) |index| {
             return index;
@@ -628,11 +643,28 @@ const FunMonomorphizer = struct {
                 return result;
             },
             .loop => |body| {
+                const result = try self.fun.put(.{ .uninitialized = {} }, "Nothing"); // type will be replaced
+                try self.breakable_scopes.append(.{
+                    .result = result,
+                    .result_ty = null,
+                    .breaks = ArrayList(mono.ExprIndex).init(self.alloc),
+                });
                 // TODO: Create inner var env
                 const loop_start = self.fun.next_index();
                 _ = try self.compile_body(body.items);
-                const end = try self.fun.put(.{ .jump = .{ .target = loop_start } }, "Never");
-                return end;
+                _ = try self.fun.put(.{ .jump = .{ .target = loop_start } }, "Never");
+
+                const after_loop = self.fun.next_index();
+                const scope = self.breakable_scopes.pop();
+                std.debug.print("Scope: {any}\n", .{scope});
+                if (scope.result_ty) |ty| {
+                    self.fun.tys.items[result] = ty;
+                }
+                for (scope.breaks.items) |b| {
+                    self.fun.body.items[b] = .{ .jump = .{ .target = after_loop } };
+                }
+
+                return result;
             },
             .return_ => |returned| {
                 const index = try self.compile_expr(returned.*);
@@ -718,6 +750,61 @@ const FunMonomorphizer = struct {
 
     fn compile_nothing_instance(self: *Self) !mono.ExprIndex {
         return try self.fun.put(.{ .struct_creation = .{ .struct_ty = "Nothing", .fields = StringHashMap(mono.ExprIndex).init(self.alloc) } }, "Nothing");
+    }
+
+    // Some calls and some refs may be breaks. For example, `break(5)` and `break` both break.
+    fn compile_break(self: *Self, expr: ast.Expr) !?mono.ExprIndex {
+        const arg: ?ast.Expr = break_arg: {
+            switch (expr) {
+                .ref => |name| if (std.mem.eql(u8, name, "break")) {
+                    break :break_arg null;
+                } else {
+                    return null;
+                },
+                .call => |call| switch (call.callee.*) {
+                    .ref => |name| if (std.mem.eql(u8, name, "break")) {
+                        if (call.args.items.len == 0) {
+                            break :break_arg null;
+                        }
+                        if (call.args.items.len == 1) {
+                            break :break_arg call.args.items[0];
+                        }
+                        return error.BreakCanOnlyTakeOneArgument;
+                    } else {
+                        return null;
+                    },
+                    else => return null,
+                },
+                else => return null,
+            }
+        };
+
+        const compiled_arg = ca: {
+            if (arg) |a| {
+                break :ca try self.compile_expr(a);
+            } else {
+                break :ca try self.compile_nothing_instance();
+            }
+        };
+        const arg_ty = self.fun.tys.items[compiled_arg];
+
+        var scope = &self.breakable_scopes.items[self.breakable_scopes.items.len - 1];
+
+        if (scope.result_ty) |expected_ty| {
+            if (!std.mem.eql(u8, arg_ty, expected_ty)) {
+                std.debug.print("Previous break returned {s}, this break returns {s}.\n", .{ expected_ty, arg_ty });
+                return error.BreaksReturnInconsistentTypes;
+            }
+        }
+        scope.result_ty = arg_ty;
+
+        _ = try self.fun.put(.{ .assign = .{
+            .to = .{ .ty = arg_ty, .kind = .{ .ref = scope.result } },
+            .value = compiled_arg,
+        } }, "Nothing");
+        const jump = try self.fun.put(.{ .uninitialized = {} }, "Never"); // will be replaced by jump to after loop
+        try scope.breaks.append(jump);
+        return jump;
     }
 
     // Some calls and some members may be enum creations. For example, `Maybe[U8].some(4_u8)` and
