@@ -442,13 +442,43 @@ const Parser = struct {
         return statements;
     }
 
-    fn parse_expression(self: *Self) error{ ExpectedClosingParenthesis, OutOfMemory, ExpectedMemberOrConstructor, ExpectedCondition, ExpectedThenBody, ExpectedElseBody, ExpectedColon, ExpectedTypeArgument, ExpectedClosingBracket, ExpectedNameOfVar, ExpectedTypeOfVar, ExpectedEquals, ExpectedValueOfVar, ExpectedStatementOrClosingBrace, ExpectedClosingBrace, ExpectedValueOfField, ExpectedExpression, ExpectedOpeningBrace, ExpectedBody, ExpectedBinding, ExpectedSignedness, ExpectedBits, InvalidBits, ExpectedUnderscore, ExpectedChar, ExpectedType }!?ast.Expr {
+    fn parse_expression(self: *Self) error{
+        ExpectedClosingParenthesis,
+        OutOfMemory,
+        ExpectedMemberOrConstructor,
+        ExpectedCondition,
+        ExpectedThenBody,
+        ExpectedElseBody,
+        ExpectedColon,
+        ExpectedTypeArgument,
+        ExpectedClosingBracket,
+        ExpectedNameOfVar,
+        ExpectedTypeOfVar,
+        ExpectedEquals,
+        ExpectedValueOfVar,
+        ExpectedStatementOrClosingBrace,
+        ExpectedClosingBrace,
+        ExpectedValueOfField,
+        ExpectedExpression,
+        ExpectedOpeningBrace,
+        ExpectedBody,
+        ExpectedBinding,
+        ExpectedSignedness,
+        ExpectedBits,
+        InvalidBits,
+        ExpectedUnderscore,
+        ExpectedChar,
+        ExpectedType,
+        ExpectedLoopBody,
+    }!?ast.Expr {
         var expression: ?ast.Expr = null;
 
         if (try self.parse_if()) |if_| {
             expression = .{ .if_ = if_ };
         } else if (try self.parse_switch()) |switch_| {
             expression = .{ .switch_ = switch_ };
+        } else if (try self.parse_loop()) |loop| {
+            expression = .{ .loop = loop };
         } else if (try self.parse_int()) |int| {
             expression = .{ .int = int };
         } else if (try self.parse_char()) |c| {
@@ -729,5 +759,11 @@ const Parser = struct {
         self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
 
         return .{ .value = heaped_value, .cases = cases };
+    }
+
+    fn parse_loop(self: *Self) !?ast.Body {
+        self.consume_keyword("loop") orelse return null;
+        self.consume_whitespace();
+        return try self.parse_body() orelse return error.ExpectedLoopBody;
     }
 };

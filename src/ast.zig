@@ -61,6 +61,7 @@ pub const Expr = union(enum) {
     assign: Assign, // foo = ...
     if_: If, // if foo { ... }
     switch_: Switch, // switch foo { a { ... } b(bar) { ... } }
+    loop: Body, // loop { ... }
     return_: *const Expr, // return ...
     ampersanded: *const Expr, // &...
 };
@@ -272,6 +273,10 @@ fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
                 try writer.print("\n", .{});
             }
             try writer.print("}}", .{});
+        },
+        .loop => |body| {
+            try writer.print("loop ", .{});
+            try print_body(writer, indent, body);
         },
         .return_ => |returned| {
             try writer.print("return ", .{});

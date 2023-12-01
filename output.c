@@ -348,10 +348,13 @@ mar_I64 mar_main_po__pc_() {
   expr_13: mar_U64 _13; _13.value = 1ULL;
   expr_14: mar_U8 _14 = mar_get_bo_U8_bc__po_Vec_bo_U8_bc__c_U64_pc_(_0, _13);
   expr_15: mar_Nothing _15 = mar_println_bo_U8_bc__po_U8_pc_(_14);
-  expr_16: mar_I64 _16; _16.value = 0LL;
-  expr_17: return _16; mar_Never _17;
-  expr_18: mar_Never _18;
-  expr_19: // end
+  expr_16: mar_U8 _16; _16.value = 3ULL;
+  expr_17: mar_Nothing _17 = mar_println_bo_U8_bc__po_U8_pc_(_16);
+  expr_18: goto expr_16;
+  expr_19: mar_I64 _19; _19.value = 0LL;
+  expr_20: return _19; mar_Never _20;
+  expr_21: mar_Never _21;
+  expr_22: // end
 }
 
 // malloc(U64)

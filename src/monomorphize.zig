@@ -494,6 +494,13 @@ const Monomorphizer = struct {
 
                 return result;
             },
+            .loop => |body| {
+                // TODO: Create inner var env
+                const loop_start = fun.next_index();
+                _ = try self.compile_body(fun, ty_env, var_env, body.items);
+                const end = try fun.put(.{ .jump = .{ .target = loop_start } }, "Never");
+                return end;
+            },
             .return_ => |returned| {
                 const index = try self.compile_expr(fun, ty_env, var_env, returned.*);
                 // TODO: Make sure return has correct type
