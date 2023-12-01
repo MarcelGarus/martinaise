@@ -12,9 +12,12 @@ struct Nothing {}
 | evaluate to the Never type.
 struct Never {} | TODO: Make this an enum
 
+fun identity[T](value: T): T { value }
+
 | Printing
 | Values with a dump(writer) function can be printed. Writers are anything with
-| a write(U8) function. The print function writes the dumped values to stdout.
+| a write(U8) function. The print function writes the dumped values to stdout
+| using the builtin function print_to_stdout(U8).
 struct StdoutWriter {}
 fun write(sow: StdoutWriter, c: U8) { print_to_stdout(c) }
 fun print[T](value: T) { value.dump(StdoutWriter.{}) }
@@ -197,24 +200,27 @@ fun dump[W](int: U64, writer: W) {
   writer.write(int.modulo(10_u64).to_U8().add('0.value))
 }
 
-| Ref
-| Martinaise has no typed pointers, but these builtin functions exist:
-| - address_of[T](T): U64
-| - follow_address[T](U64): T
+| References
+| References (pointers to memory locations) are built into the compiler. &T is a
+| reference to a T. You can get a reference to a value using the & operator on
+| an expression. You can follow a reference using the expr.* syntax. References
+| can also be converted to and from the address they are pointing at these
+| builtin functions:
+| - to_address(&T): U64
+| - to_reference[T](U64): &T
+| The builtin memory allocation functions don't have anything to do with
+| references – they just deal with untyped memory. The following builtin
+| functions are used to build type-safe abstractions on top:
 | - size_of_type[T](): U64
 | - malloc(U64): U64
-| Here, we build some type-safe abstractions on top. The Ref type is special to
-| the compiler. In particular, you can access members on a Ref that the ref
-| itself doesn't have, if its wrapped type has those members. Also, when
-| assigning a T to a Ref[T], the memory pointed to by the Ref is changed.
-struct Ref[T] { address: U64 }
-fun ref[T](value: T): Ref[T] { Ref[T].{ address = address_of(value) } }
-fun deref[T](ref: Ref[T]): T { follow_address[T](ref.address) }
-fun cast[T, U](value: Ref[T]): Ref[U] { Ref[U].{ address = value.address } }
-fun new[T](value: T): Ref[T] {
-  var ref = Ref[T].{ address = malloc(size_of_type[T]()) }
+| fun cast[T, U](value: Ref[T]): Ref[U] { Ref[U].{ address = value.address } }
+fun new[T](value: T): &T {
+  var ref = malloc(size_of_type[T]()).to_reference[T]()
   ref = value
   ref
+}
+fun add[T](ref: &T, offset: U64): &T {
+  ref.to_address().add(offset.multiply(size_of_type[T]())).to_reference[T]()
 }
 | TODO: new should take a value
 fun dump[T, W](ref: Ref[T], writer: W) {
@@ -261,30 +267,29 @@ fun dump[T, W](point: Point[T], writer: W) {
 
 | Vec
 struct Vec[T] {
-  data: U64,
+  data: &T,
   len: U64,
   capacity: U64,
 }
-fun new_vec[T](): Ref[Vec[T]] {
-  new(Vec[T].{ data = 0_u64, capacity = 0_u64, len = 0_u64 })
+fun vec[T](): Vec[T] {
+  Vec[T].{ data = 0_u64.to_reference[T](), capacity = 0_u64, len = 0_u64 }
 }
-fun push[T](vec: Ref[Vec[T]], item: T) {
-  if vec.deref().capacity.equals(0_u64) {
-    vec.data = malloc(4_u64.multiply(size_of_type[T]()))
-    vec.capacity = 128_u64
+fun push[T](vec: &Vec[T], item: T) {
+  if vec.*.capacity.equals(0_u64) {
+    vec.*.data = malloc(8_u64.multiply(size_of_type[T]())).to_reference[T]()
+    vec.*.capacity = 8_u64
   }
-  if vec.deref().capacity.is_less_than(vec.deref().len.subtract(1_u64)) {
+  if vec.*.capacity.equals(vec.*.len) {
     | TODO: copying data needs loops
   }
-  var new_item = Ref[T].{
-    address = vec.deref().data.add(vec.deref().len.multiply(size_of_type[T]()))
-  }
-  new_item = item
-  vec.len = vec.deref().len.add(1_u64)
+  var new_item = vec.*.data.add(vec.*.len)
+  new_item.* = item
+  vec.*.len = vec.*.len.add(1_u64)
 }
-fun get[T](vec: Ref[Vec[T]], index: U64): T {
-  |if index.is_less_than(vec.deref().len) {
-    follow_address[T](vec.deref().data.add(index.multiply(size_of_type[T]())))
+fun get[T](vec: Vec[T], index: U64): T {
+  | TODO: enable check when panic exists
+  |if index.is_less_than(vec.len) {
+    vec.data.add(index).*
   |}
 }
 
@@ -321,15 +326,15 @@ fun main(): I64 {
   |println(Maybe[U8].some(2_u8))
   |println(fib(10_u64))
 
-  var box = new(Box[U8].{ val = 3_u8 })
-  box.foo()
-  println(box.deref())
+  |var box = new(Box[U8].{ val = 3_u8 })
+  |box.foo()
+  |println(box.deref())
 
-  var vec = new_vec[U8]()
-  vec.push(1_u8)
-  vec.push(2_u8)
-  vec.push(3_u8)
-  println(vec.get(1_u64))
+  var v = vec[U8]()
+  identity(&v).push(1_u8)
+  identity(&v).push(2_u8)
+  identity(&v).push(3_u8)
+  println(v.get(1_u64))
 
   |var point_ref = new(Point[U8].{ x = 3_u8, y = 2_u8 })
   |println(point_ref)

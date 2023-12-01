@@ -58,17 +58,18 @@ pub const Argument = struct { name: Str, ty: Ty };
 
 pub const Body = ArrayList(Expr);
 pub const Expr = union(enum) {
-    int: Int,
-    ref: Str,
-    ty_arged: TyArged,
-    call: Call,
-    struct_creation: StructCreation,
-    member: Member,
-    var_: Var,
-    assign: Assign,
-    if_: If,
-    switch_: Switch,
-    return_: *const Expr,
+    int: Int,                        // 0_u64
+    ref: Str,                        // foo
+    ty_arged: TyArged,               // ...[T]
+    call: Call,                      // ...(arg)
+    struct_creation: StructCreation, // Foo.{ a = ... }
+    member: Member,                  // foo.bar
+    var_: Var,                       // var foo = ...
+    assign: Assign,                  // foo = ...
+    if_: If,                         // if foo { ... }
+    switch_: Switch,                 // switch foo { a { ... } b(bar) { ... } }
+    return_: *const Expr,            // return ...
+    ampersanded: *const Expr,        // &...
 };
 pub const Int = struct { value: i128, signedness: numbers.Signedness, bits: numbers.Bits };
 pub const TyArged = struct { arged: *const Expr, ty_args: ArrayList(Ty) };
@@ -198,7 +199,7 @@ fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
     LockViolation,
 }!void {
     switch (expr) {
-        .num => |n| try writer.print("{}", .{n}),
+        .int => |int| try writer.print("{d}{c}{d}", .{int.value, int.signedness.to_char(), int.bits}),
         .ref => |name| try writer.print("{s}", .{name}),
         .ty_arged => |ty_arged| {
             try print_expr(writer, indent, ty_arged.arged.*);
@@ -272,5 +273,9 @@ fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
             try writer.print("return ", .{});
             try print_expr(writer, indent, returned.*);
         },
+        .ampersanded => |e| {
+            try writer.print("&", .{});
+            try print_expr(writer, indent, e.*);
+        }
     }
 }

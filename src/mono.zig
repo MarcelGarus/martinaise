@@ -59,6 +59,7 @@ pub const Expr = union(enum) {
     jump_if_variant: JumpIfVariant,
     get_enum_value: GetEnumValue,
     return_: ExprIndex,
+    take_ref: ExprIndex,
 };
 pub const Int = struct { value: i128, signedness: numbers.Signedness, bits: numbers.Bits };
 pub const Call = struct { fun: Str, args: ArrayList(ExprIndex) };
