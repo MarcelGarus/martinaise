@@ -261,11 +261,31 @@ fun dump[T, W](point: Point[T], writer: W) {
 
 | Vec
 struct Vec[T] {
+  data: U64,
   len: U64,
+  capacity: U64,
+}
+fun new_vec[T](): Ref[Vec[T]] {
+  new(Vec[T].{ data = 0_u64, capacity = 0_u64, len = 0_u64 })
 }
 fun push[T](vec: Ref[Vec[T]], item: T) {
-  |vec.len = vec.len.deref().add(1.to_U64())
-  Nothing.{}
+  if vec.deref().capacity.equals(0_u64) {
+    vec.data = malloc(4_u64.multiply(size_of_type[T]()))
+    vec.capacity = 128_u64
+  }
+  if vec.deref().capacity.is_less_than(vec.deref().len.subtract(1_u64)) {
+    | TODO: copying data needs loops
+  }
+  var new_item = Ref[T].{
+    address = vec.deref().data.add(vec.deref().len.multiply(size_of_type[T]()))
+  }
+  new_item = item
+  vec.len = vec.deref().len.add(1_u64)
+}
+fun get[T](vec: Ref[Vec[T]], index: U64): T {
+  |if index.is_less_than(vec.deref().len) {
+    follow_address[T](vec.deref().data.add(index.multiply(size_of_type[T]())))
+  |}
 }
 
 | Char
@@ -291,6 +311,10 @@ fun foo[A, B](foo: A, b: Bar[B]) {}
 struct Box[T] { val: T }
 fun dump[T, W](box: Box[T], writer: W) { box.val.dump(writer) }
 
+fun foo(b: Ref[Box[U8]]) {
+  b.val = 200_u8
+}
+
 fun main(): I64 {
   |Foo.{}.foo(Bar[Foo].{}) | fails when uncommented (two matching functions)
 
@@ -298,8 +322,14 @@ fun main(): I64 {
   |println(fib(10_u64))
 
   var box = new(Box[U8].{ val = 3_u8 })
-  |box.val = 5_u8
+  box.foo()
   println(box.deref())
+
+  var vec = new_vec[U8]()
+  vec.push(1_u8)
+  vec.push(2_u8)
+  vec.push(3_u8)
+  println(vec.get(1_u64))
 
   |var point_ref = new(Point[U8].{ x = 3_u8, y = 2_u8 })
   |println(point_ref)
