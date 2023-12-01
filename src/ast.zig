@@ -7,14 +7,7 @@ const numbers = @import("numbers.zig");
 pub const Program = struct {
     defs: ArrayList(Def),
 
-    pub fn add_builtin_fun(
-        self: *@This(),
-        alloc: std.mem.Allocator,
-        name: Str,
-        ty_args: ?ArrayList(Str),
-        args: ArrayList(Argument),
-        returns: Ty
-    ) void {
+    pub fn add_builtin_fun(self: *@This(), alloc: std.mem.Allocator, name: Str, ty_args: ?ArrayList(Str), args: ArrayList(Argument), returns: Ty) void {
         self.defs.append(.{ .fun = .{
             .name = name,
             .ty_args = ty_args orelse ArrayList(Str).init(alloc),
@@ -58,18 +51,18 @@ pub const Argument = struct { name: Str, ty: Ty };
 
 pub const Body = ArrayList(Expr);
 pub const Expr = union(enum) {
-    int: Int,                        // 0_u64
-    ref: Str,                        // foo
-    ty_arged: TyArged,               // ...[T]
-    call: Call,                      // ...(arg)
+    int: Int, // 0_u64
+    ref: Str, // foo
+    ty_arged: TyArged, // ...[T]
+    call: Call, // ...(arg)
     struct_creation: StructCreation, // Foo.{ a = ... }
-    member: Member,                  // foo.bar
-    var_: Var,                       // var foo = ...
-    assign: Assign,                  // foo = ...
-    if_: If,                         // if foo { ... }
-    switch_: Switch,                 // switch foo { a { ... } b(bar) { ... } }
-    return_: *const Expr,            // return ...
-    ampersanded: *const Expr,        // &...
+    member: Member, // foo.bar
+    var_: Var, // var foo = ...
+    assign: Assign, // foo = ...
+    if_: If, // if foo { ... }
+    switch_: Switch, // switch foo { a { ... } b(bar) { ... } }
+    return_: *const Expr, // return ...
+    ampersanded: *const Expr, // &...
 };
 pub const Int = struct { value: i128, signedness: numbers.Signedness, bits: numbers.Bits };
 pub const TyArged = struct { arged: *const Expr, ty_args: ArrayList(Ty) };
@@ -101,7 +94,7 @@ pub fn print_definition(writer: anytype, definition: Def) !void {
             } else {
                 try writer.print(" {{\n", .{});
                 for (fields) |field| {
-                    try writer.print("  {s}: {},\n", .{field.name, field.ty});
+                    try writer.print("  {s}: {},\n", .{ field.name, field.ty });
                 }
                 try writer.print("}}", .{});
             }
@@ -162,7 +155,7 @@ pub fn print_fun(writer: anytype, fun: Fun) !void {
         if (i > 0) {
             try writer.print(", ", .{});
         }
-        try writer.print("{s}: {}", .{arg.name, arg.ty});
+        try writer.print("{s}: {}", .{ arg.name, arg.ty });
     }
     try writer.print(")", .{});
 
@@ -193,13 +186,24 @@ fn print_body(writer: anytype, indent: usize, body: Body) !void {
     try writer.print("}}", .{});
 }
 fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
-    AccessDenied, Unexpected, SystemResources, FileTooBig, NoSpaceLeft,
-    DeviceBusy, WouldBlock, InputOutput, OperationAborted, BrokenPipe,
-    ConnectionResetByPeer, DiskQuota, InvalidArgument, NotOpenForWriting,
+    AccessDenied,
+    Unexpected,
+    SystemResources,
+    FileTooBig,
+    NoSpaceLeft,
+    DeviceBusy,
+    WouldBlock,
+    InputOutput,
+    OperationAborted,
+    BrokenPipe,
+    ConnectionResetByPeer,
+    DiskQuota,
+    InvalidArgument,
+    NotOpenForWriting,
     LockViolation,
 }!void {
     switch (expr) {
-        .int => |int| try writer.print("{d}{c}{d}", .{int.value, int.signedness.to_char(), int.bits}),
+        .int => |int| try writer.print("{d}{c}{d}", .{ int.value, int.signedness.to_char(), int.bits }),
         .ref => |name| try writer.print("{s}", .{name}),
         .ty_arged => |ty_arged| {
             try print_expr(writer, indent, ty_arged.arged.*);
@@ -276,6 +280,6 @@ fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
         .ampersanded => |e| {
             try writer.print("&", .{});
             try print_expr(writer, indent, e.*);
-        }
+        },
     }
 }

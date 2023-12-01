@@ -44,7 +44,7 @@ pub fn int_ty_name(alloc: Allocator, config: IntConfig) !Str {
         .signed => 'I',
         .unsigned => 'U',
     };
-    try std.fmt.format(name.writer(), "{c}{}", .{signedness_char, config.bits});
+    try std.fmt.format(name.writer(), "{c}{}", .{ signedness_char, config.bits });
     return name.items;
 }
 pub fn int_ty(alloc: Allocator, config: IntConfig) !Ty {

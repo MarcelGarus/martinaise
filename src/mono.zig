@@ -120,7 +120,7 @@ fn print_expr(writer: anytype, expr: Expr) !void {
     switch (expr) {
         .arg => try writer.print("arg", .{}),
         .uninitialized => try writer.print("uninitialized", .{}),
-        .int => |int| try writer.print("{d}{c}{d}", .{int.value, int.signedness.to_char(), int.bits}),
+        .int => |int| try writer.print("{d}{c}{d}", .{ int.value, int.signedness.to_char(), int.bits }),
         .call => |call| {
             try writer.print("{s} called with (", .{call.fun});
             for (call.args.items, 0..) |arg, i| {
@@ -131,21 +131,21 @@ fn print_expr(writer: anytype, expr: Expr) !void {
             }
             try writer.print(")", .{});
         },
-        .variant_creation => |vc| try writer.print("{s}.{s}(_{})", .{vc.enum_ty, vc.variant, vc.value}),
+        .variant_creation => |vc| try writer.print("{s}.{s}(_{})", .{ vc.enum_ty, vc.variant, vc.value }),
         .struct_creation => |sc| {
             try writer.print("{s}.{{", .{sc.struct_ty});
             var iter = sc.fields.iterator();
             while (iter.next()) |field| {
-                try writer.print(" {s} = _{},", .{field.key_ptr.*, field.value_ptr.*});
+                try writer.print(" {s} = _{},", .{ field.key_ptr.*, field.value_ptr.* });
             }
             try writer.print(" }}", .{});
         },
-        .member => |m| try writer.print("_{d}.{s}", .{m.of, m.name}),
-        .assign => |assign| try writer.print("_{} set to _{}", .{assign.to, assign.value}),
+        .member => |m| try writer.print("_{d}.{s}", .{ m.of, m.name }),
+        .assign => |assign| try writer.print("_{} set to _{}", .{ assign.to, assign.value }),
         .jump => |jump| try writer.print("jump to _{}", .{jump.target}),
         // TODO: remove in favor of jump_if_variant
-        .jump_if => |jump| try writer.print("if _{}, jump to _{}", .{jump.condition, jump.target}),
-        .jump_if_variant => |jump| try writer.print("if _{} is {s}, jump to _{}", .{jump.condition, jump.variant, jump.target}),
+        .jump_if => |jump| try writer.print("if _{}, jump to _{}", .{ jump.condition, jump.target }),
+        .jump_if_variant => |jump| try writer.print("if _{} is {s}, jump to _{}", .{ jump.condition, jump.variant, jump.target }),
         .get_enum_value => |gev| try writer.print("get value of _{}", .{gev.of}),
         .return_ => |r| try writer.print("return _{d}", .{r}),
     }

@@ -65,11 +65,7 @@ pub fn parse(alloc: std.mem.Allocator, code: Str) !?ast.Program {
         var fields = ArrayList(ast.Field).init(alloc);
         const t: Ty = .{ .name = "T", .args = ArrayList(Ty).init(alloc) };
         try fields.append(.{ .name = "*", .ty = t });
-        try program.defs.append(.{ .struct_ = .{
-            .name = "&",
-            .ty_args = ty_args,
-            .fields = fields
-        } });
+        try program.defs.append(.{ .struct_ = .{ .name = "&", .ty_args = ty_args, .fields = fields } });
     }
 
     { // to_address[T](&T): U64
@@ -80,7 +76,7 @@ pub fn parse(alloc: std.mem.Allocator, code: Str) !?ast.Program {
         try and_t_args.append(t);
         const and_t: Ty = .{ .name = "&", .args = and_t_args };
         var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "a", .ty = and_t});
+        try args.append(.{ .name = "a", .ty = and_t });
         const u64_: Ty = .{ .name = "U64", .args = ArrayList(Ty).init(alloc) };
         program.add_builtin_fun(alloc, "to_address", ty_args, args, u64_);
     }
@@ -90,7 +86,7 @@ pub fn parse(alloc: std.mem.Allocator, code: Str) !?ast.Program {
         var ty_args = ArrayList(Str).init(alloc);
         try ty_args.append("T");
         var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "address", .ty = u64_});
+        try args.append(.{ .name = "address", .ty = u64_ });
         const t: Ty = .{ .name = "T", .args = ArrayList(Ty).init(alloc) };
         var and_t_args = ArrayList(Ty).init(alloc);
         try and_t_args.append(t);
@@ -110,7 +106,7 @@ pub fn parse(alloc: std.mem.Allocator, code: Str) !?ast.Program {
         const u64_: Ty = .{ .name = "U64", .args = ArrayList(Ty).init(alloc) };
         var ty_args = ArrayList(Str).init(alloc);
         var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "size", .ty = u64_});
+        try args.append(.{ .name = "size", .ty = u64_ });
         program.add_builtin_fun(alloc, "malloc", ty_args, args, u64_);
     }
 
@@ -120,16 +116,15 @@ pub fn parse(alloc: std.mem.Allocator, code: Str) !?ast.Program {
         const ty = try numbers.int_ty(alloc, config);
 
         var two_args = ArrayList(ast.Argument).init(alloc);
-        try two_args.append(.{ .name = "a", .ty = ty});
-        try two_args.append(.{ .name = "b", .ty = ty});
+        try two_args.append(.{ .name = "a", .ty = ty });
+        try two_args.append(.{ .name = "b", .ty = ty });
 
         program.add_builtin_fun(alloc, "add", null, two_args, ty);
         program.add_builtin_fun(alloc, "subtract", null, two_args, ty);
         program.add_builtin_fun(alloc, "multiply", null, two_args, ty);
         program.add_builtin_fun(alloc, "divide", null, two_args, ty);
         program.add_builtin_fun(alloc, "modulo", null, two_args, ty);
-        program.add_builtin_fun(alloc, "compare_to", null, two_args,
-            .{ .name = "Ordering", .args = ArrayList(Ty).init(alloc) });
+        program.add_builtin_fun(alloc, "compare_to", null, two_args, .{ .name = "Ordering", .args = ArrayList(Ty).init(alloc) });
         // program.add_builtin_fun(alloc, "shiftLeft", two_args, ty);
         // program.add_builtin_fun(alloc, "shiftRight", two_args, ty);
         // program.add_builtin_fun(alloc, "bitLength", two_args, ty);
@@ -158,7 +153,7 @@ pub fn parse(alloc: std.mem.Allocator, code: Str) !?ast.Program {
         const u8_ = .{ .name = "U8", .args = ArrayList(Ty).init(alloc) };
         const nothing = .{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) };
         var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "c", .ty = u8_});
+        try args.append(.{ .name = "c", .ty = u8_ });
         program.add_builtin_fun(alloc, "print_to_stdout", null, args, nothing);
     }
 
@@ -274,9 +269,7 @@ const Parser = struct {
         return name;
     }
 
-    fn parse_type(self: *Self) error{
-        OutOfMemory, ExpectedTypeArgument, ExpectedClosingBracket, ExpectedType
-    }!?Ty {
+    fn parse_type(self: *Self) error{ OutOfMemory, ExpectedTypeArgument, ExpectedClosingBracket, ExpectedType }!?Ty {
         if (self.consume_prefix("&")) |_| {
             var args = ArrayList(Ty).init(self.alloc);
             try args.append(try self.parse_type() orelse return error.ExpectedType);
@@ -449,15 +442,7 @@ const Parser = struct {
         return statements;
     }
 
-    fn parse_expression(self: *Self) error{
-        ExpectedClosingParenthesis, OutOfMemory, ExpectedMemberOrConstructor, ExpectedCondition,
-        ExpectedThenBody, ExpectedElseBody, ExpectedColon, ExpectedTypeArgument,
-        ExpectedClosingBracket, ExpectedNameOfVar, ExpectedTypeOfVar, ExpectedEquals,
-        ExpectedValueOfVar, ExpectedStatementOrClosingBrace, ExpectedClosingBrace,
-        ExpectedValueOfField, ExpectedExpression, ExpectedOpeningBrace, ExpectedBody,
-        ExpectedBinding, ExpectedSignedness, ExpectedBits, InvalidBits, ExpectedUnderscore,
-        ExpectedChar, ExpectedType
-    }!?ast.Expr {
+    fn parse_expression(self: *Self) error{ ExpectedClosingParenthesis, OutOfMemory, ExpectedMemberOrConstructor, ExpectedCondition, ExpectedThenBody, ExpectedElseBody, ExpectedColon, ExpectedTypeArgument, ExpectedClosingBracket, ExpectedNameOfVar, ExpectedTypeOfVar, ExpectedEquals, ExpectedValueOfVar, ExpectedStatementOrClosingBrace, ExpectedClosingBrace, ExpectedValueOfField, ExpectedExpression, ExpectedOpeningBrace, ExpectedBody, ExpectedBinding, ExpectedSignedness, ExpectedBits, InvalidBits, ExpectedUnderscore, ExpectedChar, ExpectedType }!?ast.Expr {
         var expression: ?ast.Expr = null;
 
         if (try self.parse_if()) |if_| {
@@ -528,8 +513,12 @@ const Parser = struct {
         const value = self.parse_digits() orelse return null;
         self.consume_prefix("_") orelse return error.ExpectedUnderscore;
         const signedness: numbers.Signedness = sign: {
-            if (self.consume_prefix("i")) |_| { break :sign .signed; }
-            if (self.consume_prefix("u")) |_| { break :sign .unsigned; }
+            if (self.consume_prefix("i")) |_| {
+                break :sign .signed;
+            }
+            if (self.consume_prefix("u")) |_| {
+                break :sign .unsigned;
+            }
             return error.ExpectedSignedness;
         };
         const bits_ = self.parse_digits() orelse return error.ExpectedBits;
@@ -629,10 +618,10 @@ const Parser = struct {
 
         self.consume_whitespace();
         if (self.consume_prefix("*")) |_| {
-            return .{ .member = .{ .of = heaped, .name = "*" }};
+            return .{ .member = .{ .of = heaped, .name = "*" } };
         }
         if (self.parse_name()) |name| {
-            return .{ .member = .{ .of = heaped, .name = name }};
+            return .{ .member = .{ .of = heaped, .name = name } };
         }
         if (self.consume_prefix("{")) |_| {
             self.consume_whitespace();
@@ -721,7 +710,7 @@ const Parser = struct {
         while (true) {
             const variant = self.parse_name() orelse break;
             self.consume_whitespace();
-            
+
             var binding: ?Str = null;
             if (self.consume_prefix("(")) |_| {
                 self.consume_whitespace();
