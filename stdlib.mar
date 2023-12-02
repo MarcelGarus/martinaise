@@ -192,7 +192,7 @@ fun dump[W](int: U16, writer: W) { int.to_U64().dump(writer) }
 fun dump[W](int: U32, writer: W) { int.to_U64().dump(writer) }
 fun dump[W](int: U64, writer: W) { int.dump(10_u64, writer) }
 
-| References
+| Reference
 | References (pointers to memory locations) are built into the compiler. &T is a
 | reference to a T. You can get a reference to a value using the & operator on
 | an expression. You can follow a reference using the expr.* syntax. References
@@ -224,6 +224,13 @@ fun dump_address[W](address: U64, writer: W) {
     if divisor.equals(1_u64) { break }
     divisor = divisor.divide(16_u64)
   }
+}
+
+| Slice
+struct Slice[T] { data: &T, len: U64 }
+fun get[T](slice: Slice[T], index: U64): &T { slice.data.add(index) }
+fun subslice[T](slice: Slice[T], from: U64, to: U64) {
+  Slice[T].{ data = slice.data.add(from), len = to.subtract(from) }
 }
 
 | Vec
@@ -272,104 +279,4 @@ fun dump[T, W](point: Point[T], writer: W) {
   ').dump(writer)
 }
 
-| TODO: string, result, hash map, segment tree, treap
-
-|struct Slice[T] { data: Box[T], len: U64 }
-|fun get[T](slice: Slice[T], index: U64): T {
-|  (data)
-|}
-
-
-| ##########
-
-struct Foo {}
-struct Bar[T] {}
-fun foo[A](foo: Foo, a: A) {}
-fun foo[A, B](foo: A, b: Bar[B]) {}
-
-struct Box[T] { val: T }
-fun dump[T, W](box: Box[T], writer: W) { box.val.dump(writer) }
-
-fun foo(b: Ref[Box[U8]]) {
-  b.val = 200_u8
-}
-
-fun main(): I64 {
-  |Foo.{}.foo(Bar[Foo].{}) | fails when uncommented (two matching functions)
-
-  |println(Maybe[U8].some(2_u8))
-  |println(fib(10_u64))
-
-  |var box = new(Box[U8].{ val = 3_u8 })
-  |box.foo()
-  |println(box.deref())
-
-  var v = vec[U8]()
-  identity(&v).push(1_u8)
-  identity(&v).push(2_u8)
-  identity(&v).push(3_u8)
-  println(v.get(1_u64))
-
-  var a = loop {
-    println(3_u8)
-    break(4_u8)
-  }
-  a.to_U64().dump(2_u64, StdoutWriter.{})
-  println('!)
-
-  123456789456_u64.dump_address(StdoutWriter.{})
-  println('!)
-  123456789456_u64.dump(16_u64, StdoutWriter.{})
-  println('!)
-
-  |var point_ref = new(Point[U8].{ x = 3_u8, y = 2_u8 })
-  |println(point_ref)
-  |println(point_ref.deref())
-  |point_ref.x = 5_u8
-
-  |println(Bool.true.implies(Bool.true.or(Bool.false)))
-
-  |return 0_i64
-
-  |var vec = Vec[I64].{ len = 0.to_U64() }
-  |vec.ref().push(3)
-  |print(vec.len_u8.add(48_u8))
-
-  |print('H)
-  |print('e)
-  |print('l)
-  |print('l)
-  |print('o)
-  |print(',)
-  |print(' )
-  |print('w)
-  |print('o)
-  |print('r)
-  |print('l)
-  |print('d)
-  |print('!)
-  |print('
-  |)
-
-  |return multiply(add(3_i64, 4_i64), divide(4_i64, 2_i64)).modulo(10_i64)
-  return 0_i64
-}
-
-fun fib(n: U64): U64 {
-  if n.is_at_most(1_u64) { n } else { fib(n.subtract(1_u64)).add(fib(n.subtract(2_u64))) }
-}
-
-|fun main() {
-|  print(fib(10))
-|}
-|
-|fun map[T, X](maybe: Maybe[T], mapper: T -> X): Maybe[X] {
-|  return match maybe {
-|    case Some t -> Some mapper(t),
-|    case None -> None,
-|  };
-|}
-|
-|struct String {
-|  len: U8,
-|}
+| TODO: string, range, result, hash map, segment tree, treap

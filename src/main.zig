@@ -8,16 +8,33 @@ const compile_to_c = @import("backend_c.zig").compile_to_c;
 pub fn main() !void {
     std.debug.print("Welcome to Martinaise.\n", .{});
 
-    var my_file = try std.fs.cwd().openFile("example.mar", .{});
-    defer my_file.close();
-
-    var buf: [16 * 1024]u8 = undefined;
-    const len = try my_file.read(&buf);
-
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var alloc = gpa.allocator();
 
-    const the_ast = try parse(alloc, buf[0..len]) orelse return error.ParseError;
+    var args = std.process.args();
+    _ = args.skip();
+    const file_path = args.next() orelse {
+        std.debug.print("You should provide the file to run.\n", .{});
+        return error.NoFileProvided;
+    };
+    std.debug.print("Compiling {s}\n", .{file_path});
+
+    var stdlib = try std.fs.cwd().openFile("stdlib.mar", .{});
+    defer stdlib.close();
+    var stdlib_len = (try stdlib.stat()).size;
+
+    var file = try std.fs.cwd().openFile(file_path, .{});
+    defer file.close();
+    var file_len = (try file.stat()).size;
+
+    var total_len = stdlib_len + file_len + 2;
+    var buf = try alloc.alloc(u8, total_len);
+    _ = try stdlib.read(buf);
+    buf[stdlib_len] = '\n';
+    _ = try file.read(buf[stdlib_len + 1 ..]);
+    buf[total_len - 1] = '\n';
+
+    const the_ast = try parse(alloc, buf) orelse return error.ParseError;
     // std.debug.print("Parsed:\n", .{});
     // try ast.print(std.io.getStdOut().writer(), the_ast);
     // std.debug.print("\n", .{});

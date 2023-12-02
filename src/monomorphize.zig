@@ -658,7 +658,6 @@ const FunMonomorphizer = struct {
 
                 const after_loop = self.fun.next_index();
                 const scope = self.breakable_scopes.pop();
-                std.debug.print("Scope: {any}\n", .{scope});
                 if (scope.result_ty) |ty| {
                     self.fun.tys.items[result] = ty;
                 }

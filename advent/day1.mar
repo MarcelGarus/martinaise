@@ -1,0 +1,6 @@
+fun main(): I64 {
+  | Read file
+  | Split by line
+  | Parse numbers
+  | Sum them
+}
