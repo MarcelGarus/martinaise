@@ -49,6 +49,7 @@ pub const Expr = union(enum) {
     arg,
     uninitialized,
     int: Int,
+    string: Str,
     call: Call,
     copy: ExprIndex,
     variant_creation: VariantCreation,

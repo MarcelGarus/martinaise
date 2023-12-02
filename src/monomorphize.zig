@@ -432,6 +432,21 @@ const FunMonomorphizer = struct {
                 .{ .int = .{ .value = int.value, .signedness = int.signedness, .bits = int.bits } },
                 try numbers.int_ty_name(self.alloc, .{ .signedness = int.signedness, .bits = int.bits }),
             ),
+            .string => |str| {
+                var u8_ty: Ty = .{ .name = "U8", .args = ArrayList(Ty).init(self.alloc) };
+
+                var slice_ty_args = ArrayList(Ty).init(self.alloc);
+                try slice_ty_args.append(u8_ty);
+                const slice_ty: Ty = .{ .name = "Slice", .args = slice_ty_args };
+
+                const string_ty: Ty = .{ .name = "Str", .args = ArrayList(Ty).init(self.alloc) };
+
+                _ = try self.monomorphizer.compile_type(u8_ty, TyEnv.init(self.alloc));
+                _ = try self.monomorphizer.compile_type(slice_ty, TyEnv.init(self.alloc));
+                _ = try self.monomorphizer.compile_type(string_ty, TyEnv.init(self.alloc));
+
+                return try self.fun.put(.{ .string = str }, "Str");
+            },
             .ref => |name| {
                 if (self.var_env.get(name)) |var_info| {
                     return var_info.expr_index;

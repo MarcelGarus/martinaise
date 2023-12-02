@@ -31,18 +31,7 @@ fun or(a: Bool, b: Bool): Bool { if a { Bool.true } else { b } }
 fun xor(a: Bool, b: Bool): Bool { if a { not(b) } else { b } }
 fun implies(a: Bool, b: Bool): Bool { if a { b } else { Bool.true } }
 fun dump[W](b: Bool, writer: W) {
-  if b {
-    't.dump(writer)
-    'r.dump(writer)
-    'u.dump(writer)
-    'e.dump(writer)
-  } else {
-    'f.dump(writer)
-    'a.dump(writer)
-    'l.dump(writer)
-    's.dump(writer)
-    'e.dump(writer)
-  }
+  if b { "true" } else { "false" }.dump(writer)
 }
 
 | Maybe
@@ -53,21 +42,8 @@ fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] {
 }
 fun dump[T, W](maybe: Maybe[T], writer: W) {
   switch maybe {
-    some(val) {
-      's.dump(writer)
-      'o.dump(writer)
-      'm.dump(writer)
-      'e.dump(writer)
-      '(.dump(writer)
-      val.dump(writer)
-      ').dump(writer)
-    }
-    none {
-      'n.dump(writer)
-      'o.dump(writer)
-      'n.dump(writer)
-      'e.dump(writer)
-    }
+    some(val) { "some(".dump(writer) val.dump(writer) ').dump(writer) }
+    none { "none".dump(writer) }
   }
 }
 
@@ -90,30 +66,10 @@ fun is_greater_or_equal(ord: Ordering): Bool {
 }
 fun dump[W](ord: Ordering, writer: W) {
   switch ord {
-    less {
-      'l.dump(writer)
-      'e.dump(writer)
-      's.dump(writer)
-      's.dump(writer)
-    }
-    equal {
-      'e.dump(writer)
-      'q.dump(writer)
-      'u.dump(writer)
-      'a.dump(writer)
-      'l.dump(writer)
-      's.dump(writer)
-    }
-    greater {
-      'g.dump(writer)
-      'r.dump(writer)
-      'e.dump(writer)
-      'a.dump(writer)
-      't.dump(writer)
-      'e.dump(writer)
-      'r.dump(writer)
-    }
-  }
+    less { "less" }
+    equal { "equal" }
+    greater { "greater" }
+  }.dump(writer)
 }
 
 | Int
@@ -217,8 +173,7 @@ fun add[T](ref: &T, offset: U64): &T {
 fun dump_address[W](address: U64, writer: W) {
   | max U64 is  18446744073709551615
   var divisor = 1152921504606846976_u64 | 16 ^ something
-  '0.dump(writer)
-  'x.dump(writer)
+  "0x".dump(writer)
   loop {
     writer.write(address.divide(divisor).modulo(16_u64).to_U8().digit_to_char())
     if divisor.equals(1_u64) { break }
@@ -231,6 +186,17 @@ struct Slice[T] { data: &T, len: U64 }
 fun get[T](slice: Slice[T], index: U64): &T { slice.data.add(index) }
 fun subslice[T](slice: Slice[T], from: U64, to: U64) {
   Slice[T].{ data = slice.data.add(from), len = to.subtract(from) }
+}
+fun dump[T, W](slice: Slice[T], writer: W) {
+  '[.dump(writer)
+  var index = 0_u64
+  loop {
+    if index.equals(slice.len) { break }
+    if index.is_greater_than(0_u64) { ", ".dump(writer) }
+    slice.get(index).*.dump(writer)
+    index = index.add(1_u64)
+  }
+  '].dump(writer)
 }
 
 | Vec
@@ -265,10 +231,7 @@ fun dump[T, W](vec: Vec[T], writer: W) {
   var index = 0_u64
   loop {
     if index.equals(vec.len) { break }
-    if index.is_greater_than(0_u64) {
-      ',.dump(writer)
-      ' .dump(writer)
-    }
+    if index.is_greater_than(0_u64) { ", ".dump(writer) }
     vec.get(index).dump(writer)
     index = index.add(1_u64)
   }
@@ -279,6 +242,18 @@ fun dump[T, W](vec: Vec[T], writer: W) {
 | Essentially just a U8, but it's formatted differently.
 struct Char { value: U8 }
 fun dump[W](c: Char, writer: W) { writer.write(c.value) }
+
+| Str
+| Strings are essentially just a Slice[U8], but they are formatted differently.
+struct Str { bytes: Slice[U8] }
+fun dump[W](str: Str, writer: W) {
+  var index = 0_u64
+  loop {
+    if index.equals(str.bytes.len) { break }
+    writer.write(str.bytes.get(index).*)
+    index = index.add(1_u64)
+  }
+}
 
 struct Point[T] { x: T, y: T }
 fun add[T](a: Point[T], b: Point[T]): Point[T] {

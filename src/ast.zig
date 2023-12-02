@@ -52,6 +52,7 @@ pub const Argument = struct { name: Str, ty: Ty };
 pub const Body = ArrayList(Expr);
 pub const Expr = union(enum) {
     int: Int, // 0_u64
+    string: Str, // "foo"
     ref: Str, // foo
     ty_arged: TyArged, // ...[T]
     call: Call, // ...(arg)
@@ -205,6 +206,7 @@ fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
 }!void {
     switch (expr) {
         .int => |int| try writer.print("{d}{c}{d}", .{ int.value, int.signedness.to_char(), int.bits }),
+        .string => |str| try writer.print("\"{s}\"", .{str}),
         .ref => |name| try writer.print("{s}", .{name}),
         .ty_arged => |ty_arged| {
             try print_expr(writer, indent, ty_arged.arged.*);

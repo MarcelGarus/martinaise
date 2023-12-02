@@ -277,6 +277,13 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                                 break :suffix "LL";
                             }
                         } }),
+                        .string => |str| {
+                            try format(out, "mar_Str _{}; _{}.mar_bytes.mar_data.pointer = (mar_U8*) \"", .{ i, i });
+                            for (str) |c| {
+                                try format(out, "\\x{x}", .{c});
+                            }
+                            try format(out, "\"; _{}.mar_bytes.mar_len.value = {};", .{ i, str.len });
+                        },
                         .call => |call| {
                             try format(out, "{s} _{} = {s}(", .{ try mangle(alloc, ty), i, try mangle(alloc, call.fun) });
                             for (call.args.items, 0..) |arg, j| {

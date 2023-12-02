@@ -334,6 +334,7 @@ const Parser = struct {
             self.consume_whitespace();
         }
 
+        self.consume_whitespace();
         self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
 
         return ast.Struct{ .name = name, .ty_args = type_args, .fields = fields };
@@ -493,6 +494,8 @@ const Parser = struct {
             const int = .{ .int = .{ .value = c, .signedness = .unsigned, .bits = 8 } };
             try fields.append(.{ .name = "value", .value = int });
             expression = .{ .struct_creation = .{ .ty = ty, .fields = fields } };
+        } else if (try self.parse_string()) |string| {
+            expression = .{ .string = string };
         } else if (try self.parse_ampersanded()) |amp| {
             const heaped = try self.alloc.create(ast.Expr);
             heaped.* = amp;
@@ -583,6 +586,17 @@ const Parser = struct {
         const c = self.code[0];
         self.code = self.code[1..];
         return c;
+    }
+
+    fn parse_string(self: *Self) !?Str {
+        self.consume_prefix("\"") orelse return null;
+        var i: usize = 0;
+        while (self.code[i] != '\"') {
+            i += 1;
+        }
+        var str = self.code[0..i];
+        self.code = self.code[i + 1 ..];
+        return str;
     }
 
     fn parse_ampersanded(self: *Self) !?ast.Expr {

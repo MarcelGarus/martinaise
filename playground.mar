@@ -13,6 +13,8 @@ fun foo(b: Ref[Box[U8]]) {
 fun main(): I64 {
   |Foo.{}.foo(Bar[Foo].{}) | fails when uncommented (two matching functions)
 
+  println(Maybe[Str].some("Hello, world!"))
+
   |println(Maybe[U8].some(2_u8))
   |println(fib(10_u64))
 
