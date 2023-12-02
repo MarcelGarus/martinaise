@@ -169,7 +169,7 @@ fun is_greater_than(a: I64, b: I64): Bool { a.compare_to(b).is_greater() }
 fun is_at_least(a: I64, b: I64): Bool { a.compare_to(b).is_greater_or_equal() }
 fun is_at_most(a: I64, b: I64): Bool { a.compare_to(b).is_less_or_equal() }
 fun dump[W](int: U64, radix: U64, writer: W) {
-  var divisor = radix
+  var divisor = 1_u64
   loop {
     if int.divide(divisor).is_less_than(radix) { break }
     divisor = divisor.multiply(radix)
@@ -259,6 +259,20 @@ fun get[T](vec: Vec[T], index: U64): T {
   |if index.is_less_than(vec.len) {
     vec.data.add(index).*
   |}
+}
+fun dump[T, W](vec: Vec[T], writer: W) {
+  '[.dump(writer)
+  var index = 0_u64
+  loop {
+    if index.equals(vec.len) { break }
+    if index.is_greater_than(0_u64) {
+      ',.dump(writer)
+      ' .dump(writer)
+    }
+    vec.get(index).dump(writer)
+    index = index.add(1_u64)
+  }
+  '].dump(writer)
 }
 
 | Char

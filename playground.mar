@@ -24,7 +24,7 @@ fun main(): I64 {
   identity(&v).push(1_u8)
   identity(&v).push(2_u8)
   identity(&v).push(3_u8)
-  println(v.get(1_u64))
+  println(v)
 
   var a = loop {
     println(3_u8)
