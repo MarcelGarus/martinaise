@@ -518,8 +518,10 @@ const FunMonomorphizer = struct {
             },
             .var_ => |v| {
                 const value = try self.compile_expr(v.value.*);
-                try self.var_env.put(v.name, .{ .expr_index = value, .ty = self.fun.tys.items[@intCast(value)] });
-                return value;
+                const ty = self.fun.tys.items[@intCast(value)];
+                const copy = try self.fun.put(.{ .copy = value }, ty);
+                try self.var_env.put(v.name, .{ .expr_index = copy, .ty = ty });
+                return copy;
             },
             .assign => |assign| {
                 const value = try self.compile_expr(assign.value.*);

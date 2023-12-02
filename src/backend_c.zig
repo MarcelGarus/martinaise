@@ -287,6 +287,9 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                             }
                             try format(out, ");\n", .{});
                         },
+                        .copy => |copied| {
+                            try format(out, "{s} _{} = _{};", .{ try mangle(alloc, ty), i, copied });
+                        },
                         .variant_creation => |vc| try format(out, "{s} _{}; _{}.variant = {s}; _{}.as.{s} = _{};\n", .{
                             try mangle(alloc, vc.enum_ty),
                             i,

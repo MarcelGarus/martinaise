@@ -49,10 +49,7 @@ fun dump[W](b: Bool, writer: W) {
 | Like Option in Rust, but with the cooler Haskell name.
 enum Maybe[T] { some: T, none }
 fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] {
-  switch maybe {
-    some(inner) { inner }
-    none { Maybe[T].none() }
-  }
+  switch maybe { some(inner) { inner } none { Maybe[T].none() } }
 }
 fun dump[T, W](maybe: Maybe[T], writer: W) {
   switch maybe {
@@ -171,6 +168,27 @@ fun equals(a: I64, b: I64): Bool { a.compare_to(b).is_equal() }
 fun is_greater_than(a: I64, b: I64): Bool { a.compare_to(b).is_greater() }
 fun is_at_least(a: I64, b: I64): Bool { a.compare_to(b).is_greater_or_equal() }
 fun is_at_most(a: I64, b: I64): Bool { a.compare_to(b).is_less_or_equal() }
+fun dump[W](int: U64, radix: U64, writer: W) {
+  var divisor = radix
+  loop {
+    if int.divide(divisor).is_less_than(radix) { break }
+    divisor = divisor.multiply(radix)
+  }
+  loop {
+    if int.is_at_least(divisor) {
+      writer.write(int.divide(divisor).modulo(radix).to_U8().digit_to_char())
+    }
+    if divisor.equals(1_u64) { break }
+    divisor = divisor.divide(radix)
+  }
+}
+fun digit_to_char(digit: U8): U8 {
+  if digit.is_greater_than(9_u8) {
+    digit.subtract(10_u8).add('a.value)
+  } else {
+    digit.add('0.value)
+  }
+}
 fun dump[W](int: U8, writer: W) {
   if int.is_at_least(100_u8) { writer.write(int.divide(100_u8).modulo(10_u8).add('0.value)) }
   if int.is_at_least(10_u8) { writer.write(int.divide(10_u8).modulo(10_u8).add('0.value)) }
@@ -216,7 +234,7 @@ fun dump[W](int: U64, writer: W) {
 | fun cast[T, U](value: Ref[T]): Ref[U] { Ref[U].{ address = value.address } }
 fun new[T](value: T): &T {
   var ref = malloc(size_of_type[T]()).to_reference[T]()
-  ref = value
+  ref.* = value
   ref
 }
 fun add[T](ref: &T, offset: U64): &T {
@@ -252,19 +270,6 @@ fun dumpHexDigit[W](val: U8, writer: W) {
   })
 }
 
-struct Point[T] { x: T, y: T }
-fun add[T](a: Point[T], b: Point[T]): Point[T] {
-  return Point[T].{ x = a.x.add(b.x), y = a.y.add(b.y) }
-}
-fun dump[T, W](point: Point[T], writer: W) {
-  '(.dump(writer)
-  point.x.dump(writer)
-  ',.dump(writer)
-  ' .dump(writer)
-  point.y.dump(writer)
-  ').dump(writer)
-}
-
 | Vec
 struct Vec[T] {
   data: &T,
@@ -297,6 +302,19 @@ fun get[T](vec: Vec[T], index: U64): T {
 | Essentially just a U8, but it's formatted differently.
 struct Char { value: U8 }
 fun dump[W](c: Char, writer: W) { writer.write(c.value) }
+
+struct Point[T] { x: T, y: T }
+fun add[T](a: Point[T], b: Point[T]): Point[T] {
+  return Point[T].{ x = a.x.add(b.x), y = a.y.add(b.y) }
+}
+fun dump[T, W](point: Point[T], writer: W) {
+  '(.dump(writer)
+  point.x.dump(writer)
+  ',.dump(writer)
+  ' .dump(writer)
+  point.y.dump(writer)
+  ').dump(writer)
+}
 
 | TODO: string, result, hash map, segment tree, treap
 
@@ -335,6 +353,13 @@ fun main(): I64 {
   identity(&v).push(2_u8)
   identity(&v).push(3_u8)
   println(v.get(1_u64))
+
+  var a = loop {
+    println(3_u8)
+    break(7_u8)
+  }
+  dump(a.to_U64(), 2_u64, StdoutWriter.{})
+  println('!)
 
   |var point_ref = new(Point[U8].{ x = 3_u8, y = 2_u8 })
   |println(point_ref)
