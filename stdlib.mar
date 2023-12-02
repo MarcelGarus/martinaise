@@ -46,6 +46,12 @@ fun dump[T, W](maybe: Maybe[T], writer: W) {
     none { "none".dump(writer) }
   }
 }
+fun unwrap[T](maybe: Maybe[T]): T {
+  switch maybe {
+    some(val) { return val }
+    none { println("Called none.unwrap") return 0_u8 }
+  }
+}
 
 | Ordering
 enum Ordering { less, equal, greater }
@@ -242,6 +248,7 @@ fun dump[T, W](vec: Vec[T], writer: W) {
 | Essentially just a U8, but it's formatted differently.
 struct Char { value: U8 }
 fun dump[W](c: Char, writer: W) { writer.write(c.value) }
+fun newline_char(): Char { Char.{ value = 10_u8 } }
 
 | Str
 | Strings are essentially just a Slice[U8], but they are formatted differently.

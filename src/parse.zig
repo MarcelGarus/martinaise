@@ -149,12 +149,19 @@ pub fn parse(alloc: std.mem.Allocator, code: Str) !?ast.Program {
         }
     }
 
-    { // print_to_stdout(U8)
+    { // print_to_stdout(U8): Nothing
         const u8_ = .{ .name = "U8", .args = ArrayList(Ty).init(alloc) };
         const nothing = .{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) };
         var args = ArrayList(ast.Argument).init(alloc);
         try args.append(.{ .name = "c", .ty = u8_ });
         program.add_builtin_fun(alloc, "print_to_stdout", null, args, nothing);
+    }
+
+    { // read_file(Str): Str
+        const str = .{ .name = "Str", .args = ArrayList(Ty).init(alloc) };
+        var args = ArrayList(ast.Argument).init(alloc);
+        try args.append(.{ .name = "path", .ty = str });
+        program.add_builtin_fun(alloc, "read_file", null, args, str);
     }
 
     return program;

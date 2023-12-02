@@ -1,6 +1,32 @@
 fun main(): I64 {
-  | Read file
-  | Split by line
-  | Parse numbers
-  | Sum them
+  var content = read_file("advent/day1.big")
+  var sum = 0_u64
+  var i = 0_u64
+  var first_digit_in_line = Maybe[U8].none
+  var last_digit_in_line = Maybe[U8].none
+  loop {
+    if i.equals(content.bytes.len) { break }
+    var char = content.bytes.get(i).*
+    |println(Char.{ value = char })
+    |println(char)
+    if char.equals(10_u8) { | newline
+      println("new line")
+      var first = first_digit_in_line.unwrap().to_U64()
+      var last = last_digit_in_line.unwrap().to_U64()
+      sum = sum.add(first.multiply(10_u64).add(last))
+      first_digit_in_line = Maybe[U8].none
+      last_digit_in_line = Maybe[U8].none
+    }
+    if char.is_at_least('0.value).and(char.is_at_most('9.value)) {
+      var digit = char.subtract('0.value)
+      switch first_digit_in_line {
+        some {}
+        none { first_digit_in_line = Maybe[U8].some(digit) }
+      }
+      last_digit_in_line = Maybe[U8].some(digit)
+    }
+    i = i.add(1_u64)
+  }
+  println(sum)
+  return 0_i64
 }

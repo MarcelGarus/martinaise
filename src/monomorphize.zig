@@ -725,6 +725,8 @@ const FunMonomorphizer = struct {
                         .kind = .{ .ref = var_info.expr_index },
                     };
                 }
+
+                std.debug.print("Tried to find `{s}`.\n", .{ref});
                 return error.VariableNotInScope;
             },
             .member => |member| {

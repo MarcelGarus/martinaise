@@ -134,13 +134,42 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
             }
         }
 
-        { // print_to_stdout(U8)
+        { // print_to_stdout(U8): Nothing
             var body = String.init(alloc);
             // TODO: Check the return value of putc
             try format(body.writer(), "  putc(arg0.value, stdout);\n", .{});
             try format(body.writer(), "  mar_Nothing n;\n", .{});
             try format(body.writer(), "  return n;\n", .{});
             try builtin_funs.put("print_to_stdout(U8)", body.items);
+        }
+
+        { // read_file(Str): Str
+            var body = String.init(alloc);
+            try format(body.writer(), "  char* path = (char*)arg0.mar_bytes.mar_data.pointer;\n", .{});
+            try format(body.writer(), "  FILE* file = fopen(path, \"r\");\n", .{});
+            try format(body.writer(), "  if (!file) {{\n", .{});
+            try format(body.writer(), "    printf(\"Not able to open %s.\\n\", path);\n", .{});
+            try format(body.writer(), "    exit(-1);\n", .{});
+            try format(body.writer(), "  }}\n", .{});
+            try format(body.writer(), "  int capacity = 32, len = 0;\n", .{});
+            try format(body.writer(), "  char* content = malloc(capacity);\n", .{});
+            try format(body.writer(), "  char c;\n", .{});
+            try format(body.writer(), "  do {{\n", .{});
+            try format(body.writer(), "    c = fgetc(file);\n", .{});
+            try format(body.writer(), "    if (len == capacity) {{\n", .{});
+            try format(body.writer(), "      capacity *= 2;\n", .{});
+            try format(body.writer(), "      content = realloc(content, capacity);\n", .{});
+            try format(body.writer(), "    }}\n", .{});
+            try format(body.writer(), "    content[len] = c;\n", .{});
+            try format(body.writer(), "    len++;\n", .{});
+            try format(body.writer(), "  }} while (c != EOF);\n", .{});
+            try format(body.writer(), "  fclose(file);\n", .{});
+            try format(body.writer(), "\n", .{});
+            try format(body.writer(), "  mar_Str content_str;\n", .{});
+            try format(body.writer(), "  content_str.mar_bytes.mar_data.pointer = (mar_U8*) content;\n", .{});
+            try format(body.writer(), "  content_str.mar_bytes.mar_len.value = len;\n", .{});
+            try format(body.writer(), "  return content_str;\n", .{});
+            try builtin_funs.put("read_file(Str)", body.items);
         }
     }
 
