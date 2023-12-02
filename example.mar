@@ -175,9 +175,7 @@ fun dump[W](int: U64, radix: U64, writer: W) {
     divisor = divisor.multiply(radix)
   }
   loop {
-    if int.is_at_least(divisor) {
-      writer.write(int.divide(divisor).modulo(radix).to_U8().digit_to_char())
-    }
+    writer.write(int.divide(divisor).modulo(radix).to_U8().digit_to_char())
     if divisor.equals(1_u64) { break }
     divisor = divisor.divide(radix)
   }
@@ -189,34 +187,10 @@ fun digit_to_char(digit: U8): U8 {
     digit.add('0.value)
   }
 }
-fun dump[W](int: U8, writer: W) {
-  if int.is_at_least(100_u8) { writer.write(int.divide(100_u8).modulo(10_u8).add('0.value)) }
-  if int.is_at_least(10_u8) { writer.write(int.divide(10_u8).modulo(10_u8).add('0.value)) }
-  writer.write(int.modulo(10_u8).add('0.value))
-}
-fun dump[W](int: U64, writer: W) {
-  | note: max u64 is 18446744073709551615
-  if int.is_at_least(10000000000000000000_u64) { writer.write(int.divide(10000000000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(1000000000000000000_u64) { writer.write(int.divide(1000000000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(100000000000000000_u64) { writer.write(int.divide(100000000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(10000000000000000_u64) { writer.write(int.divide(10000000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(1000000000000000_u64) { writer.write(int.divide(1000000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(100000000000000_u64) { writer.write(int.divide(100000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(10000000000000_u64) { writer.write(int.divide(10000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(1000000000000_u64) { writer.write(int.divide(1000000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(100000000000_u64) { writer.write(int.divide(100000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(10000000000_u64) { writer.write(int.divide(10000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(1000000000_u64) { writer.write(int.divide(1000000000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(100000000_u64) { writer.write(int.divide(100000000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(10000000_u64) { writer.write(int.divide(10000000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(1000000_u64) { writer.write(int.divide(1000000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(100000_u64) { writer.write(int.divide(100000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(10000_u64) { writer.write(int.divide(10000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(1000_u64) { writer.write(int.divide(1000_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(100_u64) { writer.write(int.divide(100_u64).modulo(10_u64).to_U8().add('0.value)) }
-  if int.is_at_least(10_u64) { writer.write(int.divide(10_u64).modulo(10_u64).to_U8().add('0.value)) }
-  writer.write(int.modulo(10_u64).to_U8().add('0.value))
-}
+fun dump[W](int: U8, writer: W) { int.to_U64().dump(writer) }
+fun dump[W](int: U16, writer: W) { int.to_U64().dump(writer) }
+fun dump[W](int: U32, writer: W) { int.to_U64().dump(writer) }
+fun dump[W](int: U64, writer: W) { int.dump(10_u64, writer) }
 
 | References
 | References (pointers to memory locations) are built into the compiler. &T is a
@@ -231,7 +205,7 @@ fun dump[W](int: U64, writer: W) {
 | functions are used to build type-safe abstractions on top:
 | - size_of_type[T](): U64
 | - malloc(U64): U64
-| fun cast[T, U](value: Ref[T]): Ref[U] { Ref[U].{ address = value.address } }
+fun cast[T, U](value: &T): &U { value.to_address().to_reference[U]() }
 fun new[T](value: T): &T {
   var ref = malloc(size_of_type[T]()).to_reference[T]()
   ref.* = value
@@ -240,34 +214,16 @@ fun new[T](value: T): &T {
 fun add[T](ref: &T, offset: U64): &T {
   ref.to_address().add(offset.multiply(size_of_type[T]())).to_reference[T]()
 }
-| TODO: new should take a value
-fun dump[T, W](ref: Ref[T], writer: W) {
-  | note: max u64 is 18446744073709551615
+fun dump_address[W](address: U64, writer: W) {
+  | max U64 is  18446744073709551615
+  var divisor = 1152921504606846976_u64 | 16 ^ something
   '0.dump(writer)
   'x.dump(writer)
-  ref.address.divide(1152921504606846976_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
-  ref.address.divide(72057594037927936_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
-  ref.address.divide(4503599627370496_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
-  ref.address.divide(281474976710656_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
-  ref.address.divide(17592186044416_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
-  ref.address.divide(1099511627776_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
-  ref.address.divide(68719476736_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
-  ref.address.divide(4294967296_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
-  ref.address.divide(268435456_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
-  ref.address.divide(16777216_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
-  ref.address.divide(1048576_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
-  ref.address.divide(65536_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
-  ref.address.divide(4096_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
-  ref.address.divide(256_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
-  ref.address.divide(16_u64).modulo(16_u64).to_U8().dumpHexDigit(writer)
-  ref.address.modulo(16_u64).to_U8().dumpHexDigit(writer)
-}
-fun dumpHexDigit[W](val: U8, writer: W) {
-  writer.write(if val.is_greater_than(9_u8) {
-    val.subtract(10_u8).add('a.value)
-  } else {
-    val.add('0.value)
-  })
+  loop {
+    writer.write(address.divide(divisor).modulo(16_u64).to_U8().digit_to_char())
+    if divisor.equals(1_u64) { break }
+    divisor = divisor.divide(16_u64)
+  }
 }
 
 | Vec
@@ -356,9 +312,14 @@ fun main(): I64 {
 
   var a = loop {
     println(3_u8)
-    break(7_u8)
+    break(4_u8)
   }
-  dump(a.to_U64(), 2_u64, StdoutWriter.{})
+  a.to_U64().dump(2_u64, StdoutWriter.{})
+  println('!)
+
+  123456789456_u64.dump_address(StdoutWriter.{})
+  println('!)
+  123456789456_u64.dump(16_u64, StdoutWriter.{})
   println('!)
 
   |var point_ref = new(Point[U8].{ x = 3_u8, y = 2_u8 })
