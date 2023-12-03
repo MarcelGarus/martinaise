@@ -57,7 +57,6 @@ pub const Expr = union(enum) {
     member: Member,
     assign: Assign,
     jump: Jump,
-    jump_if: JumpIf,
     jump_if_variant: JumpIfVariant,
     get_enum_value: GetEnumValue,
     return_: ExprIndex,
@@ -145,8 +144,6 @@ fn print_expr(writer: anytype, expr: Expr) !void {
         .member => |m| try writer.print("_{d}.{s}", .{ m.of, m.name }),
         .assign => |assign| try writer.print("_{} set to _{}", .{ assign.to, assign.value }),
         .jump => |jump| try writer.print("jump to _{}", .{jump.target}),
-        // TODO: remove in favor of jump_if_variant
-        .jump_if => |jump| try writer.print("if _{}, jump to _{}", .{ jump.condition, jump.target }),
         .jump_if_variant => |jump| try writer.print("if _{} is {s}, jump to _{}", .{ jump.condition, jump.variant, jump.target }),
         .get_enum_value => |gev| try writer.print("get value of _{}", .{gev.of}),
         .return_ => |r| try writer.print("return _{d}", .{r}),

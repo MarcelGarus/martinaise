@@ -524,6 +524,7 @@ const FunMonomorphizer = struct {
                                     break :get_field_ty field.ty;
                                 }
                             }
+                            std.debug.print("Field {s} doesn't exist.\n", .{m.name});
                             return error.FieldDoesNotExist;
                         },
                         else => return error.AccessedMemberOnNonStruct,
@@ -563,15 +564,15 @@ const FunMonomorphizer = struct {
                 if (!std.mem.eql(u8, self.fun.tys.items[condition], "Bool")) {
                     return error.IfConditionMustBeBool;
                 }
-                const jump_if_true = try self.fun.put(.{ .arg = {} }, "Nothing"); // Will be replaced with jump_if
-                const jump_if_false = try self.fun.put(.{ .arg = {} }, "Never"); // Will be replaced with jump
+                const jump_if_true = try self.fun.put(.{ .uninitialized = {} }, "Nothing"); // Will be replaced with jump_if
+                const jump_if_false = try self.fun.put(.{ .uninitialized = {} }, "Never"); // Will be replaced with jump
 
                 // TODO: Create inner var env
                 const then_body = self.fun.next_index();
                 const then_result = try self.compile_body(if_.then.items);
                 self.fun.tys.items[result] = self.fun.tys.items[then_result];
                 _ = try self.fun.put(.{ .assign = .{ .to = .{ .ty = self.fun.tys.items[result], .kind = .{ .ref = result } }, .value = then_result } }, "Nothing");
-                const jump_after_then = try self.fun.put(.{ .arg = {} }, "Never"); // Will be replaced with jump
+                const jump_after_then = try self.fun.put(.{ .uninitialized = {} }, "Never"); // Will be replaced with jump
 
                 if (if_.else_) |else_| {
                     // TODO: Create inner var env
@@ -582,11 +583,11 @@ const FunMonomorphizer = struct {
                         return error.IfWithMismatchedTypes;
                     }
                     _ = try self.fun.put(.{ .assign = .{ .to = .{ .ty = self.fun.tys.items[result], .kind = .{ .ref = result } }, .value = else_result } }, "Nothing");
-                    const jump_after_else = try self.fun.put(.{ .arg = {} }, "Never"); // Will be replaced with jump
+                    const jump_after_else = try self.fun.put(.{ .uninitialized = {} }, "Never"); // Will be replaced with jump
                     const after_if = self.fun.next_index();
 
                     // Fill in jumps
-                    self.fun.body.items[jump_if_true] = .{ .jump_if = .{ .condition = condition, .target = then_body } };
+                    self.fun.body.items[jump_if_true] = .{ .jump_if_variant = .{ .condition = condition, .variant = "true", .target = then_body } };
                     self.fun.body.items[jump_if_false] = .{ .jump = .{ .target = else_body } };
                     self.fun.body.items[jump_after_then] = .{ .jump = .{ .target = after_if } };
                     self.fun.body.items[jump_after_else] = .{ .jump = .{ .target = after_if } };
@@ -594,7 +595,7 @@ const FunMonomorphizer = struct {
                     const after_if = self.fun.next_index();
 
                     // Fill in jumps
-                    self.fun.body.items[jump_if_true] = .{ .jump_if = .{ .condition = condition, .target = then_body } };
+                    self.fun.body.items[jump_if_true] = .{ .jump_if_variant = .{ .condition = condition, .variant = "true", .target = then_body } };
                     self.fun.body.items[jump_if_false] = .{ .jump = .{ .target = after_if } };
                     self.fun.body.items[jump_after_then] = .{ .jump = .{ .target = after_if } };
                 }
@@ -707,9 +708,9 @@ const FunMonomorphizer = struct {
 
     fn compile_left_expr(self: *Self, expr: ast.Expr, right_ty: Str) !mono.LeftExpr {
         var left = try self.compile_left_expr_rec(expr);
-        while (!std.mem.eql(u8, left.ty, right_ty) and std.mem.eql(u8, (self.monomorphizer.tys.get(left.ty) orelse unreachable).name, "Ref")) {
+        while (!std.mem.eql(u8, left.ty, right_ty) and left.ty[0] == '&') {
             // TODO: This is so horrible.
-            const derefed_ty = left.ty["Ref[".len .. left.ty.len - "]".len];
+            const derefed_ty = left.ty["&[".len .. left.ty.len - "]".len];
             const heaped = try self.alloc.create(mono.LeftExpr);
             heaped.* = left;
             left = .{ .ty = derefed_ty, .kind = .{ .deref = heaped } };
@@ -740,6 +741,7 @@ const FunMonomorphizer = struct {
                                     break :get_field_ty field.ty;
                                 }
                             }
+                            std.debug.print("Field {s} doesn't exist.\n", .{member.name});
                             return error.FieldDoesNotExist;
                         },
                         else => return error.AccessedMemberOnNonStruct,

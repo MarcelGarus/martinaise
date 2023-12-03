@@ -28,48 +28,17 @@ fun main(): I64 {
   identity(&v).push(3_u8)
   println(v)
 
-  var a = loop {
-    println(3_u8)
-    break(4_u8)
+  var iter = &v.iter()
+  loop {
+    switch iter.next() {
+      some(n) { println(n.*) }
+      none { break Nothing.{} }
+    }
   }
-  a.to_U64().dump(2_u64, StdoutWriter.{})
-  println('!)
-
-  123456789456_u64.dump_address(StdoutWriter.{})
-  println('!)
-  123456789456_u64.dump(16_u64, StdoutWriter.{})
-  println('!)
-
-  |var point_ref = new(Point[U8].{ x = 3_u8, y = 2_u8 })
-  |println(point_ref)
-  |println(point_ref.deref())
-  |point_ref.x = 5_u8
 
   |println(Bool.true.implies(Bool.true.or(Bool.false)))
+  |println(multiply(add(3_i64, 4_i64), divide(4_i64, 2_i64)).modulo(10_i64))
 
-  |return 0_i64
-
-  |var vec = Vec[I64].{ len = 0.to_U64() }
-  |vec.ref().push(3)
-  |print(vec.len_u8.add(48_u8))
-
-  |print('H)
-  |print('e)
-  |print('l)
-  |print('l)
-  |print('o)
-  |print(',)
-  |print(' )
-  |print('w)
-  |print('o)
-  |print('r)
-  |print('l)
-  |print('d)
-  |print('!)
-  |print('
-  |)
-
-  |return multiply(add(3_i64, 4_i64), divide(4_i64, 2_i64)).modulo(10_i64)
   return 0_i64
 }
 

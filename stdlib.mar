@@ -216,6 +216,22 @@ fun equals[T](a: Slice[T], b: Slice[T]): Bool {
   }
   return Bool.true
 }
+fun iter[T](slice: Slice[T]): SliceIter[T] {
+  SliceIter[T].{ slice = slice, index = 0_u64 }
+}
+struct SliceIter[T] {
+  slice: Slice[T],
+  index: U64,
+}
+fun next[T](iter: &SliceIter[T]): Maybe[&T] {
+  var item = if iter.*.index.is_less_than(iter.*.slice.len) {
+    Maybe[&T].some(iter.*.slice.get(iter.*.index))
+  } else {
+    Maybe[&T].none
+  }
+  iter.*.index = iter.*.index.add(1_u64)
+  item
+}
 
 | Vec
 struct Vec[T] {
@@ -253,13 +269,17 @@ fun get[T](vec: Vec[T], index: U64): &T {
     vec.data.add(index)
   |}
 }
+fun to_slice[T](vec: Vec[T]): Slice[T] {
+  Slice[T].{ data = vec.data, len = vec.len }
+}
+fun iter[T](vec: Vec[T]): SliceIter[T] { vec.to_slice().iter() }
 fun dump[T, W](vec: Vec[T], writer: W) {
   '[.dump(writer)
   var index = 0_u64
   loop {
     if index.equals(vec.len) { break }
     if index.is_greater_than(0_u64) { ", ".dump(writer) }
-    vec.get(index).dump(writer)
+    vec.get(index).*.dump(writer)
     index = index.add(1_u64)
   }
   '].dump(writer)

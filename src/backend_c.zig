@@ -29,7 +29,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
             try format(signature.writer(), "malloc(U64)", .{});
             var body = String.init(alloc);
             try format(body.writer(), "  mar_U64 address;\n", .{});
-            try format(body.writer(), "  address.value = (uint64_t)malloc(arg0.value);\n", .{});
+            try format(body.writer(), "  address.value = (uint64_t) malloc(arg0.value);\n", .{});
             try format(body.writer(), "  if (!address.value) {{\n", .{});
             try format(body.writer(), "    printf(\"OOM\");\n", .{});
             try format(body.writer(), "    exit(-1);\n", .{});
@@ -110,7 +110,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                 try format(signature.writer(), "compare_to({s}, {s})", .{ ty, ty });
                 var body = String.init(alloc);
                 try format(body.writer(), "  mar_Ordering ordering;\n", .{});
-                try format(body.writer(), "  ordering.variant = (arg0.value == arg1.value) ? mar_equal : (arg0.value > arg1.value) ? mar_greater : mar_less;\n", .{});
+                try format(body.writer(), "  ordering.variant = (arg0.value == arg1.value) ? mar_Ordering_dot_mar_equal : (arg0.value > arg1.value) ? mar_Ordering_dot_mar_greater : mar_Ordering_dot_mar_less;\n", .{});
                 try format(body.writer(), "  mar_Nothing nothing;\n", .{});
                 try format(body.writer(), "  ordering.as.mar_equal = nothing;\n", .{});
                 try format(body.writer(), "  return ordering;\n", .{});
@@ -207,7 +207,10 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                     try format(out, "struct {{\n", .{});
                     try format(out, "  enum {{\n", .{});
                     for (e.variants.items) |variant| {
-                        try format(out, "    {s},\n", .{try mangle(alloc, variant.name)});
+                        try format(out, "    {s}_dot_{s},\n", .{
+                            try mangle(alloc, name),
+                            try mangle(alloc, variant.name),
+                        });
                     }
                     try format(out, "  }} variant;\n", .{});
                     try format(out, "  union {{\n", .{});
@@ -326,10 +329,11 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                         .copy => |copied| {
                             try format(out, "{s} _{} = _{};", .{ try mangle(alloc, ty), i, copied });
                         },
-                        .variant_creation => |vc| try format(out, "{s} _{}; _{}.variant = {s}; _{}.as.{s} = _{};\n", .{
+                        .variant_creation => |vc| try format(out, "{s} _{}; _{}.variant = {s}_dot_{s}; _{}.as.{s} = _{};\n", .{
                             try mangle(alloc, vc.enum_ty),
                             i,
                             i,
+                            try mangle(alloc, vc.enum_ty),
                             try mangle(alloc, vc.variant),
                             i,
                             try mangle(alloc, vc.variant),
@@ -357,13 +361,9 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                             try format(out, " = _{}; mar_Nothing _{};\n", .{ assign.value, i });
                         },
                         .jump => |jump| try format(out, "goto expr_{}; mar_Never _{};\n", .{ jump.target, i }),
-                        .jump_if => |jump| try format(out, "if (_{}.variant == mar_true) goto expr_{}; mar_Never _{};\n", .{
+                        .jump_if_variant => |jump| try format(out, "if (_{}.variant == {s}_dot_{s}) goto expr_{}; mar_Never _{};\n", .{
                             jump.condition,
-                            jump.target,
-                            i,
-                        }),
-                        .jump_if_variant => |jump| try format(out, "if (_{}.variant == {s}) goto expr_{}; mar_Never _{};\n", .{
-                            jump.condition,
+                            try mangle(alloc, fun.tys.items[jump.condition]),
                             try mangle(alloc, jump.variant),
                             jump.target,
                             i,
@@ -397,7 +397,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
 
         try format(out, "\n// actual main function\n", .{});
         try format(out, "int main() {{\n", .{});
-        try format(out, "  return mar_main_po__pc_().value;\n", .{});
+        try format(out, "  return {s}().value;\n", .{try mangle(alloc, "main()")});
         try format(out, "}}", .{});
     }
 
@@ -427,13 +427,13 @@ fn mangle(alloc: std.mem.Allocator, name: Str) !Str {
     for (name) |c| {
         switch (c) {
             '_' => try mangled.appendSlice("__"),
-            '[' => try mangled.appendSlice("_bo_"),
-            ']' => try mangled.appendSlice("_bc_"),
-            '(' => try mangled.appendSlice("_po_"),
-            ')' => try mangled.appendSlice("_pc_"),
-            ',' => try mangled.appendSlice("_c_"),
-            '&' => try mangled.appendSlice("_a_"),
-            '*' => try mangled.appendSlice("_s_"),
+            '[' => try mangled.appendSlice("_of_"),
+            ']' => try mangled.appendSlice("_end_"),
+            '(' => try mangled.appendSlice("_withargs_"),
+            ')' => try mangled.appendSlice("_end_"),
+            ',' => try mangled.appendSlice("_and_"),
+            '&' => try mangled.appendSlice("_amp_"),
+            '*' => try mangled.appendSlice("_star_"),
             ' ' => {},
             else => try mangled.append(c),
         }
