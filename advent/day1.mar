@@ -1,5 +1,5 @@
 fun main(): I64 {
-  var content = read_file("advent/day1.big")
+  var content = read_file("advent/day1.smol")
   var sum = 0_u64
   var i = 0_u64
   var first_digit_in_line = Maybe[U8].none

@@ -188,9 +188,11 @@ fun dump_address[W](address: U64, writer: W) {
 }
 
 | Slice
+| A slice is a memory region where values of the same type are right next to
+| each other.
 struct Slice[T] { data: &T, len: U64 }
 fun get[T](slice: Slice[T], index: U64): &T { slice.data.add(index) }
-fun subslice[T](slice: Slice[T], from: U64, to: U64) {
+fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
   Slice[T].{ data = slice.data.add(from), len = to.subtract(from) }
 }
 fun dump[T, W](slice: Slice[T], writer: W) {
@@ -204,6 +206,16 @@ fun dump[T, W](slice: Slice[T], writer: W) {
   }
   '].dump(writer)
 }
+fun equals[T](a: Slice[T], b: Slice[T]): Bool {
+  if not(a.len.equals(b.len)) { return Bool.false }
+  var i = 0_u64
+  loop {
+    if i.equals(a.len) { break }
+    if not(a.get(i).*.equals(b.get(i).*)) { return Bool.false }
+    i = i.add(1_u64)
+  }
+  return Bool.true
+}
 
 | Vec
 struct Vec[T] {
@@ -216,20 +228,29 @@ fun vec[T](): Vec[T] {
 }
 fun push[T](vec: &Vec[T], item: T) {
   if vec.*.capacity.equals(0_u64) {
-    vec.*.data = malloc(8_u64.multiply(size_of_type[T]())).to_reference[T]()
     vec.*.capacity = 8_u64
+    vec.*.data = malloc(vec.*.capacity.multiply(size_of_type[T]())).to_reference[T]()
   }
   if vec.*.capacity.equals(vec.*.len) {
-    | TODO: copying data needs loops
+    var previous_data = vec.*.data
+    vec.*.capacity = vec.*.capacity.multiply(2_u64)
+    vec.*.data = malloc(vec.*.capacity.multiply(size_of_type[T]())).to_reference[T]()
+    var i = 0_u64
+    loop {
+      if i.equals(vec.*.len) { break }
+      var new_item = vec.*.data.add(i)
+      new_item.* = previous_data.add(i).*
+      i = i.add(1_u64)
+    }
   }
   var new_item = vec.*.data.add(vec.*.len)
   new_item.* = item
   vec.*.len = vec.*.len.add(1_u64)
 }
-fun get[T](vec: Vec[T], index: U64): T {
+fun get[T](vec: Vec[T], index: U64): &T {
   | TODO: enable check when panic exists
   |if index.is_less_than(vec.len) {
-    vec.data.add(index).*
+    vec.data.add(index)
   |}
 }
 fun dump[T, W](vec: Vec[T], writer: W) {

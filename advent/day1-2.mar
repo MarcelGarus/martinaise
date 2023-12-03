@@ -1,0 +1,66 @@
+fun main(): I64 {
+  var content = read_file("advent/day1.big").bytes
+  var sum = 0_u64
+  var i = 0_u64
+  var first_digit_in_line = Maybe[U8].none
+  var last_digit_in_line = Maybe[U8].none
+
+  var digit_names = vec[Str]()
+  identity(&digit_names).push("one")
+  identity(&digit_names).push("two")
+  identity(&digit_names).push("three")
+  identity(&digit_names).push("four")
+  identity(&digit_names).push("five")
+  identity(&digit_names).push("six")
+  identity(&digit_names).push("seven")
+  identity(&digit_names).push("eight")
+  identity(&digit_names).push("nine")
+
+  loop {
+    |print("Now at ")
+    |println(i)
+
+    if i.equals(content.len) { break }
+    var char = content.get(i).*
+
+    var digit = Maybe[U8].none
+    if char.is_at_least('0.value).and(char.is_at_most('9.value)) {
+        digit = Maybe[U8].some(char.subtract('0.value))
+    }
+    var j = 0_u64
+    loop {
+      if j.equals(digit_names.len) { break }
+      var name = digit_names.get(j).*
+      if i.is_at_most(content.len.subtract(name.bytes.len))
+        .and(content.subslice(i, i.add(name.bytes.len)).equals(name.bytes)) {
+        digit = Maybe[U8].some(j.to_U8().add(1_u8))
+      }
+      j = j.add(1_u64)
+    }
+
+    println(digit)
+    switch digit {
+      some(digit) {
+        switch first_digit_in_line {
+          some {}
+          none { first_digit_in_line = Maybe[U8].some(digit) }
+        }
+        last_digit_in_line = Maybe[U8].some(digit)
+      }
+      none {}
+    }
+
+    if char.equals(newline_char().value) {
+      println("new line")
+      var first = first_digit_in_line.unwrap().to_U64()
+      var last = last_digit_in_line.unwrap().to_U64()
+      sum = sum.add(first.multiply(10_u64).add(last))
+      first_digit_in_line = Maybe[U8].none
+      last_digit_in_line = Maybe[U8].none
+    }
+
+    i = i.add(1_u64)
+  }
+  println(sum)
+  return 0_i64
+}
