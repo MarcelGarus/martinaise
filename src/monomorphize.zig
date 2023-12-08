@@ -318,6 +318,11 @@ const FunMonomorphizer = struct {
     const VarInfo = struct { index: usize, ty: Str };
 
     fn compile(monomorphizer: *Monomorphizer, fun: ast.Fun, ty_env: TyEnv) !Str {
+        if (monomorphizer.context.items.len > 100) {
+            std.debug.print("Probably a recursion\n", .{});
+            return error.Todo;
+        }
+
         var alloc = monomorphizer.alloc;
 
         var signature = String.init(alloc);
@@ -395,6 +400,7 @@ const FunMonomorphizer = struct {
 
     fn compile_expr(self: *Self, expression: ast.Expr) error{
         OutOfMemory,
+        Todo,
         MultipleMatches,
         NoMatch,
         TypeArgumentCalledWithGenerics,
@@ -443,13 +449,10 @@ const FunMonomorphizer = struct {
                 try slice_ty_args.append(u8_ty);
                 const slice_ty: Ty = .{ .name = "Slice", .args = slice_ty_args };
 
-                const string_ty: Ty = .{ .name = "Str", .args = ArrayList(Ty).init(self.alloc) };
-
                 _ = try self.monomorphizer.compile_type(u8_ty, TyEnv.init(self.alloc));
                 _ = try self.monomorphizer.compile_type(slice_ty, TyEnv.init(self.alloc));
-                _ = try self.monomorphizer.compile_type(string_ty, TyEnv.init(self.alloc));
 
-                return try self.fun.put_and_get_expr(.{ .string = str }, "Str");
+                return try self.fun.put_and_get_expr(.{ .string = str }, "Slice[U8]");
             },
             .ref => |name| {
                 if (self.var_env.get(name)) |var_info| {

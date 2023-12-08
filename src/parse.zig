@@ -157,11 +157,14 @@ pub fn parse(alloc: std.mem.Allocator, code: Str) !?ast.Program {
         program.add_builtin_fun(alloc, "print_to_stdout", null, args, nothing);
     }
 
-    { // read_file(Str): Str
-        const str = .{ .name = "Str", .args = ArrayList(Ty).init(alloc) };
+    { // read_file(Slice[U8]): Slice[U8]
+        const u8_ = .{ .name = "U8", .args = ArrayList(Ty).init(alloc) };
+        var ty_args = ArrayList(Ty).init(alloc);
+        try ty_args.append(u8_);
+        const slice = .{ .name = "Slice", .args = ty_args };
         var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "path", .ty = str });
-        program.add_builtin_fun(alloc, "read_file", null, args, str);
+        try args.append(.{ .name = "path", .ty = slice });
+        program.add_builtin_fun(alloc, "read_file", null, args, slice);
     }
 
     return program;
@@ -495,17 +498,7 @@ const Parser = struct {
         } else if (try self.parse_int()) |int| {
             expression = .{ .int = int };
         } else if (try self.parse_char()) |c| {
-            // Construct an instance of Char.
-            const char_name = try self.alloc.create(ast.Expr);
-            char_name.* = .{ .ref = "Char" };
-
-            const ty = try self.alloc.create(ast.Expr);
-            ty.* = .{ .ty_arged = .{ .arged = char_name, .ty_args = ArrayList(Ty).init(self.alloc) } };
-
-            var fields = ArrayList(ast.StructCreationField).init(self.alloc);
-            const int = .{ .int = .{ .value = c, .signedness = .unsigned, .bits = 8 } };
-            try fields.append(.{ .name = "value", .value = int });
-            expression = .{ .struct_creation = .{ .ty = ty, .fields = fields } };
+            expression = .{ .int = .{ .value = c, .signedness = .unsigned, .bits = 8 } };
         } else if (try self.parse_string()) |string| {
             expression = .{ .string = string };
         } else if (try self.parse_ampersanded()) |amp| {

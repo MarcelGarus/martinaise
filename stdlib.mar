@@ -16,13 +16,39 @@ struct Never {} | TODO: Make this an enum
 fun identity[T](value: T): T { value }
 
 | Printing
-| Values with a dump(writer) function can be printed. Writers are anything with
-| a write(U8) function. The print function writes the dumped values to stdout
-| using the builtin function print_to_stdout(U8).
+| The print and println functions can print any value with a dump(writer)
+| function. Writers are anything with a write(U8) function. The prints and
+| printlns functions print the argument as a string.
 struct StdoutWriter {}
-fun write(sow: StdoutWriter, c: U8) { print_to_stdout(c) }
+fun write(sow: StdoutWriter, c: U8) {
+  print_to_stdout(c) | This is a builtin function.
+}
 fun print[T](value: T) { value.dump(StdoutWriter.{}) }
-fun println[T](value: T) { print(value) StdoutWriter.{}.write(10_u8) }
+fun println[T](value: T) { print(value) StdoutWriter.{}.write(newline()) }
+fun prints(message: Slice[U8]) { print(str(message)) }
+fun printsln(message: Slice[U8]) { println(str(message)) }
+fun newline(): U8 { 10_u8 }
+
+| Char
+| Essentially just a U8, but it's formatted differently. When you write
+| something like 'a in the source code, the corresponding Char is created.
+struct Char { value: U8 }
+fun char(value: U8): Char { Char.{ value = value } }
+fun dump[W](c: Char, writer: W) { writer.write(c.value) }
+| TODO: refactor to variable when we have global variables
+
+| Str
+| Strings are essentially just a Slice[U8], but they are formatted differently.
+struct Str { bytes: Slice[U8] }
+fun str(bytes: Slice[U8]): Str { Str.{ bytes = bytes } }
+fun dump[W](str: Str, writer: W) {
+  var index = 0_u64
+  loop {
+    if index.equals(str.bytes.len) { break }
+    writer.write(str.bytes.get(index))
+    index = index.add(1_u64)
+  }
+}
 
 | Bool
 enum Bool { true, false }
@@ -145,9 +171,9 @@ fun dump[W](int: U64, radix: U64, writer: W) {
 }
 fun digit_to_char(digit: U8): U8 {
   if digit.is_greater_than(9_u8) {
-    digit.subtract(10_u8).add('a.value)
+    digit.subtract(10_u8).add('a)
   } else {
-    digit.add('0.value)
+    digit.add('0)
   }
 }
 fun dump[W](int: U8, writer: W) { int.to_U64().dump(writer) }
@@ -201,7 +227,7 @@ fun dump[T, W](slice: Slice[T], writer: W) {
   var index = 0_u64
   loop {
     if index.equals(slice.len) { break }
-    if index.is_greater_than(0_u64) { ", ".dump(writer) }
+    if index.is_greater_than(0_u64) { ',.dump(writer) ' .dump(writer) }
     slice.get(index).dump(writer)
     index = index.add(1_u64)
   }
@@ -254,6 +280,34 @@ fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
 fun dump[T, W](iter: SliceRevIter[T], writer: W) {
   "<rev slice iter>".dump(writer)
 }
+fun split_lines[I](iter: I): SplitLinesIter[I] {
+  SplitLinesIter[I].{ iter = iter }
+}
+struct SplitLinesIter[I] { iter: I }
+fun next[I](self: &SplitLinesIter[I]): Maybe[Slice[U8]] {
+  var line = vec[U8]()
+  loop {
+    switch (&self.*.iter).next() {
+      none {
+        if line.len.is_greater_than(0_u64) { break } else { return Maybe[Slice[U8]].none }
+        Nothing.{}
+      }
+      some(c) {
+        if c.equals(newline()) {
+          break
+          Nothing.{}
+        } else {
+          (&line).push(c)
+        }
+      }
+    }
+  }
+  Maybe[Slice[U8]].some(line.to_slice())
+}
+fun dump[I, W](self: SplitLinesIter[I], writer: W) {
+  self.iter.dump(writer)
+  ".split_lines()".dump(writer)
+}
 
 | Vec
 struct Vec[T] {
@@ -296,56 +350,6 @@ fun to_slice[T](vec: Vec[T]): Slice[T] {
 }
 fun iter[T](vec: Vec[T]): SliceIter[T] { vec.to_slice().iter() }
 fun dump[T, W](vec: Vec[T], writer: W) { vec.to_slice().dump(writer) }
-
-| Char
-| Essentially just a U8, but it's formatted differently. When you write
-| something like 'a in the source code, the corresponding Char is created.
-struct Char { value: U8 }
-fun char(value: U8): Char { Char.{ value = value } }
-fun dump[W](c: Char, writer: W) { writer.write(c.value) }
-| TODO: refactor to variable when we have global variables
-fun newline_char(): Char { Char.{ value = 10_u8 } }
-
-| Str
-| Strings are essentially just a Slice[U8], but they are formatted differently.
-struct Str { bytes: Slice[U8] }
-fun str(bytes: Slice[U8]): Str { Str.{ bytes = bytes } }
-fun dump[W](str: Str, writer: W) {
-  var index = 0_u64
-  loop {
-    if index.equals(str.bytes.len) { break }
-    writer.write(str.bytes.get(index))
-    index = index.add(1_u64)
-  }
-}
-fun split_lines[I](iter: I): SplitLinesIter[I] {
-  SplitLinesIter[I].{ iter = iter }
-}
-struct SplitLinesIter[I] { iter: I }
-fun next[I](self: &SplitLinesIter[I]): Maybe[Str] {
-  var line = vec[U8]()
-  loop {
-    switch (&self.*.iter).next() {
-      none {
-        if line.len.is_greater_than(0_u64) { break } else { return Maybe[Str].none }
-        Nothing.{}
-      }
-      some(c) {
-        if c.equals(newline_char().value) {
-          break
-          Nothing.{}
-        } else {
-          (&line).push(c)
-        }
-      }
-    }
-  }
-  Maybe[Str].some(Str.{ bytes = line.to_slice() })
-}
-fun dump[I, W](self: SplitLinesIter[I], writer: W) {
-  self.iter.dump(writer)
-  ".split_lines()".dump(writer)
-}
 
 struct Point[T] { x: T, y: T }
 fun add[T](a: Point[T], b: Point[T]): Point[T] {

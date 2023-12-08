@@ -143,9 +143,9 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
             try builtin_funs.put("print_to_stdout(U8)", body.items);
         }
 
-        { // read_file(Str): Str
+        { // read_file(Slice[U8]): Slice[U8]
             var body = String.init(alloc);
-            try format(body.writer(), "  char* path = (char*)arg0.mar_bytes.mar_data.pointer;\n", .{});
+            try format(body.writer(), "  char* path = (char*)arg0.mar_data.pointer;\n", .{});
             try format(body.writer(), "  FILE* file = fopen(path, \"r\");\n", .{});
             try format(body.writer(), "  if (!file) {{\n", .{});
             try format(body.writer(), "    printf(\"Not able to open %s.\\n\", path);\n", .{});
@@ -164,11 +164,11 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
             try format(body.writer(), "  }}\n", .{});
             try format(body.writer(), "  fclose(file);\n", .{});
             try format(body.writer(), "\n", .{});
-            try format(body.writer(), "  mar_Str content_str;\n", .{});
-            try format(body.writer(), "  content_str.mar_bytes.mar_data.pointer = (mar_U8*) content;\n", .{});
-            try format(body.writer(), "  content_str.mar_bytes.mar_len.value = len;\n", .{});
-            try format(body.writer(), "  return content_str;\n", .{});
-            try builtin_funs.put("read_file(Str)", body.items);
+            try format(body.writer(), "  mar_Slice_of_U8_end_ content_slice;\n", .{});
+            try format(body.writer(), "  content_slice.mar_data.pointer = (mar_U8*) content;\n", .{});
+            try format(body.writer(), "  content_slice.mar_len.value = len;\n", .{});
+            try format(body.writer(), "  return content_slice;\n", .{});
+            try builtin_funs.put("read_file(Slice[U8])", body.items);
         }
     }
 
@@ -312,11 +312,11 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                             },
                         }),
                         .string => |str| {
-                            try format(out, "mar_Str _{}; _{}.mar_bytes.mar_data.pointer = (mar_U8*) \"", .{ i, i });
+                            try format(out, "mar_Slice_of_U8_end_ _{}; _{}.mar_data.pointer = (mar_U8*) \"", .{ i, i });
                             for (str) |c| {
                                 try format(out, "\\x{x}", .{c});
                             }
-                            try format(out, "\"; _{}.mar_bytes.mar_len.value = {};\n", .{ i, str.len });
+                            try format(out, "\"; _{}.mar_len.value = {};\n", .{ i, str.len });
                         },
                         .call => |call| {
                             try format(
