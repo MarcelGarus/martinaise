@@ -181,6 +181,14 @@ fun dump[W](int: U16, writer: W) { int.to_U64().dump(writer) }
 fun dump[W](int: U32, writer: W) { int.to_U64().dump(writer) }
 fun dump[W](int: U64, writer: W) { int.dump(10_u64, writer) }
 
+| Range
+| Ranges have an inclusive start and exclusive end value.
+struct Range[T] { start: T, end: T }
+fun to[T](start: T, end: T): Range[T] { Range[T].{ start = start, end = end } }
+fun contains[T](range: Range[T], value: T): Bool {
+  value.is_at_least(range.start).and(value.is_less_than(range.end))
+}
+
 | Reference
 | References (pointers to memory locations) are built into the compiler. &T is a
 | reference to a T. You can get a reference to a value using the & operator on
