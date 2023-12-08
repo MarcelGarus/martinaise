@@ -1,11 +1,45 @@
-fun main(): I64 {
-  var content = read_file("advent/day1.big").bytes
-  var sum = 0_u64
-  var i = 0_u64
-  var first_digit_in_line = Maybe[U8].none
-  var last_digit_in_line = Maybe[U8].none
+fun windows(s: Slice[U8]): Windows { Windows.{ slice = s, index = 0_U64 } }
+struct Windows { slice: Slice[U8], index: U64 }
+fun next(iter: &Windows): Maybe[Slice[U8]] {
+  var item = if iter.*.index.is_less_than(iter.*.slice.len) {
+    Maybe[Slice[U8]].some(iter.*.slice.subslice(iter.*.index))
+  } else {
+    Maybe[Slice[U8]].none
+  }
+  iter.*.index = iter.*.index.add(1_U64)
+  item
+}
 
-  var digit_names = vec[Str]()
+fun rev_windows(s: Slice[U8]): RevWindows {
+  RevWindows.{ slice = s, index = s.len }
+}
+struct RevWindows { slice: Slice[U8], index: U64 }
+fun next(iter: &RevWindows): Maybe[Slice[U8]] {
+  iter.*.index = iter.*.index.subtract(1_U64)
+  if iter.*.index.is_less_than(iter.*.slice.len) {
+    Maybe[Slice[U8]].some(iter.*.slice.subslice(iter.*.index))
+  } else {
+    Maybe[Slice[U8]].none
+  }
+}
+
+fun find_first_digit[I](iter: I, digit_names: Vec[Slice[U8]]): U8 {
+  loop {
+    var part = switch iter.next() { some(p) { p } none { empty_slice[U8]() } }
+    if '0.to('9).contains(part.get(0_U64)) {
+      break(part.get(0_U64).subtract('0))
+    }
+    var j = 0_U8
+    for name in &digit_names.iter() {
+      if part.starts_with(name) { break }
+      j = j.add(1_U8)
+    }
+    if j.is_less_than(digit_names.len.to_U8()) { break(j.add(1_U8)) }
+  }
+}
+
+fun main(): I64 {
+  var digit_names = vec[Slice[U8]]()
   identity(&digit_names).push("one")
   identity(&digit_names).push("two")
   identity(&digit_names).push("three")
@@ -16,51 +50,12 @@ fun main(): I64 {
   identity(&digit_names).push("eight")
   identity(&digit_names).push("nine")
 
-  loop {
-    |print("Now at ")
-    |println(i)
-
-    if i.equals(content.len) { break }
-    var char = content.get(i).*
-
-    var digit = Maybe[U8].none
-    if char.is_at_least('0.value).and(char.is_at_most('9.value)) {
-        digit = Maybe[U8].some(char.subtract('0.value))
-    }
-    var j = 0_u64
-    loop {
-      if j.equals(digit_names.len) { break }
-      var name = digit_names.get(j).*
-      if i.is_at_most(content.len.subtract(name.bytes.len))
-        .and(content.subslice(i, i.add(name.bytes.len)).equals(name.bytes)) {
-        digit = Maybe[U8].some(j.to_U8().add(1_u8))
-      }
-      j = j.add(1_u64)
-    }
-
-    println(digit)
-    switch digit {
-      some(digit) {
-        switch first_digit_in_line {
-          some {}
-          none { first_digit_in_line = Maybe[U8].some(digit) }
-        }
-        last_digit_in_line = Maybe[U8].some(digit)
-      }
-      none {}
-    }
-
-    if char.equals(newline_char().value) {
-      println("new line")
-      var first = first_digit_in_line.unwrap().to_U64()
-      var last = last_digit_in_line.unwrap().to_U64()
-      sum = sum.add(first.multiply(10_u64).add(last))
-      first_digit_in_line = Maybe[U8].none
-      last_digit_in_line = Maybe[U8].none
-    }
-
-    i = i.add(1_u64)
+  var sum = 0_U64
+  for line in &read_file("advent/day1-2.smol").iter().split_lines() {
+    var first_digit = (&line.windows()).find_first_digit(digit_names)
+    var last_digit = (&line.rev_windows()).find_first_digit(digit_names)
+    sum = sum.add(first_digit.to_U64().multiply(10_U64).add(last_digit.to_U64()))
   }
   println(sum)
-  return 0_i64
+  return 0_I64
 }
