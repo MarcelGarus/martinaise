@@ -10,6 +10,7 @@ const Str = string_mod.Str;
 const ast = @import("ast.zig");
 const mono = @import("mono.zig");
 const numbers = @import("numbers.zig");
+const print_on_same_line = @import("term.zig").print_on_same_line;
 
 pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !mono.Mono {
     var monomorphizer = Monomorphizer{
@@ -355,7 +356,31 @@ const FunMonomorphizer = struct {
         }
         try signature.append(')');
         try monomorphizer.context.append(signature.items);
-        std.debug.print("Compiling {s}\n", .{signature.items});
+        { // Printing
+            var s = ArrayList(u8).init(alloc);
+            try s.appendSlice("Compiling ");
+            for (monomorphizer.context.items, 0..) |c, i| {
+                if (i > 0) {
+                    try s.appendSlice(" > ");
+                }
+                var j: usize = 0;
+                while (true) {
+                    if (c[j] == '(' or c[j] == '[') {
+                        break;
+                    }
+                    j += 1;
+                }
+                // c.find()
+                // try s.appendSlice(c);
+                try s.appendSlice(c[0..j]);
+            }
+            if (s.items.len > 80) {
+                s.items.len = 77;
+                try s.appendSlice("...");
+            }
+            // try s.appendSlice(signature.items);
+            print_on_same_line("{s}\n", .{s.items});
+        }
 
         const return_ty = ret: {
             if (fun.returns) |ty| {
