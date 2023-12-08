@@ -551,10 +551,10 @@ const Parser = struct {
         const value = self.parse_digits() orelse return null;
         self.consume_prefix("_") orelse return error.ExpectedUnderscore;
         const signedness: numbers.Signedness = sign: {
-            if (self.consume_prefix("i")) |_| {
+            if (self.consume_prefix("I")) |_| {
                 break :sign .signed;
             }
-            if (self.consume_prefix("u")) |_| {
+            if (self.consume_prefix("U")) |_| {
                 break :sign .unsigned;
             }
             return error.ExpectedSignedness;
