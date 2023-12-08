@@ -91,7 +91,7 @@ pub fn print_definition(writer: anytype, definition: Def) !void {
         .builtin_ty => |name| try writer.print("builtinType {s}", .{name}),
         .struct_ => |s| {
             try writer.print("struct {s}", .{s.name});
-            try Ty.print_args_of_strs(writer, s.ty_args);
+            try Ty.print_args_of_strs(writer, s.ty_args.items);
             const fields = s.fields.items;
             if (fields.len == 0) {
                 try writer.print(" {{}}", .{});
@@ -105,7 +105,7 @@ pub fn print_definition(writer: anytype, definition: Def) !void {
         },
         .enum_ => |e| {
             try writer.print("enum {s}", .{e.name});
-            try Ty.print_args_of_strs(writer, e.ty_args);
+            try Ty.print_args_of_strs(writer, e.ty_args.items);
             const variants = e.variants.items;
             if (variants.len == 0) {
                 try writer.print(" {{}}", .{});
@@ -151,7 +151,7 @@ pub fn print_signature(writer: anytype, definition: Def) !void {
 }
 pub fn print_fun(writer: anytype, fun: Fun) !void {
     try writer.print("fun {s}", .{fun.name});
-    try Ty.print_args_of_strs(writer, fun.ty_args);
+    try Ty.print_args_of_strs(writer, fun.ty_args.items);
 
     const args = fun.args.items;
     try writer.print("(", .{});
@@ -212,7 +212,7 @@ fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
         .ref => |name| try writer.print("{s}", .{name}),
         .ty_arged => |ty_arged| {
             try print_expr(writer, indent, ty_arged.arged.*);
-            try Ty.print_args_of_tys(writer, ty_arged.ty_args);
+            try Ty.print_args_of_tys(writer, ty_arged.ty_args.items);
         },
         .call => |call| {
             try print_expr(writer, indent, call.callee.*);
@@ -268,7 +268,8 @@ fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
             try print_expr(writer, indent, switch_.value.*);
             try writer.print(" {{\n", .{});
             for (switch_.cases.items) |case| {
-                try writer.print("  {s}", .{case.variant});
+                try print_indent(writer, indent + 1);
+                try writer.print("{s}", .{case.variant});
                 if (case.binding) |binding| {
                     try writer.print("({s})", .{binding});
                 }
@@ -276,11 +277,18 @@ fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
                 try print_body(writer, indent + 1, case.body);
                 try writer.print("\n", .{});
             }
+            try print_indent(writer, indent);
             try writer.print("}}", .{});
         },
         .loop => |body| {
             try writer.print("loop ", .{});
             try print_body(writer, indent, body);
+        },
+        .for_ => |for_| {
+            try writer.print("for {s} in ", .{for_.iter_var});
+            try print_expr(writer, indent, for_.iter.*);
+            try writer.print(" ", .{});
+            try print_body(writer, indent, for_.body);
         },
         .return_ => |returned| {
             try writer.print("return ", .{});

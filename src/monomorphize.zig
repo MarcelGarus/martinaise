@@ -417,8 +417,7 @@ const FunMonomorphizer = struct {
 
         try monomorphizer.funs.put(signature.items, mono_fun);
 
-        const popped = monomorphizer.context.pop();
-        std.debug.print("Done with {s}\n", .{popped});
+        _ = monomorphizer.context.pop();
 
         return signature.items;
     }

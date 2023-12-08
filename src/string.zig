@@ -8,10 +8,13 @@ pub fn starts_with(buf: Str, prefix: Str) bool {
     return buf.len >= prefix.len and std.mem.eql(u8, buf[0..prefix.len], prefix);
 }
 
+pub fn eql(a: Str, b: Str) bool {
+    return std.mem.eql(u8, a, b);
+}
 pub fn cmp(context: void, a: Str, b: Str) bool {
     _ = context;
-    switch (std.mem.order(u8, a, b)) {
+    return switch (std.mem.order(u8, a, b)) {
         .lt => return true,
         else => return false,
-    }
+    };
 }
