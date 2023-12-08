@@ -478,6 +478,9 @@ const Parser = struct {
         ExpectedChar,
         ExpectedType,
         ExpectedLoopBody,
+        ExpectedIn,
+        ExpectedIterationVariable,
+        ExpectedIter,
     }!?ast.Expr {
         var expression: ?ast.Expr = null;
 
@@ -487,6 +490,8 @@ const Parser = struct {
             expression = .{ .switch_ = switch_ };
         } else if (try self.parse_loop()) |loop| {
             expression = .{ .loop = loop };
+        } else if (try self.parse_for()) |for_| {
+            expression = .{ .for_ = for_ };
         } else if (try self.parse_int()) |int| {
             expression = .{ .int = int };
         } else if (try self.parse_char()) |c| {
@@ -786,5 +791,19 @@ const Parser = struct {
         self.consume_keyword("loop") orelse return null;
         self.consume_whitespace();
         return try self.parse_body() orelse return error.ExpectedLoopBody;
+    }
+
+    fn parse_for(self: *Self) !?ast.For {
+        self.consume_keyword("for") orelse return null;
+        self.consume_whitespace();
+        const iter_var = self.parse_name() orelse return error.ExpectedIterationVariable;
+        self.consume_whitespace();
+        self.consume_keyword("in") orelse return error.ExpectedIn;
+        self.consume_whitespace();
+        const iter = try self.alloc.create(ast.Expr);
+        iter.* = try self.parse_expression() orelse return error.ExpectedIter;
+        self.consume_whitespace();
+        const body = try self.parse_body() orelse return error.ExpectedLoopBody;
+        return .{ .iter_var = iter_var, .iter = iter, .body = body };
     }
 };

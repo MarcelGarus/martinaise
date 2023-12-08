@@ -63,6 +63,7 @@ pub const Expr = union(enum) {
     if_: If, // if foo { ... }
     switch_: Switch, // switch foo { a { ... } b(bar) { ... } }
     loop: Body, // loop { ... }
+    for_: For, // for a in b { ... }
     return_: *const Expr, // return ...
     ampersanded: *const Expr, // &...
 };
@@ -77,6 +78,7 @@ pub const Assign = struct { to: *Expr, value: *Expr };
 pub const If = struct { condition: *const Expr, then: Body, else_: ?Body };
 pub const Switch = struct { value: *const Expr, cases: ArrayList(Case) };
 pub const Case = struct { variant: Str, binding: ?Str, body: Body };
+pub const For = struct { iter_var: Str, iter: *const Expr, body: Body };
 
 pub fn print(writer: anytype, program: Program) !void {
     for (program.defs.items) |def| {
@@ -127,15 +129,15 @@ pub fn print_signature(writer: anytype, definition: Def) !void {
         .builtin_ty => |bt| try writer.print("{s}", .{bt}),
         .struct_ => |s| {
             try writer.print("{s}", .{s.name});
-            try Ty.print_args_of_strs(writer, s.ty_args);
+            try Ty.print_args_of_strs(writer, s.ty_args.items);
         },
         .enum_ => |e| {
             try writer.print("{s}", .{e.name});
-            try Ty.print_args_of_strs(writer, e.ty_args);
+            try Ty.print_args_of_strs(writer, e.ty_args.items);
         },
         .fun => |fun| {
             try writer.print("{s}", .{fun.name});
-            try Ty.print_args_of_strs(writer, fun.ty_args);
+            try Ty.print_args_of_strs(writer, fun.ty_args.items);
             try writer.print("(", .{});
             for (fun.args.items, 0..) |arg, i| {
                 if (i > 0) {

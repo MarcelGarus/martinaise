@@ -91,20 +91,20 @@ pub const Ty = struct {
         _ = options;
 
         try writer.print("{s}", .{self.name});
-        try print_args_of_tys(writer, self.args);
+        try print_args_of_tys(writer, self.args.items);
     }
 
-    pub fn print_args_of_tys(writer: anytype, args: ?ArrayList(Ty)) !void {
+    pub fn print_args_of_tys(writer: anytype, args: ?[]const Ty) !void {
         try print_args(Ty, "{any}", writer, args);
     }
-    pub fn print_args_of_strs(writer: anytype, args: ?ArrayList(Str)) !void {
+    pub fn print_args_of_strs(writer: anytype, args: ?[]const Str) !void {
         try print_args(Str, "{s}", writer, args);
     }
-    fn print_args(comptime T: type, comptime fmt: []const u8, writer: anytype, args: ?ArrayList(T)) !void {
+    fn print_args(comptime T: type, comptime fmt: []const u8, writer: anytype, args: ?[]const T) !void {
         if (args) |ty_args| {
-            if (ty_args.items.len > 0) {
+            if (ty_args.len > 0) {
                 try writer.print("[", .{});
-                for (ty_args.items, 0..) |arg, i| {
+                for (ty_args, 0..) |arg, i| {
                     if (i > 0) {
                         try writer.print(", ", .{});
                     }

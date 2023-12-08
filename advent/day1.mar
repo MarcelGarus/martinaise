@@ -1,8 +1,6 @@
 fun main(): I64 {
-  var lines = read_file("advent/day1.smol").bytes.iter().split_lines()
   var sum = 0_u64
-  loop {
-    var line = switch (&lines).next() { some(line) { line } none { break "" } }
+  for line in &read_file("advent/day1.smol").bytes.iter().split_lines() {
     print("Line: ")
     println(line)
 
@@ -11,6 +9,7 @@ fun main(): I64 {
       var char = switch (&iter).next() { some(c) { c } none { break('x.value) 'x.value } }
       if char.is_at_least('0.value).and(char.is_at_most('9.value)) { break(char) }
     }.subtract('0.value).to_U64()
+
     var iter = line.bytes.rev_iter()
     var last_digit = loop {
       var char = switch (&iter).next() { some(c) { c } none { break('x.value) 'x.value } }
@@ -23,34 +22,4 @@ fun main(): I64 {
   }
   println(sum)
   return 0_i64
-
-  |var sum = 0_u64
-  |var i = 0_u64
-  |var first_digit_in_line = Maybe[U8].none
-  |var last_digit_in_line = Maybe[U8].none
-  |loop {
-  |  if i.equals(content.bytes.len) { break }
-  |  var char = content.bytes.get(i).*
-  |  |println(Char.{ value = char })
-  |  |println(char)
-  |  if char.equals(10_u8) { | newline
-  |    println("new line")
-  |    var first = first_digit_in_line.unwrap().to_U64()
-  |    var last = last_digit_in_line.unwrap().to_U64()
-  |    sum = sum.add(first.multiply(10_u64).add(last))
-  |    first_digit_in_line = Maybe[U8].none
-  |    last_digit_in_line = Maybe[U8].none
-  |  }
-  |  if char.is_at_least('0.value).and(char.is_at_most('9.value)) {
-  |    var digit = char.subtract('0.value)
-  |    switch first_digit_in_line {
-  |      some {}
-  |      none { first_digit_in_line = Maybe[U8].some(digit) }
-  |    }
-  |    last_digit_in_line = Maybe[U8].some(digit)
-  |  }
-  |  i = i.add(1_u64)
-  |}
-  |println(sum)
-  |return 0_i64
 }
