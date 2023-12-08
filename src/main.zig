@@ -10,7 +10,12 @@ const print_on_same_line = @import("term.zig").print_on_same_line;
 const string = @import("string.zig");
 const Str = string.Str;
 
-const Command = enum { ast, mono, compile, run, watch };
+const is_linux = @import("builtin").os.tag == .linux;
+
+const Command = if (is_linux)
+    enum { ast, mono, compile, run, watch }
+else
+    enum { ast, mono, compile, run };
 
 pub fn main() !u8 {
     std.debug.print("Welcome to Martinaise.\n", .{});
@@ -43,7 +48,7 @@ pub fn main() !u8 {
         return 1;
     };
 
-    if (command == .watch) {
+    if (is_linux and command == .watch) {
         if (@import("builtin").os.tag != .linux) {
             return error.NotSupported;
         }
@@ -75,10 +80,7 @@ const Watcher = struct {
     watch: usize,
     buf: [buf_len]u8,
 
-    const libc = if (@import("builtin").os.tag == .linux)
-        os.linux
-    else
-        @compileError("Not supported");
+    const libc = if (is_linux) os.linux else @compileError("Not supported");
     const event_size_without_name = @sizeOf(libc.inotify_event);
     const buf_len = (1024 * event_size_without_name) + 16;
     var buf = [_]u8{0} ** buf_len;
@@ -127,7 +129,8 @@ fn print_usage_info() void {
     std.debug.print("  mono     shows the monomorphized code\n", .{});
     std.debug.print("  compile  compiles to output.c\n", .{});
     std.debug.print("  run      compiles and runs\n", .{});
-    std.debug.print("  watch    watches, compiles, and runs\n", .{});
+    if (is_linux)
+        std.debug.print("  watch    watches, compiles, and runs\n", .{});
 }
 
 fn run_pipeline(alloc: Allocator, command: Command, file_path: Str) !u8 {
