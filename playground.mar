@@ -1,50 +1,18 @@
-struct Foo {}
-struct Bar[T] {}
-fun foo[A](foo: Foo, a: A) {}
-fun foo[A, B](foo: A, b: Bar[B]) {}
-
-struct Box[T] { val: T }
-fun dump[T, W](box: Box[T], writer: W) { box.val.dump(writer) }
-
-fun foo(b: Ref[Box[U8]]) {
-  b.val = 200_u8
+struct Foo {
+  bar: Bar,
 }
+struct Bar {}
 
 fun main(): I64 {
-  |Foo.{}.foo(Bar[Foo].{}) | fails when uncommented (two matching functions)
-
-  println(Maybe[Str].some("Hello, world!"))
-
-  |println(Maybe[U8].some(2_u8))
-  |println(fib(10_u64))
-
-  |var box = new(Box[U8].{ val = 3_u8 })
-  |box.foo()
-  |println(box.deref())
-
-  var v = vec[U8]()
-  identity(&v).push(1_u8)
-  identity(&v).push(2_u8)
-  identity(&v).push(3_u8)
-  println(v)
-
-  var iter = &v.iter()
-  loop {
-    switch iter.next() {
-      some(n) { println(n.*) }
-      none { break Nothing.{} }
-    }
-  }
-
-  |println(Bool.true.implies(Bool.true.or(Bool.false)))
-  |println(multiply(add(3_i64, 4_i64), divide(4_i64, 2_i64)).modulo(10_i64))
-
+  var f = new(Foo.{ bar = Bar.{} })
+  println(f.to_address())
+  println((&f.*.bar).to_address())
   return 0_i64
 }
 
-fun fib(n: U64): U64 {
-  if n.is_at_most(1_u64) { n } else { fib(n.subtract(1_u64)).add(fib(n.subtract(2_u64))) }
-}
+|fun fib(n: U64): U64 {
+|  if n.is_at_most(1_u64) { n } else { fib(n.subtract(1_u64)).add(fib(n.subtract(2_u64))) }
+|}
 
 |fun main() {
 |  print(fib(10))

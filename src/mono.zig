@@ -29,60 +29,70 @@ pub const Fun = struct {
     arg_tys: ArrayList(Str),
     return_ty: Str,
     is_builtin: bool,
-    body: ArrayList(Expr),
+    body: ArrayList(Statement),
     tys: ArrayList(Str),
 
     const Self = @This();
 
-    pub fn next_index(self: Self) ExprIndex {
+    pub fn next_index(self: Self) StatementIndex {
         return self.body.items.len;
     }
-    pub fn put(self: *Self, expr: Expr, ty: Str) !ExprIndex {
+    pub fn put(self: *Self, statement: Statement, ty: Str) !StatementIndex {
         const index = self.body.items.len;
-        try self.body.append(expr);
+        try self.body.append(statement);
         try self.tys.append(ty);
         return index;
     }
+    pub fn put_and_get_expr(self: *Self, statement: Statement, ty: Str) !Expr {
+        return .{ .kind = .{ .statement = try self.put(statement, ty) }, .ty = ty };
+    }
 };
-pub const ExprIndex = usize;
-pub const Expr = union(enum) {
+
+pub const StatementIndex = usize;
+pub const Statement = union(enum) {
     arg,
+    expression: Expr,
     uninitialized,
+    assign: Assign,
     int: Int,
     string: Str,
     call: Call,
-    copy: ExprIndex,
     variant_creation: VariantCreation,
     struct_creation: StructCreation,
-    member: Member,
-    assign: Assign,
     jump: Jump,
     jump_if_variant: JumpIfVariant,
     get_enum_value: GetEnumValue,
-    return_: ExprIndex,
-    take_ref: ExprIndex,
+    return_: Expr,
+    ref: Expr,
 };
-pub const Int = struct { value: i128, signedness: numbers.Signedness, bits: numbers.Bits };
-pub const Call = struct { fun: Str, args: ArrayList(ExprIndex) };
-pub const VariantCreation = struct { enum_ty: Str, variant: Str, value: ExprIndex };
-pub const StructCreation = struct { struct_ty: Str, fields: StringHashMap(ExprIndex) };
-pub const Member = struct { of: ExprIndex, name: Str };
-pub const Assign = struct { to: LeftExpr, value: ExprIndex };
-pub const Jump = struct { target: ExprIndex };
-pub const JumpIf = struct { condition: ExprIndex, target: ExprIndex };
-pub const JumpIfVariant = struct { condition: ExprIndex, variant: Str, target: ExprIndex };
-pub const GetEnumValue = struct { of: ExprIndex, variant: Str, ty: Str };
 
+pub const Assign = struct { to: LeftExpr, value: Expr };
 pub const LeftExpr = struct {
     ty: Str,
     kind: LeftExprKind,
 };
 pub const LeftExprKind = union(enum) {
-    ref: ExprIndex,
+    statement: StatementIndex,
     member: LeftMember,
-    deref: *const LeftExpr,
 };
 pub const LeftMember = struct { of: *const LeftExpr, name: Str };
+pub const Int = struct { value: i128, signedness: numbers.Signedness, bits: numbers.Bits };
+pub const Call = struct { fun: Str, args: ArrayList(Expr) };
+pub const VariantCreation = struct { enum_ty: Str, variant: Str, value: *const Expr };
+pub const StructCreation = struct { struct_ty: Str, fields: StringHashMap(Expr) };
+pub const Jump = struct { target: StatementIndex };
+pub const JumpIfVariant = struct { condition: Expr, variant: Str, target: StatementIndex };
+pub const GetEnumValue = struct { of: Expr, variant: Str, ty: Str };
+
+pub const Expr = struct {
+    ty: Str,
+    kind: ExprKind,
+};
+pub const ExprKind = union(enum) {
+    statement: StatementIndex,
+    member: Member,
+};
+pub const Member = struct { of: *const Expr, name: Str };
 
 pub fn print(writer: anytype, mono: Mono) !void {
     {
@@ -107,45 +117,87 @@ fn print_fun(writer: anytype, name: Str, fun: Fun) !void {
         try writer.print("  <builtin>", .{});
         return;
     }
-    for (fun.body.items, fun.tys.items, 0..) |expr, ty, i| {
+    for (fun.body.items, fun.tys.items, 0..) |statement, ty, i| {
         if (i > 0) {
             try writer.print("\n", .{});
         }
         try writer.print("  _{d} = ", .{i});
-        try print_expr(writer, expr);
+        try print_statement(writer, statement);
         try writer.print(": {s}", .{ty});
     }
 }
-
-fn print_expr(writer: anytype, expr: Expr) !void {
-    switch (expr) {
+fn print_statement(writer: anytype, statement: Statement) !void {
+    switch (statement) {
         .arg => try writer.print("arg", .{}),
+        .expression => |e| try print_expr(writer, e),
         .uninitialized => try writer.print("uninitialized", .{}),
         .int => |int| try writer.print("{d}{c}{d}", .{ int.value, int.signedness.to_char(), int.bits }),
+        .string => |string| try writer.print("\"{s}\"", .{string}),
         .call => |call| {
             try writer.print("{s} called with (", .{call.fun});
             for (call.args.items, 0..) |arg, i| {
                 if (i > 0) {
                     try writer.print(", ", .{});
                 }
-                try writer.print("_{d}", .{arg});
+                try print_expr(writer, arg);
             }
             try writer.print(")", .{});
         },
-        .variant_creation => |vc| try writer.print("{s}.{s}(_{})", .{ vc.enum_ty, vc.variant, vc.value }),
+        .variant_creation => |vc| {
+            try writer.print("{s}.{s}(", .{ vc.enum_ty, vc.variant });
+            try print_expr(writer, vc.value.*);
+            try writer.print(")", .{});
+        },
         .struct_creation => |sc| {
             try writer.print("{s}.{{", .{sc.struct_ty});
             var iter = sc.fields.iterator();
             while (iter.next()) |field| {
-                try writer.print(" {s} = _{},", .{ field.key_ptr.*, field.value_ptr.* });
+                try writer.print(" {s} = ", .{field.key_ptr.*});
+                try print_expr(writer, field.value_ptr.*);
+                try writer.print(",", .{});
             }
             try writer.print(" }}", .{});
         },
-        .member => |m| try writer.print("_{d}.{s}", .{ m.of, m.name }),
-        .assign => |assign| try writer.print("_{} set to _{}", .{ assign.to, assign.value }),
+        .assign => |assign| {
+            try print_left_expr(writer, assign.to);
+            try writer.print(" set to ", .{});
+            try print_expr(writer, assign.value);
+        },
         .jump => |jump| try writer.print("jump to _{}", .{jump.target}),
-        .jump_if_variant => |jump| try writer.print("if _{} is {s}, jump to _{}", .{ jump.condition, jump.variant, jump.target }),
-        .get_enum_value => |gev| try writer.print("get value of _{}", .{gev.of}),
-        .return_ => |r| try writer.print("return _{d}", .{r}),
+        .jump_if_variant => |jump| {
+            try writer.print("if ", .{});
+            try print_expr(writer, jump.condition);
+            try writer.print(" is {s}, jump to _{}", .{ jump.variant, jump.target });
+        },
+        .get_enum_value => |gev| {
+            try writer.print("get {s} value of ", .{gev.variant});
+            try print_expr(writer, gev.of);
+        },
+        .return_ => |r| {
+            try writer.print("return ", .{});
+            try print_expr(writer, r);
+        },
+        .ref => |expr| {
+            try writer.print("&", .{});
+            try print_expr(writer, expr);
+        },
+    }
+}
+fn print_expr(writer: anytype, expr: Expr) !void {
+    switch (expr.kind) {
+        .statement => |s| try writer.print("_{d}", .{s}),
+        .member => |m| {
+            try print_expr(writer, m.of.*);
+            try writer.print(".{s}", .{m.name});
+        },
+    }
+}
+fn print_left_expr(writer: anytype, expr: LeftExpr) !void {
+    switch (expr.kind) {
+        .statement => |index| try writer.print("_{}", .{index}),
+        .member => |member| {
+            try print_left_expr(writer, member.of.*);
+            try writer.print(".{s}", .{member.name});
+        },
     }
 }

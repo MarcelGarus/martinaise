@@ -154,15 +154,14 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
             try format(body.writer(), "  int capacity = 32, len = 0;\n", .{});
             try format(body.writer(), "  char* content = malloc(capacity);\n", .{});
             try format(body.writer(), "  char c;\n", .{});
-            try format(body.writer(), "  do {{\n", .{});
-            try format(body.writer(), "    c = fgetc(file);\n", .{});
+            try format(body.writer(), "  while ((c = fgetc(file)) != EOF) {{\n", .{});
             try format(body.writer(), "    if (len == capacity) {{\n", .{});
             try format(body.writer(), "      capacity *= 2;\n", .{});
             try format(body.writer(), "      content = realloc(content, capacity);\n", .{});
             try format(body.writer(), "    }}\n", .{});
             try format(body.writer(), "    content[len] = c;\n", .{});
             try format(body.writer(), "    len++;\n", .{});
-            try format(body.writer(), "  }} while (c != EOF);\n", .{});
+            try format(body.writer(), "  }}\n", .{});
             try format(body.writer(), "  fclose(file);\n", .{});
             try format(body.writer(), "\n", .{});
             try format(body.writer(), "  mar_Str content_str;\n", .{});
@@ -297,95 +296,105 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                     break :fun_body;
                 }
 
-                for (fun.body.items, fun.tys.items, 0..) |expr, ty, i| {
-                    try format(out, "  expr_{}: ", .{i});
-                    switch (expr) {
+                for (fun.body.items, fun.tys.items, 0..) |statement, ty, i| {
+                    try format(out, "  statement_{}: ", .{i});
+                    switch (statement) {
                         .arg => try format(out, "{s} _{} = arg{};\n", .{ try mangle(alloc, ty), i, i }),
+                        .expression => |expr| try format_expr(alloc, out, expr),
                         .uninitialized => try format(out, "{s} _{};\n", .{ try mangle(alloc, ty), i }),
-                        .int => |int| try format(out, "{s} _{}; _{}.value = {}{s};\n", .{ try mangle(alloc, ty), i, i, int.value, suffix: {
-                            if (int.signedness == .unsigned) {
-                                break :suffix "ULL";
-                            } else {
-                                break :suffix "LL";
-                            }
-                        } }),
+                        .int => |int| try format(out, "{s} _{}; _{}.value = {}{s};\n", .{
+                            try mangle(alloc, ty), i, i, int.value, suffix: {
+                                if (int.signedness == .unsigned) {
+                                    break :suffix "ULL";
+                                } else {
+                                    break :suffix "LL";
+                                }
+                            },
+                        }),
                         .string => |str| {
                             try format(out, "mar_Str _{}; _{}.mar_bytes.mar_data.pointer = (mar_U8*) \"", .{ i, i });
                             for (str) |c| {
                                 try format(out, "\\x{x}", .{c});
                             }
-                            try format(out, "\"; _{}.mar_bytes.mar_len.value = {};", .{ i, str.len });
+                            try format(out, "\"; _{}.mar_bytes.mar_len.value = {};\n", .{ i, str.len });
                         },
                         .call => |call| {
-                            try format(out, "{s} _{} = {s}(", .{ try mangle(alloc, ty), i, try mangle(alloc, call.fun) });
+                            try format(
+                                out,
+                                "{s} _{} = {s}(",
+                                .{ try mangle(alloc, ty), i, try mangle(alloc, call.fun) },
+                            );
                             for (call.args.items, 0..) |arg, j| {
                                 if (j > 0) {
                                     try format(out, ", ", .{});
                                 }
-                                try format(out, "_{}", .{arg});
+                                try format_expr(alloc, out, arg);
                             }
                             try format(out, ");\n", .{});
                         },
-                        .copy => |copied| {
-                            try format(out, "{s} _{} = _{};", .{ try mangle(alloc, ty), i, copied });
+                        .variant_creation => |vc| {
+                            try format(out, "{s} _{}; _{}.variant = {s}_dot_{s}; _{}.as.{s} = ", .{
+                                try mangle(alloc, vc.enum_ty),
+                                i,
+                                i,
+                                try mangle(alloc, vc.enum_ty),
+                                try mangle(alloc, vc.variant),
+                                i,
+                                try mangle(alloc, vc.variant),
+                            });
+                            try format_expr(alloc, out, vc.value.*);
+                            try format(out, ";\n", .{});
                         },
-                        .variant_creation => |vc| try format(out, "{s} _{}; _{}.variant = {s}_dot_{s}; _{}.as.{s} = _{};\n", .{
-                            try mangle(alloc, vc.enum_ty),
-                            i,
-                            i,
-                            try mangle(alloc, vc.enum_ty),
-                            try mangle(alloc, vc.variant),
-                            i,
-                            try mangle(alloc, vc.variant),
-                            vc.value,
-                        }),
                         .struct_creation => |sc| {
                             try format(out, "{s} _{};", .{ try mangle(alloc, sc.struct_ty), i });
                             var iter = sc.fields.iterator();
                             while (iter.next()) |f| {
-                                try format(out, " _{}.{s} = _{};", .{ i, try mangle(alloc, f.key_ptr.*), f.value_ptr.* });
+                                try format(out, " _{}.{s} = ", .{ i, try mangle(alloc, f.key_ptr.*) });
+                                try format_expr(alloc, out, f.value_ptr.*);
+                                try format(out, ";", .{});
                             }
                             try format(out, "\n", .{});
                         },
-                        .member => |member| {
-                            if (std.mem.eql(u8, member.name, "*")) {
-                                try format(out, "{s} _{} = *_{}.pointer;\n", .{ try mangle(alloc, ty), i, member.of });
-                            } else {
-                                try format(out, "{s} _{} = _{}.{s};\n", .{
-                                    try mangle(alloc, ty), i, member.of, try mangle(alloc, member.name),
-                                });
-                            }
-                        },
                         .assign => |assign| {
                             try format_left_expr(alloc, out, assign.to);
-                            try format(out, " = _{}; mar_Nothing _{};\n", .{ assign.value, i });
+                            try format(out, " = ", .{});
+                            try format_expr(alloc, out, assign.value);
+                            try format(out, "; mar_Nothing _{};\n", .{i});
                         },
-                        .jump => |jump| try format(out, "goto expr_{}; mar_Never _{};\n", .{ jump.target, i }),
-                        .jump_if_variant => |jump| try format(out, "if (_{}.variant == {s}_dot_{s}) goto expr_{}; mar_Never _{};\n", .{
-                            jump.condition,
-                            try mangle(alloc, fun.tys.items[jump.condition]),
-                            try mangle(alloc, jump.variant),
-                            jump.target,
-                            i,
-                        }),
-                        .get_enum_value => |gev| try format(out, "{s} _{} = _{}.as.{s};\n", .{
-                            try mangle(alloc, gev.ty),
-                            i,
-                            gev.of,
-                            try mangle(alloc, gev.variant),
-                        }),
-                        .return_ => |index| {
+                        .jump => |jump| try format(out, "goto statement_{}; mar_Never _{};\n", .{ jump.target, i }),
+                        .jump_if_variant => |jump| {
+                            try format(out, "if ((", .{});
+                            try format_expr(alloc, out, jump.condition);
+                            try format(out, ").variant == {s}_dot_{s}) goto statement_{}; mar_Never _{};\n", .{
+                                try mangle(alloc, jump.condition.ty),
+                                try mangle(alloc, jump.variant),
+                                jump.target,
+                                i,
+                            });
+                        },
+                        .get_enum_value => |gev| {
+                            try format(out, "{s} _{} = (", .{ try mangle(alloc, gev.ty), i });
+                            try format_expr(alloc, out, gev.of);
+                            try format(out, ").as.{s};\n", .{try mangle(alloc, gev.variant)});
+                        },
+                        .return_ => |expr| {
                             // If a Never is returned, the return is not reached anyway. If we emit
                             // it, C complains that Never doesn't match the function's return type.
-                            if (!std.mem.eql(u8, fun.tys.items[@intCast(index)], "Never")) {
-                                try format(out, "return _{}; ", .{index});
+                            if (!std.mem.eql(u8, expr.ty, "Never")) {
+                                try format(out, "return ", .{});
+                                try format_expr(alloc, out, expr);
+                                try format(out, "; ", .{});
                             }
                             try format(out, "mar_Never _{};\n", .{i});
                         },
-                        .take_ref => |index| try format(out, "{s} _{}; _{}.pointer = &_{};\n", .{ try mangle(alloc, ty), i, i, index }),
+                        .ref => |expr| {
+                            try format(out, "{s} _{}; _{}.pointer = &(", .{ try mangle(alloc, ty), i, i });
+                            try format_expr(alloc, out, expr);
+                            try format(out, ");\n", .{});
+                        },
                     }
                 }
-                try format(out, "  expr_{}: // end\n", .{fun.body.items.len});
+                try format(out, "  statement_{}: // end\n", .{fun.body.items.len});
                 const last_expr_index = fun.body.items.len - 1;
                 if (!std.mem.eql(u8, fun.tys.items[last_expr_index], "Never")) {
                     try format(out, "  return _{};\n", .{last_expr_index});
@@ -404,9 +413,25 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
     return out_buffer;
 }
 
+fn format_expr(alloc: std.mem.Allocator, out: anytype, expr: mono.Expr) !void {
+    switch (expr.kind) {
+        .statement => |index| try format(out, "_{}", .{index}),
+        .member => |member| {
+            if (std.mem.eql(u8, member.name, "*")) {
+                try format(out, "(*(", .{});
+                try format_expr(alloc, out, member.of.*);
+                try format(out, ".pointer))", .{});
+            } else {
+                try format_expr(alloc, out, member.of.*);
+                try format(out, ".{s}", .{try mangle(alloc, member.name)});
+            }
+        },
+    }
+}
+
 fn format_left_expr(alloc: std.mem.Allocator, out: anytype, expr: mono.LeftExpr) !void {
     switch (expr.kind) {
-        .ref => |index| try format(out, "_{}", .{index}),
+        .statement => |index| try format(out, "_{}", .{index}),
         .member => |member| {
             if (std.mem.eql(u8, member.name, "*")) {
                 try format(out, "(*(({s}*) ", .{try mangle(alloc, expr.ty)});
@@ -417,7 +442,6 @@ fn format_left_expr(alloc: std.mem.Allocator, out: anytype, expr: mono.LeftExpr)
                 try format(out, ".{s}", .{try mangle(alloc, member.name)});
             }
         },
-        .deref => |_| {},
     }
 }
 
