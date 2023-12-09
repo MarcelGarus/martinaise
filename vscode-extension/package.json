@@ -1,0 +1,38 @@
+{
+  "name": "martinaise",
+  "displayName": "martinaise",
+  "description": "Martinaise language support for VS Code",
+  "version": "0.0.1",
+  "publisher": "MarcelGarus",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [],
+  "main": "./src/extension.js",
+  "contributes": {
+    "configurationDefaults": {
+      "[martinaise]": {
+        "files.eol": "\n"
+      }
+    },
+    "languages": [
+      {
+        "id": "martinaise",
+        "extensions": [
+          ".mar"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "martinaise",
+        "scopeName": "source.mar",
+        "path": "./martinaise.tmGrammar.json"
+      }
+    ]
+  }
+}
