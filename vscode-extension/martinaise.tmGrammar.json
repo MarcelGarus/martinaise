@@ -6,7 +6,7 @@
   "patterns": [
     {
       "name": "keyword.default",
-      "match": "\\b(fun|var|loop|for|struct|enum|break|return|if|else|switch)\\b"
+      "match": "\\b(fun|var|loop|for|in|struct|enum|break|return|if|else|switch)\\b"
     },
     { "include": "#comments" },
     {

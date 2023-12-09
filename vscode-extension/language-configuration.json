@@ -21,7 +21,7 @@
     ],
     "onEnterRules": [
         {
-            "beforeText": "^\\s*|.*$",
+            "beforeText": "^\\s*\\|.*$",
             "action": {
                 "indent": "none", 
                 "appendText": "| "
