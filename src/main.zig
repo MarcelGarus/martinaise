@@ -169,11 +169,17 @@ fn run_pipeline(alloc: Allocator, command: Command, file_path: Str) !void {
         var program = std.ChildProcess.init(&[_]Str{"./a.out"}, alloc);
         program.stdout = std.io.getStdOut();
         program.stderr = std.io.getStdErr();
+        const start = std.time.nanoTimestamp();
         const wait_result = try program.spawnAndWait();
+        const end = std.time.nanoTimestamp();
+        const runtime: usize = @intCast(end - start);
         std.debug.print("\n", .{});
         switch (wait_result) {
             .Exited => |code| {
-                std.debug.print("Program exited with {d}.\n", .{code});
+                std.debug.print("Program exited with {d} after {d} ms.\n", .{
+                    code,
+                    @divTrunc(runtime, 1000000),
+                });
             },
             .Signal => |signal| {
                 std.debug.print("Program was signalled {d}.\n", .{signal});
