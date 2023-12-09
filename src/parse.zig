@@ -1,17 +1,22 @@
 const std = @import("std");
+const format = std.fmt.format;
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const ast = @import("ast.zig");
 const string_mod = @import("string.zig");
 const String = string_mod.String;
 const Str = string_mod.Str;
+const Result = @import("result.zig").Result;
 const Ty = @import("ty.zig").Ty;
 const numbers = @import("numbers.zig");
 
-pub fn parse(alloc: std.mem.Allocator, code: Str) !?ast.Program {
+pub fn parse(alloc: std.mem.Allocator, code: Str) !Result(ast.Program) {
     var parser = Parser{ .code = code, .alloc = alloc };
     // TODO: Handle OOM error differently
     var program = parser.parse_program() catch |err| {
+        var out_buf = String.init(alloc);
+        const out = out_buf.writer();
+
         const offset = code.len - parser.code.len;
 
         var lines = ArrayList(Str).init(alloc);
@@ -22,39 +27,39 @@ pub fn parse(alloc: std.mem.Allocator, code: Str) !?ast.Program {
             }
             switch (c) {
                 '\n' => {
-                    lines.append(current_line.items) catch unreachable;
+                    try lines.append(current_line.items);
                     current_line = String.init(alloc);
                 },
-                else => |a| current_line.append(a) catch unreachable,
+                else => |a| try current_line.append(a),
             }
         }
         const num_lines_to_display = @min(lines.items.len, 4);
         for (lines.items.len - num_lines_to_display + 1..lines.items.len) |number| {
             if (lines.items.len >= number) {
-                std.debug.print("{d:4} | {s}\n", .{ number + 1, lines.items[number] });
+                try format(out, "{d:4} | {s}\n", .{ number + 1, lines.items[number] });
             }
         }
-        std.debug.print("{d:4} | {s}", .{ lines.items.len + 1, current_line.items });
+        try format(out, "{d:4} | {s}", .{ lines.items.len + 1, current_line.items });
         for (code[offset..]) |c| {
             switch (c) {
                 '\n' => break,
-                else => std.debug.print("{c}", .{c}),
+                else => try format(out, "{c}", .{c}),
             }
         }
-        std.debug.print("\n", .{});
+        try format(out, "\n", .{});
 
-        std.debug.print("       ", .{});
+        try format(out, "       ", .{});
         for (0..current_line.items.len) |_| {
-            std.debug.print(" ", .{});
+            try format(out, " ", .{});
         }
-        std.debug.print("^\n", .{});
-        std.debug.print(" ", .{});
+        try format(out, "^\n", .{});
+        try format(out, " ", .{});
         for (0..current_line.items.len) |_| {
-            std.debug.print(" ", .{});
+            try format(out, " ", .{});
         }
-        std.debug.print("{}\n", .{err});
+        try format(out, "{}\n", .{err});
 
-        return null;
+        return .{ .err = out_buf.items };
     };
 
     // Add builtins.
@@ -167,7 +172,7 @@ pub fn parse(alloc: std.mem.Allocator, code: Str) !?ast.Program {
         program.add_builtin_fun(alloc, "read_file", null, args, slice);
     }
 
-    return program;
+    return .{ .ok = program };
 }
 
 const Parser = struct {

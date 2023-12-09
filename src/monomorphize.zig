@@ -7,12 +7,16 @@ const Ty = @import("ty.zig").Ty;
 const string_mod = @import("string.zig");
 const String = string_mod.String;
 const Str = string_mod.Str;
+const Result = @import("result.zig").Result;
 const ast = @import("ast.zig");
 const mono = @import("mono.zig");
 const numbers = @import("numbers.zig");
 const print_on_same_line = @import("term.zig").print_on_same_line;
 
-pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !mono.Mono {
+pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !Result(mono.Mono) {
+    var err_buf = String.init(alloc);
+    const err = err_buf.writer();
+
     var monomorphizer = Monomorphizer{
         .alloc = alloc,
         .program = program,
@@ -20,6 +24,7 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !mono.Mono {
         .tys = StringHashMap(Ty).init(alloc),
         .ty_defs = StringArrayHashMap(mono.TyDef).init(alloc),
         .funs = StringHashMap(mono.Fun).init(alloc),
+        .err = err,
     };
     try monomorphizer.put_ty(.{ .name = "Never", .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
     try monomorphizer.put_ty(.{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
@@ -35,21 +40,21 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !mono.Mono {
     const main = try monomorphizer.lookup("main", &[_]Str{}, &[_]Str{});
     const main_fun = switch (main.def) {
         .fun => |f| f,
-        else => return error.MainIsNotAFunction,
+        else => return .{ .err = "Main is not a function.\n" },
     };
 
-    _ = FunMonomorphizer.compile(&monomorphizer, main_fun, TyEnv.init(alloc)) catch |err| {
-        std.debug.print("{any}\n\nContext:\n", .{err});
+    _ = FunMonomorphizer.compile(&monomorphizer, main_fun, TyEnv.init(alloc)) catch |error_| {
+        try format(err, "{any}\n\nContext:\n", .{error_});
         for (monomorphizer.context.items) |context| {
-            std.debug.print("- {s}\n", .{context});
+            try format(err, "- {s}\n", .{context});
         }
-        return err;
+        return .{ .err = err_buf.items };
     };
 
-    return mono.Mono{
+    return .{ .ok = mono.Mono{
         .ty_defs = monomorphizer.ty_defs,
         .funs = monomorphizer.funs,
-    };
+    } };
 }
 
 // Maps type parameter names to fully monomorphized types.
@@ -64,6 +69,7 @@ const Monomorphizer = struct {
     ty_defs: StringArrayHashMap(mono.TyDef),
     // The keys are strings of monomorphized function signatures such as "foo(Int)".
     funs: StringHashMap(mono.Fun),
+    err: ArrayList(u8).Writer,
 
     const Self = @This();
 
@@ -73,6 +79,10 @@ const Monomorphizer = struct {
 
         try self.tys.put(ty_name.items, ty);
         try self.ty_defs.put(ty_name.items, ty_def);
+    }
+
+    fn format_err(self: *Self, comptime fmt: Str, args: anytype) !void {
+        try format(self.err, fmt, args);
     }
 
     // Looks up the given name with the given number of type args and the args
@@ -157,49 +167,49 @@ const Monomorphizer = struct {
         }
 
         if (full_matches.items.len != 1) {
-            std.debug.print("Looked for a definition that matches `{s}", .{name});
+            try self.format_err("Looked for a definition that matches `{s}", .{name});
             Ty.print_args_of_strs(std.io.getStdOut().writer(), ty_args) catch @panic("couldn't write to stdout");
             if (args) |args_| {
-                std.debug.print("(", .{});
+                try self.format_err("(", .{});
                 for (args_, 0..) |arg, i| {
                     if (i > 0) {
-                        std.debug.print(", ", .{});
+                        try self.format_err(", ", .{});
                     }
-                    std.debug.print("{s}", .{arg});
+                    try self.format_err("{s}", .{arg});
                 }
-                std.debug.print(")", .{});
+                try self.format_err(")", .{});
             }
-            std.debug.print("`.\n", .{});
+            try self.format_err("`.\n", .{});
         }
 
         if (full_matches.items.len == 0) {
-            std.debug.print("No definition matches.\n", .{});
+            try self.format_err("No definition matches.\n", .{});
             if (name_matches.items.len > 0) {
-                std.debug.print("These definitions have the same name, but arguments don't match:\n", .{});
+                try self.format_err("These definitions have the same name, but arguments don't match:\n", .{});
                 for (name_matches.items) |match| {
-                    std.debug.print("- ", .{});
+                    try self.format_err("- ", .{});
                     ast.print_signature(std.io.getStdOut().writer(), match) catch @panic("couldn't write to stdout");
-                    std.debug.print("\n", .{});
+                    try self.format_err("\n", .{});
                 }
             }
             return error.NoMatch;
         }
 
         if (full_matches.items.len > 1) {
-            std.debug.print("Multiple definitions match:\n", .{});
+            try self.format_err("Multiple definitions match:\n", .{});
             for (full_matches.items) |match| {
-                std.debug.print("- ", .{});
+                try self.format_err("- ", .{});
                 var padded_signature = ArrayList(u8).init(self.alloc);
                 ast.print_signature(padded_signature.writer(), match.def) catch @panic("couldn't write to stdout");
                 while (padded_signature.items.len < 30) {
                     try padded_signature.append(' ');
                 }
-                std.debug.print("{s} with ", .{padded_signature.items});
+                try self.format_err("{s} with ", .{padded_signature.items});
                 var iter = match.ty_env.iterator();
                 while (iter.next()) |constraint| {
-                    std.debug.print("{s} = {s}, ", .{ constraint.key_ptr.*, constraint.value_ptr.* });
+                    try self.format_err("{s} = {s}, ", .{ constraint.key_ptr.*, constraint.value_ptr.* });
                 }
-                std.debug.print("\n", .{});
+                try self.format_err("\n", .{});
             }
             return error.MultipleMatches;
         }
@@ -320,7 +330,7 @@ const FunMonomorphizer = struct {
 
     fn compile(monomorphizer: *Monomorphizer, fun: ast.Fun, ty_env: TyEnv) !Str {
         if (monomorphizer.context.items.len > 100) {
-            std.debug.print("Probably a recursion\n", .{});
+            try monomorphizer.format_err("Probably a recursion\n", .{});
             return error.Todo;
         }
 
@@ -355,6 +365,11 @@ const FunMonomorphizer = struct {
             try var_env.put(arg.name, .{ .index = i, .ty = arg_type });
         }
         try signature.append(')');
+
+        if (monomorphizer.funs.contains(signature.items)) {
+            return signature.items;
+        }
+
         try monomorphizer.context.append(signature.items);
         { // Printing
             var s = ArrayList(u8).init(alloc);
@@ -421,6 +436,9 @@ const FunMonomorphizer = struct {
 
         return signature.items;
     }
+    fn format_err(self: *Self, comptime fmt: Str, args: anytype) !void {
+        try self.monomorphizer.format_err(fmt, args);
+    }
 
     fn compile_expr(self: *Self, expression: ast.Expr) error{
         OutOfMemory,
@@ -484,7 +502,7 @@ const FunMonomorphizer = struct {
                 }
 
                 // TODO: Try to lookup type.
-                std.debug.print("Tried to find `{s}`.\n", .{name});
+                try self.format_err("Tried to find `{s}`.\n", .{name});
                 return error.VariableNotInScope;
             },
             .call => |call| {
@@ -535,7 +553,7 @@ const FunMonomorphizer = struct {
                                     break :get_field_ty field.ty;
                                 }
                             }
-                            std.debug.print("Field {s} doesn't exist.\n", .{m.name});
+                            try self.format_err("Field {s} doesn't exist.\n", .{m.name});
                             return error.FieldDoesNotExist;
                         },
                         else => return error.AccessedMemberOnNonStruct,
@@ -596,7 +614,7 @@ const FunMonomorphizer = struct {
                     const else_body = self.fun.next_index();
                     const else_result = try self.compile_body(else_.items);
                     if (!std.mem.eql(u8, then_result.ty, else_result.ty)) {
-                        std.debug.print(
+                        try self.format_err(
                             "The then body returns {s}, else body returns {s}.\n",
                             .{ then_result.ty, else_result.ty },
                         );
@@ -669,7 +687,7 @@ const FunMonomorphizer = struct {
                     if (i == 0) {
                         self.fun.tys.items[result] = body_result.ty;
                     } else if (!std.mem.eql(u8, self.fun.tys.items[result], body_result.ty)) {
-                        std.debug.print(
+                        try self.format_err(
                             "Previous switch cases return {s}, but the case for {s} returns {s}.\n",
                             .{ self.fun.tys.items[result], case.variant, body_result.ty },
                         );
@@ -772,7 +790,7 @@ const FunMonomorphizer = struct {
                 return try self.fun.put_and_get_expr(.{ .ref = amped }, compiled_ref_ty);
             },
             else => {
-                std.debug.print("compiling {any}\n", .{expression});
+                try self.format_err("compiling {any}\n", .{expression});
                 return error.ExpressionNotHandled;
             },
         }
@@ -792,7 +810,7 @@ const FunMonomorphizer = struct {
                     };
                 }
 
-                std.debug.print("Tried to find `{s}`.\n", .{ref});
+                try self.format_err("Tried to find `{s}`.\n", .{ref});
                 return error.VariableNotInScope;
             },
             .member => |member| {
@@ -806,7 +824,7 @@ const FunMonomorphizer = struct {
                                     break :get_field_ty field.ty;
                                 }
                             }
-                            std.debug.print("Field {s} doesn't exist.\n", .{member.name});
+                            try self.format_err("Field {s} doesn't exist.\n", .{member.name});
                             return error.FieldDoesNotExist;
                         },
                         else => return error.AccessedMemberOnNonStruct,
@@ -914,7 +932,7 @@ const FunMonomorphizer = struct {
         if (scope.result) |result| {
             if (scope.result_ty) |expected_ty| {
                 if (!std.mem.eql(u8, arg_ty, expected_ty)) {
-                    std.debug.print("Previous break returned {s}, this break returns {s}.\n", .{ expected_ty, arg_ty });
+                    try self.format_err("Previous break returned {s}, this break returns {s}.\n", .{ expected_ty, arg_ty });
                     return error.BreaksReturnInconsistentTypes;
                 }
             }
