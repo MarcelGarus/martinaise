@@ -168,7 +168,7 @@ const Monomorphizer = struct {
 
         if (full_matches.items.len != 1) {
             try self.format_err("Looked for a definition that matches `{s}", .{name});
-            Ty.print_args_of_strs(std.io.getStdOut().writer(), ty_args) catch @panic("couldn't write to stdout");
+            Ty.print_args_of_strs(self.err, ty_args) catch @panic("couldn't write to stdout");
             if (args) |args_| {
                 try self.format_err("(", .{});
                 for (args_, 0..) |arg, i| {
@@ -188,7 +188,7 @@ const Monomorphizer = struct {
                 try self.format_err("These definitions have the same name, but arguments don't match:\n", .{});
                 for (name_matches.items) |match| {
                     try self.format_err("- ", .{});
-                    ast.print_signature(std.io.getStdOut().writer(), match) catch @panic("couldn't write to stdout");
+                    ast.print_signature(self.err, match) catch @panic("couldn't write to stdout");
                     try self.format_err("\n", .{});
                 }
             }
