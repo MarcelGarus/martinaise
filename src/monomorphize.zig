@@ -4,9 +4,9 @@ const StringArrayHashMap = std.StringArrayHashMap;
 const StringHashMap = std.StringHashMap;
 const format = std.fmt.format;
 const Ty = @import("ty.zig").Ty;
-const string_mod = @import("string.zig");
-const String = string_mod.String;
-const Str = string_mod.Str;
+const string = @import("string.zig");
+const String = string.String;
+const Str = string.Str;
 const Result = @import("result.zig").Result;
 const ast = @import("ast.zig");
 const mono = @import("mono.zig");
@@ -592,8 +592,10 @@ const FunMonomorphizer = struct {
             },
             .if_ => |if_| {
                 const result = try self.fun.put(.{ .uninitialized = {} }, "Something"); // Type will be replaced later
+                var result_ty: ?Str = null;
+
                 const condition = try self.compile_expr(if_.condition.*);
-                if (!std.mem.eql(u8, condition.ty, "Bool")) {
+                if (!string.eql(condition.ty, "Bool")) {
                     return error.IfConditionMustBeBool;
                 }
                 const jump_if_true = try self.fun.put(.{ .uninitialized = {} }, "Nothing"); // Will be replaced with jump_if
@@ -602,28 +604,36 @@ const FunMonomorphizer = struct {
                 // TODO: Create inner var env
                 const then_body = self.fun.next_index();
                 const then_result = try self.compile_body(if_.then.items);
-                self.fun.tys.items[result] = then_result.ty;
-                _ = try self.fun.put(.{ .assign = .{
-                    .to = .{ .ty = self.fun.tys.items[result], .kind = .{ .statement = result } },
-                    .value = then_result,
-                } }, "Nothing");
+                if (!string.eql(then_result.ty, "Never")) {
+                    result_ty = then_result.ty;
+                    _ = try self.fun.put(.{ .assign = .{
+                        .to = .{ .ty = result_ty.?, .kind = .{ .statement = result } },
+                        .value = then_result,
+                    } }, "Nothing");
+                }
                 const jump_after_then = try self.fun.put(.{ .uninitialized = {} }, "Never"); // Will be replaced with jump
 
                 if (if_.else_) |else_| {
                     // TODO: Create inner var env
                     const else_body = self.fun.next_index();
                     const else_result = try self.compile_body(else_.items);
-                    if (!std.mem.eql(u8, then_result.ty, else_result.ty)) {
-                        try self.format_err(
-                            "The then body returns {s}, else body returns {s}.\n",
-                            .{ then_result.ty, else_result.ty },
-                        );
-                        return error.IfWithMismatchedTypes;
+                    if (!string.eql(else_result.ty, "Never")) {
+                        if (result_ty) |expected_ty| {
+                            if (!string.eql(expected_ty, else_result.ty)) {
+                                try self.format_err(
+                                    "The then body returns {s}, the else body returns {s}.\n",
+                                    .{ expected_ty, else_result.ty },
+                                );
+                                return error.IfWithMismatchedTypes;
+                            }
+                        } else {
+                            result_ty = else_result.ty;
+                        }
+                        _ = try self.fun.put(.{ .assign = .{
+                            .to = .{ .ty = result_ty.?, .kind = .{ .statement = result } },
+                            .value = else_result,
+                        } }, "Nothing");
                     }
-                    _ = try self.fun.put(.{ .assign = .{
-                        .to = .{ .ty = self.fun.tys.items[result], .kind = .{ .statement = result } },
-                        .value = else_result,
-                    } }, "Nothing");
                     const jump_after_else = try self.fun.put(.{ .uninitialized = {} }, "Never"); // Will be replaced with jump
                     const after_if = self.fun.next_index();
 
@@ -641,12 +651,15 @@ const FunMonomorphizer = struct {
                     self.fun.body.items[jump_after_then] = .{ .jump = .{ .target = after_if } };
                 }
 
+                self.fun.tys.items[result] = result_ty orelse "Never";
                 return .{ .kind = .{ .statement = result }, .ty = then_result.ty };
             },
             .switch_ => |switch_| {
                 const result = try self.fun.put(.{ .uninitialized = {} }, "Something"); // Type will be replaced later
+                var result_ty: ?Str = null;
+
                 const value = try self.compile_expr(switch_.value.*);
-                const enum_def = switch (self.monomorphizer.ty_defs.get(value.ty) orelse unreachable) {
+                const enum_def = switch (self.monomorphizer.ty_defs.get(value.ty).?) {
                     .enum_ => |e| e,
                     else => return error.SwitchOnNonEnum,
                 };
@@ -654,7 +667,7 @@ const FunMonomorphizer = struct {
                 // Jump table
                 const jump_table_start = self.fun.next_index();
                 for (switch_.cases.items) |_| {
-                    _ = try self.fun.put(.{ .arg = {} }, "Nothing"); // Will be replaced with jump_if_variant
+                    _ = try self.fun.put(.{ .uninitialized = {} }, "Nothing"); // Will be replaced with jump_if_variant
                 }
                 // TODO: instead of looping, ensure all cases are matched
                 // TODO: ensure cases aren't handled multiple times
@@ -670,7 +683,7 @@ const FunMonomorphizer = struct {
                     } };
                     const ty = find_ty: {
                         for (enum_def.variants.items) |variant| {
-                            if (std.mem.eql(u8, variant.name, case.variant)) {
+                            if (string.eql(variant.name, case.variant)) {
                                 break :find_ty variant.ty;
                             }
                         }
@@ -684,19 +697,23 @@ const FunMonomorphizer = struct {
                     }
 
                     const body_result = try self.compile_body(case.body.items);
-                    if (i == 0) {
-                        self.fun.tys.items[result] = body_result.ty;
-                    } else if (!std.mem.eql(u8, self.fun.tys.items[result], body_result.ty)) {
-                        try self.format_err(
-                            "Previous switch cases return {s}, but the case for {s} returns {s}.\n",
-                            .{ self.fun.tys.items[result], case.variant, body_result.ty },
-                        );
-                        return error.IfWithMismatchedTypes;
+                    if (!string.eql(body_result.ty, "Never")) {
+                        if (result_ty) |expected_ty| {
+                            if (!string.eql(expected_ty, body_result.ty)) {
+                                try self.format_err(
+                                    "Previous switch cases return {s}, but the case for {s} returns {s}.\n",
+                                    .{ expected_ty, case.variant, body_result.ty },
+                                );
+                                return error.IfWithMismatchedTypes;
+                            }
+                        } else {
+                            result_ty = body_result.ty;
+                        }
+                        _ = try self.fun.put(.{ .assign = .{
+                            .to = .{ .ty = self.fun.tys.items[result], .kind = .{ .statement = result } },
+                            .value = body_result,
+                        } }, "Nothing");
                     }
-                    _ = try self.fun.put(.{ .assign = .{
-                        .to = .{ .ty = self.fun.tys.items[result], .kind = .{ .statement = result } },
-                        .value = body_result,
-                    } }, "Nothing");
                     try after_switch_jumps.append(try self.fun.put(.{ .arg = {} }, "Never")); // will be replaced with jump to after switch
                 }
                 const after_switch = self.fun.next_index();
@@ -704,7 +721,9 @@ const FunMonomorphizer = struct {
                     self.fun.body.items[jump] = .{ .jump = .{ .target = after_switch } };
                 }
 
-                return .{ .kind = .{ .statement = result }, .ty = self.fun.tys.items[result] };
+                const final_ty = result_ty orelse "Never";
+                self.fun.tys.items[result] = final_ty;
+                return .{ .kind = .{ .statement = result }, .ty = final_ty };
             },
             .loop => |body| {
                 const result = try self.fun.put(.{ .uninitialized = {} }, "Nothing"); // type will be replaced

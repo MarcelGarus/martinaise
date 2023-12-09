@@ -1,45 +1,21 @@
-struct Parser { rest: Slice[U8] }
-fun consume_prefix(parser: &Parser, prefix: Slice[U8]): Maybe[Nothing] {
-  var i = 0_U64
-  if parser.*.rest.starts_with(prefix) {
-    parser.*.rest = parser.*.rest.subslice(prefix.len)
-    return Maybe[Nothing].some(Nothing.{})
-  }
-  return Maybe[Nothing].none
-}
-fun parse_number(parser: &Parser): Maybe[U64] {
-  var matched = Bool.false
-  var num = 0_U64
-  loop {
-    if parser.*.rest.is_empty() { break }
-    var char = parser.*.rest.get(0_U64)
-    if '0.until('9).contains(char).not() { break }
-    matched = Bool.true
-    num = num.multiply(10_U64).add(char.subtract('0).to_U64())
-    parser.*.rest = parser.*.rest.subslice(1_U64)
-  }
-  if matched { Maybe[U64].some(num) } else { Maybe[U64].none }
-}
-fun parse_number(bytes: Slice[U8]): U64 {
-  switch (&Parser.{ rest = bytes }).parse_number() { some(num) { num } none { 0_U64 } }
-}
-| returns the game's power if it's possible, 0 otherwise
-fun parse_game(parser: &Parser): U64 {
-  switch parser.consume_prefix("Game ") { some(_) {} none { return 100_U64 Nothing.{} } }
-  var id = switch parser.parse_number() { some(num) { num } none { return 200_U64 0_U64 } }
-  switch parser.consume_prefix(": ") { some(_) {} none { return 300_U64 Nothing.{} } }
-  prints("Game ")
-  print(id)
-  prints(": ")
+| returns the game id if it's possible, 0 otherwise
+fun game_score(game: Slice[U8]): U64 {
+  var prefix_and_turns = game.split(": ")
+  var prefix = prefix_and_turns.get(0_U64)
+  var turns = prefix_and_turns.get(1_U64)
+
+  identity(&prefix).trim_prefix("Game ")
+  var id = prefix.parse_U64()
 
   var red = 0_U64
   var green = 0_U64
   var blue = 0_U64
-  for part in &parser.*.rest.iter().split("; ") {
-    for cubes in &part.iter().split(", ") {
-      var parts = cubes.iter().split(" ")
-      var num = switch (&parts).next(){ some(s) { s } none { "" } }.parse_number()
-      var color = switch (&parts).next() { some(s) { s } none { "" } }
+  for turn in &turns.split("; ").iter() {
+    for cubes in &turn.split(", ").iter() {
+      var parts = cubes.split(" ")
+      var num = parts.get(0_U64).parse_U64()
+      var color = parts.get(1_U64)
+
       if color.equals("red") { red = max(red, num) }
       if color.equals("green") { green = max(green, num) }
       if color.equals("blue") { blue = max(blue, num) }
@@ -52,8 +28,8 @@ fun parse_game(parser: &Parser): U64 {
 fun main(): U8 {
   var sum = 0_U64
   for line in &read_file("advent/day2.big").iter().split_lines() {
-    var parser = Parser.{ rest = line }
-    var score = identity(&parser).parse_game()
+    | printsln(line)
+    var score = line.game_score()
     println(score)
     sum = sum.add(score)
   }

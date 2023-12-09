@@ -3,11 +3,17 @@ struct Foo {
 }
 struct Bar {}
 
-fun main(): I64 {
+fun main(): U8 {
+  var f = if Bool.true {
+    3_U8
+  } else {
+    return 4_U8
+  }
+
   var f = new(Foo.{ bar = Bar.{} })
   println(f.to_address())
   println((&f.*.bar).to_address())
-  return 0_i64
+  return 0_U8
 }
 
 |fun fib(n: U64): U64 {

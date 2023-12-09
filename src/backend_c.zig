@@ -24,6 +24,18 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
         try builtin_tys.put("Nothing", "struct {}");
         try builtin_tys.put("Never", "struct {\n  // TODO: Is this needed?\n}");
 
+        { // panic(Slice[U8]): Never
+            var signature = String.init(alloc);
+            try format(signature.writer(), "panic(Slice[U8])", .{});
+            var body = String.init(alloc);
+            try format(body.writer(), "  fprintf(stderr, \"Panic: \");\n", .{});
+            try format(body.writer(), "  for (uint64_t i = 0; i < arg0.mar_len.value; i++)\n", .{});
+            try format(body.writer(), "    putc(arg0.mar_data.pointer[i].value, stderr);\n", .{});
+            try format(body.writer(), "  putc('\\n', stderr);\n", .{});
+            try format(body.writer(), "  exit(1);\n", .{});
+            try builtin_funs.put(signature.items, body.items);
+        }
+
         { // malloc(U64)
             var signature = String.init(alloc);
             try format(signature.writer(), "malloc(U64)", .{});

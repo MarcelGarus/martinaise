@@ -64,6 +64,17 @@ pub fn parse(alloc: std.mem.Allocator, code: Str) !Result(ast.Program) {
 
     // Add builtins.
 
+    { // panic(Slice[U8]): Never
+        const u8_ = .{ .name = "U8", .args = ArrayList(Ty).init(alloc) };
+        var ty_args = ArrayList(Ty).init(alloc);
+        try ty_args.append(u8_);
+        const slice = .{ .name = "Slice", .args = ty_args };
+        var args = ArrayList(ast.Argument).init(alloc);
+        try args.append(.{ .name = "message", .ty = slice });
+        const never = .{ .name = "Never", .args = ArrayList(Ty).init(alloc) };
+        program.add_builtin_fun(alloc, "panic", null, args, never);
+    }
+
     { // &T
         var ty_args = ArrayList(Str).init(alloc);
         try ty_args.append("T");

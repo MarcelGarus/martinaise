@@ -14,6 +14,7 @@ fun dump[W](nothing: Nothing, writer: W) { "nothing".dump(writer) }
 struct Never {} | TODO: Make this an enum
 
 fun identity[T](value: T): T { value }
+fun notEquals[T](a: T, b: T): Bool { not(a.equals(b)) }
 
 | Printing
 | The print and println functions can print any value with a dump(writer)
@@ -82,7 +83,7 @@ fun dump[T, W](maybe: Maybe[T], writer: W) {
 fun unwrap[T](maybe: Maybe[T]): T {
   switch maybe {
     some(val) { return val }
-    none { println("Called none.unwrap") return 0_U8 }
+    none { panic("Called none.unwrap") }
   }
 }
 
@@ -129,7 +130,6 @@ struct Pair[A, B] { a: A, b: B }
 |      some(c) {
 |        if c.equals(newline()) {
 |          break
-|          Nothing.{}
 |        } else {
 |          (&line).push(c)
 |        }
@@ -196,6 +196,14 @@ fun dump[W](int: U8, writer: W) { int.to_U64().dump(writer) }
 fun dump[W](int: U16, writer: W) { int.to_U64().dump(writer) }
 fun dump[W](int: U32, writer: W) { int.to_U64().dump(writer) }
 fun dump[W](int: U64, writer: W) { int.dump(10_U64, writer) }
+fun parse_U64(bytes: Slice[U8]): U64 {
+  var num = 0_U64
+  for char in &bytes.iter() {
+    if not('0.until('9).contains(char)) { panic("non-digit in supposed number") }
+    num = num.multiply(10_U64).add(char.subtract('0).to_U64())
+  }
+  num
+}
 
 | Range
 | Ranges have an inclusive start and exclusive end value.
@@ -266,6 +274,13 @@ fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
 fun subslice[T](slice: Slice[T], from: U64): Slice[T] {
   slice.subslice(from, slice.len)
 }
+fun split(slice: Slice[U8], separator: Slice[U8]): Slice[Slice[U8]] {
+  var result = vec[Slice[U8]]()
+  for part in &slice.iter().iter_split(separator) {
+    (&result).push(part)
+  }
+  result.to_slice()
+}
 fun dump[T, W](slice: Slice[T], writer: W) {
   '[.dump(writer)
   var index = 0_U64
@@ -282,11 +297,17 @@ fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
   for i in &0_U64.to(prefix.len).iter() {
     if not(slice.get(i).equals(prefix.get(i))) { return Bool.false }
   }
-  return Bool.true
+  Bool.true
+}
+fun trim_prefix(slice: &Slice[U8], prefix: Slice[U8]) {
+  if slice.*.starts_with(prefix) {
+    slice.* = slice.*.subslice(prefix.len)
+  } else {
+    panic("Slice doesn't start with prefix")
+  }
 }
 fun equals[T](a: Slice[T], b: Slice[T]): Bool {
-  if not(a.len.equals(b.len)) { return Bool.false }
-  starts_with(a, b)
+  if a.len.equals(b.len) { starts_with(a, b) } else { Bool.false }
 }
 fun iter[T](slice: Slice[T]): SliceIter[T] {
   SliceIter[T].{ slice = slice, index = 0_U64 }
@@ -325,7 +346,7 @@ fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
 fun dump[T, W](iter: SliceRevIter[T], writer: W) {
   "<rev slice iter>".dump(writer)
 }
-fun split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
+fun iter_split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
   SplitIter[I].{ iter = iter, separator = separator }
 }
 struct SplitIter[I] { iter: I, separator: Slice[U8] }
@@ -335,7 +356,6 @@ fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
     switch (&self.*.iter).next() {
       none {
         if line.len.is_greater_than(0_U64) { break } else { return Maybe[Slice[U8]].none }
-        Nothing.{}
       }
       some(c) {
         (&line).push(c)
@@ -343,9 +363,7 @@ fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
           return Maybe[Slice[U8]].some(
             line.to_slice().subslice(0_U64, line.len.subtract(self.*.separator.len))
           )
-          break
         }
-        Nothing.{}
       }
     }
   }
@@ -362,15 +380,9 @@ fun next[I](self: &SplitLinesIter[I]): Maybe[Slice[U8]] {
     switch (&self.*.iter).next() {
       none {
         if line.len.is_greater_than(0_U64) { break } else { return Maybe[Slice[U8]].none }
-        Nothing.{}
       }
       some(c) {
-        if c.equals(newline()) {
-          break
-          Nothing.{}
-        } else {
-          (&line).push(c)
-        }
+        if c.equals(newline()) { break } else { (&line).push(c) }
       }
     }
   }
@@ -425,7 +437,7 @@ fun dump[T, W](vec: Vec[T], writer: W) { vec.to_slice().dump(writer) }
 
 struct Point[T] { x: T, y: T }
 fun add[T](a: Point[T], b: Point[T]): Point[T] {
-  return Point[T].{ x = a.x.add(b.x), y = a.y.add(b.y) }
+  Point[T].{ x = a.x.add(b.x), y = a.y.add(b.y) }
 }
 fun dump[T, W](point: Point[T], writer: W) {
   '(.dump(writer)
