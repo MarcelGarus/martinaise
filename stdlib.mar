@@ -67,6 +67,12 @@ enum Maybe[T] { some: T, none }
 fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] {
   switch maybe { some(inner) { inner } none { Maybe[T].none() } }
 }
+fun is_some[T](maybe: Maybe[T]): Bool {
+  switch maybe { some(_) { Bool.true } none { Bool.false } }
+}
+fun is_none[T](maybe: Maybe[T]): Bool {
+  switch maybe { some(_) { Bool.false } none { Bool.true } }
+}
 fun dump[T, W](maybe: Maybe[T], writer: W) {
   switch maybe {
     some(val) { "some(".dump(writer) val.dump(writer) ').dump(writer) }
@@ -105,6 +111,34 @@ fun dump[W](ord: Ordering, writer: W) {
   }.dump(writer)
 }
 
+| Pair
+struct Pair[A, B] { a: A, b: B }
+|fun enumerate[I](iter: I): Enumerated[I] {
+|  Enumerated[I].{ iter = iter, counter = 0_U64 }
+|}
+|struct Enumerated[T, I] { iter: I, counter: U64 }
+| TODO: Support inferring part of the return type like here
+|fun next[I](self: &Enumerated[I]): Maybe[Pair[U64, _]] {
+|  var line = vec[U8]()
+|  loop {
+|    switch (&self.*.iter).next() {
+|      none {
+|        if line.len.is_greater_than(0_U64) { break } else { return Maybe[Slice[U8]].none }
+|        Nothing.{}
+|      }
+|      some(c) {
+|        if c.equals(newline()) {
+|          break
+|          Nothing.{}
+|        } else {
+|          (&line).push(c)
+|        }
+|      }
+|    }
+|  }
+|  Maybe[Slice[U8]].some(line.to_slice())
+|}
+
 | Int
 | Integers are built into the language. There are several types with different
 | signedness and bit amount available as {U, I} x {8, 16, 32, 64}. For example,
@@ -133,38 +167,12 @@ fun equals(a: I8, b: I8): Bool { a.compare_to(b).is_equal() }
 fun equals(a: I16, b: I16): Bool { a.compare_to(b).is_equal() }
 fun equals(a: I32, b: I32): Bool { a.compare_to(b).is_equal() }
 fun equals(a: I64, b: I64): Bool { a.compare_to(b).is_equal() }
-fun is_less_than(a: U8, b: U8): Bool { a.compare_to(b).is_less() }
-fun is_less_than(a: U16, b: U16): Bool { a.compare_to(b).is_less() }
-fun is_less_than(a: U32, b: U32): Bool { a.compare_to(b).is_less() }
-fun is_less_than(a: U64, b: U64): Bool { a.compare_to(b).is_less() }
-fun is_less_than(a: I8, b: I8): Bool { a.compare_to(b).is_less() }
-fun is_less_than(a: I16, b: I16): Bool { a.compare_to(b).is_less() }
-fun is_less_than(a: I32, b: I32): Bool { a.compare_to(b).is_less() }
-fun is_less_than(a: I64, b: I64): Bool { a.compare_to(b).is_less() }
-fun is_greater_than(a: U8, b: U8): Bool { a.compare_to(b).is_greater() }
-fun is_greater_than(a: U16, b: U16): Bool { a.compare_to(b).is_greater() }
-fun is_greater_than(a: U32, b: U32): Bool { a.compare_to(b).is_greater() }
-fun is_greater_than(a: U64, b: U64): Bool { a.compare_to(b).is_greater() }
-fun is_greater_than(a: I8, b: I8): Bool { a.compare_to(b).is_greater() }
-fun is_greater_than(a: I16, b: I16): Bool { a.compare_to(b).is_greater() }
-fun is_greater_than(a: I32, b: I32): Bool { a.compare_to(b).is_greater() }
-fun is_greater_than(a: I64, b: I64): Bool { a.compare_to(b).is_greater() }
-fun is_at_least(a: U8, b: U8): Bool { a.compare_to(b).is_greater_or_equal() }
-fun is_at_least(a: U16, b: U16): Bool { a.compare_to(b).is_greater_or_equal() }
-fun is_at_least(a: U32, b: U32): Bool { a.compare_to(b).is_greater_or_equal() }
-fun is_at_least(a: U64, b: U64): Bool { a.compare_to(b).is_greater_or_equal() }
-fun is_at_least(a: I8, b: I8): Bool { a.compare_to(b).is_greater_or_equal() }
-fun is_at_least(a: I16, b: I16): Bool { a.compare_to(b).is_greater_or_equal() }
-fun is_at_least(a: I32, b: I32): Bool { a.compare_to(b).is_greater_or_equal() }
-fun is_at_least(a: I64, b: I64): Bool { a.compare_to(b).is_greater_or_equal() }
-fun is_at_most(a: U8, b: U8): Bool { a.compare_to(b).is_less_or_equal() }
-fun is_at_most(a: U16, b: U16): Bool { a.compare_to(b).is_less_or_equal() }
-fun is_at_most(a: U32, b: U32): Bool { a.compare_to(b).is_less_or_equal() }
-fun is_at_most(a: U64, b: U64): Bool { a.compare_to(b).is_less_or_equal() }
-fun is_at_most(a: I8, b: I8): Bool { a.compare_to(b).is_less_or_equal() }
-fun is_at_most(a: I16, b: I16): Bool { a.compare_to(b).is_less_or_equal() }
-fun is_at_most(a: I32, b: I32): Bool { a.compare_to(b).is_less_or_equal() }
-fun is_at_most(a: I64, b: I64): Bool { a.compare_to(b).is_less_or_equal() }
+fun is_less_than[T](a: T, b: T): Bool { a.compare_to(b).is_less() }
+fun is_greater_than[T](a: T, b: T): Bool { a.compare_to(b).is_greater() }
+fun is_at_least[T](a: T, b: T): Bool { a.compare_to(b).is_greater_or_equal() }
+fun is_at_most[T](a: T, b: T): Bool { a.comapre_to(b).is_less_or_equal() }
+fun min[T](a: T, b: T): T { if a.is_less_than(b) { a } else { b } }
+fun max[T](a: T, b: T): T { if a.is_greater_than(b) { a } else { b } }
 fun dump[W](int: U64, radix: U64, writer: W) {
   var divisor = 1_U64
   loop {
@@ -193,6 +201,7 @@ fun dump[W](int: U64, writer: W) { int.dump(10_U64, writer) }
 | Ranges have an inclusive start and exclusive end value.
 struct Range[T] { start: T, end: T }
 fun to[T](start: T, end: T): Range[T] { Range[T].{ start = start, end = end } }
+fun until[T](start: T, end: T): Range[U8] { Range[U8].{ start = start, end = end.inc() } }
 fun contains[T](range: Range[T], value: T): Bool {
   value.is_at_least(range.start).and(value.is_less_than(range.end))
 }
@@ -249,6 +258,7 @@ struct Slice[T] { data: &T, len: U64 }
 fun empty_slice[T](): Slice[T] {
   Slice[T].{ data = 0_U64.to_reference[T](), len = 0_U64 }
 }
+fun is_empty[T](slice: Slice[T]): Bool { slice.len.equals(0_U64) }
 fun get[T](slice: Slice[T], index: U64): T { slice.data.add(index).* }
 fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
   Slice[T].{ data = slice.data.add(from), len = to.subtract(from) }
@@ -315,6 +325,33 @@ fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
 fun dump[T, W](iter: SliceRevIter[T], writer: W) {
   "<rev slice iter>".dump(writer)
 }
+fun split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
+  SplitIter[I].{ iter = iter, separator = separator }
+}
+struct SplitIter[I] { iter: I, separator: Slice[U8] }
+fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
+  var line = vec[U8]()
+  loop {
+    switch (&self.*.iter).next() {
+      none {
+        if line.len.is_greater_than(0_U64) { break } else { return Maybe[Slice[U8]].none }
+        Nothing.{}
+      }
+      some(c) {
+        (&line).push(c)
+        if line.to_slice().subslice(line.len.subtract(self.*.separator.len)).equals(self.*.separator) {
+          return Maybe[Slice[U8]].some(
+            line.to_slice().subslice(0_U64, line.len.subtract(self.*.separator.len))
+          )
+          break
+        }
+        Nothing.{}
+      }
+    }
+  }
+  Maybe[Slice[U8]].some(line.to_slice())
+}
+
 fun split_lines[I](iter: I): SplitLinesIter[I] {
   SplitLinesIter[I].{ iter = iter }
 }
@@ -399,4 +436,4 @@ fun dump[T, W](point: Point[T], writer: W) {
   ').dump(writer)
 }
 
-| TODO: range, result, hash map, segment tree, treap
+| TODO: result, hash map, segment tree, treap

@@ -1,0 +1,65 @@
+struct Parser { rest: Slice[U8] }
+fun consume_prefix(parser: &Parser, prefix: Slice[U8]): Maybe[Nothing] {
+  var i = 0_U64
+  if parser.*.rest.starts_with(prefix) {
+    parser.*.rest = parser.*.rest.subslice(prefix.len)
+    return Maybe[Nothing].some(Nothing.{})
+  }
+  return Maybe[Nothing].none
+}
+fun parse_number(parser: &Parser): Maybe[U64] {
+  var matched = Bool.false
+  var num = 0_U64
+  loop {
+    if parser.*.rest.is_empty() { break }
+    var char = parser.*.rest.get(0_U64)
+    if '0.until('9).contains(char).not() { break }
+    matched = Bool.true
+    num = num.multiply(10_U64).add(char.subtract('0).to_U64())
+    parser.*.rest = parser.*.rest.subslice(1_U64)
+  }
+  if matched { Maybe[U64].some(num) } else { Maybe[U64].none }
+}
+fun parse_number(bytes: Slice[U8]): U64 {
+  switch (&Parser.{ rest = bytes }).parse_number() { some(num) { num } none { 0_U64 } }
+}
+| returns the game id if it's possible, 0 otherwise
+fun parse_game(parser: &Parser): U64 {
+  switch parser.consume_prefix("Game ") { some(_) {} none { return 100_U64 Nothing.{} } }
+  var id = switch parser.parse_number() { some(num) { num } none { return 200_U64 0_U64 } }
+  switch parser.consume_prefix(": ") { some(_) {} none { return 300_U64 Nothing.{} } }
+  prints("Game ")
+  print(id)
+  prints(": ")
+
+  for part in &parser.*.rest.iter().split("; ") {
+    | prints("Turn: ")
+    | printsln(part)
+    for cubes in &part.iter().split(", ") {
+      var parts = cubes.iter().split(" ")
+      var num = switch (&parts).next(){ some(s) { s } none { "" } }.parse_number()
+      var color = switch (&parts).next() { some(s) { s } none { "" } }
+      | print(num)
+      | prints(" ")
+      | printsln(color)
+      if color.equals("red").and(num.is_greater_than(12_U64)) { return 0_U64 }
+      if color.equals("green").and(num.is_greater_than(13_U64)) { return 0_U64 }
+      if color.equals("blue").and(num.is_greater_than(14_U64)) { return 0_U64 }
+    }
+  }
+
+  return id | Game is possible
+}
+
+fun main(): U8 {
+  var sum = 0_U64
+  for line in &read_file("advent/day2.big").iter().split_lines() {
+    | printsln(line)
+    var parser = Parser.{ rest = line }
+    var score = identity(&parser).parse_game()
+    println(score)
+    sum = sum.add(score)
+  }
+  println(sum)
+  return 0_U8
+}
