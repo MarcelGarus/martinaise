@@ -50,7 +50,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
             \\  fprintf(stderr, "Panic: ");
             \\  for (uint64_t i = 0; i < arg0.mar_len.value; i++)
             \\    putc(arg0.mar_data.pointer[i].value, stderr);
-            \\  putc('\\n', stderr);
+            \\  putc('\n', stderr);
             \\  exit(1);
         );
 
