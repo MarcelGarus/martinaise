@@ -1,0 +1,40 @@
+fun card_score(card: Slice[U8]): U64 {
+  var prefix_and_turns = card.split(": ")
+  var all_numbers = prefix_and_turns.get(1_U64).split(" | ")
+
+  | TODO: use hash set when implemented
+  var winning_numbers = vec[U64]()
+  for num in &all_numbers.get(0_U64).split(" ").iter() {
+    if not(num.is_empty()) { (&winning_numbers).push(num.parse_U64()) }
+  }
+  var my_numbers = vec[U64]()
+  for num in &all_numbers.get(1_U64).split(" ").iter() {
+    if not(num.is_empty()) { (&my_numbers).push(num.parse_U64()) }
+  }
+  println(winning_numbers)
+
+  var score = 0_U64
+  for num in &my_numbers.iter() {
+    var wins = Bool.false
+    for winning in &winning_numbers.iter() {
+      if num.equals(winning) { wins = Bool.true }
+    }
+    if wins {
+      score = if score.equals(0_U64) { 1_U64 } else { score.multiply(2_U64) }
+    }
+  }
+
+  return score
+}
+
+fun main(): U8 {
+  var sum = 0_U64
+  for line in &read_file("advent/day4.big").lines().iter() {
+    | printsln(line)
+    var score = line.card_score()
+    println(score)
+    sum = sum.add(score)
+  }
+  println(sum)
+  return 0_U8
+}
