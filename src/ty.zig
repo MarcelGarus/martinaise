@@ -2,9 +2,9 @@ const std = @import("std");
 const Alloc = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const StringHashMap = std.StringHashMap;
-const string_mod = @import("string.zig");
-const String = string_mod.String;
-const Str = string_mod.Str;
+const string = @import("string.zig");
+const String = string.String;
+const Str = string.Str;
 
 /// A type such as `Int` or `Maybe[T]`.
 pub const Ty = struct {
@@ -18,16 +18,12 @@ pub const Ty = struct {
 
     pub fn specialize(self: Self, alloc: Alloc, ty_env: TyEnv) !Ty {
         if (ty_env.get(self.name)) |mapped| {
-            if (self.args.items.len > 0) {
-                return error.TypeArgumentCantHaveGenerics;
-            }
+            if (self.args.items.len > 0) return error.TypeArgumentCantHaveGenerics;
             return mapped;
         }
 
         var mapped_args = ArrayList(Ty).init(alloc);
-        for (self.args) |arg| {
-            try mapped_args.append(arg.specialize(alloc, ty_env));
-        }
+        for (self.args) |arg| try mapped_args.append(arg.specialize(alloc, ty_env));
         return .{ .name = self.name, .args = mapped_args };
     }
 
@@ -39,18 +35,14 @@ pub const Ty = struct {
         // Under ty env `{A: Int}`, is `A` assignable to `B`? Depends on whether
         // `Int` is assignable to `B`.
         if (ty_env.get(self.name)) |mapped| {
-            if (self.args.items.len > 0) {
-                return error.TypeArgumentCantHaveGenerics;
-            }
+            if (self.args.items.len > 0) return error.TypeArgumentCantHaveGenerics;
             return mapped.is_assignable_to(ty_vars, ty_env, other);
         }
 
         // Under ty env `{A: Int}`, is `B` assignable to `A`? Depends on whether
         // `B` is assignable to `Int`.
         if (ty_env.get(other.name)) |mapped| {
-            if (other.args.items.len > 0) {
-                return error.TypeArgumentCantHaveGenerics;
-            }
+            if (other.args.items.len > 0) return error.TypeArgumentCantHaveGenerics;
             return self.is_assignable_to(ty_vars, ty_env, mapped);
         }
 
@@ -67,23 +59,18 @@ pub const Ty = struct {
             return true;
         }
 
-        if (!std.mem.eql(u8, self.name, other.name)) {
-            return false;
-        }
-        if (self.args.items.len != other.args.items.len) {
-            return false;
-        }
-        for (self.args.items, other.args.items) |self_arg, other_arg| {
-            if (!try self_arg.is_assignable_to(ty_vars, ty_env, other_arg)) {
+        if (!string.eql(self.name, other.name)) return false;
+        if (self.args.items.len != other.args.items.len) return false;
+        for (self.args.items, other.args.items) |self_arg, other_arg|
+            if (!try self_arg.is_assignable_to(ty_vars, ty_env, other_arg))
                 return false;
-            }
-        }
+
         return true;
     }
 
     pub fn format(
         self: Self,
-        comptime fmt: []const u8,
+        comptime fmt: Str,
         options: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
@@ -101,17 +88,13 @@ pub const Ty = struct {
         try print_args(Str, "{s}", writer, args);
     }
     fn print_args(comptime T: type, comptime fmt: []const u8, writer: anytype, args: ?[]const T) !void {
-        if (args) |ty_args| {
-            if (ty_args.len > 0) {
-                try writer.print("[", .{});
-                for (ty_args, 0..) |arg, i| {
-                    if (i > 0) {
-                        try writer.print(", ", .{});
-                    }
-                    try writer.print(fmt, .{arg});
-                }
-                try writer.print("]", .{});
+        if (args) |ty_args| if (ty_args.len > 0) {
+            try writer.print("[", .{});
+            for (ty_args, 0..) |arg, i| {
+                if (i > 0) try writer.print(", ", .{});
+                try writer.print(fmt, .{arg});
             }
-        }
+            try writer.print("]", .{});
+        };
     }
 };

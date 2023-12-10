@@ -3,185 +3,199 @@ const ArrayList = std.ArrayList;
 const StringHashMap = std.StringHashMap;
 const format = std.fmt.format;
 const ast = @import("ast.zig");
-const string_mod = @import("string.zig");
-const String = string_mod.String;
-const Str = string_mod.Str;
+const string = @import("string.zig");
+const String = string.String;
+const Str = string.Str;
 const mono = @import("mono.zig");
 const numbers = @import("numbers.zig");
+
+// Formats to a newly allocated string, leaking the memory.
+fn formata(alloc: std.mem.Allocator, comptime s: Str, args: anytype) Str {
+    var out = String.init(alloc);
+    format(out.writer(), s, args) catch @panic("couldn't format");
+    return out.items;
+}
 
 pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
     var out_buffer = String.init(alloc);
     var out = out_buffer.writer();
 
-    try format(out, "// This file is a compiler target.\n", .{});
-    try format(out, "#include <stdio.h>\n\n", .{});
-    try format(out, "#include <stdint.h>\n\n", .{});
-    try format(out, "#include <stdlib.h>\n\n", .{});
+    try format(out,
+        \\// This file is a compiler target.
+        \\#include <stdio.h>
+        \\#include <stdint.h>
+        \\#include <stdlib.h>
+        \\
+        \\
+    , .{});
 
     var builtin_tys = StringHashMap(Str).init(alloc);
     var builtin_funs = StringHashMap(Str).init(alloc);
     { // Generate code for builtins
-        try builtin_tys.put("Nothing", "struct {}");
-        try builtin_tys.put("Never", "struct {\n  // TODO: Is this needed?\n}");
 
-        { // panic(Slice[U8]): Never
-            var signature = String.init(alloc);
-            try format(signature.writer(), "panic(Slice[U8])", .{});
-            var body = String.init(alloc);
-            try format(body.writer(), "  fprintf(stderr, \"Panic: \");\n", .{});
-            try format(body.writer(), "  for (uint64_t i = 0; i < arg0.mar_len.value; i++)\n", .{});
-            try format(body.writer(), "    putc(arg0.mar_data.pointer[i].value, stderr);\n", .{});
-            try format(body.writer(), "  putc('\\n', stderr);\n", .{});
-            try format(body.writer(), "  exit(1);\n", .{});
-            try builtin_funs.put(signature.items, body.items);
-        }
+        // Nothing
+        try builtin_tys.put("Nothing",
+            \\struct {}
+        );
 
-        { // malloc(U64)
-            var signature = String.init(alloc);
-            try format(signature.writer(), "malloc(U64)", .{});
-            var body = String.init(alloc);
-            try format(body.writer(), "  mar_U64 address;\n", .{});
-            try format(body.writer(), "  address.value = (uint64_t) malloc(arg0.value);\n", .{});
-            try format(body.writer(), "  if (!address.value) {{\n", .{});
-            try format(body.writer(), "    printf(\"OOM\");\n", .{});
-            try format(body.writer(), "    exit(-1);\n", .{});
-            try format(body.writer(), "  }}\n", .{});
-            try format(body.writer(), "  return address;\n", .{});
-            try builtin_funs.put(signature.items, body.items);
-        }
+        // Never
+        try builtin_tys.put("Never",
+            \\struct {
+            \\  // TODO: Is this needed?
+            \\}
+        );
+
+        // panic(Slice[U8]): Never
+        try builtin_funs.put("panic(Slice[U8])",
+            \\  fprintf(stderr, "Panic: ");
+            \\  for (uint64_t i = 0; i < arg0.mar_len.value; i++)
+            \\    putc(arg0.mar_data.pointer[i].value, stderr);
+            \\  putc('\\n', stderr);
+            \\  exit(1);
+        );
+
+        // malloc(U64): U64
+        try builtin_funs.put("malloc(U64)",
+            \\  mar_U64 address;
+            \\  address.value = (uint64_t) malloc(arg0.value);
+            \\  if (!address.value) {
+            \\    printf("OOM");
+            \\    exit(-1);
+            \\  }
+            \\  return address;
+        );
 
         for (numbers.all_int_configs()) |config| {
             const ty = try numbers.int_ty_name(alloc, config);
 
-            { // Generate type
-                var impl = String.init(alloc);
-                try format(impl.writer(), "struct {{\n", .{});
-                try format(impl.writer(), "  {s}int{}_t value;\n", .{
-                    switch (config.signedness) {
-                        .signed => "",
-                        .unsigned => "u",
-                    },
-                    config.bits,
-                });
-                try format(impl.writer(), "}}", .{});
-                try builtin_tys.put(ty, impl.items);
-            }
+            // Type
+            try builtin_tys.put(ty, formata(alloc,
+                \\ struct {{
+                \\  {s}int{}_t value;
+                \\}}
+            , .{
+                switch (config.signedness) {
+                    .signed => "",
+                    .unsigned => "u",
+                },
+                config.bits,
+            }));
 
-            { // add(Int, Int)
-                var signature = String.init(alloc);
-                try format(signature.writer(), "add({s}, {s})", .{ ty, ty });
-                var body = String.init(alloc);
-                try format(body.writer(), "  mar_{s} i;\n", .{ty});
-                try format(body.writer(), "  i.value = arg0.value + arg1.value;\n", .{});
-                try format(body.writer(), "  return i;\n", .{});
-                try builtin_funs.put(signature.items, body.items);
-            }
+            // add(Int, Int): Int
+            try builtin_funs.put(
+                formata(alloc, "add({s}, {s})", .{ ty, ty }),
+                formata(alloc,
+                    \\  mar_{s} i;
+                    \\  i.value = arg0.value + arg1.value;
+                    \\  return i;
+                , .{ty}),
+            );
 
-            { // subtract(Int, Int)
-                var signature = String.init(alloc);
-                try format(signature.writer(), "subtract({s}, {s})", .{ ty, ty });
-                var body = String.init(alloc);
-                try format(body.writer(), "  mar_{s} i;\n", .{ty});
-                try format(body.writer(), "  i.value = arg0.value - arg1.value;\n", .{});
-                try format(body.writer(), "  return i;\n", .{});
-                try builtin_funs.put(signature.items, body.items);
-            }
+            // subtract(Int, Int): Int
+            try builtin_funs.put(
+                formata(alloc, "subtract({s}, {s})", .{ ty, ty }),
+                formata(alloc,
+                    \\  mar_{s} i;
+                    \\  i.value = arg0.value - arg1.value;
+                    \\  return i;
+                , .{ty}),
+            );
 
-            { // multiply(Int, Int)
-                var signature = String.init(alloc);
-                try format(signature.writer(), "multiply({s}, {s})", .{ ty, ty });
-                var body = String.init(alloc);
-                try format(body.writer(), "  mar_{s} i;\n", .{ty});
-                try format(body.writer(), "  i.value = arg0.value * arg1.value;\n", .{});
-                try format(body.writer(), "  return i;\n", .{});
-                try builtin_funs.put(signature.items, body.items);
-            }
+            // multiply(Int, Int): Int
+            try builtin_funs.put(
+                formata(alloc, "multiply({s}, {s})", .{ ty, ty }),
+                formata(alloc,
+                    \\  mar_{s} i;
+                    \\  i.value = arg0.value * arg1.value;
+                    \\  return i;
+                , .{ty}),
+            );
 
-            { // divide(Int, Int)
-                var signature = String.init(alloc);
-                try format(signature.writer(), "divide({s}, {s})", .{ ty, ty });
-                var body = String.init(alloc);
-                try format(body.writer(), "  mar_{s} i;\n", .{ty});
-                try format(body.writer(), "  i.value = arg0.value / arg1.value;\n", .{});
-                try format(body.writer(), "  return i;\n", .{});
-                try builtin_funs.put(signature.items, body.items);
-            }
+            // divide(Int, Int): Int
+            try builtin_funs.put(
+                formata(alloc, "divide({s}, {s})", .{ ty, ty }),
+                formata(alloc,
+                    \\  mar_{s} i;
+                    \\  i.value = arg0.value / arg1.value;
+                    \\  return i;
+                , .{ty}),
+            );
 
-            { // modulo(Int, Int)
-                var signature = String.init(alloc);
-                try format(signature.writer(), "modulo({s}, {s})", .{ ty, ty });
-                var body = String.init(alloc);
-                try format(body.writer(), "  mar_{s} i;\n", .{ty});
-                try format(body.writer(), "  i.value = arg0.value % arg1.value;\n", .{});
-                try format(body.writer(), "  return i;\n", .{});
-                try builtin_funs.put(signature.items, body.items);
-            }
+            // modulo(Int, Int): Int
+            try builtin_funs.put(
+                formata(alloc, "modulo({s}, {s})", .{ ty, ty }),
+                formata(alloc,
+                    \\  mar_{s} i;
+                    \\  i.value = arg0.value % arg1.value;
+                    \\  return i;
+                , .{ty}),
+            );
 
-            { // compare_to(Int, Int)
-                var signature = String.init(alloc);
-                try format(signature.writer(), "compare_to({s}, {s})", .{ ty, ty });
-                var body = String.init(alloc);
-                try format(body.writer(), "  mar_Ordering ordering;\n", .{});
-                try format(body.writer(), "  ordering.variant = (arg0.value == arg1.value) ? mar_Ordering_dot_mar_equal : (arg0.value > arg1.value) ? mar_Ordering_dot_mar_greater : mar_Ordering_dot_mar_less;\n", .{});
-                try format(body.writer(), "  mar_Nothing nothing;\n", .{});
-                try format(body.writer(), "  ordering.as.mar_equal = nothing;\n", .{});
-                try format(body.writer(), "  return ordering;\n", .{});
-                try builtin_funs.put(signature.items, body.items);
-            }
+            // compare_to(Int, Int): Ordering
+            try builtin_funs.put(
+                formata(alloc, "compare_to({s}, {s})", .{ ty, ty }),
+                formata(alloc,
+                    \\  mar_Ordering ordering;
+                    \\  ordering.variant = (arg0.value == arg1.value) ?
+                    \\    mar_Ordering_dot_mar_equal : (arg0.value > arg1.value) ?
+                    \\      mar_Ordering_dot_mar_greater : mar_Ordering_dot_mar_less;
+                    \\  mar_Nothing nothing;
+                    \\  ordering.as.mar_equal = nothing;
+                    \\  return ordering;
+                , .{}),
+            );
 
             // Conversion functions
             for (numbers.all_int_configs()) |target_config| {
-                if (config.signedness == target_config.signedness and config.bits == target_config.bits) {
+                if (config.signedness == target_config.signedness and config.bits == target_config.bits)
                     continue;
-                }
 
                 const target_ty = try numbers.int_ty_name(alloc, target_config);
-                var signature = String.init(alloc);
-                try format(signature.writer(), "to_{s}({s})", .{ target_ty, ty });
-                var body = String.init(alloc);
-                try format(body.writer(), "  mar_{s} i;\n", .{target_ty});
-                try format(body.writer(), "  i.value = arg0.value;\n", .{});
-                try format(body.writer(), "  return i;\n", .{});
-                try builtin_funs.put(signature.items, body.items);
+                try builtin_funs.put(
+                    formata(alloc, "to_{s}({s})", .{ target_ty, ty }),
+                    formata(alloc,
+                        \\  mar_{s} i;
+                        \\  i.value = arg0.value;
+                        \\  return i;
+                    , .{target_ty}),
+                );
             }
         }
 
-        { // print_to_stdout(U8): Nothing
-            var body = String.init(alloc);
-            // TODO: Check the return value of putc
-            try format(body.writer(), "  putc(arg0.value, stdout);\n", .{});
-            try format(body.writer(), "  mar_Nothing n;\n", .{});
-            try format(body.writer(), "  return n;\n", .{});
-            try builtin_funs.put("print_to_stdout(U8)", body.items);
-        }
+        // print_to_stdout(U8): Nothing
+        // TODO: Check the return value of putc
+        try builtin_funs.put("print_to_stdout(U8)", formata(alloc,
+            \\  putc(arg0.value, stdout);
+            \\  mar_Nothing n;
+            \\  return n;
+        , .{}));
 
-        { // read_file(Slice[U8]): Slice[U8]
-            var body = String.init(alloc);
-            try format(body.writer(), "  char* path = (char*)arg0.mar_data.pointer;\n", .{});
-            try format(body.writer(), "  FILE* file = fopen(path, \"r\");\n", .{});
-            try format(body.writer(), "  if (!file) {{\n", .{});
-            try format(body.writer(), "    printf(\"Not able to open %s.\\n\", path);\n", .{});
-            try format(body.writer(), "    exit(-1);\n", .{});
-            try format(body.writer(), "  }}\n", .{});
-            try format(body.writer(), "  int capacity = 32, len = 0;\n", .{});
-            try format(body.writer(), "  char* content = malloc(capacity);\n", .{});
-            try format(body.writer(), "  char c;\n", .{});
-            try format(body.writer(), "  while ((c = fgetc(file)) != EOF) {{\n", .{});
-            try format(body.writer(), "    if (len == capacity) {{\n", .{});
-            try format(body.writer(), "      capacity *= 2;\n", .{});
-            try format(body.writer(), "      content = realloc(content, capacity);\n", .{});
-            try format(body.writer(), "    }}\n", .{});
-            try format(body.writer(), "    content[len] = c;\n", .{});
-            try format(body.writer(), "    len++;\n", .{});
-            try format(body.writer(), "  }}\n", .{});
-            try format(body.writer(), "  fclose(file);\n", .{});
-            try format(body.writer(), "\n", .{});
-            try format(body.writer(), "  mar_Slice_of_U8_end_ content_slice;\n", .{});
-            try format(body.writer(), "  content_slice.mar_data.pointer = (mar_U8*) content;\n", .{});
-            try format(body.writer(), "  content_slice.mar_len.value = len;\n", .{});
-            try format(body.writer(), "  return content_slice;\n", .{});
-            try builtin_funs.put("read_file(Slice[U8])", body.items);
-        }
+        // read_file(Slice[U8]): Slice[U8]
+        try builtin_funs.put("read_file(Slice[U8])", formata(alloc,
+            \\  char* path = (char*)arg0.mar_data.pointer;
+            \\  FILE* file = fopen(path, "r");
+            \\  if (!file) {{
+            \\    printf("Not able to open %s.\\n", path);
+            \\    exit(-1);
+            \\  }}
+            \\  int capacity = 32, len = 0;
+            \\  char* content = malloc(capacity);
+            \\  char c;
+            \\  while ((c = fgetc(file)) != EOF) {{
+            \\    if (len == capacity) {{
+            \\      capacity *= 2;
+            \\      content = realloc(content, capacity);
+            \\    }}
+            \\    content[len] = c;
+            \\    len++;
+            \\  }}
+            \\  fclose(file);
+            \\
+            \\  mar_Slice_of_U8_end_ content_slice;
+            \\  content_slice.mar_data.pointer = (mar_U8*) content;
+            \\  content_slice.mar_len.value = len;
+            \\  return content_slice;
+        , .{}));
     }
 
     { // Types
@@ -194,46 +208,37 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
             try format(out, "\n// {s}\n", .{name});
             try format(out, "typedef ", .{});
             switch (ty) {
-                .builtin_ty => {
-                    if (builtin_tys.get(name)) |impl| {
-                        try format(out, "{s}", .{impl});
-                    } else {
-                        std.debug.print("Type is {s}.\n", .{name});
-                        @panic("Unknown builtin type");
-                    }
+                .builtin_ty => if (builtin_tys.get(name)) |impl|
+                    try format(out, "{s}", .{impl})
+                else {
+                    std.debug.print("Type is {s}.\n", .{name});
+                    @panic("Unknown builtin type");
                 },
                 .struct_ => |s| {
                     try format(out, "struct {{\n", .{});
-                    for (s.fields.items) |f| {
-                        if (std.mem.eql(u8, f.name, "*")) {
-                            // This is the field in the & struct.
-                            try format(out, "  {s}* pointer;\n", .{try mangle(alloc, f.ty)});
-                            continue;
-                        }
-                        try format(out, "  {s} {s};\n", .{ try mangle(alloc, f.ty), try mangle(alloc, f.name) });
-                    }
+                    for (s.fields.items) |f|
+                        if (string.eql(f.name, "*"))
+                            try format(out, "  {s}* pointer;\n", .{try mangle(alloc, f.ty)})
+                        else
+                            try format(out, "  {s} {s};\n", .{ try mangle(alloc, f.ty), try mangle(alloc, f.name) });
                     try format(out, "}}", .{});
                 },
                 .enum_ => |e| {
                     try format(out, "struct {{\n", .{});
                     try format(out, "  enum {{\n", .{});
-                    for (e.variants.items) |variant| {
+                    for (e.variants.items) |variant|
                         try format(out, "    {s}_dot_{s},\n", .{
                             try mangle(alloc, name),
                             try mangle(alloc, variant.name),
                         });
-                    }
                     try format(out, "  }} variant;\n", .{});
                     try format(out, "  union {{\n", .{});
-                    for (e.variants.items) |variant| {
+                    for (e.variants.items) |variant|
                         try format(out, "    {s} {s};\n", .{ try mangle(alloc, variant.ty), try mangle(alloc, variant.name) });
-                    }
                     try format(out, "  }} as;\n", .{});
                     try format(out, "}}", .{});
                 },
-                .fun => {
-                    try format(out, "// TODO: compile fun types\n", .{});
-                },
+                .fun => try format(out, "// TODO: compile fun types\n", .{}),
             }
             try format(out, " {s};\n", .{try mangle(alloc, name)});
         }
@@ -242,15 +247,12 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
     { // Functions
         var ordered_funs_ = ArrayList(Str).init(alloc);
         var key_iter = the_mono.funs.keyIterator();
-        while (key_iter.next()) |fun| {
-            try ordered_funs_.append(fun.*);
-        }
+        while (key_iter.next()) |fun| try ordered_funs_.append(fun.*);
         var ordered_funs = try ordered_funs_.toOwnedSlice();
-        std.mem.sort(Str, ordered_funs, {}, string_mod.cmp);
+        std.mem.sort(Str, ordered_funs, {}, string.cmp);
         var funs_to_index = StringHashMap(usize).init(alloc);
-        for (ordered_funs, 0..) |fun_name, index| {
+        for (ordered_funs, 0..) |fun_name, index|
             try funs_to_index.put(fun_name, index);
-        }
 
         // Declarations
         try format(out, "\n/// Function declarations\n\n", .{});
@@ -258,9 +260,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
             const fun = the_mono.funs.get(fun_name) orelse unreachable;
             try format(out, "/* {s} */ {s} {s}(", .{ fun_name, try mangle(alloc, fun.return_ty), try mangle(alloc, fun_name) });
             for (fun.arg_tys.items, 0..) |arg_ty, i| {
-                if (i > 0) {
-                    try format(out, ", ", .{});
-                }
+                if (i > 0) try format(out, ", ", .{});
                 try format(out, "{s} arg{}", .{ try mangle(alloc, arg_ty), i });
             }
             try format(out, ");\n", .{});
@@ -274,34 +274,37 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
             try format(out, "\n// {s}\n", .{fun_name});
             try format(out, "{s} {s}(", .{ try mangle(alloc, fun.return_ty), try mangle(alloc, fun_name) });
             for (fun.arg_tys.items, 0..) |arg_ty, i| {
-                if (i > 0) {
-                    try format(out, ", ", .{});
-                }
+                if (i > 0) try format(out, ", ", .{});
                 try format(out, "{s} arg{}", .{ try mangle(alloc, arg_ty), i });
             }
             try format(out, ") {{\n", .{});
 
             fun_body: {
                 if (fun.is_builtin) {
-                    if (builtin_funs.get(fun_name)) |body| {
-                        try format(out, "{s}", .{body});
-                    } else if (string_mod.starts_with(fun_name, "to_address")) {
-                        try format(out, "  mar_U64 address;\n", .{});
-                        try format(out, "  address.value = (uint64_t)arg0.pointer;\n", .{});
-                        try format(out, "  return address;\n", .{});
-                    } else if (string_mod.starts_with(fun_name, "to_reference")) {
-                        try format(out, "  {s} ref;\n", .{try mangle(alloc, fun.return_ty)});
-                        try format(out, "  ref.pointer = ({s}*) arg0.value;\n", .{
+                    if (builtin_funs.get(fun_name)) |body|
+                        try format(out, "{s}", .{body})
+                    else if (string.starts_with(fun_name, "to_address"))
+                        try format(out,
+                            \\  mar_U64 address;
+                            \\  address.value = (uint64_t) arg0.pointer;
+                            \\  return address;
+                        , .{})
+                    else if (string.starts_with(fun_name, "to_reference"))
+                        try format(out,
+                            \\  {s} ref;
+                            \\  ref.pointer = ({s}*) arg0.value;
+                            \\  return ref;
+                        , .{
+                            try mangle(alloc, fun.return_ty),
                             try mangle(alloc, fun.ty_args.items[0]),
-                        });
-                        try format(out, "  return ref;\n", .{});
-                    } else if (string_mod.starts_with(fun_name, "size_of_type")) {
-                        try format(out, "  mar_U64 size;\n", .{});
-                        try format(out, "  size.value = (uint64_t)sizeof({s});\n", .{
-                            try mangle(alloc, fun.ty_args.items[0]),
-                        });
-                        try format(out, "  return size;\n", .{});
-                    } else {
+                        })
+                    else if (string.starts_with(fun_name, "size_of_type"))
+                        try format(out,
+                            \\  mar_U64 size;
+                            \\  size.value = (uint64_t) sizeof({s});
+                            \\  return size;
+                        , .{try mangle(alloc, fun.ty_args.items[0])})
+                    else {
                         std.debug.print("Fun is {s}.\n", .{fun_name});
                         @panic("Unknown builtin fun");
                     }
@@ -315,19 +318,16 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                         .expression => |expr| try format_expr(alloc, out, expr),
                         .uninitialized => try format(out, "{s} _{};\n", .{ try mangle(alloc, ty), i }),
                         .int => |int| try format(out, "{s} _{}; _{}.value = {}{s};\n", .{
-                            try mangle(alloc, ty), i, i, int.value, suffix: {
-                                if (int.signedness == .unsigned) {
-                                    break :suffix "ULL";
-                                } else {
-                                    break :suffix "LL";
-                                }
-                            },
+                            try mangle(alloc, ty),
+                            i,
+                            i,
+                            int.value,
+                            if (int.signedness == .unsigned) "ULL" else "LL",
                         }),
                         .string => |str| {
                             try format(out, "mar_Slice_of_U8_end_ _{}; _{}.mar_data.pointer = (mar_U8*) \"", .{ i, i });
-                            for (str) |c| {
+                            for (str) |c|
                                 try format(out, "\\x{x}", .{c});
-                            }
                             try format(out, "\"; _{}.mar_len.value = {};\n", .{ i, str.len });
                         },
                         .call => |call| {
@@ -337,9 +337,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                                 .{ try mangle(alloc, ty), i, try mangle(alloc, call.fun) },
                             );
                             for (call.args.items, 0..) |arg, j| {
-                                if (j > 0) {
-                                    try format(out, ", ", .{});
-                                }
+                                if (j > 0) try format(out, ", ", .{});
                                 try format_expr(alloc, out, arg);
                             }
                             try format(out, ");\n", .{});
@@ -392,7 +390,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                         .return_ => |expr| {
                             // If a Never is returned, the return is not reached anyway. If we emit
                             // it, C complains that Never doesn't match the function's return type.
-                            if (!std.mem.eql(u8, expr.ty, "Never")) {
+                            if (!string.eql(expr.ty, "Never")) {
                                 try format(out, "return ", .{});
                                 try format_expr(alloc, out, expr);
                                 try format(out, "; ", .{});
@@ -408,7 +406,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                 }
                 try format(out, "  statement_{}: // end\n", .{fun.body.items.len});
                 const last_expr_index = fun.body.items.len - 1;
-                if (!std.mem.eql(u8, fun.tys.items[last_expr_index], "Never")) {
+                if (!string.eql(fun.tys.items[last_expr_index], "Never")) {
                     try format(out, "  return _{};\n", .{last_expr_index});
                 }
             }
@@ -429,7 +427,7 @@ fn format_expr(alloc: std.mem.Allocator, out: anytype, expr: mono.Expr) !void {
     switch (expr.kind) {
         .statement => |index| try format(out, "_{}", .{index}),
         .member => |member| {
-            if (std.mem.eql(u8, member.name, "*")) {
+            if (string.eql(member.name, "*")) {
                 try format(out, "(*(", .{});
                 try format_expr(alloc, out, member.of.*);
                 try format(out, ".pointer))", .{});
@@ -445,7 +443,7 @@ fn format_left_expr(alloc: std.mem.Allocator, out: anytype, expr: mono.LeftExpr)
     switch (expr.kind) {
         .statement => |index| try format(out, "_{}", .{index}),
         .member => |member| {
-            if (std.mem.eql(u8, member.name, "*")) {
+            if (string.eql(member.name, "*")) {
                 try format(out, "(*(({s}*) ", .{try mangle(alloc, expr.ty)});
                 try format_left_expr(alloc, out, member.of.*);
                 try format(out, ".pointer))", .{});
@@ -460,19 +458,17 @@ fn format_left_expr(alloc: std.mem.Allocator, out: anytype, expr: mono.LeftExpr)
 fn mangle(alloc: std.mem.Allocator, name: Str) !Str {
     var mangled = String.init(alloc);
     try mangled.appendSlice("mar_");
-    for (name) |c| {
-        switch (c) {
-            '_' => try mangled.appendSlice("__"),
-            '[' => try mangled.appendSlice("_of_"),
-            ']' => try mangled.appendSlice("_end_"),
-            '(' => try mangled.appendSlice("_withargs_"),
-            ')' => try mangled.appendSlice("_end_"),
-            ',' => try mangled.appendSlice("_and_"),
-            '&' => try mangled.appendSlice("_amp_"),
-            '*' => try mangled.appendSlice("_star_"),
-            ' ' => {},
-            else => try mangled.append(c),
-        }
-    }
+    for (name) |c| switch (c) {
+        '_' => try mangled.appendSlice("__"),
+        '[' => try mangled.appendSlice("_of_"),
+        ']' => try mangled.appendSlice("_end_"),
+        '(' => try mangled.appendSlice("_withargs_"),
+        ')' => try mangled.appendSlice("_end_"),
+        ',' => try mangled.appendSlice("_and_"),
+        '&' => try mangled.appendSlice("_amp_"),
+        '*' => try mangled.appendSlice("_star_"),
+        ' ' => {},
+        else => try mangled.append(c),
+    };
     return mangled.items;
 }

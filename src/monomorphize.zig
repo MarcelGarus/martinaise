@@ -28,13 +28,9 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !Result(mono
     };
     try monomorphizer.put_ty(.{ .name = "Never", .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
     try monomorphizer.put_ty(.{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
-    for ("IU") |signedness| {
-        for ([_]u8{ 8, 16, 32, 64 }) |bits| {
-            var name_buf = String.init(alloc);
-            try std.fmt.format(name_buf.writer(), "{c}{}", .{ signedness, bits });
-            const name = name_buf.items;
-            try monomorphizer.put_ty(.{ .name = name, .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
-        }
+    for (numbers.all_int_configs()) |config| {
+        const name = try numbers.int_ty_name(alloc, config);
+        try monomorphizer.put_ty(.{ .name = name, .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
     }
 
     const main = try monomorphizer.lookup("main", &[_]Str{}, &[_]Str{});
@@ -55,9 +51,7 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !Result(mono
             try format(errw, "{s}", .{err_buf.items});
 
             return .{ .err = err_with_context.items };
-        } else {
-            return error_;
-        }
+        } else return error_;
     };
 
     return .{ .ok = mono.Mono{
@@ -107,13 +101,9 @@ const Monomorphizer = struct {
         for (self.program.defs.items) |def| {
             const def_name = switch (def) {
                 .builtin_ty => |n| n,
-                .struct_ => |s| s.name,
-                .enum_ => |e| e.name,
-                .fun => |f| f.name,
+                inline else => |it| it.name,
             };
-            if (std.mem.eql(u8, name, def_name)) {
-                try name_matches.append(def);
-            }
+            if (string.eql(name, def_name)) try name_matches.append(def);
         }
 
         var full_matches = ArrayList(LookupSolution).init(self.alloc);
@@ -123,9 +113,7 @@ const Monomorphizer = struct {
                     .fun => |f| f,
                     else => continue :defs, // Only funs can accept args.
                 };
-                if (args_.len != fun.args.items.len) {
-                    continue :defs;
-                }
+                if (args_.len != fun.args.items.len) continue :defs;
 
                 var solver_ty_vars = StringHashMap(void).init(self.alloc);
                 var solver_ty_env = StringHashMap(Ty).init(self.alloc);
@@ -135,9 +123,8 @@ const Monomorphizer = struct {
                 }
                 if (ty_args) |ty_args_| {
                     if (fun.ty_args.items.len != ty_args_.len) continue :defs;
-                    for (fun.ty_args.items, ty_args_) |from, to| {
+                    for (fun.ty_args.items, ty_args_) |from, to|
                         try solver_ty_env.put(from, self.tys.get(to) orelse unreachable);
-                    }
                 }
                 for (fun.args.items, args_) |param, arg_mono_ty| {
                     const arg_ty = self.tys.get(arg_mono_ty) orelse unreachable;
@@ -176,18 +163,12 @@ const Monomorphizer = struct {
                 var ty_env = StringHashMap(Str).init(self.alloc);
                 const ty_params = switch (def) {
                     .builtin_ty => |_| ArrayList(Str).init(self.alloc).items,
-                    .struct_ => |s| s.ty_args.items,
-                    .enum_ => |e| e.ty_args.items,
-                    .fun => |f| f.ty_args.items,
+                    inline else => |it| it.ty_args.items,
                 };
                 const ty_args_ = ty_args orelse &[_]Str{};
-                if (ty_args_.len != ty_params.len) {
-                    continue :defs;
-                }
-                for (ty_params, ty_args_) |from, to| {
+                if (ty_args_.len != ty_params.len) continue :defs;
+                for (ty_params, ty_args_) |from, to|
                     try ty_env.put(from, to);
-                }
-
                 try full_matches.append(.{ .def = def, .ty_env = ty_env });
             }
         }
@@ -198,9 +179,7 @@ const Monomorphizer = struct {
             if (args) |args_| {
                 try self.format_err("(", .{});
                 for (args_, 0..) |arg, i| {
-                    if (i > 0) {
-                        try self.format_err(", ", .{});
-                    }
+                    if (i > 0) try self.format_err(", ", .{});
                     try self.format_err("{s}", .{arg});
                 }
                 try self.format_err(")", .{});
@@ -216,9 +195,7 @@ const Monomorphizer = struct {
                     ast.print_signature(self.err, match) catch @panic("couldn't write to stdout");
                     try self.format_err("\n", .{});
                 }
-            } else {
-                try self.format_err("There are no definitions named \"{s}\".\n", .{name});
-            }
+            } else try self.format_err("There are no definitions named \"{s}\".\n", .{name});
             return error.CompileError;
         }
 
@@ -226,18 +203,17 @@ const Monomorphizer = struct {
             try self.format_err("Multiple definitions match:\n", .{});
             for (full_matches.items) |match| {
                 try self.format_err("- ", .{});
+
                 var padded_signature = ArrayList(u8).init(self.alloc);
                 ast.print_signature(padded_signature.writer(), match.def) catch @panic("couldn't write to stdout");
-                while (padded_signature.items.len < 30) {
-                    try padded_signature.append(' ');
-                }
+                while (padded_signature.items.len < 30) try padded_signature.append(' ');
                 try self.format_err("{s}", .{padded_signature.items});
+
                 if (match.ty_env.count() > 0) {
                     try self.format_err(" with ", .{});
                     var iter = match.ty_env.iterator();
-                    while (iter.next()) |constraint| {
+                    while (iter.next()) |constraint|
                         try self.format_err("{s} = {s}, ", .{ constraint.key_ptr.*, constraint.value_ptr.* });
-                    }
                 }
                 try self.format_err("\n", .{});
             }
@@ -249,9 +225,8 @@ const Monomorphizer = struct {
 
     fn compile_types(self: *Self, tys: ArrayList(Ty), ty_env: TyEnv) error{ Todo, OutOfMemory, CompileError }!ArrayList(Str) {
         var args = ArrayList(Str).init(self.alloc);
-        for (tys.items) |arg| {
+        for (tys.items) |arg|
             try args.append(try self.compile_type(arg, ty_env));
-        }
         return args;
     }
 
@@ -274,9 +249,7 @@ const Monomorphizer = struct {
         if (args.items.len > 0) {
             try name_buf.append('[');
             for (args.items, 0..) |arg, i| {
-                if (i > 0) {
-                    try name_buf.appendSlice(", ");
-                }
+                if (i > 0) try name_buf.appendSlice(", ");
                 try name_buf.appendSlice(arg);
             }
             try name_buf.append(']');
@@ -284,9 +257,7 @@ const Monomorphizer = struct {
         const name = name_buf.items;
 
         switch ((try self.lookup(ty.name, args.items, null)).def) {
-            .builtin_ty => |_| {
-                try self.put_ty(ty, .builtin_ty);
-            },
+            .builtin_ty => |_| try self.put_ty(ty, .builtin_ty),
             .struct_ => |s| {
                 var specialized_args = ArrayList(Ty).init(self.alloc);
                 var inner_ty_env = TyEnv.init(self.alloc);
@@ -314,13 +285,10 @@ const Monomorphizer = struct {
 
                 var variants = ArrayList(mono.Variant).init(self.alloc);
                 for (e.variants.items) |variant| {
-                    const variant_type = b: {
-                        if (variant.ty) |t| {
-                            break :b try self.compile_type(t, inner_ty_env);
-                        } else {
-                            break :b "Nothing";
-                        }
-                    };
+                    const variant_type = if (variant.ty) |t|
+                        try self.compile_type(t, inner_ty_env)
+                    else
+                        "Nothing";
                     try variants.append(.{ .name = variant.name, .ty = variant_type });
                 }
                 try self.put_ty(.{ .name = ty.name, .args = specialized_args }, .{
@@ -374,9 +342,7 @@ const FunMonomorphizer = struct {
         if (fun.ty_args.items.len > 0) {
             try signature.appendSlice("[");
             for (fun.ty_args.items, 0..) |arg, i| {
-                if (i > 0) {
-                    try signature.appendSlice(", ");
-                }
+                if (i > 0) try signature.appendSlice(", ");
                 const arg_ty: Str = ty_env.get(arg) orelse @panic("required type arg doesn't exist in type env");
                 try ty_args.append(arg_ty);
                 try signature.appendSlice(arg_ty);
@@ -385,9 +351,7 @@ const FunMonomorphizer = struct {
         }
         try signature.append('(');
         for (fun.args.items, 0..) |arg, i| {
-            if (i > 0) {
-                try signature.appendSlice(", ");
-            }
+            if (i > 0) try signature.appendSlice(", ");
             const arg_type = try monomorphizer.compile_type(arg.ty, ty_env);
             try arg_tys.append(arg_type);
             try signature.appendSlice(arg_type);
@@ -404,18 +368,12 @@ const FunMonomorphizer = struct {
             var s = ArrayList(u8).init(alloc);
             try s.appendSlice("Compiling ");
             for (monomorphizer.context.items, 0..) |c, i| {
-                if (i > 0) {
-                    try s.appendSlice(" > ");
-                }
+                if (i > 0) try s.appendSlice(" > ");
                 var j: usize = 0;
                 while (true) {
-                    if (c[j] == '(' or c[j] == '[') {
-                        break;
-                    }
+                    if (c[j] == '(' or c[j] == '[') break;
                     j += 1;
                 }
-                // c.find()
-                // try s.appendSlice(c);
                 try s.appendSlice(c[0..j]);
             }
             if (s.items.len > 80) {
@@ -426,13 +384,10 @@ const FunMonomorphizer = struct {
             print_on_same_line("{s}\n", .{s.items});
         }
 
-        const return_ty = ret: {
-            if (fun.returns) |ty| {
-                break :ret try monomorphizer.compile_type(ty, ty_env);
-            } else {
-                break :ret "Nothing";
-            }
-        };
+        const return_ty = if (fun.returns) |ty|
+            try monomorphizer.compile_type(ty, ty_env)
+        else
+            "Nothing";
 
         var mono_fun = mono.Fun{
             .ty_args = ty_args,
@@ -442,9 +397,8 @@ const FunMonomorphizer = struct {
             .body = ArrayList(mono.Statement).init(alloc),
             .tys = ArrayList(Str).init(alloc),
         };
-        for (arg_tys.items) |ty| {
+        for (arg_tys.items) |ty|
             _ = try mono_fun.put(.{ .arg = {} }, ty);
-        }
 
         var fun_monomorphizer = Self{
             .monomorphizer = monomorphizer,
@@ -470,13 +424,10 @@ const FunMonomorphizer = struct {
     }
 
     fn compile_expr(self: *Self, expression: ast.Expr) error{ Todo, OutOfMemory, CompileError }!mono.Expr {
-        if (try self.compile_break(expression)) |expr| {
-            return expr;
-        }
+        if (try self.compile_break(expression)) |expr| return expr;
+
         // This may be an enum variant instantiation such as `Maybe[Int].some(3)`.
-        if (try self.compile_enum_creation(expression)) |expr| {
-            return expr;
-        }
+        if (try self.compile_enum_creation(expression)) |expr| return expr;
         switch (expression) {
             .int => |int| return try self.fun.put_and_get_expr(
                 .{ .int = .{ .value = int.value, .signedness = int.signedness, .bits = int.bits } },
@@ -495,9 +446,8 @@ const FunMonomorphizer = struct {
                 return try self.fun.put_and_get_expr(.{ .string = str }, "Slice[U8]");
             },
             .ref => |name| {
-                if (self.var_env.get(name)) |var_info| {
+                if (self.var_env.get(name)) |var_info|
                     return .{ .kind = .{ .statement = var_info.index }, .ty = var_info.ty };
-                }
 
                 // TODO: Try to lookup type.
                 try self.format_err("No \"{s}\" is in scope.\n", .{name});
@@ -531,14 +481,10 @@ const FunMonomorphizer = struct {
                         },
                     }
                 };
-                for (call.args.items) |arg| {
-                    try args.append(try self.compile_expr(arg));
-                }
+                for (call.args.items) |arg| try args.append(try self.compile_expr(arg));
 
                 var ty_args_: ?[]const Str = null;
-                if (ty_args) |ta| {
-                    ty_args_ = ta.items;
-                }
+                if (ty_args) |ta| ty_args_ = ta.items;
                 return self.compile_call(name, compiled_callee, ty_args_, args.items);
             },
             .member => |m| {
@@ -549,16 +495,13 @@ const FunMonomorphizer = struct {
                 const field_ty = get_field_ty: {
                     switch (of_type_def) {
                         .struct_ => |s| {
-                            for (s.fields.items) |field| {
-                                if (string.eql(field.name, m.name)) {
+                            for (s.fields.items) |field|
+                                if (string.eql(field.name, m.name))
                                     break :get_field_ty field.ty;
-                                }
-                            }
                             try self.format_err("\"{s}\" is not a field on {s}.\n", .{ m.name, of.ty });
                             try self.format_err("It only contains these fields:\n", .{});
-                            for (s.fields.items) |field| {
+                            for (s.fields.items) |field|
                                 try self.format_err("- {s}\n", .{field.name});
-                            }
                             return error.CompileError;
                         },
                         else => {
@@ -592,9 +535,8 @@ const FunMonomorphizer = struct {
                 const struct_type = try self.monomorphizer.compile_type(ty, self.ty_env);
 
                 var fields = StringHashMap(mono.Expr).init(self.alloc);
-                for (sc.fields.items) |f| {
+                for (sc.fields.items) |f|
                     try fields.put(f.name, try self.compile_expr(f.value));
-                }
 
                 return try self.fun.put_and_get_expr(.{ .struct_creation = .{
                     .struct_ty = struct_type,
@@ -637,9 +579,8 @@ const FunMonomorphizer = struct {
                                 try self.format_err("- The else body returns {s}.\n", .{else_result.ty});
                                 return error.CompileError;
                             }
-                        } else {
-                            result_ty = else_result.ty;
-                        }
+                        } else result_ty = else_result.ty;
+
                         _ = try self.fun.put(.{ .assign = .{
                             .to = .{ .ty = result_ty.?, .kind = .{ .statement = result } },
                             .value = else_result,
@@ -680,9 +621,9 @@ const FunMonomorphizer = struct {
 
                 // Jump table
                 const jump_table_start = self.fun.next_index();
-                for (switch_.cases.items) |_| {
+                for (switch_.cases.items) |_|
                     _ = try self.fun.put(.{ .uninitialized = {} }, "Nothing"); // Will be replaced with jump_if_variant
-                }
+
                 // TODO: instead of looping, ensure all cases are matched
                 // TODO: ensure cases aren't handled multiple times
                 _ = try self.fun.put(.{ .jump = .{ .target = jump_table_start } }, "Never"); // unreachable
@@ -696,20 +637,17 @@ const FunMonomorphizer = struct {
                         .target = self.fun.next_index(),
                     } };
                     const ty = find_ty: {
-                        for (enum_def.variants.items) |variant| {
-                            if (string.eql(variant.name, case.variant)) {
+                        for (enum_def.variants.items) |variant|
+                            if (string.eql(variant.name, case.variant))
                                 break :find_ty variant.ty;
-                            }
-                        }
                         try self.format_err("You switched on {s}, which doesn't have a \"{s}\" variant.\n", .{ value.ty, case.variant });
                         return error.CompileError;
                     };
                     const unpacked = try self.fun.put(.{ .get_enum_value = .{ .of = value, .variant = case.variant, .ty = ty } }, ty);
                     // TODO: Create inner var env
                     // const inner_self.var_env = self.var_env.clone();
-                    if (case.binding) |binding| {
+                    if (case.binding) |binding|
                         try self.var_env.put(binding, .{ .index = unpacked, .ty = ty });
-                    }
 
                     const body_result = try self.compile_body(case.body.items);
                     if (!string.eql(body_result.ty, "Never")) {
@@ -721,9 +659,8 @@ const FunMonomorphizer = struct {
                                 );
                                 return error.CompileError;
                             }
-                        } else {
-                            result_ty = body_result.ty;
-                        }
+                        } else result_ty = body_result.ty;
+
                         _ = try self.fun.put(.{ .assign = .{
                             .to = .{ .ty = self.fun.tys.items[result], .kind = .{ .statement = result } },
                             .value = body_result,
@@ -732,9 +669,8 @@ const FunMonomorphizer = struct {
                     try after_switch_jumps.append(try self.fun.put(.{ .uninitialized = {} }, "Never")); // will be replaced with jump to after switch
                 }
                 const after_switch = self.fun.next_index();
-                for (after_switch_jumps.items) |jump| {
+                for (after_switch_jumps.items) |jump|
                     self.fun.body.items[jump] = .{ .jump = .{ .target = after_switch } };
-                }
 
                 const final_ty = result_ty orelse "Never";
                 self.fun.tys.items[result] = final_ty;
@@ -754,12 +690,8 @@ const FunMonomorphizer = struct {
 
                 const after_loop = self.fun.next_index();
                 const scope = self.breakable_scopes.pop();
-                if (scope.result_ty) |ty| {
-                    self.fun.tys.items[result] = ty;
-                }
-                for (scope.breaks.items) |b| {
-                    self.fun.body.items[b] = .{ .jump = .{ .target = after_loop } };
-                }
+                if (scope.result_ty) |ty| self.fun.tys.items[result] = ty;
+                for (scope.breaks.items) |b| self.fun.body.items[b] = .{ .jump = .{ .target = after_loop } };
 
                 return .{ .kind = .{ .statement = result }, .ty = self.fun.tys.items[result] };
             },
@@ -803,9 +735,8 @@ const FunMonomorphizer = struct {
                     .target = after_loop,
                 } };
                 const scope = self.breakable_scopes.pop();
-                for (scope.breaks.items) |b| {
+                for (scope.breaks.items) |b|
                     self.fun.body.items[b] = .{ .jump = .{ .target = after_loop } };
-                }
                 return self.compile_nothing_instance();
             },
             .return_ => |returned| {
@@ -838,32 +769,30 @@ const FunMonomorphizer = struct {
     fn compile_left_expr_rec(self: *Self, expr: ast.Expr) !mono.LeftExpr {
         switch (expr) {
             .ref => |ref| {
-                if (self.var_env.get(ref)) |var_info| {
-                    return .{
-                        .ty = self.fun.tys.items[var_info.index],
-                        .kind = .{ .statement = var_info.index },
-                    };
-                }
+                if (self.var_env.get(ref)) |var_info| return .{
+                    .ty = self.fun.tys.items[var_info.index],
+                    .kind = .{ .statement = var_info.index },
+                };
 
                 try self.format_err("\"{s}\" is not in scope.\n", .{ref});
                 return error.CompileError;
             },
             .member => |member| {
-                var of = try self.compile_left_expr_rec(member.of.*);
-                const of_type_def = self.monomorphizer.ty_defs.get(of.ty) orelse unreachable;
+                const of = try self.alloc.create(mono.LeftExpr);
+                of.* = try self.compile_left_expr_rec(member.of.*);
+                const of_type_def = self.monomorphizer.ty_defs.get(of.ty).?;
                 const field_ty = get_field_ty: {
                     switch (of_type_def) {
                         .struct_ => |s| {
-                            for (s.fields.items) |field| {
-                                if (std.mem.eql(u8, field.name, member.name)) {
+                            for (s.fields.items) |field|
+                                if (string.eql(field.name, member.name))
                                     break :get_field_ty field.ty;
-                                }
-                            }
+
                             try self.format_err("\"{s}\" is not a field on {s}.\n", .{ member.name, of.ty });
                             try self.format_err("It only contains these fields:\n", .{});
-                            for (s.fields.items) |field| {
+                            for (s.fields.items) |field|
                                 try self.format_err("- {s}\n", .{field.name});
-                            }
+
                             return error.CompileError;
                         },
                         else => {
@@ -873,9 +802,7 @@ const FunMonomorphizer = struct {
                     }
                 };
 
-                const heaped = try self.alloc.create(mono.LeftExpr);
-                heaped.* = of;
-                return .{ .ty = field_ty, .kind = .{ .member = .{ .of = heaped, .name = member.name } } };
+                return .{ .ty = field_ty, .kind = .{ .member = .{ .of = of, .name = member.name } } };
             },
             else => {
                 try self.format_err("You can't assign to this.\n", .{});
@@ -886,14 +813,8 @@ const FunMonomorphizer = struct {
 
     fn compile_body(self: *Self, body: []const ast.Expr) !mono.Expr {
         var last: ?mono.Expr = null;
-        for (body) |expr| {
-            last = try self.compile_expr(expr);
-        }
-        if (last) |l| {
-            return l;
-        } else {
-            return try self.compile_nothing_instance();
-        }
+        for (body) |expr| last = try self.compile_expr(expr);
+        return if (last) |l| l else try self.compile_nothing_instance();
     }
 
     fn compile_nothing_instance(self: *Self) !mono.Expr {
@@ -905,33 +826,23 @@ const FunMonomorphizer = struct {
 
     fn compile_call(self: *Self, name: Str, callee: ?mono.Expr, ty_args: ?[]const Str, args: []const mono.Expr) !mono.Expr {
         var full_args = ArrayList(mono.Expr).init(self.alloc);
-        if (callee) |c| {
-            try full_args.append(c);
-        }
+        if (callee) |c| try full_args.append(c);
         try full_args.appendSlice(args);
 
         var arg_tys = ArrayList(Str).init(self.alloc);
-        for (full_args.items) |arg| {
-            try arg_tys.append(arg.ty);
-        }
+        for (full_args.items) |arg| try arg_tys.append(arg.ty);
 
         const lookup_solution = try self.monomorphizer.lookup(name, ty_args, arg_tys.items);
-        const called_fun = switch (lookup_solution.def) {
-            .fun => |f| f,
-            else => unreachable,
-        };
+        const called_fun = lookup_solution.def.fun;
         const call_ty_env = lookup_solution.ty_env;
 
         // TODO: Make sure all type args are different.
 
         const fun_name = try FunMonomorphizer.compile(self.monomorphizer, called_fun, call_ty_env);
-        const return_type = ret: {
-            if (called_fun.returns) |ty| {
-                break :ret try self.monomorphizer.compile_type(ty, call_ty_env);
-            } else {
-                break :ret "Nothing";
-            }
-        };
+        const return_type = if (called_fun.returns) |ty|
+            try self.monomorphizer.compile_type(ty, call_ty_env)
+        else
+            "Nothing";
 
         return try self.fun.put_and_get_expr(.{ .call = .{ .fun = fun_name, .args = full_args } }, return_type);
     }
@@ -940,48 +851,38 @@ const FunMonomorphizer = struct {
     fn compile_break(self: *Self, expr: ast.Expr) !?mono.Expr {
         const arg: ?ast.Expr = break_arg: {
             switch (expr) {
-                .ref => |name| if (std.mem.eql(u8, name, "break")) {
-                    break :break_arg null;
-                } else {
-                    return null;
-                },
+                .ref => |name| if (string.eql(name, "break"))
+                    break :break_arg null
+                else
+                    return null,
                 .call => |call| switch (call.callee.*) {
-                    .ref => |name| if (std.mem.eql(u8, name, "break")) {
-                        if (call.args.items.len == 0) {
-                            break :break_arg null;
-                        }
-                        if (call.args.items.len == 1) {
-                            break :break_arg call.args.items[0];
-                        }
+                    .ref => |name| if (string.eql(name, "break")) {
+                        if (call.args.items.len == 0) break :break_arg null;
+                        if (call.args.items.len == 1) break :break_arg call.args.items[0];
                         try self.format_err("Break can only take one argument.\n", .{});
                         return error.CompileError;
-                    } else {
-                        return null;
-                    },
+                    } else return null,
                     else => return null,
                 },
                 else => return null,
             }
         };
 
-        const compiled_arg: mono.Expr = ca: {
-            if (arg) |a| {
-                break :ca try self.compile_expr(a);
-            } else {
-                break :ca try self.compile_nothing_instance();
-            }
-        };
+        const compiled_arg: mono.Expr = if (arg) |a|
+            try self.compile_expr(a)
+        else
+            try self.compile_nothing_instance();
+
         const arg_ty = compiled_arg.ty;
 
         var scope = &self.breakable_scopes.items[self.breakable_scopes.items.len - 1];
 
         if (scope.result) |result| {
-            if (scope.result_ty) |expected_ty| {
-                if (!string.eql(arg_ty, expected_ty)) {
-                    try self.format_err("A previous break returned {s}, but this break returns {s}.\n", .{ expected_ty, arg_ty });
-                    return error.CompileError;
-                }
-            }
+            if (scope.result_ty) |expected_ty| if (!string.eql(arg_ty, expected_ty)) {
+                try self.format_err("A previous break returned {s}, but this break returns {s}.\n", .{ expected_ty, arg_ty });
+                return error.CompileError;
+            };
+
             scope.result_ty = arg_ty;
 
             _ = try self.fun.put(.{ .assign = .{
@@ -1039,9 +940,8 @@ const FunMonomorphizer = struct {
             .ref => |ref| ref,
             else => return null,
         };
-        if (self.var_env.contains(enum_name)) {
-            return null;
-        }
+        if (self.var_env.contains(enum_name)) return null;
+
         var compiled_ty_args = try self.monomorphizer.compile_types(enum_ty_args, self.ty_env);
         const solution = try self.monomorphizer.lookup(enum_name, compiled_ty_args.items, null);
         const enum_def = switch (solution.def) {
@@ -1062,11 +962,10 @@ const FunMonomorphizer = struct {
         }
 
         var compiled_value = try self.alloc.create(mono.Expr);
-        if (value) |val| {
-            compiled_value.* = try self.compile_expr(val);
-        } else {
-            compiled_value.* = try self.compile_nothing_instance();
-        }
+        compiled_value.* = if (value) |val|
+            try self.compile_expr(val)
+        else
+            try self.compile_nothing_instance();
 
         return try self.fun.put_and_get_expr(.{ .variant_creation = .{
             .enum_ty = enum_ty,
