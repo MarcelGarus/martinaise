@@ -1,0 +1,73 @@
+fun width(grid: Slice[Slice[U8]]): U64 { grid.get(0_U64).len }
+fun height(grid: Slice[Slice[U8]]): U64 { grid.len }
+fun get(grid: Slice[Slice[U8]], x: I64, y: I64): U8 {
+  if x.is_less_than(0_I64).or(x.is_at_least(grid.width().to_I64()))
+    .or(y.is_less_than(0_I64)).or(y.is_at_least(grid.height().to_I64())) {
+    return '.
+  }
+  grid.get(y.to_U64()).get(x.to_U64())
+}
+fun is_digit(char: U8): Bool { '0.until('9).contains(char) }
+fun is_gear(char: U8): Bool { char.equals('*) }
+
+fun main(): U8 {
+  var grid = read_file("advent/day3.big").lines()
+  printsln("hi")
+  println(grid.width())
+  println(grid.height())
+
+  var maybe_gears = vec[Vec[Vec[U64]]]()
+  for y in &0_U64.to(grid.height()).iter() {
+    var row = vec[Vec[U64]]()
+    for x in &0_U64.to(grid.width()).iter() {
+      (&row).push(vec[U64]())
+    }
+    identity(&maybe_gears).push(row)
+  }
+
+  for y in &0_I64.to(grid.height().to_I64()).iter() {
+    for x in &0_I64.to(grid.width().to_I64()).iter() {
+      var char = grid.get(x, y)
+      if char.is_digit().and(not(grid.get(x.subtract(1_I64), y).is_digit())) {
+        var end = x
+        loop {
+          if grid.get(end, y).is_digit() { end = end.add(1_I64) } else { break }
+        }
+        var num = grid.get(y.to_U64()).subslice(x.to_U64(), end.to_U64()).parse_U64()
+
+        var adjacent_locations = vec[Point[I64]]()
+        for xx in &x.subtract(1_I64).until(end).iter() {
+          identity(&adjacent_locations).push(Point[I64].{ x = xx, y = y.subtract(1_I64) })
+          identity(&adjacent_locations).push(Point[I64].{ x = xx, y = y.add(1_I64) })
+        }
+        identity(&adjacent_locations).push(Point[I64].{ x = x.subtract(1_I64), y = y })
+        identity(&adjacent_locations).push(Point[I64].{ x = end, y = y })
+
+        for pos in &adjacent_locations.iter() {
+          if grid.get(pos.x, pos.y).is_gear() {
+            prints("There might be a gear at ")
+            print(pos.x.to_U64())
+            prints(" ")
+            println(pos.y.to_U64())
+            maybe_gears.get(pos.y.to_U64()).get_mut(pos.x.to_U64()).push(num)
+          }
+        }
+      }
+    }
+  }
+
+  println(maybe_gears)
+
+  var sum = 0_U64
+  for y in &0_U64.to(grid.height()).iter() {
+    for x in &0_U64.to(grid.width()).iter() {
+      var adjacent_parts = maybe_gears.get(y).get(x)
+      if adjacent_parts.len.equals(2_U64) {
+        sum = sum.add(adjacent_parts.get(0_U64).multiply(adjacent_parts.get(1_U64)))
+      }
+    }
+  }
+  println(sum)
+
+  return 0_U8
+}

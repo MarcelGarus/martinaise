@@ -268,6 +268,13 @@ fun empty_slice[T](): Slice[T] {
 }
 fun is_empty[T](slice: Slice[T]): Bool { slice.len.equals(0_U64) }
 fun get[T](slice: Slice[T], index: U64): T { slice.data.add(index).* }
+fun get_mut[T](slice: Slice[T], index: U64): &T {
+  if 0_U64.to(slice.len).contains(index) {
+    slice.data.add(index)
+  } else {
+    panic("Index out of bounds")
+  }
+}
 fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
   Slice[T].{ data = slice.data.add(from), len = to.subtract(from) }
 }
@@ -402,11 +409,13 @@ fun push[T](vec: &Vec[T], item: T) {
   new_item.* = item
   vec.*.len = vec.*.len.add(1_U64)
 }
-fun get[T](vec: Vec[T], index: U64): T {
-  | TODO: enable check when panic exists
-  |if index.is_less_than(vec.len) {
-    vec.data.add(index).*
-  |}
+fun get[T](vec: Vec[T], index: U64): T { vec.get_mut(index).* }
+fun get_mut[T](vec: Vec[T], index: U64): &T {
+  if 0_U64.to(vec.len).contains(index) {
+    vec.data.add(index)
+  } else {
+    panic("Index out of bounds")
+  }
 }
 fun to_slice[T](vec: Vec[T]): Slice[T] {
   Slice[T].{ data = vec.data, len = vec.len }
