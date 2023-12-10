@@ -51,7 +51,7 @@ fun main(): I64 {
   identity(&digit_names).push("nine")
 
   var sum = 0_U64
-  for line in &read_file("advent/day1-2.smol").iter().split_lines() {
+  for line in &read_file("advent/day1-2.smol").lines().iter() {
     var first_digit = (&line.windows()).find_first_digit(digit_names)
     var last_digit = (&line.rev_windows()).find_first_digit(digit_names)
     sum = sum.add(first_digit.to_U64().multiply(10_U64).add(last_digit.to_U64()))

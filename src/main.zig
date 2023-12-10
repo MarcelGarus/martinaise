@@ -8,6 +8,7 @@ const monomorphize = @import("monomorphize.zig").monomorphize;
 const mono = @import("mono.zig");
 const compile_to_c = @import("backend_c.zig").compile_to_c;
 const print_on_same_line = @import("term.zig").print_on_same_line;
+const clear_terminal = @import("term.zig").clear_terminal;
 const string = @import("string.zig");
 const Str = string.Str;
 const String = string.String;
@@ -54,10 +55,7 @@ pub fn main() !u8 {
         defer watcher.deinit();
 
         while (true) {
-            var clear = std.ChildProcess.init(&[_]Str{"clear"}, alloc);
-            clear.stdout = std.io.getStdOut();
-            clear.stderr = std.io.getStdErr();
-            _ = try clear.spawnAndWait();
+            try clear_terminal(alloc);
 
             std.debug.print("Recompiling\n", .{});
             try run_pipeline(alloc, command, file_path);
@@ -127,7 +125,7 @@ fn run_pipeline(alloc: Allocator, command: Command, file_path: Str) !void {
         switch (try monomorphize(alloc, the_ast)) {
             .ok => |the_mono| break :compile_mono the_mono,
             .err => |err| {
-                std.debug.print("{s}\n", .{err});
+                print_on_same_line("{s}", .{err});
                 return;
             },
         }

@@ -24,7 +24,7 @@ fun game_score(game: Slice[U8]): U64 {
 
 fun main(): U8 {
   var sum = 0_U64
-  for line in &read_file("advent/day2.big").iter().split_lines() {
+  for line in &read_file("advent/day2.big").lines().iter() {
     | printsln(line)
     var score = line.game_score()
     println(score)

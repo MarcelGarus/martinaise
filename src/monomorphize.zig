@@ -44,11 +44,20 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !Result(mono
     };
 
     _ = FunMonomorphizer.compile(&monomorphizer, main_fun, TyEnv.init(alloc)) catch |error_| {
-        try format(err, "{any}\n\nContext:\n", .{error_});
-        for (monomorphizer.context.items) |context| {
-            try format(err, "- {s}\n", .{context});
+        if (error_ == error.CompileError) {
+            var err_with_context = String.init(alloc);
+            const errw = err_with_context.writer();
+            try format(errw, "Error while compiling\n", .{});
+            for (monomorphizer.context.items) |context| {
+                try format(errw, "- {s}\n", .{context});
+            }
+            try format(errw, "\n", .{});
+            try format(errw, "{s}", .{err_buf.items});
+
+            return .{ .err = err_with_context.items };
+        } else {
+            return error_;
         }
-        return .{ .err = err_buf.items };
     };
 
     return .{ .ok = mono.Mono{
@@ -88,7 +97,12 @@ const Monomorphizer = struct {
     // Looks up the given name with the given number of type args and the args
     // of the given types.
     const LookupSolution = struct { def: ast.Def, ty_env: TyEnv };
-    fn lookup(self: *Self, name: Str, ty_args: ?[]const Str, args: ?[]const Str) error{ OutOfMemory, TypeArgumentCantHaveGenerics, TypeArgumentCalledWithGenerics, MultipleTypesMatch, NoTypesMatch, StructTypeArgsCannotHaveTypeArgs, EnumTypeArgsCannotHaveTypeArgs, MultipleMatches, NoMatch }!LookupSolution {
+    fn lookup(
+        self: *Self,
+        name: Str,
+        ty_args: ?[]const Str,
+        args: ?[]const Str,
+    ) error{ Todo, OutOfMemory, CompileError }!LookupSolution {
         var name_matches = ArrayList(ast.Def).init(self.alloc);
         for (self.program.defs.items) |def| {
             const def_name = switch (def) {
@@ -120,18 +134,21 @@ const Monomorphizer = struct {
                     try solver_ty_vars.put(ta, {});
                 }
                 if (ty_args) |ty_args_| {
-                    if (fun.ty_args.items.len != ty_args_.len) {
-                        continue :defs;
-                    }
+                    if (fun.ty_args.items.len != ty_args_.len) continue :defs;
                     for (fun.ty_args.items, ty_args_) |from, to| {
                         try solver_ty_env.put(from, self.tys.get(to) orelse unreachable);
                     }
                 }
                 for (fun.args.items, args_) |param, arg_mono_ty| {
                     const arg_ty = self.tys.get(arg_mono_ty) orelse unreachable;
-                    if (!try arg_ty.is_assignable_to(solver_ty_vars, &solver_ty_env, param.ty)) {
-                        continue :defs;
-                    }
+                    const is_assignable = arg_ty.is_assignable_to(solver_ty_vars, &solver_ty_env, param.ty) catch |err| {
+                        if (err == error.TypeArgumentCantHaveGenerics) {
+                            try self.format_err("Type arguments can't have generics.\n", .{});
+                            return error.CompileError;
+                        }
+                        return error.Todo;
+                    };
+                    if (!is_assignable) continue :defs;
                 }
 
                 // TODO: Check if there are still unbound type parameters.
@@ -141,7 +158,16 @@ const Monomorphizer = struct {
                 {
                     var iter = solver_ty_env.iterator();
                     while (iter.next()) |constraint| {
-                        try ty_env.put(constraint.key_ptr.*, try self.compile_type(constraint.value_ptr.*, TyEnv.init(self.alloc)));
+                        try ty_env.put(
+                            constraint.key_ptr.*,
+                            self.compile_type(constraint.value_ptr.*, TyEnv.init(self.alloc)) catch |err| {
+                                if (err == error.TypeArgumentCantHaveGenerics) {
+                                    try self.format_err("Type arguments can't have generics.\n", .{});
+                                    return error.CompileError;
+                                }
+                                return error.Todo;
+                            },
+                        );
                     }
                 }
 
@@ -167,7 +193,7 @@ const Monomorphizer = struct {
         }
 
         if (full_matches.items.len != 1) {
-            try self.format_err("Looked for a definition that matches `{s}", .{name});
+            try self.format_err("This call doesn't work:\n> {s}", .{name});
             Ty.print_args_of_strs(self.err, ty_args) catch @panic("couldn't write to stdout");
             if (args) |args_| {
                 try self.format_err("(", .{});
@@ -179,11 +205,10 @@ const Monomorphizer = struct {
                 }
                 try self.format_err(")", .{});
             }
-            try self.format_err("`.\n", .{});
+            try self.format_err("\n\n", .{});
         }
 
         if (full_matches.items.len == 0) {
-            try self.format_err("No definition matches.\n", .{});
             if (name_matches.items.len > 0) {
                 try self.format_err("These definitions have the same name, but arguments don't match:\n", .{});
                 for (name_matches.items) |match| {
@@ -191,8 +216,10 @@ const Monomorphizer = struct {
                     ast.print_signature(self.err, match) catch @panic("couldn't write to stdout");
                     try self.format_err("\n", .{});
                 }
+            } else {
+                try self.format_err("There are no definitions named \"{s}\".\n", .{name});
             }
-            return error.NoMatch;
+            return error.CompileError;
         }
 
         if (full_matches.items.len > 1) {
@@ -204,20 +231,23 @@ const Monomorphizer = struct {
                 while (padded_signature.items.len < 30) {
                     try padded_signature.append(' ');
                 }
-                try self.format_err("{s} with ", .{padded_signature.items});
-                var iter = match.ty_env.iterator();
-                while (iter.next()) |constraint| {
-                    try self.format_err("{s} = {s}, ", .{ constraint.key_ptr.*, constraint.value_ptr.* });
+                try self.format_err("{s}", .{padded_signature.items});
+                if (match.ty_env.count() > 0) {
+                    try self.format_err(" with ", .{});
+                    var iter = match.ty_env.iterator();
+                    while (iter.next()) |constraint| {
+                        try self.format_err("{s} = {s}, ", .{ constraint.key_ptr.*, constraint.value_ptr.* });
+                    }
                 }
                 try self.format_err("\n", .{});
             }
-            return error.MultipleMatches;
+            return error.CompileError;
         }
 
         return full_matches.items[0];
     }
 
-    fn compile_types(self: *Self, tys: ArrayList(Ty), ty_env: TyEnv) error{ OutOfMemory, TypeArgumentCalledWithGenerics, MultipleTypesMatch, NoTypesMatch, StructTypeArgsCannotHaveTypeArgs, EnumTypeArgsCannotHaveTypeArgs, MultipleMatches, NoMatch, TypeArgumentCantHaveGenerics }!ArrayList(Str) {
+    fn compile_types(self: *Self, tys: ArrayList(Ty), ty_env: TyEnv) error{ Todo, OutOfMemory, CompileError }!ArrayList(Str) {
         var args = ArrayList(Str).init(self.alloc);
         for (tys.items) |arg| {
             try args.append(try self.compile_type(arg, ty_env));
@@ -233,7 +263,8 @@ const Monomorphizer = struct {
 
         if (ty_env.get(ty.name)) |name| {
             if (args.items.len > 0) {
-                return error.TypeArgumentCalledWithGenerics;
+                try self.format_err("A type argument is called with generics.\n", .{});
+                return error.CompileError;
             }
             return name;
         }
@@ -296,9 +327,7 @@ const Monomorphizer = struct {
                     .enum_ = .{ .variants = variants },
                 });
             },
-            .fun => {
-                unreachable;
-            },
+            .fun => unreachable,
         }
 
         return name;
@@ -440,38 +469,7 @@ const FunMonomorphizer = struct {
         try self.monomorphizer.format_err(fmt, args);
     }
 
-    fn compile_expr(self: *Self, expression: ast.Expr) error{
-        OutOfMemory,
-        Todo,
-        MultipleMatches,
-        NoMatch,
-        TypeArgumentCalledWithGenerics,
-        MultipleTypesMatch,
-        NoTypesMatch,
-        StructTypeArgsCannotHaveTypeArgs,
-        EnumTypeArgsCannotHaveTypeArgs,
-        InvalidExpressionCalled,
-        CalledNonFunction,
-        FunctionTypeArgsCannotHaveTypeArgs,
-        IterNextMustReturnMaybe,
-        ExpressionNotHandled,
-        VariableNotInScope,
-        CanOnlyAssignToName,
-        YouCanOnlyConstructStructs,
-        TypeArgumentCantHaveGenerics,
-        FieldDoesNotExist,
-        AccessedMemberOnNonStruct,
-        VariantDoesntExist,
-        IfConditionMustBeBool,
-        SwitchOnNonEnum,
-        UnknownVariant,
-        BreakInForCannotTakeAnArgument,
-        TooManyArgumentsForVariant,
-        IfWithMismatchedTypes,
-        CannotAssignToThis,
-        BreakCanOnlyTakeOneArgument,
-        BreaksReturnInconsistentTypes,
-    }!mono.Expr {
+    fn compile_expr(self: *Self, expression: ast.Expr) error{ Todo, OutOfMemory, CompileError }!mono.Expr {
         if (try self.compile_break(expression)) |expr| {
             return expr;
         }
@@ -502,8 +500,8 @@ const FunMonomorphizer = struct {
                 }
 
                 // TODO: Try to lookup type.
-                try self.format_err("Tried to find `{s}`.\n", .{name});
-                return error.VariableNotInScope;
+                try self.format_err("No \"{s}\" is in scope.\n", .{name});
+                return error.CompileError;
             },
             .call => |call| {
                 var callee = call.callee.*;
@@ -527,7 +525,10 @@ const FunMonomorphizer = struct {
                             break :find_name member.name;
                         },
                         .ref => |name| break :find_name name,
-                        else => return error.InvalidExpressionCalled,
+                        else => {
+                            try self.format_err("This expression can't be called.\n", .{});
+                            return error.CompileError;
+                        },
                     }
                 };
                 for (call.args.items) |arg| {
@@ -549,14 +550,21 @@ const FunMonomorphizer = struct {
                     switch (of_type_def) {
                         .struct_ => |s| {
                             for (s.fields.items) |field| {
-                                if (std.mem.eql(u8, field.name, m.name)) {
+                                if (string.eql(field.name, m.name)) {
                                     break :get_field_ty field.ty;
                                 }
                             }
-                            try self.format_err("Field {s} doesn't exist.\n", .{m.name});
-                            return error.FieldDoesNotExist;
+                            try self.format_err("\"{s}\" is not a field on {s}.\n", .{ m.name, of.ty });
+                            try self.format_err("It only contains these fields:\n", .{});
+                            for (s.fields.items) |field| {
+                                try self.format_err("- {s}\n", .{field.name});
+                            }
+                            return error.CompileError;
                         },
-                        else => return error.AccessedMemberOnNonStruct,
+                        else => {
+                            try self.format_err("You tried to access a field on {s}, but it's not a struct.\n", .{of.ty});
+                            return error.CompileError;
+                        },
                     }
                 };
                 return .{ .kind = .{ .member = .{ .of = of, .name = m.name } }, .ty = field_ty };
@@ -577,7 +585,10 @@ const FunMonomorphizer = struct {
                 return try self.fun.put_and_get_expr(.{ .assign = .{ .to = to, .value = value } }, "Nothing");
             },
             .struct_creation => |sc| {
-                var ty = self.expr_to_type(sc.ty.*) orelse return error.YouCanOnlyConstructStructs;
+                var ty = self.expr_to_type(sc.ty.*) orelse {
+                    try self.format_err("You can only construct structs.\n", .{});
+                    return error.CompileError;
+                };
                 const struct_type = try self.monomorphizer.compile_type(ty, self.ty_env);
 
                 var fields = StringHashMap(mono.Expr).init(self.alloc);
@@ -596,7 +607,8 @@ const FunMonomorphizer = struct {
 
                 const condition = try self.compile_expr(if_.condition.*);
                 if (!string.eql(condition.ty, "Bool")) {
-                    return error.IfConditionMustBeBool;
+                    try self.format_err("The if condition has to be a Bool, but it was {s}.\n", .{condition.ty});
+                    return error.CompileError;
                 }
                 const jump_if_true = try self.fun.put(.{ .uninitialized = {} }, "Nothing"); // Will be replaced with jump_if
                 const jump_if_false = try self.fun.put(.{ .uninitialized = {} }, "Never"); // Will be replaced with jump
@@ -620,11 +632,10 @@ const FunMonomorphizer = struct {
                     if (!string.eql(else_result.ty, "Never")) {
                         if (result_ty) |expected_ty| {
                             if (!string.eql(expected_ty, else_result.ty)) {
-                                try self.format_err(
-                                    "The then body returns {s}, the else body returns {s}.\n",
-                                    .{ expected_ty, else_result.ty },
-                                );
-                                return error.IfWithMismatchedTypes;
+                                try self.format_err("An if is inconsistenly typed:\n", .{});
+                                try self.format_err("- The then body returns {s}.\n", .{expected_ty});
+                                try self.format_err("- The else body returns {s}.\n", .{else_result.ty});
+                                return error.CompileError;
                             }
                         } else {
                             result_ty = else_result.ty;
@@ -661,7 +672,10 @@ const FunMonomorphizer = struct {
                 const value = try self.compile_expr(switch_.value.*);
                 const enum_def = switch (self.monomorphizer.ty_defs.get(value.ty).?) {
                     .enum_ => |e| e,
-                    else => return error.SwitchOnNonEnum,
+                    else => {
+                        try self.format_err("You tried to switch on {s}, but you can only switch on enums.\n", .{value.ty});
+                        return error.CompileError;
+                    },
                 };
 
                 // Jump table
@@ -687,7 +701,8 @@ const FunMonomorphizer = struct {
                                 break :find_ty variant.ty;
                             }
                         }
-                        return error.UnknownVariant;
+                        try self.format_err("You switched on {s}, which doesn't have a \"{s}\" variant.\n", .{ value.ty, case.variant });
+                        return error.CompileError;
                     };
                     const unpacked = try self.fun.put(.{ .get_enum_value = .{ .of = value, .variant = case.variant, .ty = ty } }, ty);
                     // TODO: Create inner var env
@@ -701,10 +716,10 @@ const FunMonomorphizer = struct {
                         if (result_ty) |expected_ty| {
                             if (!string.eql(expected_ty, body_result.ty)) {
                                 try self.format_err(
-                                    "Previous switch cases return {s}, but the case for {s} returns {s}.\n",
+                                    "Previous switch cases return {s}, but the case for \"{s}\" returns {s}.\n",
                                     .{ expected_ty, case.variant, body_result.ty },
                                 );
-                                return error.IfWithMismatchedTypes;
+                                return error.CompileError;
                             }
                         } else {
                             result_ty = body_result.ty;
@@ -714,7 +729,7 @@ const FunMonomorphizer = struct {
                             .value = body_result,
                         } }, "Nothing");
                     }
-                    try after_switch_jumps.append(try self.fun.put(.{ .arg = {} }, "Never")); // will be replaced with jump to after switch
+                    try after_switch_jumps.append(try self.fun.put(.{ .uninitialized = {} }, "Never")); // will be replaced with jump to after switch
                 }
                 const after_switch = self.fun.next_index();
                 for (after_switch_jumps.items) |jump| {
@@ -760,8 +775,9 @@ const FunMonomorphizer = struct {
 
                 const result_of_next = try self.compile_call("next", iter, null, &[_]mono.Expr{});
                 const next_ty = self.monomorphizer.tys.get(result_of_next.ty) orelse unreachable;
-                if (!std.mem.eql(u8, next_ty.name, "Maybe")) {
-                    return error.IterNextMustReturnMaybe;
+                if (!string.eql(next_ty.name, "Maybe")) {
+                    try self.format_err("The iterator's next function returns {s}, not Maybe.\n", .{result_of_next.ty});
+                    return error.CompileError;
                 }
                 const unpacked_ty = result_of_next.ty["Maybe[".len .. result_of_next.ty.len - "]".len];
 
@@ -809,8 +825,8 @@ const FunMonomorphizer = struct {
                 return try self.fun.put_and_get_expr(.{ .ref = amped }, compiled_ref_ty);
             },
             else => {
-                try self.format_err("compiling {any}\n", .{expression});
-                return error.ExpressionNotHandled;
+                try self.format_err("Compiling {any}\n", .{expression});
+                return error.Todo;
             },
         }
     }
@@ -829,8 +845,8 @@ const FunMonomorphizer = struct {
                     };
                 }
 
-                try self.format_err("Tried to find `{s}`.\n", .{ref});
-                return error.VariableNotInScope;
+                try self.format_err("\"{s}\" is not in scope.\n", .{ref});
+                return error.CompileError;
             },
             .member => |member| {
                 var of = try self.compile_left_expr_rec(member.of.*);
@@ -843,10 +859,17 @@ const FunMonomorphizer = struct {
                                     break :get_field_ty field.ty;
                                 }
                             }
-                            try self.format_err("Field {s} doesn't exist.\n", .{member.name});
-                            return error.FieldDoesNotExist;
+                            try self.format_err("\"{s}\" is not a field on {s}.\n", .{ member.name, of.ty });
+                            try self.format_err("It only contains these fields:\n", .{});
+                            for (s.fields.items) |field| {
+                                try self.format_err("- {s}\n", .{field.name});
+                            }
+                            return error.CompileError;
                         },
-                        else => return error.AccessedMemberOnNonStruct,
+                        else => {
+                            try self.format_err("You tried to access a field on {s}, but it's not a struct.\n", .{of.ty});
+                            return error.CompileError;
+                        },
                     }
                 };
 
@@ -854,7 +877,10 @@ const FunMonomorphizer = struct {
                 heaped.* = of;
                 return .{ .ty = field_ty, .kind = .{ .member = .{ .of = heaped, .name = member.name } } };
             },
-            else => return error.CannotAssignToThis,
+            else => {
+                try self.format_err("You can't assign to this.\n", .{});
+                return error.CompileError;
+            },
         }
     }
 
@@ -927,7 +953,8 @@ const FunMonomorphizer = struct {
                         if (call.args.items.len == 1) {
                             break :break_arg call.args.items[0];
                         }
-                        return error.BreakCanOnlyTakeOneArgument;
+                        try self.format_err("Break can only take one argument.\n", .{});
+                        return error.CompileError;
                     } else {
                         return null;
                     },
@@ -950,9 +977,9 @@ const FunMonomorphizer = struct {
 
         if (scope.result) |result| {
             if (scope.result_ty) |expected_ty| {
-                if (!std.mem.eql(u8, arg_ty, expected_ty)) {
-                    try self.format_err("Previous break returned {s}, this break returns {s}.\n", .{ expected_ty, arg_ty });
-                    return error.BreaksReturnInconsistentTypes;
+                if (!string.eql(arg_ty, expected_ty)) {
+                    try self.format_err("A previous break returned {s}, but this break returns {s}.\n", .{ expected_ty, arg_ty });
+                    return error.CompileError;
                 }
             }
             scope.result_ty = arg_ty;
@@ -962,7 +989,8 @@ const FunMonomorphizer = struct {
                 .value = compiled_arg,
             } }, "Nothing");
         } else if (arg) |_| {
-            return error.BreakInForCannotTakeAnArgument;
+            try self.format_err("Breaks in for can't take an argument.\n", .{});
+            return error.CompileError;
         }
 
         const jump = try self.fun.put(.{ .uninitialized = {} }, "Never"); // will be replaced by jump to after loop
@@ -1024,12 +1052,13 @@ const FunMonomorphizer = struct {
 
         find_variant: {
             for (enum_def.variants.items) |variant| {
-                if (std.mem.eql(u8, variant.name, member.name)) {
+                if (string.eql(variant.name, member.name)) {
                     break :find_variant;
                 }
             }
             // Did not find a variant. Restore the sacred timeline.
-            return error.VariantDoesntExist;
+            try self.format_err("You tried to instantiate the enum {s}, which doesn't have a \"{s}\" variant.\n", .{ enum_ty, member.name });
+            return error.CompileError;
         }
 
         var compiled_value = try self.alloc.create(mono.Expr);

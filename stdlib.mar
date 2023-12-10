@@ -209,7 +209,7 @@ fun parse_U64(bytes: Slice[U8]): U64 {
 | Ranges have an inclusive start and exclusive end value.
 struct Range[T] { start: T, end: T }
 fun to[T](start: T, end: T): Range[T] { Range[T].{ start = start, end = end } }
-fun until[T](start: T, end: T): Range[U8] { Range[U8].{ start = start, end = end.inc() } }
+fun until[T](start: T, end: T): Range[T] { Range[T].{ start = start, end = end.inc() } }
 fun contains[T](range: Range[T], value: T): Bool {
   value.is_at_least(range.start).and(value.is_less_than(range.end))
 }
@@ -281,16 +281,18 @@ fun split(slice: Slice[U8], separator: Slice[U8]): Slice[Slice[U8]] {
   }
   result.to_slice()
 }
+fun lines(slice: Slice[U8]): Slice[Slice[U8]] { slice.split("
+") }
 fun dump[T, W](slice: Slice[T], writer: W) {
-  '[.dump(writer)
+  char('[).dump(writer)
   var index = 0_U64
   loop {
     if index.equals(slice.len) { break }
-    if index.is_greater_than(0_U64) { ',.dump(writer) ' .dump(writer) }
+    if index.is_greater_than(0_U64) { char(',).dump(writer) char(' ).dump(writer) }
     slice.get(index).dump(writer)
     index = index.add(1_U64)
   }
-  '].dump(writer)
+  char(']).dump(writer)
 }
 fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
   if prefix.len.is_greater_than(slice.len) { return Bool.false }
@@ -370,29 +372,6 @@ fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
   Maybe[Slice[U8]].some(line.to_slice())
 }
 
-fun split_lines[I](iter: I): SplitLinesIter[I] {
-  SplitLinesIter[I].{ iter = iter }
-}
-struct SplitLinesIter[I] { iter: I }
-fun next[I](self: &SplitLinesIter[I]): Maybe[Slice[U8]] {
-  var line = vec[U8]()
-  loop {
-    switch (&self.*.iter).next() {
-      none {
-        if line.len.is_greater_than(0_U64) { break } else { return Maybe[Slice[U8]].none }
-      }
-      some(c) {
-        if c.equals(newline()) { break } else { (&line).push(c) }
-      }
-    }
-  }
-  Maybe[Slice[U8]].some(line.to_slice())
-}
-fun dump[I, W](self: SplitLinesIter[I], writer: W) {
-  self.iter.dump(writer)
-  ".split_lines()".dump(writer)
-}
-
 | Vec
 struct Vec[T] {
   data: &T,
@@ -423,10 +402,10 @@ fun push[T](vec: &Vec[T], item: T) {
   new_item.* = item
   vec.*.len = vec.*.len.add(1_U64)
 }
-fun get[T](vec: Vec[T], index: U64): &T {
+fun get[T](vec: Vec[T], index: U64): T {
   | TODO: enable check when panic exists
   |if index.is_less_than(vec.len) {
-    vec.data.add(index)
+    vec.data.add(index).*
   |}
 }
 fun to_slice[T](vec: Vec[T]): Slice[T] {
