@@ -22,15 +22,19 @@ pub fn parse(alloc: std.mem.Allocator, code: Str, stdlib_size: usize) !Result(as
         var lines = ArrayList(Str).init(alloc);
         var current_line = String.init(alloc);
         var stdlib_lines: ?usize = null;
+        var error_offset_in_line: ?usize = null;
         get_lines: for (code, 0..) |c, i| {
             if (i == stdlib_size) stdlib_lines = lines.items.len;
-            if (i == error_offset) for (code[error_offset..]) |c_| switch (c_) {
-                '\n' => {
-                    try lines.append(current_line.items);
-                    break :get_lines;
-                },
-                else => try current_line.append(c_),
-            };
+            if (i == error_offset) {
+                error_offset_in_line = current_line.items.len;
+                for (code[error_offset..]) |c_| switch (c_) {
+                    '\n' => {
+                        try lines.append(current_line.items);
+                        break :get_lines;
+                    },
+                    else => try current_line.append(c_),
+                };
+            }
             switch (c) {
                 '\n' => {
                     try lines.append(current_line.items);
@@ -48,11 +52,11 @@ pub fn parse(alloc: std.mem.Allocator, code: Str, stdlib_size: usize) !Result(as
         }
 
         try format(out, "       ", .{});
-        for (0..current_line.items.len) |_|
+        for (0..error_offset_in_line.?) |_|
             try format(out, " ", .{});
         try format(out, "^\n", .{});
         try format(out, " ", .{});
-        for (0..current_line.items.len) |_|
+        for (0..error_offset_in_line.?) |_|
             try format(out, " ", .{});
         try format(out, "{}\n", .{err});
 
