@@ -4,7 +4,7 @@ fun game_score(game: Slice[U8]): U64 {
   var prefix = prefix_and_turns.get(0_U64)
   var turns = prefix_and_turns.get(1_U64)
 
-  identity(&prefix).trim_prefix("Game ")
+  prefix.&.trim_prefix("Game ")
   var id = prefix.parse_U64()
 
   var red = 0_U64

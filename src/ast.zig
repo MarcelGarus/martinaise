@@ -66,6 +66,7 @@ pub const Expr = union(enum) {
     for_: For, // for a in b { ... }
     return_: *const Expr, // return ...
     ampersanded: *const Expr, // &...
+    body: Body,
 };
 pub const Int = struct { value: i128, signedness: numbers.Signedness, bits: numbers.Bits };
 pub const TyArged = struct { arged: *const Expr, ty_args: ArrayList(Ty) };
@@ -189,7 +190,8 @@ fn print_body(writer: anytype, indent: usize, body: Body) !void {
     try print_indent(writer, indent);
     try writer.print("}}", .{});
 }
-fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
+pub fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
+    OutOfMemory,
     AccessDenied,
     Unexpected,
     SystemResources,
@@ -298,5 +300,6 @@ fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
             try writer.print("&", .{});
             try print_expr(writer, indent, e.*);
         },
+        .body => |b| try print_body(writer, indent, b),
     }
 }

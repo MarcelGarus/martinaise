@@ -20,9 +20,9 @@ fun main(): U8 {
   for y in &0_U64.to(grid.height()).iter() {
     var row = vec[Vec[U64]]()
     for x in &0_U64.to(grid.width()).iter() {
-      (&row).push(vec[U64]())
+      row.&.push(vec[U64]())
     }
-    identity(&maybe_gears).push(row)
+    maybe_gears.&.push(row)
   }
 
   for y in &0_I64.to(grid.height().to_I64()).iter() {
@@ -37,11 +37,11 @@ fun main(): U8 {
 
         var adjacent_locations = vec[Point[I64]]()
         for xx in &x.subtract(1_I64).until(end).iter() {
-          identity(&adjacent_locations).push(Point[I64].{ x = xx, y = y.subtract(1_I64) })
-          identity(&adjacent_locations).push(Point[I64].{ x = xx, y = y.add(1_I64) })
+          adjacent_locations.&.push(Point[I64].{ x = xx, y = y.subtract(1_I64) })
+          adjacent_locations.&.push(Point[I64].{ x = xx, y = y.add(1_I64) })
         }
-        identity(&adjacent_locations).push(Point[I64].{ x = x.subtract(1_I64), y = y })
-        identity(&adjacent_locations).push(Point[I64].{ x = end, y = y })
+        adjacent_locations.&.push(Point[I64].{ x = x.subtract(1_I64), y = y })
+        adjacent_locations.&.push(Point[I64].{ x = end, y = y })
 
         for pos in &adjacent_locations.iter() {
           if grid.get(pos.x, pos.y).is_gear() {

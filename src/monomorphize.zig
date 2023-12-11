@@ -476,7 +476,13 @@ const FunMonomorphizer = struct {
                         },
                         .ref => |name| break :find_name name,
                         else => {
-                            try self.format_err("This expression can't be called.\n", .{});
+                            try self.format_err("You tried to call this expression:\n", .{});
+                            try self.format_err("> ", .{});
+                            ast.print_expr(self.monomorphizer.err, 2, callee) catch
+                                @panic("formatting failed");
+                            try self.format_err("\n{any}", .{callee});
+
+                            try self.format_err("\n\nThis expression can't be called.\n", .{});
                             return error.CompileError;
                         },
                     }
@@ -755,6 +761,7 @@ const FunMonomorphizer = struct {
 
                 return try self.fun.put_and_get_expr(.{ .ref = amped }, compiled_ref_ty);
             },
+            .body => |body| return try self.compile_body(body.items),
             else => {
                 try self.format_err("Compiling {any}\n", .{expression});
                 return error.Todo;

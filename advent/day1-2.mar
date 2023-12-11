@@ -40,20 +40,20 @@ fun find_first_digit[I](iter: I, digit_names: Vec[Slice[U8]]): U8 {
 
 fun main(): I64 {
   var digit_names = vec[Slice[U8]]()
-  identity(&digit_names).push("one")
-  identity(&digit_names).push("two")
-  identity(&digit_names).push("three")
-  identity(&digit_names).push("four")
-  identity(&digit_names).push("five")
-  identity(&digit_names).push("six")
-  identity(&digit_names).push("seven")
-  identity(&digit_names).push("eight")
-  identity(&digit_names).push("nine")
+  digit_names.&.push("one")
+  digit_names.&.push("two")
+  digit_names.&.push("three")
+  digit_names.&.push("four")
+  digit_names.&.push("five")
+  digit_names.&.push("six")
+  digit_names.&.push("seven")
+  digit_names.&.push("eight")
+  digit_names.&.push("nine")
 
   var sum = 0_U64
   for line in &read_file("advent/day1-2.smol").lines().iter() {
-    var first_digit = (&line.windows()).find_first_digit(digit_names)
-    var last_digit = (&line.rev_windows()).find_first_digit(digit_names)
+    var first_digit = line.windows().&.find_first_digit(digit_names)
+    var last_digit = line.rev_windows().&.find_first_digit(digit_names)
     sum = sum.add(first_digit.to_U64().multiply(10_U64).add(last_digit.to_U64()))
   }
   println(sum)

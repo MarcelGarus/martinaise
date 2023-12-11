@@ -41,11 +41,9 @@ pub fn main() !u8 {
             .Enum => |e| e.fields,
             else => unreachable,
         };
-        inline for (all_commands) |c| {
-            if (string.eql(command_str, c.name)) {
+        inline for (all_commands) |c|
+            if (string.eql(command_str, c.name))
                 break :find_command @enumFromInt(c.value);
-            }
-        }
         print_usage_info();
         return 1;
     };
@@ -81,12 +79,13 @@ fn print_usage_info() void {
 }
 
 fn run_pipeline(alloc: Allocator, command: Command, file_path: Str) !void {
+    var stdlib_size: usize = 0;
     const input = read_input: {
         print_on_same_line("Reading {s}\n", .{file_path});
 
         var stdlib = try std.fs.cwd().openFile("stdlib.mar", .{});
         defer stdlib.close();
-        var stdlib_len = (try stdlib.stat()).size;
+        stdlib_size = (try stdlib.stat()).size;
 
         var file = std.fs.cwd().openFile(file_path, .{}) catch |e| {
             std.debug.print("Couldn't open file {}", .{e});
@@ -95,11 +94,11 @@ fn run_pipeline(alloc: Allocator, command: Command, file_path: Str) !void {
         defer file.close();
         var file_len = (try file.stat()).size;
 
-        var total_len = stdlib_len + file_len + 2;
+        var total_len = stdlib_size + file_len + 2;
         var in = try alloc.alloc(u8, total_len);
         _ = try stdlib.read(in);
-        in[stdlib_len] = '\n';
-        _ = try file.read(in[stdlib_len + 1 ..]);
+        in[stdlib_size] = '\n';
+        _ = try file.read(in[stdlib_size + 1 ..]);
         in[total_len - 1] = '\n';
 
         break :read_input in;
@@ -107,7 +106,7 @@ fn run_pipeline(alloc: Allocator, command: Command, file_path: Str) !void {
 
     const the_ast = parse_ast: {
         print_on_same_line("Parsing {s}\n", .{file_path});
-        switch (try parse(alloc, input)) {
+        switch (try parse(alloc, input, stdlib_size)) {
             .ok => |the_ast| break :parse_ast the_ast,
             .err => |err| {
                 std.debug.print("{s}\n", .{err});

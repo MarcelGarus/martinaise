@@ -8,8 +8,8 @@ fun find_first_digit[I](iter: I): U8 {
 fun main(): I64 {
   var sum = 0_U64
   for line in &read_file("advent/day1.smol").lines().iter() {
-    var first_digit = (&line.iter()).find_first_digit().to_U64()
-    var last_digit = (&line.rev_iter()).find_first_digit().to_U64()
+    var first_digit = line.iter().&.find_first_digit().to_U64()
+    var last_digit = line.rev_iter().&.find_first_digit().to_U64()
     sum = sum.add(first_digit.multiply(10_U64).add(last_digit))
   }
   println(sum)

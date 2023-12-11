@@ -3,28 +3,34 @@ const format = std.fmt.format;
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const ast = @import("ast.zig");
-const string_mod = @import("string.zig");
-const String = string_mod.String;
-const Str = string_mod.Str;
+const string = @import("string.zig");
+const String = string.String;
+const Str = string.Str;
 const Result = @import("result.zig").Result;
 const Ty = @import("ty.zig").Ty;
 const numbers = @import("numbers.zig");
 
-pub fn parse(alloc: std.mem.Allocator, code: Str) !Result(ast.Program) {
+pub fn parse(alloc: std.mem.Allocator, code: Str, stdlib_size: usize) !Result(ast.Program) {
     var parser = Parser{ .code = code, .alloc = alloc };
     // TODO: Handle OOM error differently
     var program = parser.parse_program() catch |err| {
         var out_buf = String.init(alloc);
         const out = out_buf.writer();
 
-        const offset = code.len - parser.code.len;
+        const error_offset = code.len - parser.code.len;
 
         var lines = ArrayList(Str).init(alloc);
         var current_line = String.init(alloc);
-        for (code, 0..) |c, i| {
-            if (offset == i) {
-                break;
-            }
+        var stdlib_lines: ?usize = null;
+        get_lines: for (code, 0..) |c, i| {
+            if (i == stdlib_size) stdlib_lines = lines.items.len;
+            if (i == error_offset) for (code[error_offset..]) |c_| switch (c_) {
+                '\n' => {
+                    try lines.append(current_line.items);
+                    break :get_lines;
+                },
+                else => try current_line.append(c_),
+            };
             switch (c) {
                 '\n' => {
                     try lines.append(current_line.items);
@@ -33,30 +39,21 @@ pub fn parse(alloc: std.mem.Allocator, code: Str) !Result(ast.Program) {
                 else => |a| try current_line.append(a),
             }
         }
+
         const num_lines_to_display = @min(lines.items.len, 4);
-        for (lines.items.len - num_lines_to_display + 1..lines.items.len) |number| {
-            if (lines.items.len >= number) {
-                try format(out, "{d:4} | {s}\n", .{ number + 1, lines.items[number] });
-            }
+        const start_line = lines.items.len - num_lines_to_display + 1;
+        for (lines.items[start_line..], start_line..) |line, line_number| {
+            const number = if (stdlib_lines) |stdlines| line_number - stdlines else line_number + 1;
+            try format(out, "{d:4} | {s}\n", .{ number, line });
         }
-        try format(out, "{d:4} | {s}", .{ lines.items.len + 1, current_line.items });
-        for (code[offset..]) |c| {
-            switch (c) {
-                '\n' => break,
-                else => try format(out, "{c}", .{c}),
-            }
-        }
-        try format(out, "\n", .{});
 
         try format(out, "       ", .{});
-        for (0..current_line.items.len) |_| {
+        for (0..current_line.items.len) |_|
             try format(out, " ", .{});
-        }
         try format(out, "^\n", .{});
         try format(out, " ", .{});
-        for (0..current_line.items.len) |_| {
+        for (0..current_line.items.len) |_|
             try format(out, " ", .{});
-        }
         try format(out, "{}\n", .{err});
 
         return .{ .err = out_buf.items };
@@ -515,16 +512,16 @@ const Parser = struct {
             expression = .{ .int = int };
         } else if (try self.parse_char()) |c| {
             expression = .{ .int = .{ .value = c, .signedness = .unsigned, .bits = 8 } };
-        } else if (try self.parse_string()) |string| {
-            expression = .{ .string = string };
+        } else if (try self.parse_string()) |s| {
+            expression = .{ .string = s };
         } else if (try self.parse_ampersanded()) |amp| {
             const heaped = try self.alloc.create(ast.Expr);
             heaped.* = amp;
             expression = .{ .ampersanded = heaped };
         } else if (self.parse_name()) |name| {
             expression = .{ .ref = name };
-        } else if (try self.parse_parenthesized()) |expr| {
-            expression = expr;
+        } else if (try self.parse_body()) |body| {
+            expression = .{ .body = body };
         }
 
         while (true) {
@@ -626,13 +623,6 @@ const Parser = struct {
         return expr;
     }
 
-    fn parse_parenthesized(self: *Self) !?ast.Expr {
-        self.consume_prefix("(") orelse return null;
-        const expr = try self.parse_expression() orelse return error.ExpectedExpression;
-        self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
-        return expr;
-    }
-
     fn parse_expression_suffix_type_arged(self: *Self, current: ast.Expr) !?ast.TyArged {
         const type_args = try self.parse_type_args() orelse return null;
 
@@ -682,12 +672,9 @@ const Parser = struct {
         heaped.* = current;
 
         self.consume_whitespace();
-        if (self.consume_prefix("*")) |_| {
-            return .{ .member = .{ .of = heaped, .name = "*" } };
-        }
-        if (self.parse_name()) |name| {
-            return .{ .member = .{ .of = heaped, .name = name } };
-        }
+        if (self.consume_prefix("*")) |_| return .{ .member = .{ .of = heaped, .name = "*" } };
+        if (self.consume_prefix("&")) |_| return .{ .ampersanded = heaped };
+        if (self.parse_name()) |name| return .{ .member = .{ .of = heaped, .name = name } };
         if (self.consume_prefix("{")) |_| {
             self.consume_whitespace();
 

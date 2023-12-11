@@ -122,7 +122,7 @@ struct Pair[A, B] { a: A, b: B }
 |fun next[I](self: &Enumerated[I]): Maybe[Pair[U64, _]] {
 |  var line = vec[U8]()
 |  loop {
-|    switch (&self.*.iter).next() {
+|    switch &self.*.iter.&.next() {
 |      none {
 |        if line.len.is_greater_than(0_U64) { break } else { return Maybe[Slice[U8]].none }
 |        Nothing.{}
@@ -131,7 +131,7 @@ struct Pair[A, B] { a: A, b: B }
 |        if c.equals(newline()) {
 |          break
 |        } else {
-|          (&line).push(c)
+|          line.&.push(c)
 |        }
 |      }
 |    }
@@ -284,7 +284,7 @@ fun subslice[T](slice: Slice[T], from: U64): Slice[T] {
 fun split(slice: Slice[U8], separator: Slice[U8]): Slice[Slice[U8]] {
   var result = vec[Slice[U8]]()
   for part in &slice.iter().iter_split(separator) {
-    (&result).push(part)
+    result.&.push(part)
   }
   result.to_slice()
 }
@@ -362,12 +362,12 @@ struct SplitIter[I] { iter: I, separator: Slice[U8] }
 fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
   var line = vec[U8]()
   loop {
-    switch (&self.*.iter).next() {
+    switch self.*.iter.&.next() {
       none {
         if line.len.is_greater_than(0_U64) { break } else { return Maybe[Slice[U8]].none }
       }
       some(c) {
-        (&line).push(c)
+        line.&.push(c)
         if line.to_slice().subslice(line.len.subtract(self.*.separator.len)).equals(self.*.separator) {
           return Maybe[Slice[U8]].some(
             line.to_slice().subslice(0_U64, line.len.subtract(self.*.separator.len))

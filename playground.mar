@@ -12,7 +12,7 @@ fun main(): U8 {
 
   var f = new(Foo.{ bar = Bar.{} })
   println(f.to_address())
-  println((&f.*.bar).to_address())
+  println(f.*.bar.&.to_address())
   return 0_U8
 }
 

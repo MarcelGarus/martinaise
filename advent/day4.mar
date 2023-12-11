@@ -5,11 +5,11 @@ fun card_score(card: Slice[U8]): U64 {
   | TODO: use hash set when implemented
   var winning_numbers = vec[U64]()
   for num in &all_numbers.get(0_U64).split(" ").iter() {
-    if not(num.is_empty()) { (&winning_numbers).push(num.parse_U64()) }
+    if not(num.is_empty()) { winning_numbers.&.push(num.parse_U64()) }
   }
   var my_numbers = vec[U64]()
   for num in &all_numbers.get(1_U64).split(" ").iter() {
-    if not(num.is_empty()) { (&my_numbers).push(num.parse_U64()) }
+    if not(num.is_empty()) { my_numbers.&.push(num.parse_U64()) }
   }
   println(winning_numbers)
 
