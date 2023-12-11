@@ -16,10 +16,24 @@ struct Never {} | TODO: Make this an enum
 fun identity[T](value: T): T { value }
 fun notEquals[T](a: T, b: T): Bool { not(a.equals(b)) }
 
+| Hashing
+| To use this hash function, implement a hash(T, Hasher) function that
+| contributes some uniqueness/entropy to the Hasher by calling its
+| contribute(U64) function. Internally, the Hasher uses the djb2 algorithm.
+fun hash[T](value: T): U64 {
+  var hasher = Hasher.{ state = 5381_U64 }
+  value.hash(&hasher)
+  hasher.state
+}
+struct Hasher { state: U64 }
+fun contribute(hasher: &Hasher, val: U64) {
+  hasher.*.state = hasher.*.state.multiply(33_U64).add(val)
+}
+
 | Printing
-| The print and println functions can print any value with a dump(writer)
+| The print and println functions can print any value with a dump(Writer)
 | function. Writers are anything with a write(U8) function. The prints and
-| printlns functions print the argument as a string.
+| printsln functions print the argument as a string.
 struct StdoutWriter {}
 fun write(sow: StdoutWriter, c: U8) {
   print_to_stdout(c) | This is a builtin function.
@@ -28,18 +42,19 @@ fun print[T](value: T) { value.dump(StdoutWriter.{}) }
 fun println[T](value: T) { print(value) StdoutWriter.{}.write(newline()) }
 fun prints(message: Slice[U8]) { print(str(message)) }
 fun printsln(message: Slice[U8]) { println(str(message)) }
-fun newline(): U8 { 10_U8 }
 
 | Char
-| Essentially just a U8, but it's formatted differently. When you write
-| something like 'a in the source code, the corresponding Char is created.
+| Essentially just a U8, but it's formatted differently.
 struct Char { value: U8 }
 fun char(value: U8): Char { Char.{ value = value } }
 fun dump[W](c: Char, writer: W) { writer.write(c.value) }
 | TODO: refactor to variable when we have global variables
+fun newline(): U8 { 10_U8 }
 
 | Str
 | Strings are essentially just a Slice[U8], but they are formatted differently.
+| There's no enforcement of whether they are UTF-8 or anything. When formatting
+| strings, the raw bytes are simply sent to the writer.
 struct Str { bytes: Slice[U8] }
 fun str(bytes: Slice[U8]): Str { Str.{ bytes = bytes } }
 fun dump[W](str: Str, writer: W) {
@@ -52,12 +67,17 @@ fun dump[W](str: Str, writer: W) {
 }
 
 | Bool
+| The usual boolean values true and false.
 enum Bool { true, false }
+fun equals(a: Bool, b: Bool): Bool { if a { b } else { not(b) } }
 fun not(a: Bool): Bool { if a { Bool.false } else { Bool.true } }
 fun and(a: Bool, b: Bool): Bool { if a { b } else { a } }
 fun or(a: Bool, b: Bool): Bool { if a { Bool.true } else { b } }
 fun xor(a: Bool, b: Bool): Bool { if a { not(b) } else { b } }
 fun implies(a: Bool, b: Bool): Bool { if a { b } else { Bool.true } }
+fun hash(value: I64, hasher: &Hasher) {
+  hasher.contribute(if value { 0_U64 } else { 1_U64 })
+}
 fun dump[W](b: Bool, writer: W) {
   if b { "true" } else { "false" }.dump(writer)
 }
@@ -68,16 +88,34 @@ enum Maybe[T] { some: T, none }
 fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] {
   switch maybe { some(inner) { inner } none { Maybe[T].none() } }
 }
+| TODO: remove when language feature exists
 fun is_some[T](maybe: Maybe[T]): Bool {
   switch maybe { some(_) { Bool.true } none { Bool.false } }
 }
 fun is_none[T](maybe: Maybe[T]): Bool {
   switch maybe { some(_) { Bool.false } none { Bool.true } }
 }
+fun equals(a: Maybe[T], b: Maybe[T]): Bool {
+  switch a {
+    some(a_val) {
+      switch b { some(b_val) { a_val.equals(b_val) } none { Bool.false } }
+    }
+    none { b.is_none() }
+  }
+}
+fun hash[T](value: Maybe[T], hasher: &Hasher) {
+  switch value {
+    some(inner) {
+      hasher.contribute('s.to_U64())
+      inner.hash(hasher)
+    }
+    none { hasher.contribute('n.to_U64()) }
+  }
+}
 fun dump[T, W](maybe: Maybe[T], writer: W) {
   switch maybe {
-    some(val) { "some(".dump(writer) val.dump(writer) ').dump(writer) }
-    none { "none".dump(writer) }
+    some(val) { str("some(").dump(writer) val.dump(writer) char(')).dump(writer) }
+    none { str("none").dump(writer) }
   }
 }
 fun unwrap[T](maybe: Maybe[T]): T {
@@ -87,7 +125,8 @@ fun unwrap[T](maybe: Maybe[T]): T {
   }
 }
 
-| Ordering
+| Comparing
+| Comparing values results in an Ordering.
 enum Ordering { less, equal, greater }
 fun is_less(ord: Ordering): Bool {
   switch ord { less { Bool.true } equal { Bool.false } greater { Bool.false } }
@@ -111,6 +150,12 @@ fun dump[W](ord: Ordering, writer: W) {
     greater { "greater" }
   }.dump(writer)
 }
+fun is_less_than[T](a: T, b: T): Bool { a.compare_to(b).is_less() }
+fun is_greater_than[T](a: T, b: T): Bool { a.compare_to(b).is_greater() }
+fun is_at_least[T](a: T, b: T): Bool { a.compare_to(b).is_greater_or_equal() }
+fun is_at_most[T](a: T, b: T): Bool { a.comapre_to(b).is_less_or_equal() }
+fun min[T](a: T, b: T): T { if a.is_less_than(b) { a } else { b } }
+fun max[T](a: T, b: T): T { if a.is_greater_than(b) { a } else { b } }
 
 | Pair
 struct Pair[A, B] { a: A, b: B }
@@ -167,12 +212,14 @@ fun equals(a: I8, b: I8): Bool { a.compare_to(b).is_equal() }
 fun equals(a: I16, b: I16): Bool { a.compare_to(b).is_equal() }
 fun equals(a: I32, b: I32): Bool { a.compare_to(b).is_equal() }
 fun equals(a: I64, b: I64): Bool { a.compare_to(b).is_equal() }
-fun is_less_than[T](a: T, b: T): Bool { a.compare_to(b).is_less() }
-fun is_greater_than[T](a: T, b: T): Bool { a.compare_to(b).is_greater() }
-fun is_at_least[T](a: T, b: T): Bool { a.compare_to(b).is_greater_or_equal() }
-fun is_at_most[T](a: T, b: T): Bool { a.comapre_to(b).is_less_or_equal() }
-fun min[T](a: T, b: T): T { if a.is_less_than(b) { a } else { b } }
-fun max[T](a: T, b: T): T { if a.is_greater_than(b) { a } else { b } }
+fun hash(value: U8, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
+fun hash(value: U16, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
+fun hash(value: U32, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
+fun hash(value: U64, hasher: &Hasher) { hasher.contribute(value) }
+fun hash(value: I8, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
+fun hash(value: I16, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
+fun hash(value: I32, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
+fun hash(value: I64, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
 fun dump[W](int: U64, radix: U64, writer: W) {
   var divisor = 1_U64
   loop {
@@ -266,14 +313,19 @@ struct Slice[T] { data: &T, len: U64 }
 fun empty_slice[T](): Slice[T] {
   Slice[T].{ data = 0_U64.to_reference[T](), len = 0_U64 }
 }
+fun filled_slice[T](len: U64, fill: T): Slice[T] {
+  var data = malloc(len.multiply(size_of_type[T]())).to_reference[T]()
+  for i in &0_U64.to(len).iter() {
+    var address = data.add(i)
+    address.* = fill
+  }
+  Slice[T].{ data = data, len = len }
+}
 fun is_empty[T](slice: Slice[T]): Bool { slice.len.equals(0_U64) }
 fun get[T](slice: Slice[T], index: U64): T { slice.data.add(index).* }
-fun get_mut[T](slice: Slice[T], index: U64): &T {
-  if 0_U64.to(slice.len).contains(index) {
-    slice.data.add(index)
-  } else {
-    panic("Index out of bounds")
-  }
+fun get_ref[T](slice: Slice[T], index: U64): &T {
+  if 0_U64.to(slice.len).contains(index) { slice.data.add(index) }
+  else { panic("Index out of bounds") }
 }
 fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
   Slice[T].{ data = slice.data.add(from), len = to.subtract(from) }
@@ -295,7 +347,9 @@ fun dump[T, W](slice: Slice[T], writer: W) {
   var index = 0_U64
   loop {
     if index.equals(slice.len) { break }
-    if index.is_greater_than(0_U64) { char(',).dump(writer) char(' ).dump(writer) }
+    if index.is_greater_than(0_U64) {
+      char(',).dump(writer) char(' ).dump(writer)
+    }
     slice.get(index).dump(writer)
     index = index.add(1_U64)
   }
@@ -334,9 +388,6 @@ fun next[T](iter: &SliceIter[T]): Maybe[T] {
   iter.*.index = iter.*.index.add(1_U64)
   item
 }
-fun dump[T, W](iter: SliceIter[T], writer: W) {
-  "<slice iter>".dump(writer)
-}
 fun rev_iter[T](slice: Slice[T]): SliceRevIter[T] {
   SliceRevIter[T].{ slice = slice, index = slice.len }
 }
@@ -352,9 +403,6 @@ fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
     Maybe[T].none
   }
 }
-fun dump[T, W](iter: SliceRevIter[T], writer: W) {
-  "<rev slice iter>".dump(writer)
-}
 fun iter_split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
   SplitIter[I].{ iter = iter, separator = separator }
 }
@@ -364,11 +412,16 @@ fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
   loop {
     switch self.*.iter.&.next() {
       none {
-        if line.len.is_greater_than(0_U64) { break } else { return Maybe[Slice[U8]].none }
+        if line.len.is_greater_than(0_U64) {
+          break
+        } else {
+          return Maybe[Slice[U8]].none
+        }
       }
       some(c) {
         line.&.push(c)
-        if line.to_slice().subslice(line.len.subtract(self.*.separator.len)).equals(self.*.separator) {
+        if line.to_slice().subslice(line.len.subtract(self.*.separator.len))
+           .equals(self.*.separator) {
           return Maybe[Slice[U8]].some(
             line.to_slice().subslice(0_U64, line.len.subtract(self.*.separator.len))
           )
@@ -380,6 +433,7 @@ fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
 }
 
 | Vec
+| A growable array.
 struct Vec[T] {
   data: &T,
   len: U64,
@@ -409,8 +463,8 @@ fun push[T](vec: &Vec[T], item: T) {
   new_item.* = item
   vec.*.len = vec.*.len.add(1_U64)
 }
-fun get[T](vec: Vec[T], index: U64): T { vec.get_mut(index).* }
-fun get_mut[T](vec: Vec[T], index: U64): &T {
+fun get[T](vec: Vec[T], index: U64): T { vec.get_ref(index).* }
+fun get_ref[T](vec: Vec[T], index: U64): &T {
   if 0_U64.to(vec.len).contains(index) {
     vec.data.add(index)
   } else {
@@ -423,6 +477,8 @@ fun to_slice[T](vec: Vec[T]): Slice[T] {
 fun iter[T](vec: Vec[T]): SliceIter[T] { vec.to_slice().iter() }
 fun dump[T, W](vec: Vec[T], writer: W) { vec.to_slice().dump(writer) }
 
+| Point
+| Just 2D points.
 struct Point[T] { x: T, y: T }
 fun add[T](a: Point[T], b: Point[T]): Point[T] {
   Point[T].{ x = a.x.add(b.x), y = a.y.add(b.y) }
@@ -436,4 +492,94 @@ fun dump[T, W](point: Point[T], writer: W) {
   ').dump(writer)
 }
 
-| TODO: result, hash map, segment tree, treap
+| Map
+| Stores key-value-pairs for efficient lookup.
+struct Map[K, V] { buckets: Slice[MapBucket[K, V]], size: U64 }
+enum MapBucket[K, V] { empty, filled: MapEntry[K, V] }
+struct MapEntry[K, V] { key: K, value: V }
+fun map[K, V](): Map[K, V] {
+  Map[K, V].{
+    buckets = filled_slice(8_U64, MapBucket[K, V].empty),
+    size = 0_U64,
+  }
+}
+fun is_empty[K, V](map: Map[K, V]): Bool { map.size.equals(0_U64) }
+fun insert[K, V](map: &Map[K, V], key: K, value: V) {
+  var fill_percentage = 100_U64.multiply(map.*.size).divide(map.*.buckets.len)
+  prints("Fill percentage: ")
+  println(fill_percentage)
+  if fill_percentage.is_at_least(60_U64) {
+    var old_buckets = map.*.buckets
+    map.* = Map[K, V].{
+      buckets = filled_slice(map.*.buckets.len.multiply(2_U64), MapBucket[K, V].empty),
+      size = 0_U64,
+    }
+    for bucket in &old_buckets.iter() {
+     switch bucket {
+       empty {}
+       filled(entry) { map.raw_insert(entry.key, entry.value) }
+     }
+    }
+  }
+  map.raw_insert(key, value)
+}
+fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
+  var i = key.hash().modulo(map.*.buckets.len)
+  loop {
+    var bucket = map.*.buckets.get_ref(i)
+    switch bucket.* {
+      empty {
+        bucket.* = MapBucket[K, V].filled(MapEntry[K, V].{ key = key, value = value })
+        map.*.size = map.*.size.add(1_U64)
+        break
+      }
+      filled(entry) {
+        if entry.key.equals(key) {
+          bucket.* = MapBucket[K, V].filled(MapEntry[K, V].{ key = key, value = value })
+          break
+        } else {
+          i = i.add(1_U64).modulo(map.*.buckets.len)
+        }
+      }
+    }
+  }
+}
+fun get[K, V](map: Map[K, V], key: K): Maybe[V] {
+  switch map.get_ref(key) { some(val) { Maybe[V].some(val.*) } none { Maybe[V].none } }
+}
+fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
+  var i = key.hash().modulo(map.buckets.len)
+  loop {
+    var bucket = map.buckets.get_ref(i)
+    switch bucket.* {
+      empty { return Maybe[&V].none }
+      filled(entry) {
+        if entry.key.equals(key) {
+          return Maybe[&V].some(&entry.value)
+        } else {
+          i = i.add(1_U64).modulo(map.buckets.len)
+        }
+      }
+    }
+  }
+  | TODO: make it so that this is no longer necessary
+  Maybe[&V].none
+}
+fun dump[K, V, W](map: Map[K, V], writer: W) {
+  char('{).dump(writer)
+  var first = Bool.true
+  for bucket in &map.buckets.iter() {
+    switch bucket {
+      empty {}
+      filled(entry) {
+        if first { first = Bool.false } else { str(", ").dump(writer) }
+        entry.key.dump(writer)
+        str(": ").dump(writer)
+        entry.value.dump(writer)
+      }
+    }
+  }
+  char('}).dump(writer)
+}
+
+| TODO: result, segment tree, treap

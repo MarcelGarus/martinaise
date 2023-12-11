@@ -4,20 +4,28 @@ struct Foo {
 struct Bar {}
 
 fun main(): U8 {
-  var f = if Bool.true {
-    3_U8
-  } else {
-    return 4_U8
+  var m = map[U8, U8]()
+  m.&.insert(2_U8, 3_U8)
+  m.&.insert(4_U8, 3_U8)
+  m.&.insert(12_U8, 3_U8)
+  m.&.insert(1_U8, 3_U8)
+  m.&.insert(12_U8, 3_U8)
+  m.&.insert(12_U8, 3_U8)
+  m.&.insert(12_U8, 8_U8)
+  println(m)
+  println(m.get(1_U8))
+  switch m.get_ref(1_U8) {
+    some(val) { val.* = 42_U8 }
+    none {}
   }
+  println(m)
 
-  var f = new(Foo.{ bar = Bar.{} })
-  println(f.to_address())
-  println(f.*.bar.&.to_address())
   return 0_U8
 }
 
+| TODO: implement recursive functions
 |fun fib(n: U64): U64 {
-|  if n.is_at_most(1_u64) { n } else { fib(n.subtract(1_u64)).add(fib(n.subtract(2_u64))) }
+|  if n.is_at_most(1_U64) { n } else { fib(n.subtract(1_u64)).add(fib(n.subtract(2_u64))) }
 |}
 
 |fun main() {
