@@ -6,7 +6,11 @@
   "patterns": [
     {
       "name": "keyword.default",
-      "match": "\\b(fun|var|loop|for|in|struct|enum|break|return|if|else|switch)\\b"
+      "match": "\\b(fun|struct|enum|var)\\b"
+    },
+    {
+      "name": "keyword.control",
+      "match": "\\b(loop|for|in|break|return|if|else|switch)\\b"
     },
     { "include": "#comments" },
     {
@@ -52,7 +56,7 @@
           "end": "$",
           "patterns": [
             {
-              "match": "\\b(TODO|FIXME|XXX|NOTE)\\b:?",
+              "match": "\\bTODO\\b:?",
               "name": "keyword.todo"
             }
           ]
