@@ -10,7 +10,7 @@
     },
     {
       "name": "keyword.control",
-      "match": "\\b(loop|for|in|break|return|if|else|switch)\\b"
+      "match": "\\b(if|then|else|switch|loop|for|in|break|return)\\b"
     },
     { "include": "#comments" },
     {

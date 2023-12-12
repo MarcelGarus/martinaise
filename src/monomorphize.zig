@@ -563,7 +563,7 @@ const FunMonomorphizer = struct {
 
                 // TODO: Create inner var env
                 const then_body = self.fun.next_index();
-                const then_result = try self.compile_body(if_.then.items);
+                const then_result = try self.compile_expr(if_.then.*);
                 if (!string.eql(then_result.ty, "Never")) {
                     result_ty = then_result.ty;
                     _ = try self.fun.put(.{ .assign = .{
@@ -576,7 +576,7 @@ const FunMonomorphizer = struct {
                 if (if_.else_) |else_| {
                     // TODO: Create inner var env
                     const else_body = self.fun.next_index();
-                    const else_result = try self.compile_body(else_.items);
+                    const else_result = try self.compile_expr(else_.*);
                     if (!string.eql(else_result.ty, "Never")) {
                         if (result_ty) |expected_ty| {
                             if (!string.eql(expected_ty, else_result.ty)) {

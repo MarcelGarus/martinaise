@@ -450,14 +450,6 @@ const Parser = struct {
         while (true) {
             self.consume_whitespace();
 
-            if (try self.parse_var()) |var_| {
-                try statements.append(.{ .var_ = var_ });
-                continue;
-            }
-            if (try self.parse_return()) |returned| {
-                try statements.append(.{ .return_ = returned });
-                continue;
-            }
             if (try self.parse_expression()) |expr| {
                 try statements.append(expr);
                 continue;
@@ -475,8 +467,9 @@ const Parser = struct {
         OutOfMemory,
         ExpectedMemberOrConstructor,
         ExpectedCondition,
-        ExpectedThenBody,
-        ExpectedElseBody,
+        ExpectedThen,
+        ExpectedThenExpression,
+        ExpectedElseExpression,
         ExpectedColon,
         ExpectedTypeArgument,
         ExpectedClosingBracket,
@@ -504,7 +497,11 @@ const Parser = struct {
     }!?ast.Expr {
         var expression: ?ast.Expr = null;
 
-        if (try self.parse_if()) |if_| {
+        if (try self.parse_var()) |var_| {
+            expression = .{ .var_ = var_ };
+        } else if (try self.parse_return()) |returned| {
+            expression = .{ .return_ = returned };
+        } else if (try self.parse_if()) |if_| {
             expression = .{ .if_ = if_ };
         } else if (try self.parse_switch()) |switch_| {
             expression = .{ .switch_ = switch_ };
@@ -733,21 +730,25 @@ const Parser = struct {
         self.consume_keyword("if") orelse return null;
         self.consume_whitespace();
 
-        const condition = try self.parse_expression() orelse return error.ExpectedCondition;
-        self.consume_whitespace();
-        const heaped = try self.alloc.create(ast.Expr);
-        heaped.* = condition;
-
-        const then = try self.parse_body() orelse return error.ExpectedThenBody;
+        const condition = try self.alloc.create(ast.Expr);
+        condition.* = try self.parse_expression() orelse return error.ExpectedCondition;
         self.consume_whitespace();
 
-        var else_: ?ast.Body = null;
+        self.consume_keyword("then") orelse return error.ExpectedThen;
+        self.consume_whitespace();
+
+        const then = try self.alloc.create(ast.Expr);
+        then.* = try self.parse_expression() orelse return error.ExpectedThenExpression;
+        self.consume_whitespace();
+
+        var else_: ?*ast.Expr = null;
         if (self.consume_keyword("else")) |_| {
             self.consume_whitespace();
-            else_ = try self.parse_body() orelse return error.ExpectedElseBody;
+            else_ = try self.alloc.create(ast.Expr);
+            else_.?.* = try self.parse_expression() orelse return error.ExpectedElseExpression;
         }
 
-        return .{ .condition = heaped, .then = then, .else_ = else_ };
+        return .{ .condition = condition, .then = then, .else_ = else_ };
     }
 
     fn parse_switch(self: *Self) !?ast.Switch {

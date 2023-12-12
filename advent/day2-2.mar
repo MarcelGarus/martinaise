@@ -16,9 +16,9 @@ fun game_score(game: Slice[U8]): U64 {
       var num = parts.get(0_U64).parse_U64()
       var color = parts.get(1_U64)
 
-      if color.equals("red") { red = max(red, num) }
-      if color.equals("green") { green = max(green, num) }
-      if color.equals("blue") { blue = max(blue, num) }
+      if color.equals("red") then red = max(red, num)
+      if color.equals("green") then green = max(green, num)
+      if color.equals("blue") then blue = max(blue, num)
     }
   }
 

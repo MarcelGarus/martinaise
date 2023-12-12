@@ -2,9 +2,8 @@ fun width(grid: Slice[Slice[U8]]): U64 { grid.get(0_U64).len }
 fun height(grid: Slice[Slice[U8]]): U64 { grid.len }
 fun get(grid: Slice[Slice[U8]], x: I64, y: I64): U8 {
   if x.is_less_than(0_I64).or(x.is_at_least(grid.width().to_I64()))
-    .or(y.is_less_than(0_I64)).or(y.is_at_least(grid.height().to_I64())) {
-    return '.
-  }
+    .or(y.is_less_than(0_I64)).or(y.is_at_least(grid.height().to_I64()))
+  then return '.
   grid.get(y.to_U64()).get(x.to_U64())
 }
 fun is_digit(char: U8): Bool { '0.until('9).contains(char) }
@@ -28,10 +27,10 @@ fun main(): U8 {
   for y in &0_I64.to(grid.height().to_I64()).iter() {
     for x in &0_I64.to(grid.width().to_I64()).iter() {
       var char = grid.get(x, y)
-      if char.is_digit().and(not(grid.get(x.subtract(1_I64), y).is_digit())) {
+      if char.is_digit().and(not(grid.get(x.subtract(1_I64), y).is_digit())) then {
         var end = x
         loop {
-          if grid.get(end, y).is_digit() { end = end.add(1_I64) } else { break }
+          if grid.get(end, y).is_digit() then end = end.add(1_I64) else break
         }
         var num = grid.get(y.to_U64()).subslice(x.to_U64(), end.to_U64()).parse_U64()
 
@@ -44,12 +43,12 @@ fun main(): U8 {
         adjacent_locations.&.push(Point[I64].{ x = end, y = y })
 
         for pos in &adjacent_locations.iter() {
-          if grid.get(pos.x, pos.y).is_gear() {
+          if grid.get(pos.x, pos.y).is_gear() then {
             prints("There might be a gear at ")
             print(pos.x.to_U64())
             prints(" ")
             println(pos.y.to_U64())
-            maybe_gears.get(pos.y.to_U64()).get_mut(pos.x.to_U64()).push(num)
+            maybe_gears.get(pos.y.to_U64()).get_ref(pos.x.to_U64()).push(num)
           }
         }
       }
@@ -62,9 +61,8 @@ fun main(): U8 {
   for y in &0_U64.to(grid.height()).iter() {
     for x in &0_U64.to(grid.width()).iter() {
       var adjacent_parts = maybe_gears.get(y).get(x)
-      if adjacent_parts.len.equals(2_U64) {
-        sum = sum.add(adjacent_parts.get(0_U64).multiply(adjacent_parts.get(1_U64)))
-      }
+      if adjacent_parts.len.equals(2_U64)
+      then sum = sum.add(adjacent_parts.get(0_U64).multiply(adjacent_parts.get(1_U64)))
     }
   }
   println(sum)

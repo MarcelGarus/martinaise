@@ -1,7 +1,7 @@
 fun find_first_digit[I](iter: I): U8 {
   loop {
     var char = iter.next().unwrap()
-    if '0.to('9).contains(char) { break(char) }
+    if '0.to('9).contains(char) then break(char)
   }.subtract('0)
 }
 

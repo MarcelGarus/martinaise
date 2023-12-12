@@ -76,7 +76,7 @@ pub const StructCreationField = struct { name: Str, value: Expr };
 pub const Member = struct { of: *const Expr, name: Str };
 pub const Var = struct { name: Str, value: *Expr };
 pub const Assign = struct { to: *Expr, value: *Expr };
-pub const If = struct { condition: *const Expr, then: Body, else_: ?Body };
+pub const If = struct { condition: *const Expr, then: *const Expr, else_: ?*const Expr };
 pub const Switch = struct { value: *const Expr, cases: ArrayList(Case) };
 pub const Case = struct { variant: Str, binding: ?Str, body: Body };
 pub const For = struct { iter_var: Str, iter: *const Expr, body: Body };
@@ -259,10 +259,10 @@ pub fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
             try writer.print("if ", .{});
             try print_expr(writer, indent, if_.condition.*);
             try writer.print(" ", .{});
-            try print_body(writer, indent, if_.then);
+            try print_expr(writer, indent, if_.then.*);
             if (if_.else_) |e| {
                 try writer.print(" else ", .{});
-                try print_body(writer, indent, e);
+                try print_expr(writer, indent, e.*);
             }
         },
         .switch_ => |switch_| {

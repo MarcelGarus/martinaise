@@ -60,7 +60,7 @@ fun str(bytes: Slice[U8]): Str { Str.{ bytes = bytes } }
 fun dump[W](str: Str, writer: W) {
   var index = 0_U64
   loop {
-    if index.equals(str.bytes.len) { break }
+    if index.equals(str.bytes.len) then break
     writer.write(str.bytes.get(index))
     index = index.add(1_U64)
   }
@@ -69,17 +69,17 @@ fun dump[W](str: Str, writer: W) {
 | Bool
 | The usual boolean values true and false.
 enum Bool { true, false }
-fun equals(a: Bool, b: Bool): Bool { if a { b } else { not(b) } }
-fun not(a: Bool): Bool { if a { Bool.false } else { Bool.true } }
-fun and(a: Bool, b: Bool): Bool { if a { b } else { a } }
-fun or(a: Bool, b: Bool): Bool { if a { Bool.true } else { b } }
-fun xor(a: Bool, b: Bool): Bool { if a { not(b) } else { b } }
-fun implies(a: Bool, b: Bool): Bool { if a { b } else { Bool.true } }
+fun equals(a: Bool, b: Bool): Bool { if a then b else not(b) }
+fun not(a: Bool): Bool { if a then Bool.false else Bool.true }
+fun and(a: Bool, b: Bool): Bool { if a then b else a }
+fun or(a: Bool, b: Bool): Bool { if a then Bool.true else b }
+fun xor(a: Bool, b: Bool): Bool { if a then not(b) else b }
+fun implies(a: Bool, b: Bool): Bool { if a then b else Bool.true }
 fun hash(value: I64, hasher: &Hasher) {
-  hasher.contribute(if value { 0_U64 } else { 1_U64 })
+  hasher.contribute(if value then 0_U64 else 1_U64)
 }
 fun dump[W](b: Bool, writer: W) {
-  if b { "true" } else { "false" }.dump(writer)
+  {if b then "true" else "false"}.dump(writer)
 }
 
 | Maybe
@@ -154,8 +154,8 @@ fun is_less_than[T](a: T, b: T): Bool { a.compare_to(b).is_less() }
 fun is_greater_than[T](a: T, b: T): Bool { a.compare_to(b).is_greater() }
 fun is_at_least[T](a: T, b: T): Bool { a.compare_to(b).is_greater_or_equal() }
 fun is_at_most[T](a: T, b: T): Bool { a.comapre_to(b).is_less_or_equal() }
-fun min[T](a: T, b: T): T { if a.is_less_than(b) { a } else { b } }
-fun max[T](a: T, b: T): T { if a.is_greater_than(b) { a } else { b } }
+fun min[T](a: T, b: T): T { if a.is_less_than(b) then a else b }
+fun max[T](a: T, b: T): T { if a.is_greater_than(b) then a else b }
 
 | Pair
 struct Pair[A, B] { a: A, b: B }
@@ -223,21 +223,19 @@ fun hash(value: I64, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
 fun dump[W](int: U64, radix: U64, writer: W) {
   var divisor = 1_U64
   loop {
-    if int.divide(divisor).is_less_than(radix) { break }
+    if int.divide(divisor).is_less_than(radix) then break
     divisor = divisor.multiply(radix)
   }
   loop {
     writer.write(int.divide(divisor).modulo(radix).to_U8().digit_to_char())
-    if divisor.equals(1_U64) { break }
+    if divisor.equals(1_U64) then break
     divisor = divisor.divide(radix)
   }
 }
 fun digit_to_char(digit: U8): U8 {
-  if digit.is_greater_than(9_U8) {
-    digit.subtract(10_U8).add('a)
-  } else {
-    digit.add('0)
-  }
+  if digit.is_greater_than(9_U8)
+  then digit.subtract(10_U8).add('a)
+  else digit.add('0)
 }
 fun dump[W](int: U8, writer: W) { int.to_U64().dump(writer) }
 fun dump[W](int: U16, writer: W) { int.to_U64().dump(writer) }
@@ -246,7 +244,8 @@ fun dump[W](int: U64, writer: W) { int.dump(10_U64, writer) }
 fun parse_U64(bytes: Slice[U8]): U64 {
   var num = 0_U64
   for char in &bytes.iter() {
-    if not('0.until('9).contains(char)) { panic("non-digit in supposed number") }
+    if not('0.until('9).contains(char))
+    then panic("non-digit in supposed number")
     num = num.multiply(10_U64).add(char.subtract('0).to_U64())
   }
   num
@@ -264,9 +263,7 @@ fun is_empty[T](range: Range[T]): Bool { range.start.is_at_least(range.end) }
 fun iter[T](range: Range[T]): RangeIter[T] { RangeIter[T].{ rest = range } }
 struct RangeIter[T] { rest: Range[T] }
 fun next[T](iter: &RangeIter[T]): Maybe[T] {
-  if iter.*.rest.is_empty() {
-    Maybe[T].none
-  } else {
+  if iter.*.rest.is_empty() then Maybe[T].none else {
     var current = iter.*.rest.start
     iter.*.rest.start = current.inc()
     Maybe[T].some(current)
@@ -301,7 +298,7 @@ fun dump_address[W](address: U64, writer: W) {
   "0x".dump(writer)
   loop {
     writer.write(address.divide(divisor).modulo(16_U64).to_U8().digit_to_char())
-    if divisor.equals(1_U64) { break }
+    if divisor.equals(1_U64) then break
     divisor = divisor.divide(16_U64)
   }
 }
@@ -324,8 +321,9 @@ fun filled_slice[T](len: U64, fill: T): Slice[T] {
 fun is_empty[T](slice: Slice[T]): Bool { slice.len.equals(0_U64) }
 fun get[T](slice: Slice[T], index: U64): T { slice.data.add(index).* }
 fun get_ref[T](slice: Slice[T], index: U64): &T {
-  if 0_U64.to(slice.len).contains(index) { slice.data.add(index) }
-  else { panic("Index out of bounds") }
+  if 0_U64.to(slice.len).contains(index)
+  then slice.data.add(index)
+  else panic("Index out of bounds")
 }
 fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
   Slice[T].{ data = slice.data.add(from), len = to.subtract(from) }
@@ -346,31 +344,28 @@ fun dump[T, W](slice: Slice[T], writer: W) {
   char('[).dump(writer)
   var index = 0_U64
   loop {
-    if index.equals(slice.len) { break }
-    if index.is_greater_than(0_U64) {
-      char(',).dump(writer) char(' ).dump(writer)
-    }
+    if index.equals(slice.len) then break
+    if index.is_greater_than(0_U64)
+    then char(',).dump(writer) char(' ).dump(writer)
     slice.get(index).dump(writer)
     index = index.add(1_U64)
   }
   char(']).dump(writer)
 }
 fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
-  if prefix.len.is_greater_than(slice.len) { return Bool.false }
+  if prefix.len.is_greater_than(slice.len) then return Bool.false
   for i in &0_U64.to(prefix.len).iter() {
-    if not(slice.get(i).equals(prefix.get(i))) { return Bool.false }
+    if not(slice.get(i).equals(prefix.get(i))) then return Bool.false
   }
   Bool.true
 }
 fun trim_prefix(slice: &Slice[U8], prefix: Slice[U8]) {
-  if slice.*.starts_with(prefix) {
-    slice.* = slice.*.subslice(prefix.len)
-  } else {
-    panic("Slice doesn't start with prefix")
-  }
+  if slice.*.starts_with(prefix)
+  then slice.* = slice.*.subslice(prefix.len)
+  else panic("Slice doesn't start with prefix")
 }
 fun equals[T](a: Slice[T], b: Slice[T]): Bool {
-  if a.len.equals(b.len) { starts_with(a, b) } else { Bool.false }
+  if a.len.equals(b.len) then starts_with(a, b) else Bool.false
 }
 fun iter[T](slice: Slice[T]): SliceIter[T] {
   SliceIter[T].{ slice = slice, index = 0_U64 }
@@ -380,11 +375,9 @@ struct SliceIter[T] {
   index: U64,
 }
 fun next[T](iter: &SliceIter[T]): Maybe[T] {
-  var item = if iter.*.index.is_less_than(iter.*.slice.len) {
-    Maybe[T].some(iter.*.slice.get(iter.*.index))
-  } else {
-    Maybe[T].none
-  }
+  var item = if iter.*.index.is_less_than(iter.*.slice.len)
+    then Maybe[T].some(iter.*.slice.get(iter.*.index))
+    else Maybe[T].none
   iter.*.index = iter.*.index.add(1_U64)
   item
 }
@@ -396,12 +389,10 @@ struct SliceRevIter[T] {
   index: U64, | last yielded item
 }
 fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
-  if iter.*.index.is_greater_than(0_U64) {
+  if iter.*.index.is_greater_than(0_U64) then {
     iter.*.index = iter.*.index.subtract(1_U64)
     Maybe[T].some(iter.*.slice.get(iter.*.index))
-  } else {
-    Maybe[T].none
-  }
+  } else Maybe[T].none
 }
 fun iter_split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
   SplitIter[I].{ iter = iter, separator = separator }
@@ -412,20 +403,17 @@ fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
   loop {
     switch self.*.iter.&.next() {
       none {
-        if line.len.is_greater_than(0_U64) {
-          break
-        } else {
-          return Maybe[Slice[U8]].none
-        }
+        if line.len.is_greater_than(0_U64)
+        then break
+        else return Maybe[Slice[U8]].none
       }
       some(c) {
         line.&.push(c)
         if line.to_slice().subslice(line.len.subtract(self.*.separator.len))
-           .equals(self.*.separator) {
-          return Maybe[Slice[U8]].some(
-            line.to_slice().subslice(0_U64, line.len.subtract(self.*.separator.len))
-          )
-        }
+          .equals(self.*.separator)
+        then return Maybe[Slice[U8]].some(
+          line.to_slice().subslice(0_U64, line.len.subtract(self.*.separator.len))
+        )
       }
     }
   }
@@ -443,17 +431,17 @@ fun vec[T](): Vec[T] {
   Vec[T].{ data = 0_U64.to_reference[T](), capacity = 0_U64, len = 0_U64 }
 }
 fun push[T](vec: &Vec[T], item: T) {
-  if vec.*.capacity.equals(0_U64) {
+  if vec.*.capacity.equals(0_U64) then {
     vec.*.capacity = 8_U64
     vec.*.data = malloc(vec.*.capacity.multiply(size_of_type[T]())).to_reference[T]()
   }
-  if vec.*.capacity.equals(vec.*.len) {
+  if vec.*.capacity.equals(vec.*.len) then {
     var previous_data = vec.*.data
     vec.*.capacity = vec.*.capacity.multiply(2_U64)
     vec.*.data = malloc(vec.*.capacity.multiply(size_of_type[T]())).to_reference[T]()
     var i = 0_U64
     loop {
-      if i.equals(vec.*.len) { break }
+      if i.equals(vec.*.len) then break
       var new_item = vec.*.data.add(i)
       new_item.* = previous_data.add(i).*
       i = i.add(1_U64)
@@ -465,11 +453,9 @@ fun push[T](vec: &Vec[T], item: T) {
 }
 fun get[T](vec: Vec[T], index: U64): T { vec.get_ref(index).* }
 fun get_ref[T](vec: Vec[T], index: U64): &T {
-  if 0_U64.to(vec.len).contains(index) {
-    vec.data.add(index)
-  } else {
-    panic("Index out of bounds")
-  }
+  if 0_U64.to(vec.len).contains(index)
+  then vec.data.add(index)
+  else panic("Index out of bounds")
 }
 fun to_slice[T](vec: Vec[T]): Slice[T] {
   Slice[T].{ data = vec.data, len = vec.len }
@@ -508,7 +494,7 @@ fun insert[K, V](map: &Map[K, V], key: K, value: V) {
   var fill_percentage = 100_U64.multiply(map.*.size).divide(map.*.buckets.len)
   prints("Fill percentage: ")
   println(fill_percentage)
-  if fill_percentage.is_at_least(60_U64) {
+  if fill_percentage.is_at_least(60_U64) then {
     var old_buckets = map.*.buckets
     map.* = Map[K, V].{
       buckets = filled_slice(map.*.buckets.len.multiply(2_U64), MapBucket[K, V].empty),
@@ -534,12 +520,10 @@ fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
         break
       }
       filled(entry) {
-        if entry.key.equals(key) {
+        if entry.key.equals(key) then {
           bucket.* = MapBucket[K, V].filled(MapEntry[K, V].{ key = key, value = value })
           break
-        } else {
-          i = i.add(1_U64).modulo(map.*.buckets.len)
-        }
+        } else i = i.add(1_U64).modulo(map.*.buckets.len)
       }
     }
   }
@@ -554,11 +538,8 @@ fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
     switch bucket.* {
       empty { return Maybe[&V].none }
       filled(entry) {
-        if entry.key.equals(key) {
-          return Maybe[&V].some(&entry.value)
-        } else {
-          i = i.add(1_U64).modulo(map.buckets.len)
-        }
+        if entry.key.equals(key) then return Maybe[&V].some(&entry.value)
+        else i = i.add(1_U64).modulo(map.buckets.len)
       }
     }
   }
@@ -572,7 +553,7 @@ fun dump[K, V, W](map: Map[K, V], writer: W) {
     switch bucket {
       empty {}
       filled(entry) {
-        if first { first = Bool.false } else { str(", ").dump(writer) }
+        if first then first = Bool.false else str(", ").dump(writer)
         entry.key.dump(writer)
         str(": ").dump(writer)
         entry.value.dump(writer)
@@ -582,4 +563,4 @@ fun dump[K, V, W](map: Map[K, V], writer: W) {
   char('}).dump(writer)
 }
 
-| TODO: result, segment tree, treap
+| TODO: segment tree, treap

@@ -1,11 +1,9 @@
 fun windows(s: Slice[U8]): Windows { Windows.{ slice = s, index = 0_U64 } }
 struct Windows { slice: Slice[U8], index: U64 }
 fun next(iter: &Windows): Maybe[Slice[U8]] {
-  var item = if iter.*.index.is_less_than(iter.*.slice.len) {
-    Maybe[Slice[U8]].some(iter.*.slice.subslice(iter.*.index))
-  } else {
-    Maybe[Slice[U8]].none
-  }
+  var item = if iter.*.index.is_less_than(iter.*.slice.len)
+    then Maybe[Slice[U8]].some(iter.*.slice.subslice(iter.*.index))
+    else Maybe[Slice[U8]].none
   iter.*.index = iter.*.index.add(1_U64)
   item
 }
@@ -16,25 +14,21 @@ fun rev_windows(s: Slice[U8]): RevWindows {
 struct RevWindows { slice: Slice[U8], index: U64 }
 fun next(iter: &RevWindows): Maybe[Slice[U8]] {
   iter.*.index = iter.*.index.subtract(1_U64)
-  if iter.*.index.is_less_than(iter.*.slice.len) {
-    Maybe[Slice[U8]].some(iter.*.slice.subslice(iter.*.index))
-  } else {
-    Maybe[Slice[U8]].none
-  }
+  if iter.*.index.is_less_than(iter.*.slice.len)
+  then Maybe[Slice[U8]].some(iter.*.slice.subslice(iter.*.index))
+  else Maybe[Slice[U8]].none
 }
 
 fun find_first_digit[I](iter: I, digit_names: Vec[Slice[U8]]): U8 {
   loop {
     var part = switch iter.next() { some(p) { p } none { empty_slice[U8]() } }
-    if '0.to('9).contains(part.get(0_U64)) {
-      break(part.get(0_U64).subtract('0))
-    }
+    if '0.to('9).contains(part.get(0_U64)) then break(part.get(0_U64).subtract('0))
     var j = 0_U8
     for name in &digit_names.iter() {
-      if part.starts_with(name) { break }
+      if part.starts_with(name) then break
       j = j.add(1_U8)
     }
-    if j.is_less_than(digit_names.len.to_U8()) { break(j.add(1_U8)) }
+    if j.is_less_than(digit_names.len.to_U8()) then break(j.add(1_U8))
   }
 }
 

@@ -5,11 +5,11 @@ fun card_matches(card: Slice[U8]): U64 {
   | TODO: use hash set when implemented
   var winning_numbers = vec[U64]()
   for num in &all_numbers.get(0_U64).split(" ").iter() {
-    if not(num.is_empty()) { winning_numbers.&.push(num.parse_U64()) }
+    if not(num.is_empty()) then winning_numbers.&.push(num.parse_U64())
   }
   var my_numbers = vec[U64]()
   for num in &all_numbers.get(1_U64).split(" ").iter() {
-    if not(num.is_empty()) { my_numbers.&.push(num.parse_U64()) }
+    if not(num.is_empty()) then my_numbers.&.push(num.parse_U64())
   }
   println(winning_numbers)
 
@@ -17,9 +17,9 @@ fun card_matches(card: Slice[U8]): U64 {
   for num in &my_numbers.iter() {
     var wins = Bool.false
     for winning in &winning_numbers.iter() {
-      if num.equals(winning) { wins = Bool.true }
+      if num.equals(winning) then wins = Bool.true
     }
-    if wins { matches = matches.add(1_U64) }
+    if wins then matches = matches.add(1_U64)
   }
 
   return matches
@@ -36,7 +36,7 @@ fun main(): U8 {
     var amount_i = num_cards.get(i)
     var matches = line.card_matches()
     for j in &i.add(1_U64).until(i.add(matches)).iter() {
-      var amount_j = num_cards.get_mut(j)
+      var amount_j = num_cards.get_ref(j)
       amount_j.* = amount_j.*.add(amount_i)
     }
     i = i.add(1_U64)
