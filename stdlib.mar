@@ -90,10 +90,10 @@ fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] {
 }
 | TODO: remove when language feature exists
 fun is_some[T](maybe: Maybe[T]): Bool {
-  switch maybe case some(_) Bool.true case none Bool.false
+  switch maybe case some Bool.true case none Bool.false
 }
 fun is_none[T](maybe: Maybe[T]): Bool {
-  switch maybe case some(_) Bool.false case none Bool.true
+  switch maybe case some Bool.false case none Bool.true
 }
 fun equals(a: Maybe[T], b: Maybe[T]): Bool {
   switch a
@@ -244,7 +244,7 @@ fun dump[W](int: U32, writer: W) { int.to_U64().dump(writer) }
 fun dump[W](int: U64, writer: W) { int.dump(10_U64, writer) }
 fun parse_U64(bytes: Slice[U8]): U64 {
   var num = 0_U64
-  for char in &bytes.iter() {
+  for char in &bytes.iter() do {
     if not('0.until('9).contains(char))
     then panic("non-digit in supposed number")
     num = num.multiply(10_U64).add(char.subtract('0).to_U64())
@@ -313,10 +313,7 @@ fun empty_slice[T](): Slice[T] {
 }
 fun filled_slice[T](len: U64, fill: T): Slice[T] {
   var data = malloc(len.multiply(size_of_type[T]())).to_reference[T]()
-  for i in &0_U64.to(len).iter() {
-    var address = data.add(i)
-    address.* = fill
-  }
+  for i in &0_U64.to(len).iter() do data.add(i).* = fill
   Slice[T].{ data = data, len = len }
 }
 fun is_empty[T](slice: Slice[T]): Bool { slice.len.equals(0_U64) }
@@ -334,9 +331,7 @@ fun subslice[T](slice: Slice[T], from: U64): Slice[T] {
 }
 fun split(slice: Slice[U8], separator: Slice[U8]): Slice[Slice[U8]] {
   var result = vec[Slice[U8]]()
-  for part in &slice.iter().iter_split(separator) {
-    result.&.push(part)
-  }
+  for part in &slice.iter().iter_split(separator) do result.&.push(part)
   result.to_slice()
 }
 fun lines(slice: Slice[U8]): Slice[Slice[U8]] { slice.split("
@@ -346,8 +341,10 @@ fun dump[T, W](slice: Slice[T], writer: W) {
   var index = 0_U64
   loop {
     if index.equals(slice.len) then break
-    if index.is_greater_than(0_U64)
-    then char(',).dump(writer) char(' ).dump(writer)
+    if index.is_greater_than(0_U64) then {
+      char(',).dump(writer)
+      char(' ).dump(writer)
+    }
     slice.get(index).dump(writer)
     index = index.add(1_U64)
   }
@@ -355,9 +352,8 @@ fun dump[T, W](slice: Slice[T], writer: W) {
 }
 fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
   if prefix.len.is_greater_than(slice.len) then return Bool.false
-  for i in &0_U64.to(prefix.len).iter() {
+  for i in &0_U64.to(prefix.len).iter() do
     if not(slice.get(i).equals(prefix.get(i))) then return Bool.false
-  }
   Bool.true
 }
 fun trim_prefix(slice: &Slice[U8], prefix: Slice[U8]) {
@@ -401,8 +397,7 @@ fun iter_split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
 struct SplitIter[I] { iter: I, separator: Slice[U8] }
 fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
   var line = vec[U8]()
-  loop {
-    switch self.iter.&.next()
+  loop switch self.iter.&.next()
     case none {
       if line.len.is_greater_than(0_U64)
       then break
@@ -416,7 +411,6 @@ fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
         line.to_slice().subslice(0_U64, line.len.subtract(self.separator.len))
       )
     }
-  }
   Maybe[Slice[U8]].some(line.to_slice())
 }
 
@@ -500,11 +494,9 @@ fun insert[K, V](map: &Map[K, V], key: K, value: V) {
       buckets = filled_slice(map.buckets.len.multiply(2_U64), MapBucket[K, V].empty),
       size = 0_U64,
     }
-    for bucket in &old_buckets.iter() {
-     switch bucket {
-       empty {}
-       filled(entry) { map.raw_insert(entry.key, entry.value) }
-     }
+    for bucket in &old_buckets.iter() do switch bucket {
+      case empty {}
+      case filled(entry) { map.raw_insert(entry.key, entry.value) }
     }
   }
   map.raw_insert(key, value)
@@ -547,8 +539,8 @@ fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
 fun dump[K, V, W](map: Map[K, V], writer: W) {
   char('{).dump(writer)
   var first = Bool.true
-  for bucket in &map.buckets.iter() {
-    switch bucket
+  for bucket in &map.buckets.iter()
+  do switch bucket
     case empty {}
     case filled(entry) {
       if first then first = Bool.false else str(", ").dump(writer)
@@ -556,7 +548,6 @@ fun dump[K, V, W](map: Map[K, V], writer: W) {
       str(": ").dump(writer)
       entry.value.dump(writer)
     }
-  }
   char('}).dump(writer)
 }
 

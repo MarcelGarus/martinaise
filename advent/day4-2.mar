@@ -4,21 +4,18 @@ fun card_matches(card: Slice[U8]): U64 {
 
   | TODO: use hash set when implemented
   var winning_numbers = vec[U64]()
-  for num in &all_numbers.get(0_U64).split(" ").iter() {
+  for num in &all_numbers.get(0_U64).split(" ").iter() do
     if not(num.is_empty()) then winning_numbers.&.push(num.parse_U64())
-  }
   var my_numbers = vec[U64]()
-  for num in &all_numbers.get(1_U64).split(" ").iter() {
+  for num in &all_numbers.get(1_U64).split(" ").iter() do
     if not(num.is_empty()) then my_numbers.&.push(num.parse_U64())
-  }
   println(winning_numbers)
 
   var matches = 0_U64
-  for num in &my_numbers.iter() {
+  for num in &my_numbers.iter() do {
     var wins = Bool.false
-    for winning in &winning_numbers.iter() {
+    for winning in &winning_numbers.iter() do
       if num.equals(winning) then wins = Bool.true
-    }
     if wins then matches = matches.add(1_U64)
   }
 
@@ -29,13 +26,13 @@ fun main(): U8 {
   var input = read_file("advent/day4.big")
 
   var num_cards = vec[U64]()
-  for _ in &0_U64.to(input.lines().len).iter() { num_cards.&.push(1_U64) }
+  for _ in &0_U64.to(input.lines().len).iter() do num_cards.&.push(1_U64)
 
   var i = 0_U64
-  for line in &input.lines().iter() {
+  for line in &input.lines().iter() do {
     var amount_i = num_cards.get(i)
     var matches = line.card_matches()
-    for j in &i.add(1_U64).until(i.add(matches)).iter() {
+    for j in &i.add(1_U64).until(i.add(matches)).iter() do {
       var amount_j = num_cards.get_ref(j)
       amount_j.* = amount_j.*.add(amount_i)
     }
@@ -43,7 +40,7 @@ fun main(): U8 {
   }
 
   var total = 0_U64
-  for amount in &num_cards.iter() { total = total.add(amount) }
+  for amount in &num_cards.iter() do total = total.add(amount)
   println(num_cards)
   println(total)
   return 0_U8

@@ -495,7 +495,8 @@ const Parser = struct {
         ExpectedUnderscore,
         ExpectedChar,
         ExpectedType,
-        ExpectedLoopBody,
+        ExpectedDo,
+        ExpectedLoopExpr,
         ExpectedIn,
         ExpectedIterationVariable,
         ExpectedIter,
@@ -511,7 +512,9 @@ const Parser = struct {
         } else if (try self.parse_switch()) |switch_| {
             expression = .{ .switch_ = switch_ };
         } else if (try self.parse_loop()) |loop| {
-            expression = .{ .loop = loop };
+            const heaped = try self.alloc.create(ast.Expr);
+            heaped.* = loop;
+            expression = .{ .loop = heaped };
         } else if (try self.parse_for()) |for_| {
             expression = .{ .for_ = for_ };
         } else if (try self.parse_int()) |int| {
@@ -791,10 +794,10 @@ const Parser = struct {
         return .{ .value = value, .cases = cases };
     }
 
-    fn parse_loop(self: *Self) !?ast.Body {
+    fn parse_loop(self: *Self) !?ast.Expr {
         self.consume_keyword("loop") orelse return null;
         self.consume_whitespace();
-        return try self.parse_body() orelse return error.ExpectedLoopBody;
+        return try self.parse_expression() orelse return error.ExpectedLoopExpr;
     }
 
     fn parse_for(self: *Self) !?ast.For {
@@ -807,7 +810,10 @@ const Parser = struct {
         const iter = try self.alloc.create(ast.Expr);
         iter.* = try self.parse_expression() orelse return error.ExpectedIter;
         self.consume_whitespace();
-        const body = try self.parse_body() orelse return error.ExpectedLoopBody;
-        return .{ .iter_var = iter_var, .iter = iter, .body = body };
+        self.consume_keyword("do") orelse return error.ExpectedDo;
+        self.consume_whitespace();
+        const expr = try self.alloc.create(ast.Expr);
+        expr.* = try self.parse_expression() orelse return error.ExpectedLoopExpr;
+        return .{ .iter_var = iter_var, .iter = iter, .expr = expr };
     }
 };

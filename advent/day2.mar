@@ -7,8 +7,8 @@ fun game_score(game: Slice[U8]): U64 {
   prefix.&.trim_prefix("Game ")
   var id = prefix.parse_U64()
 
-  for turn in &turns.split("; ").iter() {
-    for cubes in &turn.split(", ").iter() {
+  for turn in &turns.split("; ").iter() do
+    for cubes in &turn.split(", ").iter() do {
       var parts = cubes.split(" ")
       var num = parts.get(0_U64).parse_U64()
       var color = parts.get(1_U64)
@@ -17,14 +17,13 @@ fun game_score(game: Slice[U8]): U64 {
       if color.equals("green").and(num.is_greater_than(13_U64)) then return 0_U64
       if color.equals("blue").and(num.is_greater_than(14_U64)) then return 0_U64
     }
-  }
 
   return id | Game is possible
 }
 
 fun main(): U8 {
   var sum = 0_U64
-  for line in &read_file("advent/day2.big").lines().iter() {
+  for line in &read_file("advent/day2.big").lines().iter() do {
     | printsln(line)
     var score = line.game_score()
     println(score)

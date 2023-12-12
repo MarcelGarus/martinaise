@@ -62,7 +62,7 @@ pub const Expr = union(enum) {
     assign: Assign, // foo = ...
     if_: If, // if foo { ... }
     switch_: Switch, // switch foo { a { ... } b(bar) { ... } }
-    loop: Body, // loop { ... }
+    loop: *const Expr, // loop { ... }
     for_: For, // for a in b { ... }
     return_: *const Expr, // return ...
     ampersanded: *const Expr, // &...
@@ -79,7 +79,7 @@ pub const Assign = struct { to: *Expr, value: *Expr };
 pub const If = struct { condition: *const Expr, then: *const Expr, else_: ?*const Expr };
 pub const Switch = struct { value: *const Expr, cases: ArrayList(Case) };
 pub const Case = struct { variant: Str, binding: ?Str, then: *const Expr };
-pub const For = struct { iter_var: Str, iter: *const Expr, body: Body };
+pub const For = struct { iter_var: Str, iter: *const Expr, expr: *const Expr };
 
 pub fn print(writer: anytype, program: Program) !void {
     for (program.defs.items) |def| {
@@ -280,13 +280,13 @@ pub fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
         },
         .loop => |body| {
             try writer.print("loop ", .{});
-            try print_body(writer, indent, body);
+            try print_expr(writer, indent, body.*);
         },
         .for_ => |for_| {
             try writer.print("for {s} in ", .{for_.iter_var});
             try print_expr(writer, indent, for_.iter.*);
-            try writer.print(" ", .{});
-            try print_body(writer, indent, for_.body);
+            try writer.print(" do ", .{});
+            try print_expr(writer, indent, for_.expr.*);
         },
         .return_ => |returned| {
             try writer.print("return ", .{});

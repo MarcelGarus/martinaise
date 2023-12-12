@@ -696,7 +696,7 @@ const FunMonomorphizer = struct {
                 self.fun.tys.items[result] = final_ty;
                 return .{ .kind = .{ .statement = result }, .ty = final_ty };
             },
-            .loop => |body| {
+            .loop => |expr| {
                 const result = try self.fun.put(.{ .uninitialized = {} }, "Nothing"); // type will be replaced
                 try self.breakable_scopes.append(.{
                     .result = result,
@@ -705,7 +705,7 @@ const FunMonomorphizer = struct {
                 });
                 // TODO: Create inner var env
                 const loop_start = self.fun.next_index();
-                _ = try self.compile_body(body.items);
+                _ = try self.compile_expr(expr.*);
                 _ = try self.fun.put(.{ .jump = .{ .target = loop_start } }, "Never");
 
                 const after_loop = self.fun.next_index();
@@ -745,7 +745,7 @@ const FunMonomorphizer = struct {
                 // const inner_self.var_env = self.var_env.clone();
                 try self.var_env.put(for_.iter_var, .{ .index = unpacked, .ty = unpacked_ty });
 
-                _ = try self.compile_body(for_.body.items);
+                _ = try self.compile_expr(for_.expr.*);
                 _ = try self.fun.put(.{ .jump = .{ .target = loop_start } }, "Never");
 
                 const after_loop = self.fun.next_index();
