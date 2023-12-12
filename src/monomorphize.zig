@@ -247,12 +247,12 @@ const Monomorphizer = struct {
         var name_buf = String.init(self.alloc);
         try name_buf.appendSlice(ty.name);
         if (args.items.len > 0) {
-            try name_buf.append('[');
+            if (!string.eql(ty.name, "&")) try name_buf.append('[');
             for (args.items, 0..) |arg, i| {
                 if (i > 0) try name_buf.appendSlice(", ");
                 try name_buf.appendSlice(arg);
             }
-            try name_buf.append(']');
+            if (!string.eql(ty.name, "&")) try name_buf.append(']');
         }
         const name = name_buf.items;
 

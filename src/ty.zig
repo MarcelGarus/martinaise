@@ -74,11 +74,12 @@ pub const Ty = struct {
         options: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
-        _ = fmt;
-        _ = options;
-
         try writer.print("{s}", .{self.name});
-        try print_args_of_tys(writer, self.args.items);
+        if (string.eql(self.name, "&")) {
+            try self.args.items[0].format(fmt, options, writer);
+        } else {
+            try print_args_of_tys(writer, self.args.items);
+        }
     }
 
     pub fn print_args_of_tys(writer: anytype, args: ?[]const Ty) !void {
