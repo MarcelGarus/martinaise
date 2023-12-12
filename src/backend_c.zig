@@ -360,7 +360,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                             try format(out, "\n", .{});
                         },
                         .assign => |assign| {
-                            try format_left_expr(alloc, out, assign.to);
+                            try format_expr(alloc, out, assign.to);
                             try format(out, " = ", .{});
                             try format_expr(alloc, out, assign.value);
                             try format(out, "; mar_Nothing _{};\n", .{i});
@@ -427,22 +427,6 @@ fn format_expr(alloc: std.mem.Allocator, out: anytype, expr: mono.Expr) !void {
                 try format(out, ".pointer))", .{});
             } else {
                 try format_expr(alloc, out, member.of.*);
-                try format(out, ".{s}", .{try mangle(alloc, member.name)});
-            }
-        },
-    }
-}
-
-fn format_left_expr(alloc: std.mem.Allocator, out: anytype, expr: mono.LeftExpr) !void {
-    switch (expr.kind) {
-        .statement => |index| try format(out, "_{}", .{index}),
-        .member => |member| {
-            if (string.eql(member.name, "*")) {
-                try format(out, "(*(({s}*) ", .{try mangle(alloc, expr.ty)});
-                try format_left_expr(alloc, out, member.of.*);
-                try format(out, ".pointer))", .{});
-            } else {
-                try format_left_expr(alloc, out, member.of.*);
                 try format(out, ".{s}", .{try mangle(alloc, member.name)});
             }
         },

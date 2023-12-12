@@ -5,7 +5,7 @@ pub const String = ArrayList(u8);
 pub const Str = []const u8;
 
 pub fn starts_with(buf: Str, prefix: Str) bool {
-    return buf.len >= prefix.len and std.mem.eql(u8, buf[0..prefix.len], prefix);
+    return buf.len >= prefix.len and eql(buf[0..prefix.len], prefix);
 }
 
 pub fn eql(a: Str, b: Str) bool {

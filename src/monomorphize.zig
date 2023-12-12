@@ -14,9 +14,7 @@ const numbers = @import("numbers.zig");
 const print_on_same_line = @import("term.zig").print_on_same_line;
 
 pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !Result(mono.Mono) {
-    var err_buf = String.init(alloc);
-    const err = err_buf.writer();
-
+    var err = String.init(alloc);
     var monomorphizer = Monomorphizer{
         .alloc = alloc,
         .program = program,
@@ -48,7 +46,7 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !Result(mono
                 try format(errw, "- {s}\n", .{context});
             }
             try format(errw, "\n", .{});
-            try format(errw, "{s}", .{err_buf.items});
+            try format(errw, "{s}", .{err.items});
 
             return .{ .err = err_with_context.items };
         } else return error_;
@@ -66,13 +64,13 @@ const TyEnv = StringHashMap(Str);
 const Monomorphizer = struct {
     alloc: std.mem.Allocator,
     program: ast.Program,
-    context: ArrayList([]const u8),
+    context: ArrayList(Str),
     // The keys are strings of monomorphized types such as "Maybe[Int]".
     tys: StringHashMap(Ty),
     ty_defs: StringArrayHashMap(mono.TyDef),
     // The keys are strings of monomorphized function signatures such as "foo(Int)".
     funs: StringHashMap(mono.Fun),
-    err: ArrayList(u8).Writer,
+    err: String,
 
     const Self = @This();
 
@@ -85,7 +83,7 @@ const Monomorphizer = struct {
     }
 
     fn format_err(self: *Self, comptime fmt: Str, args: anytype) !void {
-        try format(self.err, fmt, args);
+        try format(self.err.writer(), fmt, args);
     }
 
     // Looks up the given name with the given number of type args and the args
@@ -175,7 +173,7 @@ const Monomorphizer = struct {
 
         if (full_matches.items.len != 1) {
             try self.format_err("This call doesn't work:\n> {s}", .{name});
-            Ty.print_args_of_strs(self.err, ty_args) catch @panic("couldn't write to stdout");
+            Ty.print_args_of_strs(self.err.writer(), ty_args) catch @panic("couldn't write to stdout");
             if (args) |args_| {
                 try self.format_err("(", .{});
                 for (args_, 0..) |arg, i| {
@@ -192,7 +190,7 @@ const Monomorphizer = struct {
                 try self.format_err("These definitions have the same name, but arguments don't match:\n", .{});
                 for (name_matches.items) |match| {
                     try self.format_err("- ", .{});
-                    ast.print_signature(self.err, match) catch @panic("couldn't write to stdout");
+                    ast.print_signature(self.err.writer(), match) catch @panic("couldn't write to stdout");
                     try self.format_err("\n", .{});
                 }
             } else try self.format_err("There are no definitions named \"{s}\".\n", .{name});
@@ -446,8 +444,10 @@ const FunMonomorphizer = struct {
                 return try self.fun.put_and_get_expr(.{ .string = str }, "Slice[U8]");
             },
             .ref => |name| {
-                if (self.var_env.get(name)) |var_info|
-                    return .{ .kind = .{ .statement = var_info.index }, .ty = var_info.ty };
+                if (self.var_env.get(name)) |var_info| return .{
+                    .kind = .{ .statement = var_info.index },
+                    .ty = var_info.ty,
+                };
 
                 // TODO: Try to lookup type.
                 try self.format_err("No \"{s}\" is in scope.\n", .{name});
@@ -478,7 +478,7 @@ const FunMonomorphizer = struct {
                         else => {
                             try self.format_err("You tried to call this expression:\n", .{});
                             try self.format_err("> ", .{});
-                            ast.print_expr(self.monomorphizer.err, 2, callee) catch
+                            ast.print_expr(self.monomorphizer.err.writer(), 2, callee) catch
                                 @panic("formatting failed");
                             try self.format_err("\n{any}", .{callee});
 
@@ -497,24 +497,38 @@ const FunMonomorphizer = struct {
                 // Struct field access.
                 var of = try self.alloc.create(mono.Expr);
                 of.* = try self.compile_expr(m.of.*);
-                const of_type_def = self.monomorphizer.ty_defs.get(of.ty) orelse unreachable;
-                const field_ty = get_field_ty: {
-                    switch (of_type_def) {
-                        .struct_ => |s| {
-                            for (s.fields.items) |field|
-                                if (string.eql(field.name, m.name))
-                                    break :get_field_ty field.ty;
-                            try self.format_err("\"{s}\" is not a field on {s}.\n", .{ m.name, of.ty });
-                            try self.format_err("It only contains these fields:\n", .{});
-                            for (s.fields.items) |field|
-                                try self.format_err("- {s}\n", .{field.name});
-                            return error.CompileError;
-                        },
+
+                const field_ty = field_ty: while (true) {
+                    // When accessing a member on a reference, we automatically
+                    // dereference the receiver as often as necessary. For
+                    // example, you can access point.x if point is a &&&Point.
+                    if (!string.eql(m.name, "*") and string.starts_with(of.ty, "&")) {
+                        var dereference = try self.alloc.create(mono.Expr);
+                        dereference.* = .{
+                            .ty = of.ty[1..], // trim the leading &
+                            .kind = .{ .member = .{ .of = of, .name = "*" } },
+                        };
+                        of = dereference;
+                        continue;
+                    }
+
+                    const of_type_def = self.monomorphizer.ty_defs.get(of.ty) orelse unreachable;
+                    const struct_ = switch (of_type_def) {
+                        .struct_ => |s| s,
                         else => {
                             try self.format_err("You tried to access a field on {s}, but it's not a struct.\n", .{of.ty});
                             return error.CompileError;
                         },
-                    }
+                    };
+                    for (struct_.fields.items) |field|
+                        if (string.eql(field.name, m.name))
+                            break :field_ty field.ty;
+                    try self.format_err("\"{s}\" is not a field on {s}.\n", .{ m.name, of.ty });
+                    try self.format_err("{any}\n", .{(!string.eql(m.name, "*") and string.starts_with(of.ty, "&"))});
+                    try self.format_err("It only contains these fields:\n", .{});
+                    for (struct_.fields.items) |field|
+                        try self.format_err("- {s}\n", .{field.name});
+                    return error.CompileError;
                 };
                 return .{ .kind = .{ .member = .{ .of = of, .name = m.name } }, .ty = field_ty };
             },
@@ -530,7 +544,7 @@ const FunMonomorphizer = struct {
             },
             .assign => |assign| {
                 const value = try self.compile_expr(assign.value.*);
-                const to = try self.compile_left_expr(assign.to.*, value.ty);
+                const to = try self.compile_expr(assign.to.*);
                 return try self.fun.put_and_get_expr(.{ .assign = .{ .to = to, .value = value } }, "Nothing");
             },
             .struct_creation => |sc| {
@@ -769,55 +783,6 @@ const FunMonomorphizer = struct {
         }
     }
 
-    fn compile_left_expr(self: *Self, expr: ast.Expr, right_ty: Str) !mono.LeftExpr {
-        _ = right_ty;
-        return try self.compile_left_expr_rec(expr);
-    }
-    fn compile_left_expr_rec(self: *Self, expr: ast.Expr) !mono.LeftExpr {
-        switch (expr) {
-            .ref => |ref| {
-                if (self.var_env.get(ref)) |var_info| return .{
-                    .ty = self.fun.tys.items[var_info.index],
-                    .kind = .{ .statement = var_info.index },
-                };
-
-                try self.format_err("\"{s}\" is not in scope.\n", .{ref});
-                return error.CompileError;
-            },
-            .member => |member| {
-                const of = try self.alloc.create(mono.LeftExpr);
-                of.* = try self.compile_left_expr_rec(member.of.*);
-                const of_type_def = self.monomorphizer.ty_defs.get(of.ty).?;
-                const field_ty = get_field_ty: {
-                    switch (of_type_def) {
-                        .struct_ => |s| {
-                            for (s.fields.items) |field|
-                                if (string.eql(field.name, member.name))
-                                    break :get_field_ty field.ty;
-
-                            try self.format_err("\"{s}\" is not a field on {s}.\n", .{ member.name, of.ty });
-                            try self.format_err("It only contains these fields:\n", .{});
-                            for (s.fields.items) |field|
-                                try self.format_err("- {s}\n", .{field.name});
-
-                            return error.CompileError;
-                        },
-                        else => {
-                            try self.format_err("You tried to access a field on {s}, but it's not a struct.\n", .{of.ty});
-                            return error.CompileError;
-                        },
-                    }
-                };
-
-                return .{ .ty = field_ty, .kind = .{ .member = .{ .of = of, .name = member.name } } };
-            },
-            else => {
-                try self.format_err("You can't assign to this.\n", .{});
-                return error.CompileError;
-            },
-        }
-    }
-
     fn compile_body(self: *Self, body: []const ast.Expr) !mono.Expr {
         var last: ?mono.Expr = null;
         for (body) |expr| last = try self.compile_expr(expr);
@@ -839,15 +804,44 @@ const FunMonomorphizer = struct {
         var arg_tys = ArrayList(Str).init(self.alloc);
         for (full_args.items) |arg| try arg_tys.append(arg.ty);
 
-        const lookup_solution = try self.monomorphizer.lookup(name, ty_args, arg_tys.items);
-        const called_fun = lookup_solution.def.fun;
-        const call_ty_env = lookup_solution.ty_env;
+        // If a call has a callee and it's a ref, it also matches functions
+        // where it's dereferenced. For example, if you have a value of type T,
+        // calling value.foo() also matches foo(&T).
+        var first_error: ?String = null;
+        var called_fun: ?ast.Fun = null;
+        var call_ty_env: ?TyEnv = null;
+        while (true) {
+            const lookup_solution = self.monomorphizer.lookup(name, ty_args, arg_tys.items) catch |err| {
+                if (err != error.CompileError) return err;
+                if (first_error == null) first_error = self.monomorphizer.err;
+
+                if (callee != null and string.starts_with(arg_tys.items[0], "&")) {
+                    // There is a callee and it's a reference. Dereference it.
+                    var derefed_callee = try self.alloc.create(mono.Expr);
+                    derefed_callee.* = full_args.items[0];
+                    const deref_ty = arg_tys.items[0][1..]; // trim &
+                    full_args.items[0] = .{
+                        .ty = deref_ty,
+                        .kind = .{ .member = .{ .of = derefed_callee, .name = "*" } },
+                    };
+                    arg_tys.items[0] = deref_ty;
+                    continue;
+                } else {
+                    self.monomorphizer.err = first_error.?;
+                    return error.CompileError;
+                }
+            };
+
+            called_fun = lookup_solution.def.fun;
+            call_ty_env = lookup_solution.ty_env;
+            break;
+        }
 
         // TODO: Make sure all type args are different.
 
-        const fun_name = try FunMonomorphizer.compile(self.monomorphizer, called_fun, call_ty_env);
-        const return_type = if (called_fun.returns) |ty|
-            try self.monomorphizer.compile_type(ty, call_ty_env)
+        const fun_name = try FunMonomorphizer.compile(self.monomorphizer, called_fun.?, call_ty_env.?);
+        const return_type = if (called_fun.?.returns) |ty|
+            try self.monomorphizer.compile_type(ty, call_ty_env.?)
         else
             "Nothing";
 

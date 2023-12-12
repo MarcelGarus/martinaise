@@ -65,17 +65,7 @@ pub const Statement = union(enum) {
     return_: Expr,
     ref: Expr,
 };
-
-pub const Assign = struct { to: LeftExpr, value: Expr };
-pub const LeftExpr = struct {
-    ty: Str,
-    kind: LeftExprKind,
-};
-pub const LeftExprKind = union(enum) {
-    statement: StatementIndex,
-    member: LeftMember,
-};
-pub const LeftMember = struct { of: *const LeftExpr, name: Str };
+pub const Assign = struct { to: Expr, value: Expr };
 pub const Int = struct { value: i128, signedness: numbers.Signedness, bits: numbers.Bits };
 pub const Call = struct { fun: Str, args: ArrayList(Expr) };
 pub const VariantCreation = struct { enum_ty: Str, variant: Str, value: *const Expr };
@@ -159,7 +149,7 @@ fn print_statement(writer: anytype, statement: Statement) !void {
             try writer.print(" }}", .{});
         },
         .assign => |assign| {
-            try print_left_expr(writer, assign.to);
+            try print_expr(writer, assign.to);
             try writer.print(" set to ", .{});
             try print_expr(writer, assign.value);
         },
@@ -189,15 +179,6 @@ fn print_expr(writer: anytype, expr: Expr) !void {
         .member => |m| {
             try print_expr(writer, m.of.*);
             try writer.print(".{s}", .{m.name});
-        },
-    }
-}
-fn print_left_expr(writer: anytype, expr: LeftExpr) !void {
-    switch (expr.kind) {
-        .statement => |index| try writer.print("_{}", .{index}),
-        .member => |member| {
-            try print_left_expr(writer, member.of.*);
-            try writer.print(".{s}", .{member.name});
         },
     }
 }

@@ -75,11 +75,10 @@ pub const Ty = struct {
         writer: anytype,
     ) !void {
         try writer.print("{s}", .{self.name});
-        if (string.eql(self.name, "&")) {
-            try self.args.items[0].format(fmt, options, writer);
-        } else {
+        if (string.eql(self.name, "&"))
+            try self.args.items[0].format(fmt, options, writer)
+        else
             try print_args_of_tys(writer, self.args.items);
-        }
     }
 
     pub fn print_args_of_tys(writer: anytype, args: ?[]const Ty) !void {

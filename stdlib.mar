@@ -27,7 +27,7 @@ fun hash[T](value: T): U64 {
 }
 struct Hasher { state: U64 }
 fun contribute(hasher: &Hasher, val: U64) {
-  hasher.*.state = hasher.*.state.multiply(33_U64).add(val)
+  hasher.state = hasher.state.multiply(33_U64).add(val)
 }
 
 | Printing  
@@ -168,7 +168,7 @@ struct Pair[A, B] { a: A, b: B }
 |fun next[I](self: &Enumerated[I]): Maybe[Pair[U64, _]] {
 |  var line = vec[U8]()
 |  loop {
-|    switch &self.*.iter.&.next() {
+|    switch &self.iter.&.next() {
 |      none {
 |        if line.len.is_greater_than(0_U64) { break } else { return Maybe[Slice[U8]].none }
 |        Nothing.{}
@@ -264,9 +264,9 @@ fun is_empty[T](range: Range[T]): Bool { range.start.is_at_least(range.end) }
 fun iter[T](range: Range[T]): RangeIter[T] { RangeIter[T].{ rest = range } }
 struct RangeIter[T] { rest: Range[T] }
 fun next[T](iter: &RangeIter[T]): Maybe[T] {
-  if iter.*.rest.is_empty() then Maybe[T].none else {
-    var current = iter.*.rest.start
-    iter.*.rest.start = current.inc()
+  if iter.rest.is_empty() then Maybe[T].none else {
+    var current = iter.rest.start
+    iter.rest.start = current.inc()
     Maybe[T].some(current)
   }
 }
@@ -361,8 +361,8 @@ fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
   Bool.true
 }
 fun trim_prefix(slice: &Slice[U8], prefix: Slice[U8]) {
-  if slice.*.starts_with(prefix)
-  then slice.* = slice.*.subslice(prefix.len)
+  if slice.starts_with(prefix)
+  then slice.* = slice.subslice(prefix.len)
   else panic("Slice doesn't start with prefix")
 }
 fun equals[T](a: Slice[T], b: Slice[T]): Bool {
@@ -376,10 +376,10 @@ struct SliceIter[T] {
   index: U64,
 }
 fun next[T](iter: &SliceIter[T]): Maybe[T] {
-  var item = if iter.*.index.is_less_than(iter.*.slice.len)
-    then Maybe[T].some(iter.*.slice.get(iter.*.index))
+  var item = if iter.index.is_less_than(iter.slice.len)
+    then Maybe[T].some(iter.slice.get(iter.index))
     else Maybe[T].none
-  iter.*.index = iter.*.index.add(1_U64)
+  iter.index = iter.index.add(1_U64)
   item
 }
 fun rev_iter[T](slice: Slice[T]): SliceRevIter[T] {
@@ -390,9 +390,9 @@ struct SliceRevIter[T] {
   index: U64, | last yielded item
 }
 fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
-  if iter.*.index.is_greater_than(0_U64) then {
-    iter.*.index = iter.*.index.subtract(1_U64)
-    Maybe[T].some(iter.*.slice.get(iter.*.index))
+  if iter.index.is_greater_than(0_U64) then {
+    iter.index = iter.index.subtract(1_U64)
+    Maybe[T].some(iter.slice.get(iter.index))
   } else Maybe[T].none
 }
 fun iter_split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
@@ -402,7 +402,7 @@ struct SplitIter[I] { iter: I, separator: Slice[U8] }
 fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
   var line = vec[U8]()
   loop {
-    switch self.*.iter.&.next()
+    switch self.iter.&.next()
     case none {
       if line.len.is_greater_than(0_U64)
       then break
@@ -410,10 +410,10 @@ fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
     }
     case some(c) {
       line.&.push(c)
-      if line.to_slice().subslice(line.len.subtract(self.*.separator.len))
-        .equals(self.*.separator)
+      if line.to_slice().subslice(line.len.subtract(self.separator.len))
+        .equals(self.separator)
       then return Maybe[Slice[U8]].some(
-        line.to_slice().subslice(0_U64, line.len.subtract(self.*.separator.len))
+        line.to_slice().subslice(0_U64, line.len.subtract(self.separator.len))
       )
     }
   }
@@ -431,25 +431,25 @@ fun vec[T](): Vec[T] {
   Vec[T].{ data = 0_U64.to_reference[T](), capacity = 0_U64, len = 0_U64 }
 }
 fun push[T](vec: &Vec[T], item: T) {
-  if vec.*.capacity.equals(0_U64) then {
-    vec.*.capacity = 8_U64
-    vec.*.data = malloc(vec.*.capacity.multiply(size_of_type[T]())).to_reference[T]()
+  if vec.capacity.equals(0_U64) then {
+    vec.capacity = 8_U64
+    vec.data = malloc(vec.capacity.multiply(size_of_type[T]())).to_reference[T]()
   }
-  if vec.*.capacity.equals(vec.*.len) then {
-    var previous_data = vec.*.data
-    vec.*.capacity = vec.*.capacity.multiply(2_U64)
-    vec.*.data = malloc(vec.*.capacity.multiply(size_of_type[T]())).to_reference[T]()
+  if vec.capacity.equals(vec.len) then {
+    var previous_data = vec.data
+    vec.capacity = vec.capacity.multiply(2_U64)
+    vec.data = malloc(vec.capacity.multiply(size_of_type[T]())).to_reference[T]()
     var i = 0_U64
     loop {
-      if i.equals(vec.*.len) then break
-      var new_item = vec.*.data.add(i)
+      if i.equals(vec.len) then break
+      var new_item = vec.data.add(i)
       new_item.* = previous_data.add(i).*
       i = i.add(1_U64)
     }
   }
-  var new_item = vec.*.data.add(vec.*.len)
+  var new_item = vec.data.add(vec.len)
   new_item.* = item
-  vec.*.len = vec.*.len.add(1_U64)
+  vec.len = vec.len.add(1_U64)
 }
 fun get[T](vec: Vec[T], index: U64): T { vec.get_ref(index).* }
 fun get_ref[T](vec: Vec[T], index: U64): &T {
@@ -491,13 +491,13 @@ fun map[K, V](): Map[K, V] {
 }
 fun is_empty[K, V](map: Map[K, V]): Bool { map.size.equals(0_U64) }
 fun insert[K, V](map: &Map[K, V], key: K, value: V) {
-  var fill_percentage = 100_U64.multiply(map.*.size).divide(map.*.buckets.len)
+  var fill_percentage = 100_U64.multiply(map.size).divide(map.buckets.len)
   prints("Fill percentage: ")
   println(fill_percentage)
   if fill_percentage.is_at_least(60_U64) then {
-    var old_buckets = map.*.buckets
+    var old_buckets = map.buckets
     map.* = Map[K, V].{
-      buckets = filled_slice(map.*.buckets.len.multiply(2_U64), MapBucket[K, V].empty),
+      buckets = filled_slice(map.buckets.len.multiply(2_U64), MapBucket[K, V].empty),
       size = 0_U64,
     }
     for bucket in &old_buckets.iter() {
@@ -510,20 +510,20 @@ fun insert[K, V](map: &Map[K, V], key: K, value: V) {
   map.raw_insert(key, value)
 }
 fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
-  var i = key.hash().modulo(map.*.buckets.len)
+  var i = key.hash().modulo(map.buckets.len)
   loop {
-    var bucket = map.*.buckets.get_ref(i)
+    var bucket = map.buckets.get_ref(i)
     switch bucket.*
     case empty {
       bucket.* = MapBucket[K, V].filled(MapEntry[K, V].{ key = key, value = value })
-      map.*.size = map.*.size.add(1_U64)
+      map.size = map.size.add(1_U64)
       break
     }
     case filled(entry) {
       if entry.key.equals(key) then {
         bucket.* = MapBucket[K, V].filled(MapEntry[K, V].{ key = key, value = value })
         break
-      } else i = i.add(1_U64).modulo(map.*.buckets.len)
+      } else i = i.add(1_U64).modulo(map.buckets.len)
     }
   }
 }
