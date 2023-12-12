@@ -13,9 +13,10 @@ fun game_score(game: Slice[U8]): U64 {
       var num = parts.get(0_U64).parse_U64()
       var color = parts.get(1_U64)
 
-      if color.equals("red").and(num.is_greater_than(12_U64)) then return 0_U64
-      if color.equals("green").and(num.is_greater_than(13_U64)) then return 0_U64
-      if color.equals("blue").and(num.is_greater_than(14_U64)) then return 0_U64
+      var is_possible = color.equals("red").and(num.is_at_most(12_U64))
+        .or(color.equals("green").and(num.is_at_most(13_U64)))
+        .or(color.equals("blue").and(num.is_at_most(14_U64)))
+      if not(is_possible) then return 0_U64
     }
 
   return id | Game is possible
