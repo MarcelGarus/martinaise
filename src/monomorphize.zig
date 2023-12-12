@@ -14,7 +14,6 @@ const numbers = @import("numbers.zig");
 const print_on_same_line = @import("term.zig").print_on_same_line;
 
 pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !Result(mono.Mono) {
-    var err = String.init(alloc);
     var monomorphizer = Monomorphizer{
         .alloc = alloc,
         .program = program,
@@ -22,7 +21,7 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !Result(mono
         .tys = StringHashMap(Ty).init(alloc),
         .ty_defs = StringArrayHashMap(mono.TyDef).init(alloc),
         .funs = StringHashMap(mono.Fun).init(alloc),
-        .err = err,
+        .err = String.init(alloc),
     };
     try monomorphizer.put_ty(.{ .name = "Never", .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
     try monomorphizer.put_ty(.{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
@@ -38,18 +37,17 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !Result(mono
     };
 
     _ = FunMonomorphizer.compile(&monomorphizer, main_fun, TyEnv.init(alloc)) catch |error_| {
-        if (error_ == error.CompileError) {
-            var err_with_context = String.init(alloc);
-            const errw = err_with_context.writer();
-            try format(errw, "Error while compiling\n", .{});
-            for (monomorphizer.context.items) |context| {
-                try format(errw, "- {s}\n", .{context});
-            }
-            try format(errw, "\n", .{});
-            try format(errw, "{s}", .{err.items});
+        if (error_ != error.CompileError) return error_;
 
-            return .{ .err = err_with_context.items };
-        } else return error_;
+        var err_with_context = String.init(alloc);
+        const errw = err_with_context.writer();
+        try format(errw, "Error while compiling\n", .{});
+        for (monomorphizer.context.items) |context|
+            try format(errw, "- {s}\n", .{context});
+        try format(errw, "\n", .{});
+        try format(errw, "{s}", .{monomorphizer.err.items});
+
+        return .{ .err = err_with_context.items };
     };
 
     return .{ .ok = mono.Mono{
@@ -357,9 +355,8 @@ const FunMonomorphizer = struct {
         }
         try signature.append(')');
 
-        if (monomorphizer.funs.contains(signature.items)) {
+        if (monomorphizer.funs.contains(signature.items))
             return signature.items;
-        }
 
         try monomorphizer.context.append(signature.items);
         { // Printing
@@ -814,6 +811,7 @@ const FunMonomorphizer = struct {
             const lookup_solution = self.monomorphizer.lookup(name, ty_args, arg_tys.items) catch |err| {
                 if (err != error.CompileError) return err;
                 if (first_error == null) first_error = self.monomorphizer.err;
+                self.monomorphizer.err = String.init(self.alloc);
 
                 if (callee != null and string.starts_with(arg_tys.items[0], "&")) {
                     // There is a callee and it's a reference. Dereference it.
@@ -953,9 +951,7 @@ const FunMonomorphizer = struct {
 
         find_variant: {
             for (enum_def.variants.items) |variant| {
-                if (string.eql(variant.name, member.name)) {
-                    break :find_variant;
-                }
+                if (string.eql(variant.name, member.name)) break :find_variant;
             }
             // Did not find a variant. Restore the sacred timeline.
             try self.format_err("You tried to instantiate the enum {s}, which doesn't have a \"{s}\" variant.\n", .{ enum_ty, member.name });
