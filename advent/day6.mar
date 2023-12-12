@@ -1,0 +1,45 @@
+fun main(): U8 {
+  var lines = read_file("advent/day6-2.big").lines()
+  println(lines)
+  lines.get_ref(0_U64).trim_prefix("Time:")
+  lines.get_ref(1_U64).trim_prefix("Distance:")
+
+  println(lines)
+
+  var times = vec[U64]()
+  var distances = vec[U64]()
+  for time in &lines.get(0_U64).split(" ").iter() do
+    if not(time.is_empty()) then times.&.push(time.parse_U64())
+  for dist in &lines.get(1_U64).split(" ").iter() do
+    if not(dist.is_empty()) then distances.&.push(dist.parse_U64())
+
+  println(times)
+  println(distances)
+
+  var wins = vec[U64]()
+  var i = 0_U64
+  loop {
+    if i.equals(times.len) then break
+    var time = times.get(i)
+    var goal = distances.get(i)
+
+    var ways_to_win = 0_U64
+    for hold in &1_U64.to(time).iter() do {
+      var speed = hold
+      var release = time.subtract(hold)
+      var dist = release.multiply(speed)
+      if dist.is_greater_than(goal) then ways_to_win = ways_to_win.inc()
+    }
+    i = i.inc()
+
+    println(ways_to_win)
+    wins.&.push(ways_to_win)
+  }
+
+  println(wins)
+  var product = 1_U64
+  for win in &wins.iter() do product = product.multiply(win)
+  println(product)
+
+  return 0_U8
+}
