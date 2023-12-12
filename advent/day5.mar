@@ -1,0 +1,40 @@
+fun main(): U8 {
+  var lines = &read_file("advent/day5.big").lines().iter()
+
+  var ids = set[U64]()
+  {
+    var first_line = lines.next().unwrap()
+    first_line.&.trim_prefix("seeds: ")
+    for n in &first_line.split(" ").iter() do ids.&.insert(n.parse_U64())
+    var _ = lines.next().unwrap()
+  }
+
+  loop {
+    var category = switch lines.next()
+      case some(line) line.split(" ").get(0_U64).split("-to-").get(1_U64)
+      case none break
+    var next_ids = set[U64]()
+    var mapped_ids = set[U64]()
+    loop {
+      var line = switch lines.next() case some(line) line case none break
+      if line.is_empty() then break
+      var dest = line.split(" ").get(0_U64).parse_U64()
+      var source = line.split(" ").get(1_U64).parse_U64()
+      var len = line.split(" ").get(2_U64).parse_U64()
+
+      for id in &ids.iter() do
+        if source.to(source.add(len)).contains(id) then {
+          mapped_ids.&.insert(id)
+          next_ids.&.insert(id.add(dest).subtract(source))
+        }
+    }
+    for id in &ids.iter() do
+      if not(mapped_ids.&.contains(id)) then next_ids.&.insert(id)
+    ids = next_ids
+    if category.equals("location") then break
+  }
+  println(ids)
+  println(ids.min())
+
+  return 0_U8
+}
