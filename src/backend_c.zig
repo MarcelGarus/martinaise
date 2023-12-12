@@ -6,15 +6,9 @@ const ast = @import("ast.zig");
 const string = @import("string.zig");
 const String = string.String;
 const Str = string.Str;
+const formata = string.formata;
 const mono = @import("mono.zig");
 const numbers = @import("numbers.zig");
-
-// Formats to a newly allocated string, leaking the memory.
-fn formata(alloc: std.mem.Allocator, comptime s: Str, args: anytype) Str {
-    var out = String.init(alloc);
-    format(out.writer(), s, args) catch @panic("couldn't format");
-    return out.items;
-}
 
 pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
     var out_buffer = String.init(alloc);

@@ -23,7 +23,7 @@ pub fn main() !u8 {
     std.debug.print("Welcome to Martinaise.\n", .{});
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var alloc = gpa.allocator();
+    const alloc = gpa.allocator();
 
     var args = std.process.args();
     _ = args.skip();
@@ -56,14 +56,11 @@ pub fn main() !u8 {
             try clear_terminal(alloc);
 
             std.debug.print("Recompiling\n", .{});
-            try run_pipeline(alloc, command, file_path);
+            _ = try run_pipeline(alloc, command, file_path);
 
             try watcher.wait_for_change();
         }
-    } else {
-        try run_pipeline(alloc, command, file_path);
-        return 0;
-    }
+    } else return if (try run_pipeline(alloc, command, file_path)) 0 else 1;
 }
 
 fn print_usage_info() void {
@@ -78,7 +75,13 @@ fn print_usage_info() void {
         std.debug.print("  watch    watches, compiles, and runs\n", .{});
 }
 
-fn run_pipeline(alloc: Allocator, command: Command, file_path: Str) !void {
+// Runs the pipeline that matches the command. Errors are handled internally
+// (stuff is printed to stdout). Returns whether it ran through successfully.
+fn run_pipeline(original_alloc: Allocator, command: Command, file_path: Str) !bool {
+    var arena = std.heap.ArenaAllocator.init(original_alloc);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
     var stdlib_size: usize = 0;
     const input = read_input: {
         print_on_same_line("Reading {s}\n", .{file_path});
@@ -89,7 +92,7 @@ fn run_pipeline(alloc: Allocator, command: Command, file_path: Str) !void {
 
         var file = std.fs.cwd().openFile(file_path, .{}) catch |e| {
             std.debug.print("Couldn't open file {}", .{e});
-            return;
+            return false;
         };
         defer file.close();
         var file_len = (try file.stat()).size;
@@ -110,13 +113,13 @@ fn run_pipeline(alloc: Allocator, command: Command, file_path: Str) !void {
             .ok => |the_ast| break :parse_ast the_ast,
             .err => |err| {
                 std.debug.print("{s}\n", .{err});
-                return;
+                return false;
             },
         }
     };
     if (command == .ast) {
         try ast.print(std.io.getStdOut().writer(), the_ast);
-        return;
+        return true;
     }
 
     const the_mono = compile_mono: {
@@ -125,13 +128,13 @@ fn run_pipeline(alloc: Allocator, command: Command, file_path: Str) !void {
             .ok => |the_mono| break :compile_mono the_mono,
             .err => |err| {
                 print_on_same_line("{s}", .{err});
-                return;
+                return false;
             },
         }
     };
     if (command == .mono) {
         try mono.print(std.io.getStdOut().writer(), the_mono);
-        return;
+        return true;
     }
 
     { // Compile to C
@@ -143,7 +146,7 @@ fn run_pipeline(alloc: Allocator, command: Command, file_path: Str) !void {
     }
     if (command == .compile) {
         std.debug.print("Compiled to output.c. Enjoy!\n", .{});
-        return;
+        return true;
     }
 
     { // Compile C
@@ -157,7 +160,7 @@ fn run_pipeline(alloc: Allocator, command: Command, file_path: Str) !void {
         };
         if (!worked) {
             std.debug.print("Compiling C using GCC failed.\n", .{});
-            return;
+            return false;
         }
     }
 
@@ -190,6 +193,25 @@ fn run_pipeline(alloc: Allocator, command: Command, file_path: Str) !void {
                 std.debug.print("Waiting for program completed with unknown wait result {d}.\n", .{val});
                 return error.Todo;
             },
+        }
+    }
+
+    return true;
+}
+
+test "run all days" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for (1..5) |day| {
+        for ([_]Str{
+            string.formata(alloc, "advent/day{}.mar", .{day}),
+            string.formata(alloc, "advent/day{}-2.mar", .{day}),
+        }) |file| {
+            std.debug.print("File: {s}\n", .{file});
+            if (!try run_pipeline(alloc, .run, file))
+                return error.PipelineFailed;
         }
     }
 }
