@@ -1,14 +1,14 @@
-| Welcome to Martinaise!
+| Welcome to Martinaise!  
 | This is the standard library. Be careful when deleting code here because this
 | may crash the compiler.
 
-| Nothing
+| Nothing  
 | A type with only one instance. Functions that don't explicitly return a value
 | return Nothing instead.
 struct Nothing {}
 fun dump[W](nothing: Nothing, writer: W) { "nothing".dump(writer) }
 
-| Never
+| Never  
 | Some expressions always abort control flow, for example `return 3`. These
 | evaluate to the Never type.
 struct Never {} | TODO: Make this an enum
@@ -16,7 +16,7 @@ struct Never {} | TODO: Make this an enum
 fun identity[T](value: T): T { value }
 fun notEquals[T](a: T, b: T): Bool { not(a.equals(b)) }
 
-| Hashing
+| Hashing  
 | To use this hash function, implement a hash(T, Hasher) function that
 | contributes some uniqueness/entropy to the Hasher by calling its
 | contribute(U64) function. Internally, the Hasher uses the djb2 algorithm.
@@ -30,7 +30,7 @@ fun contribute(hasher: &Hasher, val: U64) {
   hasher.*.state = hasher.*.state.multiply(33_U64).add(val)
 }
 
-| Printing
+| Printing  
 | The print and println functions can print any value with a dump(Writer)
 | function. Writers are anything with a write(U8) function. The prints and
 | printsln functions print the argument as a string.
@@ -43,7 +43,7 @@ fun println[T](value: T) { print(value) StdoutWriter.{}.write(newline()) }
 fun prints(message: Slice[U8]) { print(str(message)) }
 fun printsln(message: Slice[U8]) { println(str(message)) }
 
-| Char
+| Char  
 | Essentially just a U8, but it's formatted differently.
 struct Char { value: U8 }
 fun char(value: U8): Char { Char.{ value = value } }
@@ -51,7 +51,7 @@ fun dump[W](c: Char, writer: W) { writer.write(c.value) }
 | TODO: refactor to variable when we have global variables
 fun newline(): U8 { 10_U8 }
 
-| Str
+| Str  
 | Strings are essentially just a Slice[U8], but they are formatted differently.
 | There's no enforcement of whether they are UTF-8 or anything. When formatting
 | strings, the raw bytes are simply sent to the writer.
@@ -66,7 +66,7 @@ fun dump[W](str: Str, writer: W) {
   }
 }
 
-| Bool
+| Bool  
 | The usual boolean values true and false.
 enum Bool { true, false }
 fun equals(a: Bool, b: Bool): Bool { if a then b else not(b) }
@@ -82,72 +82,73 @@ fun dump[W](b: Bool, writer: W) {
   {if b then "true" else "false"}.dump(writer)
 }
 
-| Maybe
+| Maybe  
 | Like Option in Rust, but with the cooler Haskell name.
 enum Maybe[T] { some: T, none }
 fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] {
-  switch maybe { some(inner) { inner } none { Maybe[T].none() } }
+  switch maybe case some(inner) inner case none Maybe[T].none()
 }
 | TODO: remove when language feature exists
 fun is_some[T](maybe: Maybe[T]): Bool {
-  switch maybe { some(_) { Bool.true } none { Bool.false } }
+  switch maybe case some(_) Bool.true case none Bool.false
 }
 fun is_none[T](maybe: Maybe[T]): Bool {
-  switch maybe { some(_) { Bool.false } none { Bool.true } }
+  switch maybe case some(_) Bool.false case none Bool.true
 }
 fun equals(a: Maybe[T], b: Maybe[T]): Bool {
-  switch a {
-    some(a_val) {
-      switch b { some(b_val) { a_val.equals(b_val) } none { Bool.false } }
-    }
-    none { b.is_none() }
+  switch a
+  case some(a_val) {
+    switch b case some(b_val) a_val.equals(b_val) case none Bool.false
   }
+  case none { b.is_none() }
 }
 fun hash[T](value: Maybe[T], hasher: &Hasher) {
-  switch value {
-    some(inner) {
-      hasher.contribute('s.to_U64())
-      inner.hash(hasher)
-    }
-    none { hasher.contribute('n.to_U64()) }
+  switch value
+  case some(inner) {
+    hasher.contribute('s.to_U64())
+    inner.hash(hasher)
   }
+  case none hasher.contribute('n.to_U64())
 }
 fun dump[T, W](maybe: Maybe[T], writer: W) {
-  switch maybe {
-    some(val) { str("some(").dump(writer) val.dump(writer) char(')).dump(writer) }
-    none { str("none").dump(writer) }
+  switch maybe
+  case some(val) {
+    str("some(").dump(writer)
+    val.dump(writer)
+    char(')).dump(writer)
   }
+  case none str("none").dump(writer)
 }
 fun unwrap[T](maybe: Maybe[T]): T {
-  switch maybe {
-    some(val) { return val }
-    none { panic("Called none.unwrap") }
-  }
+  switch maybe
+  case some(val) return val
+  case none panic("Called none.unwrap")
 }
 
-| Comparing
+| Comparing  
 | Comparing values results in an Ordering.
 enum Ordering { less, equal, greater }
 fun is_less(ord: Ordering): Bool {
-  switch ord { less { Bool.true } equal { Bool.false } greater { Bool.false } }
+  switch ord case less Bool.true case equal Bool.false case greater Bool.false
 }
 fun is_equal(ord: Ordering): Bool {
-  switch ord { less { Bool.false } equal { Bool.true } greater { Bool.false } }
+  switch ord case less Bool.false case equal Bool.true case greater Bool.false
 }
 fun is_greater(ord: Ordering): Bool {
-  switch ord { less { Bool.false } equal { Bool.false } greater { Bool.true } }
+  switch ord case less Bool.false case equal Bool.false case greater Bool.true
 }
 fun is_less_or_equal(ord: Ordering): Bool {
-  switch ord { less { Bool.true } equal { Bool.true } greater { Bool.false } }
+  switch ord case less Bool.true case equal Bool.true case greater Bool.false
 }
 fun is_greater_or_equal(ord: Ordering): Bool {
-  switch ord { less { Bool.false } equal { Bool.true } greater { Bool.true } }
+  switch ord case less Bool.false case equal Bool.true case greater Bool.true
 }
 fun dump[W](ord: Ordering, writer: W) {
-  switch ord {
-    less { "less" }
-    equal { "equal" }
-    greater { "greater" }
+  {
+    switch ord
+    case less "less"
+    case equal "equal"
+    case greater "greater"
   }.dump(writer)
 }
 fun is_less_than[T](a: T, b: T): Bool { a.compare_to(b).is_less() }
@@ -157,7 +158,7 @@ fun is_at_most[T](a: T, b: T): Bool { a.comapre_to(b).is_less_or_equal() }
 fun min[T](a: T, b: T): T { if a.is_less_than(b) then a else b }
 fun max[T](a: T, b: T): T { if a.is_greater_than(b) then a else b }
 
-| Pair
+| Pair  
 struct Pair[A, B] { a: A, b: B }
 |fun enumerate[I](iter: I): Enumerated[I] {
 |  Enumerated[I].{ iter = iter, counter = 0_U64 }
@@ -184,7 +185,7 @@ struct Pair[A, B] { a: A, b: B }
 |  Maybe[Slice[U8]].some(line.to_slice())
 |}
 
-| Int
+| Int  
 | Integers are built into the language. There are several types with different
 | signedness and bit amount available as {U, I} x {8, 16, 32, 64}. For example,
 | U64 is an unsigned integer of 64 bits.
@@ -251,7 +252,7 @@ fun parse_U64(bytes: Slice[U8]): U64 {
   num
 }
 
-| Range
+| Range  
 | Ranges have an inclusive start and exclusive end value.
 struct Range[T] { start: T, end: T }
 fun to[T](start: T, end: T): Range[T] { Range[T].{ start = start, end = end } }
@@ -270,7 +271,7 @@ fun next[T](iter: &RangeIter[T]): Maybe[T] {
   }
 }
 
-| Reference
+| Reference  
 | References (pointers to memory locations) are built into the compiler. &T is a
 | reference to a T. You can get a reference to a value using the & operator on
 | an expression. You can follow a reference using the expr.* syntax. References
@@ -303,7 +304,7 @@ fun dump_address[W](address: U64, writer: W) {
   }
 }
 
-| Slice
+| Slice  
 | A slice is a memory region where values of the same type are right next to
 | each other.
 struct Slice[T] { data: &T, len: U64 }
@@ -401,26 +402,25 @@ struct SplitIter[I] { iter: I, separator: Slice[U8] }
 fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
   var line = vec[U8]()
   loop {
-    switch self.*.iter.&.next() {
-      none {
-        if line.len.is_greater_than(0_U64)
-        then break
-        else return Maybe[Slice[U8]].none
-      }
-      some(c) {
-        line.&.push(c)
-        if line.to_slice().subslice(line.len.subtract(self.*.separator.len))
-          .equals(self.*.separator)
-        then return Maybe[Slice[U8]].some(
-          line.to_slice().subslice(0_U64, line.len.subtract(self.*.separator.len))
-        )
-      }
+    switch self.*.iter.&.next()
+    case none {
+      if line.len.is_greater_than(0_U64)
+      then break
+      else return Maybe[Slice[U8]].none
+    }
+    case some(c) {
+      line.&.push(c)
+      if line.to_slice().subslice(line.len.subtract(self.*.separator.len))
+        .equals(self.*.separator)
+      then return Maybe[Slice[U8]].some(
+        line.to_slice().subslice(0_U64, line.len.subtract(self.*.separator.len))
+      )
     }
   }
   Maybe[Slice[U8]].some(line.to_slice())
 }
 
-| Vec
+| Vec  
 | A growable array.
 struct Vec[T] {
   data: &T,
@@ -478,7 +478,7 @@ fun dump[T, W](point: Point[T], writer: W) {
   ').dump(writer)
 }
 
-| Map
+| Map   
 | Stores key-value-pairs for efficient lookup.
 struct Map[K, V] { buckets: Slice[MapBucket[K, V]], size: U64 }
 enum MapBucket[K, V] { empty, filled: MapEntry[K, V] }
@@ -513,35 +513,33 @@ fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
   var i = key.hash().modulo(map.*.buckets.len)
   loop {
     var bucket = map.*.buckets.get_ref(i)
-    switch bucket.* {
-      empty {
+    switch bucket.*
+    case empty {
+      bucket.* = MapBucket[K, V].filled(MapEntry[K, V].{ key = key, value = value })
+      map.*.size = map.*.size.add(1_U64)
+      break
+    }
+    case filled(entry) {
+      if entry.key.equals(key) then {
         bucket.* = MapBucket[K, V].filled(MapEntry[K, V].{ key = key, value = value })
-        map.*.size = map.*.size.add(1_U64)
         break
-      }
-      filled(entry) {
-        if entry.key.equals(key) then {
-          bucket.* = MapBucket[K, V].filled(MapEntry[K, V].{ key = key, value = value })
-          break
-        } else i = i.add(1_U64).modulo(map.*.buckets.len)
-      }
+      } else i = i.add(1_U64).modulo(map.*.buckets.len)
     }
   }
 }
 fun get[K, V](map: Map[K, V], key: K): Maybe[V] {
-  switch map.get_ref(key) { some(val) { Maybe[V].some(val.*) } none { Maybe[V].none } }
+  switch map.get_ref(key) case some(val) Maybe[V].some(val.*) case none Maybe[V].none
 }
 fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
   var i = key.hash().modulo(map.buckets.len)
   loop {
     var bucket = map.buckets.get_ref(i)
-    switch bucket.* {
-      empty { return Maybe[&V].none }
-      filled(entry) {
-        if entry.key.equals(key) then return Maybe[&V].some(&entry.value)
-        else i = i.add(1_U64).modulo(map.buckets.len)
-      }
-    }
+    switch bucket.*
+    case empty { return Maybe[&V].none }
+    case filled(entry)
+      if entry.key.equals(key)
+      then return Maybe[&V].some(&entry.value)
+      else i = i.add(1_U64).modulo(map.buckets.len)
   }
   | TODO: make it so that this is no longer necessary
   Maybe[&V].none
@@ -550,14 +548,13 @@ fun dump[K, V, W](map: Map[K, V], writer: W) {
   char('{).dump(writer)
   var first = Bool.true
   for bucket in &map.buckets.iter() {
-    switch bucket {
-      empty {}
-      filled(entry) {
-        if first then first = Bool.false else str(", ").dump(writer)
-        entry.key.dump(writer)
-        str(": ").dump(writer)
-        entry.value.dump(writer)
-      }
+    switch bucket
+    case empty {}
+    case filled(entry) {
+      if first then first = Bool.false else str(", ").dump(writer)
+      entry.key.dump(writer)
+      str(": ").dump(writer)
+      entry.value.dump(writer)
     }
   }
   char('}).dump(writer)

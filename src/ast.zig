@@ -78,7 +78,7 @@ pub const Var = struct { name: Str, value: *Expr };
 pub const Assign = struct { to: *Expr, value: *Expr };
 pub const If = struct { condition: *const Expr, then: *const Expr, else_: ?*const Expr };
 pub const Switch = struct { value: *const Expr, cases: ArrayList(Case) };
-pub const Case = struct { variant: Str, binding: ?Str, body: Body };
+pub const Case = struct { variant: Str, binding: ?Str, then: *const Expr };
 pub const For = struct { iter_var: Str, iter: *const Expr, body: Body };
 
 pub fn print(writer: anytype, program: Program) !void {
@@ -220,9 +220,7 @@ pub fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
             try print_expr(writer, indent, call.callee.*);
             try writer.print("(", .{});
             for (call.args.items, 0..) |arg, i| {
-                if (i > 0) {
-                    try writer.print(", ", .{});
-                }
+                if (i > 0) try writer.print(", ", .{});
                 try print_expr(writer, indent, arg);
             }
             try writer.print(")", .{});
@@ -258,7 +256,7 @@ pub fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
         .if_ => |if_| {
             try writer.print("if ", .{});
             try print_expr(writer, indent, if_.condition.*);
-            try writer.print(" ", .{});
+            try writer.print(" then ", .{});
             try print_expr(writer, indent, if_.then.*);
             if (if_.else_) |e| {
                 try writer.print(" else ", .{});
@@ -270,13 +268,11 @@ pub fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
             try print_expr(writer, indent, switch_.value.*);
             try writer.print(" {{\n", .{});
             for (switch_.cases.items) |case| {
-                try print_indent(writer, indent + 1);
-                try writer.print("{s}", .{case.variant});
-                if (case.binding) |binding| {
-                    try writer.print("({s})", .{binding});
-                }
+                try print_indent(writer, indent);
+                try writer.print("case {s}", .{case.variant});
+                if (case.binding) |binding| try writer.print("({s})", .{binding});
                 try writer.print(" ", .{});
-                try print_body(writer, indent + 1, case.body);
+                try print_expr(writer, indent + 1, case.then.*);
                 try writer.print("\n", .{});
             }
             try print_indent(writer, indent);

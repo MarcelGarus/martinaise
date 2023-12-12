@@ -47,7 +47,10 @@ pub fn parse(alloc: std.mem.Allocator, code: Str, stdlib_size: usize) !Result(as
         const num_lines_to_display = @min(lines.items.len, 4);
         const start_line = lines.items.len - num_lines_to_display + 1;
         for (lines.items[start_line..], start_line..) |line, line_number| {
-            const number = if (stdlib_lines) |stdlines| line_number - stdlines else line_number + 1;
+            var number = line_number + 1;
+            if (stdlib_lines) |stdlines| if (line_number > stdlines) {
+                number -= stdlines + 1;
+            };
             try format(out, "{d:4} | {s}\n", .{ number, line });
         }
 
@@ -470,6 +473,8 @@ const Parser = struct {
         ExpectedThen,
         ExpectedThenExpression,
         ExpectedElseExpression,
+        ExpectedVariant,
+        ExpectedCaseExpression,
         ExpectedColon,
         ExpectedTypeArgument,
         ExpectedClosingBracket,
@@ -755,17 +760,16 @@ const Parser = struct {
         self.consume_keyword("switch") orelse return null;
         self.consume_whitespace();
 
-        const value = try self.parse_expression() orelse return error.ExpectedExpression;
-        self.consume_whitespace();
-        const heaped_value = try self.alloc.create(ast.Expr);
-        heaped_value.* = value;
-
-        self.consume_prefix("{") orelse return error.ExpectedOpeningBrace;
+        const value = try self.alloc.create(ast.Expr);
+        value.* = try self.parse_expression() orelse return error.ExpectedExpression;
         self.consume_whitespace();
 
         var cases = ArrayList(ast.Case).init(self.alloc);
         while (true) {
-            const variant = self.parse_name() orelse break;
+            self.consume_keyword("case") orelse break;
+            self.consume_whitespace();
+
+            const variant = self.parse_name() orelse return error.ExpectedVariant;
             self.consume_whitespace();
 
             var binding: ?Str = null;
@@ -777,15 +781,14 @@ const Parser = struct {
                 self.consume_whitespace();
             }
 
-            const body = try self.parse_body() orelse return error.ExpectedBody;
+            const then = try self.alloc.create(ast.Expr);
+            then.* = try self.parse_expression() orelse return error.ExpectedCaseExpression;
             self.consume_whitespace();
 
-            try cases.append(.{ .variant = variant, .binding = binding, .body = body });
+            try cases.append(.{ .variant = variant, .binding = binding, .then = then });
         }
 
-        self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
-
-        return .{ .value = heaped_value, .cases = cases };
+        return .{ .value = value, .cases = cases };
     }
 
     fn parse_loop(self: *Self) !?ast.Body {

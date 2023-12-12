@@ -655,21 +655,21 @@ const FunMonomorphizer = struct {
                     if (case.binding) |binding|
                         try self.var_env.put(binding, .{ .index = unpacked, .ty = ty });
 
-                    const body_result = try self.compile_body(case.body.items);
-                    if (!string.eql(body_result.ty, "Never")) {
+                    const then_result = try self.compile_expr(case.then.*);
+                    if (!string.eql(then_result.ty, "Never")) {
                         if (result_ty) |expected_ty| {
-                            if (!string.eql(expected_ty, body_result.ty)) {
+                            if (!string.eql(expected_ty, then_result.ty)) {
                                 try self.format_err(
                                     "Previous switch cases return {s}, but the case for \"{s}\" returns {s}.\n",
-                                    .{ expected_ty, case.variant, body_result.ty },
+                                    .{ expected_ty, case.variant, then_result.ty },
                                 );
                                 return error.CompileError;
                             }
-                        } else result_ty = body_result.ty;
+                        } else result_ty = then_result.ty;
 
                         _ = try self.fun.put(.{ .assign = .{
                             .to = .{ .ty = self.fun.tys.items[result], .kind = .{ .statement = result } },
-                            .value = body_result,
+                            .value = then_result,
                         } }, "Nothing");
                     }
                     try after_switch_jumps.append(try self.fun.put(.{ .uninitialized = {} }, "Never")); // will be replaced with jump to after switch

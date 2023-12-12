@@ -5,12 +5,24 @@
   "fileTypes": ["mar"],
   "patterns": [
     {
-      "name": "keyword.default",
+      "name": "keyword",
       "match": "\\b(fun|struct|enum|var)\\b"
     },
     {
       "name": "keyword.control",
-      "match": "\\b(if|then|else|switch|loop|for|in|break|return)\\b"
+      "match": "(case)\\s+([a-zA-Z_0-9]*)",
+      "captures": {
+        "1": {
+          "name": "keyword.control"
+        },
+        "2": {
+          "name": "emphasis"
+        }
+      }
+    },
+    {
+      "name": "keyword.control",
+      "match": "\\b(if|then|else|switch|case|loop|for|in|break|return)\\b"
     },
     { "include": "#comments" },
     {
@@ -19,7 +31,7 @@
       "end": "\""
     },
     {
-      "name": "string.quoted.single",
+      "name": "constant.character",
       "match": "'."
     },
     {
@@ -43,12 +55,13 @@
     "comments": {
       "patterns": [
         {
-          "name": "entity.name.function",
-          "match": "\\| [A-Za-z_0-9]*$"
-        },
-        {
-          "name": "entity.name.function",
-          "match": "\\| Welcome to Martinaise!"
+          "name": "comment.line",
+          "match": "\\| (.*)  $",
+          "captures": {
+            "1": {
+              "name": "markup.bold"
+            }
+          }
         },
         {
           "name": "comment.line",
