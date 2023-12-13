@@ -395,6 +395,8 @@ const FunMonomorphizer = struct {
         for (arg_tys.items) |ty|
             _ = try mono_fun.put(.{ .arg = {} }, ty);
 
+        try monomorphizer.funs.put(signature.items, mono_fun);
+
         var fun_monomorphizer = Self{
             .monomorphizer = monomorphizer,
             .alloc = alloc,

@@ -15,6 +15,11 @@ struct Never {} | TODO: Make this an enum
 
 fun identity[T](value: T): T { value }
 fun notEquals[T](a: T, b: T): Bool { not(a.equals(b)) }
+fun swap[T](a: &T, b: &T) {
+  var tmp = a.*
+  a.* = b.*
+  b.* = tmp
+}
 
 | Hashing  
 | To use this hash function, implement a hash(T, Hasher) function that
@@ -187,6 +192,16 @@ fun inc(a: I8): I8 { a.add(1_I8) }
 fun inc(a: I16): I16 { a.add(1_I16) }
 fun inc(a: I32): I32 { a.add(1_I32) }
 fun inc(a: I64): I64 { a.add(1_I64) }
+fun dec(a: U8): U8 { a.subtract(1_U8) }
+fun dec(a: U16): U16 { a.subtract(1_U16) }
+fun dec(a: U32): U32 { a.subtract(1_U32) }
+fun dec(a: U64): U64 { a.subtract(1_U64) }
+fun dec(a: I8): I8 { a.subtract(1_I8) }
+fun dec(a: I16): I16 { a.subtract(1_I16) }
+fun dec(a: I32): I32 { a.subtract(1_I32) }
+fun dec(a: I64): I64 { a.subtract(1_I64) }
+| fun inc[T](val: &T) { val.* = val.inc() }
+| fun dec[T](val: &T) { val.* = val.dec() }
 fun equals(a: U8, b: U8): Bool { a.compare_to(b).is_equal() }
 fun equals(a: U16, b: U16): Bool { a.compare_to(b).is_equal() }
 fun equals(a: U32, b: U32): Bool { a.compare_to(b).is_equal() }
@@ -342,8 +357,39 @@ fun trim_prefix(slice: &Slice[U8], prefix: Slice[U8]) {
   then slice.* = slice.subslice(prefix.len)
   else panic("Slice doesn't start with prefix")
 }
+fun compare_to[T](a: Slice[T], b: Slice[T]): Ordering {
+  var i = 0_U64
+  loop {
+    if i.equals(a.len).and(i.equals(b.len)) then return Ordering.equal
+    if i.equals(a.len) then return Ordering.less
+    if i.equals(b.len) then return Ordering.greater
+    var ord = a.get(i).compare_to(b.get(i))
+    if not(ord.is_equal()) then return ord
+    i = i.inc()
+  }
+  panic("unreachable") | TODO: remove
+}
 fun equals[T](a: Slice[T], b: Slice[T]): Bool {
-  if a.len.equals(b.len) then starts_with(a, b) else Bool.false
+  if a.len.equals(b.len) then compare_to(a, b).is_equal() else Bool.false
+}
+fun find[T](slice: Slice[T], needle: T): Maybe[U64] {
+  for i in &0_U64.to(slice.len).iter() do
+    if slice.get(i).equals(needle) then return Maybe[U64].some(i)
+  return Maybe[U64].none
+}
+fun sort[T](slice: &Slice[T]) {
+  | quick sort
+  if slice.len.is_at_most(1_U64) then return {}
+  var pivot = slice.get(slice.len.dec())
+  var i = 0_U64
+  for j in &0_U64.to(slice.len).iter() do
+    if slice.get(j).is_less_than(pivot) then {
+      i = i.inc()
+      swap(slice.get_ref(i.dec()), slice.get_ref(j))
+    }
+  swap(slice.get_ref(i), slice.get_ref(slice.len.dec()))
+  sort(&slice.subslice(0_U64, i))
+  sort(&slice.subslice(min(i.inc(), slice.len.dec()), slice.len))
 }
 fun iter[T](slice: Slice[T]): SliceIter[T] {
   SliceIter[T].{ slice = slice, index = 0_U64 }
@@ -413,6 +459,32 @@ struct Vec[T] {
 fun vec[T](): Vec[T] {
   Vec[T].{ data = 0_U64.to_reference[T](), capacity = 0_U64, len = 0_U64 }
 }
+fun vec[T](a: T): Vec[T] {
+  var v = vec[T]()
+  v.&.push(a)
+  v
+}
+fun vec[T](a: T, b: T): Vec[T] {
+  var v = vec[T]()
+  v.&.push(a)
+  v.&.push(b)
+  v
+}
+fun vec[T](a: T, b: T, c: T): Vec[T] {
+  var v = vec[T]()
+  v.&.push(a)
+  v.&.push(b)
+  v.&.push(c)
+  v
+}
+fun vec[T](a: T, b: T, c: T, d: T): Vec[T] {
+  var v = vec[T]()
+  v.&.push(a)
+  v.&.push(b)
+  v.&.push(c)
+  v.&.push(d)
+  v
+}
 fun push[T](vec: &Vec[T], item: T) {
   if vec.capacity.equals(0_U64) then {
     vec.capacity = 8_U64
@@ -445,6 +517,7 @@ fun get_ref[T](vec: Vec[T], index: U64): &T {
 fun to_slice[T](vec: Vec[T]): Slice[T] {
   Slice[T].{ data = vec.data, len = vec.len }
 }
+fun equals[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice().equals(b.to_slice()) }
 fun iter[T](vec: Vec[T]): SliceIter[T] { vec.to_slice().iter() }
 fun dump[T, W](vec: Vec[T], writer: W) { vec.to_slice().dump(writer) }
 
@@ -511,6 +584,7 @@ fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
       } else i = i.add(1_U64).modulo(map.buckets.len)
   }
 }
+fun contains[K, V](map: Map[K, V], key: K): Bool { map.get(key).is_some() }
 fun get[K, V](map: Map[K, V], key: K): Maybe[V] {
   switch map.get_ref(key)
   case some(val) Maybe[V].some(val.*)
@@ -557,6 +631,7 @@ fun next[K, V](map: &MapIter[K, V]): Maybe[MapEntry[K, V]] {
     case empty {}
     case filled(entry) return Maybe[MapEntry[K, V]].some(entry)
   }
+  Maybe[MapEntry[K, V]].none | TODO: remove
 }
 
 | Set  

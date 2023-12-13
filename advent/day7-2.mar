@@ -1,0 +1,71 @@
+struct Hand {
+  score: U8,
+  hand: Slice[U8],
+  bid: U64,
+}
+fun compare_to(a: Hand, b: Hand): Ordering {
+  switch a.score.compare_to(b.score)
+  case less return Ordering.less
+  case greater return Ordering.greater
+  case equal for i in &0_U64.to(5_U64).iter() do {
+    var values = "J23456789TQKA"
+    var a_index = values.find(a.hand.get(i)).unwrap()
+    var b_index = values.find(b.hand.get(i)).unwrap()
+    var ord = a_index.compare_to(b_index)
+    if not(ord.is_equal()) then return ord
+  }
+  return Ordering.equal
+}
+fun hand_score(hand: Slice[U8]): U8 {
+  var max_score = 0_U8
+  for joker in &"J23456789TQKA".iter() do {
+    var card_to_amount = map[U8, U8]()
+    for card in &hand.iter() do {
+      if card.equals('J) then card = joker
+      if card_to_amount.contains(card)
+      then card_to_amount.&.insert(card, card_to_amount.get(card).unwrap().inc())
+      else card_to_amount.&.insert(card, 1_U8)
+    }
+
+    var amounts = vec[U8]()
+    for card_and_amount in &card_to_amount.iter() do
+      amounts.&.push(card_and_amount.value)
+    amounts.to_slice().&.sort()
+
+    var score = 0_U8
+    if amounts.equals(vec[U8](5_U8)) then score = 6_U8 | five of a kind
+    if amounts.equals(vec[U8](1_U8, 4_U8)) then score = 5_U8 | four of a kind
+    if amounts.equals(vec[U8](2_U8, 3_U8)) then score = 4_U8 | full house
+    if amounts.equals(vec[U8](1_U8, 1_U8, 3_U8)) then score = 3_U8 | three of a kind
+    if amounts.equals(vec[U8](1_U8, 2_U8, 2_U8)) then score = 2_U8 | two pair
+    if amounts.equals(vec[U8](1_U8, 1_U8, 1_U8, 2_U8)) then score = 1_U8 | one pair
+    max_score = max(max_score, score)
+  }
+  max_score
+}
+
+fun main(): U8 {
+  var hands = vec[Hand]()
+  for line in &read_file("advent/day7.big").lines().iter() do {
+    var parts = line.split(" ")
+    var hand = parts.get(0_U64)
+    var bid = parts.get(1_U64).parse_U64()
+    var score = hand_score(hand)
+    hands.&.push(Hand.{ score = score, hand = hand, bid = bid })
+  }
+  hands.to_slice().&.sort()
+
+  var total = 0_U64
+  for i in &0_U64.to(hands.len).iter() do {
+    var hand = hands.get(i)
+    print(i.inc())
+    prints(" ")
+    prints(hand.hand)
+    prints(" ")
+    println(hand.bid)
+    total = total.add(i.inc().multiply(hand.bid))
+  }
+  println(total)
+
+  return 0_U8
+}
