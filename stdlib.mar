@@ -44,7 +44,8 @@ fun write(sow: StdoutWriter, c: U8) {
   print_to_stdout(c) | This is a builtin function.
 }
 fun print[T](value: T) { value.dump(StdoutWriter.{}) }
-fun println[T](value: T) { print(value) StdoutWriter.{}.write(newline()) }
+fun println[T](value: T) { print(value) println() }
+fun println() { StdoutWriter.{}.write(newline()) }
 fun prints(message: Slice[U8]) { print(str(message)) }
 fun printsln(message: Slice[U8]) { println(str(message)) }
 
@@ -84,7 +85,7 @@ fun hash(value: I64, hasher: &Hasher) {
   hasher.contribute(if value then 0_U64 else 1_U64)
 }
 fun dump[W](b: Bool, writer: W) {
-  {if b then "true" else "false"}.dump(writer)
+  str({if b then "true" else "false"}).dump(writer)
 }
 
 | Maybe  
@@ -352,6 +353,15 @@ fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
     if not(slice.get(i).equals(prefix.get(i))) then return Bool.false
   Bool.true
 }
+fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
+  if suffix.len.is_greater_than(slice.len) then return Bool.false
+  for i in &0_U64.to(suffix.len).iter() do
+    if not(
+      slice.get(slice.len.subtract(suffix.len).add(i)).equals(suffix.get(i))
+    )
+    then return Bool.false
+  Bool.true
+}
 fun trim_prefix(slice: &Slice[U8], prefix: Slice[U8]) {
   if slice.starts_with(prefix)
   then slice.* = slice.subslice(prefix.len)
@@ -371,6 +381,9 @@ fun compare_to[T](a: Slice[T], b: Slice[T]): Ordering {
 }
 fun equals[T](a: Slice[T], b: Slice[T]): Bool {
   if a.len.equals(b.len) then compare_to(a, b).is_equal() else Bool.false
+}
+fun hash[T](slice: Slice[T], hasher: &Hasher) {
+  for item in &slice.iter() do item.hash(hasher)
 }
 fun find[T](slice: Slice[T], needle: T): Maybe[U64] {
   for i in &0_U64.to(slice.len).iter() do

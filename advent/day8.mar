@@ -1,0 +1,30 @@
+struct Node {
+  left: Slice[U8],
+  right: Slice[U8],
+}
+fun main(): U8 {
+  var lines = read_file("advent/day8.big").lines()
+  var directions = lines.get_ref(0_U64)
+  var nodes = map[Slice[U8], Node]()
+
+  for line in &lines.subslice(2_U64).iter() do {
+    var name = line.subslice(0_U64, 3_U64)
+    var left = line.subslice(7_U64, 10_U64)
+    var right = line.subslice(12_U64, 15_U64)
+    nodes.&.insert(name, Node.{ left = left, right = right })
+  }
+
+  var step = 0_U64
+  var current = "AAA"
+  loop {
+    if current.equals("ZZZ") then break
+    var direction = directions.get(step.modulo(directions.len))
+    if direction.equals('L) then current = nodes.get(current).unwrap().left
+    if direction.equals('R) then current = nodes.get(current).unwrap().right
+    step = step.inc()
+    printsln(current)
+  }
+  println(step)
+
+  return 0_U8
+}
