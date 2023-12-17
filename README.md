@@ -2,7 +2,7 @@
 
 A small, statically typed, low-level language.
 
-Take a look at `example.mar`.
+Take a look at the files in the `advent` folder.
 
 ## This language is not optimized for use, but for fun during implementation
 
