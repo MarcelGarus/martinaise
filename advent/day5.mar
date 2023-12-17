@@ -36,5 +36,5 @@ fun main(): U8 {
   println(ids)
   println(ids.min())
 
-  return 0_U8
+  0_U8
 }

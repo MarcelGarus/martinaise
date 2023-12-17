@@ -25,42 +25,35 @@ fun main(): U8 {
   }
 
   var step = 0_U64
-  var current = vec[U64]()
+  var initials = vec[U64]()
   for node in &0_U64.to(names.len).iter() do
-    if is_initial.get(node) then current.&.push(node)
+    if is_initial.get(node) then initials.&.push(node)
 
-  for node in &current.iter() do {
-    prints(names.get(node))
-    prints(" ")
+  for initial in &initials.iter() do {
+    prints(names.get(initial))
+    println()
+
+    var current = initial
+    var finals = vec[U64]()
+    loop {
+      if is_final.get(current) then {
+        finals.&.push(current)
+        println(finals)
+      }
+
+      var direction = directions.get(step.modulo(directions.len))
+      if direction.equals('L) then current = lefts.get(current).to_U64()
+      if direction.equals('R) then current = rights.get(current).to_U64()
+
+      step = step.inc()
+
+      if current.equals(initial).and(step.modulo(directions.len).equals(0_U64))
+      then break
+    }
+    println(finals)
   }
   println()
 
-  loop {
-    var all_end_with_z = Bool.true
-    for node in &current.iter() do
-      if not(is_final.get(node)) then all_end_with_z = Bool.false
-    if all_end_with_z then break
 
-    var direction = directions.get(step.modulo(directions.len))
-    if direction.equals('L) then
-      for i in &0_U64.to(current.len).iter() do
-        current.get_ref(i).* = lefts.get(current.get(i)).to_U64()
-    if direction.equals('R) then
-      for i in &0_U64.to(current.len).iter() do
-        current.get_ref(i).* = rights.get(current.get(i)).to_U64()
-
-    step = step.inc()
-    if step.modulo(1000000_U64).equals(0_U64) then {
-      print(step)
-      prints(": ")
-      for node in &current.iter() do {
-        prints(names.get(node))
-        prints(" ")
-      }
-      println()
-    }
-  }
-  println(step)
-
-  return 0_U8
+  0_U8
 }

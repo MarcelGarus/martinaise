@@ -19,17 +19,13 @@ fun game_score(game: Slice[U8]): U64 {
       if not(is_possible) then return 0_U64
     }
 
-  return id | Game is possible
+  id | Game is possible
 }
 
 fun main(): U8 {
   var sum = 0_U64
-  for line in &read_file("advent/day2.big").lines().iter() do {
-    | printsln(line)
-    var score = line.game_score()
-    println(score)
-    sum = sum.add(score)
-  }
+  for line in &read_file("advent/day2.big").lines().iter() do
+    sum = sum.add(line.game_score())
   println(sum)
-  return 0_U8
+  0_U8
 }

@@ -20,17 +20,13 @@ fun card_score(card: Slice[U8]): U64 {
     then score = if score.equals(0_U64) then 1_U64 else score.multiply(2_U64)
   }
 
-  return score
+  score
 }
 
 fun main(): U8 {
   var sum = 0_U64
-  for line in &read_file("advent/day4.big").lines().iter() do {
-    | printsln(line)
-    var score = line.card_score()
-    println(score)
-    sum = sum.add(score)
-  }
+  for line in &read_file("advent/day4.big").lines().iter() do
+    sum = sum.add(line.card_score())
   println(sum)
-  return 0_U8
+  0_U8
 }

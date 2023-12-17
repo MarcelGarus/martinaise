@@ -19,7 +19,7 @@ fun card_matches(card: Slice[U8]): U64 {
     if wins then matches = matches.add(1_U64)
   }
 
-  return matches
+  matches
 }
 
 fun main(): U8 {
@@ -43,5 +43,5 @@ fun main(): U8 {
   for amount in &num_cards.iter() do total = total.add(amount)
   println(num_cards)
   println(total)
-  return 0_U8
+  0_U8
 }

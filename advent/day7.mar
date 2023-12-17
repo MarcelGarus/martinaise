@@ -14,7 +14,7 @@ fun compare_to(a: Hand, b: Hand): Ordering {
     var ord = a_index.compare_to(b_index)
     if not(ord.is_equal()) then return ord
   }
-  return Ordering.equal
+  Ordering.equal
 }
 fun hand_score(hand: Slice[U8]): U8 {
   var card_to_amount = map[U8, U8]()
@@ -55,5 +55,5 @@ fun main(): U8 {
   }
   println(total)
 
-  return 0_U8
+  0_U8
 }

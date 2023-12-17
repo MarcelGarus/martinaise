@@ -63,5 +63,5 @@ fun main(): U8 {
     }
   println(sum)
 
-  return 0_U8
+  0_U8
 }

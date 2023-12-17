@@ -41,5 +41,5 @@ fun main(): U8 {
   for win in &wins.iter() do product = product.multiply(win)
   println(product)
 
-  return 0_U8
+  0_U8
 }
