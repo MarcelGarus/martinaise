@@ -22,7 +22,7 @@
     },
     {
       "name": "keyword.control",
-      "match": "\\b(if|then|else|switch|case|loop|for|in|do|break|return)\\b"
+      "match": "\\b(if|then|else|switch|case|loop|for|in|do|break|continue|return)\\b"
     },
     { "include": "#comments" },
     {

@@ -308,11 +308,14 @@ const FunMonomorphizer = struct {
     // When lowering loops, breaks don't know where to jump to yet. Instead,
     // they fill this structure.
     breakable_scopes: ArrayList(BreakableScope), // used like a stack
+    continuable_scopes: ArrayList(ContinuableScope), // used like a stack
+
     const BreakableScope = struct {
         result: ?mono.StatementIndex,
         result_ty: ?Str,
         breaks: ArrayList(mono.StatementIndex),
     };
+    const ContinuableScope = struct { continues: ArrayList(mono.StatementIndex) };
 
     const Self = @This();
 
@@ -404,6 +407,7 @@ const FunMonomorphizer = struct {
             .ty_env = ty_env,
             .var_env = &var_env,
             .breakable_scopes = ArrayList(BreakableScope).init(alloc),
+            .continuable_scopes = ArrayList(ContinuableScope).init(alloc),
         };
 
         const body_result = try fun_monomorphizer.compile_body(fun.body.items);
@@ -422,6 +426,7 @@ const FunMonomorphizer = struct {
 
     fn compile_expr(self: *Self, expression: ast.Expr) error{ Todo, OutOfMemory, CompileError }!mono.Expr {
         if (try self.compile_break(expression)) |expr| return expr;
+        if (try self.compile_continue(expression)) |expr| return expr;
 
         // This may be an enum variant instantiation such as `Maybe[Int].some(3)`.
         if (try self.compile_enum_creation(expression)) |expr| return expr;
@@ -702,15 +707,24 @@ const FunMonomorphizer = struct {
                     .result_ty = null,
                     .breaks = ArrayList(mono.StatementIndex).init(self.alloc),
                 });
+                try self.continuable_scopes.append(.{
+                    .continues = ArrayList(mono.StatementIndex).init(self.alloc),
+                });
                 // TODO: Create inner var env
                 const loop_start = self.fun.next_index();
                 _ = try self.compile_expr(expr.*);
                 _ = try self.fun.put(.{ .jump = .{ .target = loop_start } }, "Never");
 
                 const after_loop = self.fun.next_index();
-                const scope = self.breakable_scopes.pop();
-                if (scope.result_ty) |ty| self.fun.tys.items[result] = ty;
-                for (scope.breaks.items) |b| self.fun.body.items[b] = .{ .jump = .{ .target = after_loop } };
+                {
+                    const scope = self.breakable_scopes.pop();
+                    if (scope.result_ty) |ty| self.fun.tys.items[result] = ty;
+                    for (scope.breaks.items) |b| self.fun.body.items[b] = .{ .jump = .{ .target = after_loop } };
+                }
+                {
+                    const scope = self.continuable_scopes.pop();
+                    for (scope.continues.items) |b| self.fun.body.items[b] = .{ .jump = .{ .target = loop_start } };
+                }
 
                 return .{ .kind = .{ .statement = result }, .ty = self.fun.tys.items[result] };
             },
@@ -876,6 +890,10 @@ const FunMonomorphizer = struct {
 
         const arg_ty = compiled_arg.ty;
 
+        if (self.breakable_scopes.items.len == 0) {
+            try self.format_err("break outside of a loop", .{});
+            return error.CompileError;
+        }
         var scope = &self.breakable_scopes.items[self.breakable_scopes.items.len - 1];
 
         if (scope.result) |result| {
@@ -897,6 +915,24 @@ const FunMonomorphizer = struct {
 
         const jump = try self.fun.put(.{ .uninitialized = {} }, "Never"); // will be replaced by jump to after loop
         try scope.breaks.append(jump);
+        return .{ .kind = .{ .statement = jump }, .ty = "Never" };
+    }
+
+    // Some refs may be continues.
+    fn compile_continue(self: *Self, expr: ast.Expr) !?mono.Expr {
+        switch (expr) {
+            .ref => |name| if (!string.eql(name, "continue")) return null,
+            else => return null,
+        }
+
+        if (self.continuable_scopes.items.len == 0) {
+            try self.format_err("continue outside of a loop", .{});
+            return error.CompileError;
+        }
+        var scope = &self.continuable_scopes.items[self.continuable_scopes.items.len - 1];
+
+        const jump = try self.fun.put(.{ .uninitialized = {} }, "Never"); // will be replaced by jump to loop start
+        try scope.continues.append(jump);
         return .{ .kind = .{ .statement = jump }, .ty = "Never" };
     }
 
