@@ -10,13 +10,12 @@ fun main(): U8 {
   }
 
   loop {
-    var category = switch lines.next()
-      case some(line) line.split(" ").get(0_U64).split("-to-").get(1_U64)
-      case none break
+    var category = {lines.next() orelse break}
+      .split(" ").get(0_U64).split("-to-").get(1_U64)
     var next_ids = set[U64]()
     var mapped_ids = set[U64]()
     loop {
-      var line = switch lines.next() case some(line) line case none break
+      var line = lines.next() orelse break
       if line.is_empty() then break
       var dest = line.split(" ").get(0_U64).parse_U64()
       var source = line.split(" ").get(1_U64).parse_U64()

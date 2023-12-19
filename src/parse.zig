@@ -497,6 +497,7 @@ const Parser = struct {
         ExpectedType,
         ExpectedDo,
         ExpectedLoopExpr,
+        ExpectedAlternativeExpression,
         ExpectedIn,
         ExpectedIterationVariable,
         ExpectedIter,
@@ -541,24 +542,20 @@ const Parser = struct {
                     expression = .{ .ty_arged = type_arged };
                     continue;
                 }
-            }
-
-            if (expression) |expr| {
                 if (try self.parse_expression_suffix_assign(expr)) |assign| {
                     expression = .{ .assign = assign };
                     continue;
                 }
-            }
-
-            if (expression) |expr| {
                 if (try self.parse_expression_suffix_call(expr)) |call| {
                     expression = .{ .call = call };
                     continue;
                 }
-            }
-            if (expression) |expr| {
                 if (try self.parse_expression_suffix_member_or_constructor(expr)) |e| {
                     expression = e;
+                    continue;
+                }
+                if (try self.parse_expression_suffix_orelse(expr)) |e| {
+                    expression = .{ .orelse_ = e };
                     continue;
                 }
             }
@@ -704,6 +701,19 @@ const Parser = struct {
             return .{ .struct_creation = .{ .ty = heaped, .fields = fields } };
         }
         return error.ExpectedMemberOrConstructor;
+    }
+
+    fn parse_expression_suffix_orelse(self: *Self, current: ast.Expr) !?ast.Orelse {
+        self.consume_keyword("orelse") orelse return null;
+        self.consume_whitespace();
+
+        const heaped = try self.alloc.create(ast.Expr);
+        heaped.* = current;
+
+        const alternative = try self.alloc.create(ast.Expr);
+        alternative.* = try self.parse_expression() orelse return error.ExpectedAlternativeExpression;
+
+        return .{ .primary = heaped, .alternative = alternative };
     }
 
     fn parse_var(self: *Self) !?ast.Var {

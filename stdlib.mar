@@ -92,7 +92,7 @@ fun dump[W](b: Bool, writer: W) {
 | Like Option in Rust, but with the cooler Haskell name.
 enum Maybe[T] { some: T, none }
 fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] {
-  switch maybe case some(inner) inner case none Maybe[T].none()
+  inner orelse Maybe[T].none()
 }
 | TODO: remove when language feature exists
 fun is_some[T](maybe: Maybe[T]): Bool {
@@ -125,11 +125,7 @@ fun dump[T, W](maybe: Maybe[T], writer: W) {
   }
   case none str("none").dump(writer)
 }
-fun unwrap[T](maybe: Maybe[T]): T {
-  switch maybe
-  case some(val) return val
-  case none panic("Called none.unwrap")
-}
+fun unwrap[T](maybe: Maybe[T]): T { maybe orelse panic("Called none.unwrap") }
 
 | Comparing  
 | Comparing values results in an Ordering.
@@ -201,8 +197,6 @@ fun dec(a: I8): I8 { a.subtract(1_I8) }
 fun dec(a: I16): I16 { a.subtract(1_I16) }
 fun dec(a: I32): I32 { a.subtract(1_I32) }
 fun dec(a: I64): I64 { a.subtract(1_I64) }
-| fun inc[T](val: &T) { val.* = val.inc() }
-| fun dec[T](val: &T) { val.* = val.dec() }
 fun equals(a: U8, b: U8): Bool { a.compare_to(b).is_equal() }
 fun equals(a: U16, b: U16): Bool { a.compare_to(b).is_equal() }
 fun equals(a: U32, b: U32): Bool { a.compare_to(b).is_equal() }

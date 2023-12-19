@@ -21,7 +21,7 @@ fun next(iter: &RevWindows): Maybe[Slice[U8]] {
 
 fun find_first_digit[I](iter: I, digit_names: Vec[Slice[U8]]): U8 {
   loop {
-    var part = switch iter.next() case some(p) p case none empty_slice[U8]()
+    var part = iter.next() orelse empty_slice[U8]()
     if '0.to('9).contains(part.get(0_U64))
     then break(part.get(0_U64).subtract('0))
     var j = 0_U8

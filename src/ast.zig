@@ -62,6 +62,7 @@ pub const Expr = union(enum) {
     assign: Assign, // foo = ...
     if_: If, // if foo { ... }
     switch_: Switch, // switch foo { a { ... } b(bar) { ... } }
+    orelse_: Orelse, // a orelse b
     loop: *const Expr, // loop { ... }
     for_: For, // for a in b { ... }
     return_: *const Expr, // return ...
@@ -78,6 +79,7 @@ pub const Var = struct { name: Str, value: *Expr };
 pub const Assign = struct { to: *Expr, value: *Expr };
 pub const If = struct { condition: *const Expr, then: *const Expr, else_: ?*const Expr };
 pub const Switch = struct { value: *const Expr, cases: ArrayList(Case) };
+pub const Orelse = struct { primary: *const Expr, alternative: *const Expr };
 pub const Case = struct { variant: Str, binding: ?Str, then: *const Expr };
 pub const For = struct { iter_var: Str, iter: *const Expr, expr: *const Expr };
 
@@ -277,6 +279,11 @@ pub fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
             }
             try print_indent(writer, indent);
             try writer.print("}}", .{});
+        },
+        .orelse_ => |orelse_| {
+            try print_expr(writer, indent, orelse_.primary.*);
+            try writer.print(" orelse ", .{});
+            try print_expr(writer, indent, orelse_.alternative.*);
         },
         .loop => |body| {
             try writer.print("loop ", .{});

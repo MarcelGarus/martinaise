@@ -22,7 +22,7 @@
     },
     {
       "name": "keyword.control",
-      "match": "\\b(if|then|else|switch|case|loop|for|in|do|break|continue|return)\\b"
+      "match": "\\b(if|then|else|switch|case|orelse|loop|for|in|do|break|continue|return)\\b"
     },
     { "include": "#comments" },
     {
@@ -31,7 +31,7 @@
       "end": "\""
     },
     {
-      "name": "constant.character",
+      "name": "string.quoted.single",
       "match": "'."
     },
     {

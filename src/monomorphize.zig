@@ -700,6 +700,67 @@ const FunMonomorphizer = struct {
                 self.fun.tys.items[result] = final_ty;
                 return .{ .kind = .{ .statement = result }, .ty = final_ty };
             },
+            .orelse_ => |orelse_| {
+                // primary = ...
+                // result = uninitialized
+                // jump_if_variant primary none >---------+
+                // result = get_enum_variant result some  |
+                // jump >------------------------------+  |
+                // alternative = ...                   |  |
+                // result = alternative                |  |
+                // [after] <---------------------------+--+
+
+                const primary = try self.compile_expr(orelse_.primary.*);
+                if (!string.starts_with(primary.ty, "Maybe[")) {
+                    try self.format_err("The left side of an orelse has to be a Maybe, but it was {s}.\n", .{primary.ty});
+                    return error.CompileError;
+                }
+                const primary_ty = primary.ty["Maybe[".len .. primary.ty.len - "]".len];
+
+                const result = try self.fun.put(.{ .uninitialized = {} }, "Something"); // Type will be replaced later
+                var result_ty: ?Str = null;
+
+                const jump_if_none = try self.fun.put(.{
+                    .jump_if_variant = .{ .condition = primary, .variant = "none", .target = 0 },
+                }, "Nothing"); // target be replaced with jump_if
+                const unwrapped = try self.fun.put(.{ .get_enum_value = .{ .of = primary, .variant = "some", .ty = primary_ty } }, "Nothing");
+                if (!string.eql(primary_ty, "Never")) {
+                    _ = try self.fun.put(.{ .assign = .{
+                        .to = .{ .ty = "Nothing", .kind = .{ .statement = result } },
+                        .value = .{ .ty = primary_ty, .kind = .{ .statement = unwrapped } },
+                    } }, "Nothing");
+                    result_ty = primary_ty;
+                }
+                const jump_if_some = try self.fun.put(.{ .jump = .{ .target = 0 } }, "Never"); // target will be replaced
+
+                // TODO: Create inner var env
+                const alternative_target = self.fun.next_index();
+                const alternative = try self.compile_expr(orelse_.alternative.*);
+                if (!string.eql(alternative.ty, "Never")) {
+                    if (result_ty) |expected_ty| {
+                        if (!string.eql(expected_ty, alternative.ty)) {
+                            try self.format_err("An orelse is inconsistenly typed:\n", .{});
+                            try self.format_err("- The primary expression is a Maybe of {s}.\n", .{expected_ty});
+                            try self.format_err("- The alternative is a {s}.\n", .{alternative.ty});
+                            return error.CompileError;
+                        }
+                    } else result_ty = alternative.ty;
+
+                    _ = try self.fun.put(.{ .assign = .{
+                        .to = .{ .ty = result_ty.?, .kind = .{ .statement = result } },
+                        .value = alternative,
+                    } }, "Nothing");
+                }
+
+                const after_orelse = self.fun.next_index();
+
+                self.fun.body.items[jump_if_none].jump_if_variant.target = alternative_target;
+                self.fun.body.items[jump_if_some].jump.target = after_orelse;
+
+                const final_ty = result_ty orelse "Never";
+                self.fun.tys.items[result] = final_ty;
+                return .{ .kind = .{ .statement = result }, .ty = final_ty };
+            },
             .loop => |expr| {
                 const result = try self.fun.put(.{ .uninitialized = {} }, "Nothing"); // type will be replaced
                 try self.breakable_scopes.append(.{
