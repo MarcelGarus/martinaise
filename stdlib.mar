@@ -21,13 +21,23 @@ fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
 fun todo(): Never { panic("todo") }
 
-fun identity[T](value: T): T { value }
-fun notEquals[T](a: T, b: T): Bool { not(a.equals(b)) }
-fun swap[T](a: &T, b: &T) {
-  var tmp = a.*
-  a.* = b.*
-  b.* = tmp
-}
+| Printing  
+| You should implement a dump(T, Writer) function for types that can be printed.
+| The print and println functions can print any value with a dump(T, Writer)
+| function. Writers are anything with a write(W, U8) function. The prints and
+| printsln functions print the argument as a string.
+struct StdoutWriter {} | Uses the builtin print_to_stdout function.
+fun write(sow: StdoutWriter, c: U8) { print_to_stdout(c) } | TODO: add generic write builtin
+fun print[T](value: T) { value.dump(StdoutWriter.{}) }
+fun println[T](value: T) { print(value) println() }
+fun println() { StdoutWriter.{}.write(newline()) }
+fun prints(message: Slice[U8]) { print(str(message)) }
+fun printsln(message: Slice[U8]) { println(str(message)) }
+
+| Equality  
+| You should implement an equals(T, T) function for types that can be compared
+| for equality.
+fun not_equals[T](a: T, b: T): Bool { not(a.equals(b)) }
 
 | Hashing  
 | You should implement a hash(T, Hasher) function for types that can be hashed.
@@ -43,27 +53,12 @@ fun contribute(hasher: &Hasher, val: U64) {
   hasher.state = hasher.state.multiply(33_U64).add(val)
 }
 
-| Printing  
-| The print and println functions can print any value with a dump(Writer)
-| function. Writers are anything with a write(U8) function. The prints and
-| printsln functions print the argument as a string.
-struct StdoutWriter {}
-fun write(sow: StdoutWriter, c: U8) {
-  print_to_stdout(c) | This is a builtin function.
-}
-fun print[T](value: T) { value.dump(StdoutWriter.{}) }
-fun println[T](value: T) { print(value) println() }
-fun println() { StdoutWriter.{}.write(newline()) }
-fun prints(message: Slice[U8]) { print(str(message)) }
-fun printsln(message: Slice[U8]) { println(str(message)) }
-
 | Char  
 | Essentially just a U8, but it's formatted differently.
 struct Char { value: U8 }
 fun char(value: U8): Char { Char.{ value = value } }
 fun dump[W](c: Char, writer: W) { writer.write(c.value) }
-| TODO: refactor to variable when we have global variables
-fun newline(): U8 { 10_U8 }
+fun newline(): U8 { 10_U8 } | TODO: refactor to variable when we have global variables
 
 | Str  
 | Essentially just a Slice[U8], but it's formatted differently. There's no
@@ -133,7 +128,8 @@ fun hash[T](value: Maybe[T], hasher: &Hasher) {
 }
 
 | Comparing  
-| Comparing values results in an Ordering.
+| You should implement a compare_to(T, T): Ordering function for types that can
+| be compared. This allows you to use functions such as is_at_least or min.
 enum Ordering { less, equal, greater }
 fun is_less(ord: Ordering): Bool {
   switch ord case less Bool.true case equal Bool.false case greater Bool.false
@@ -150,13 +146,21 @@ fun is_less_or_equal(ord: Ordering): Bool {
 fun is_greater_or_equal(ord: Ordering): Bool {
   switch ord case less Bool.false case equal Bool.true case greater Bool.true
 }
+fun equals(a: Ordering, b: Ordering): Bool {
+  switch a
+  case less b.is_less()
+  case equal b.is_equal()
+  case greater b.is_greater()
+}
+fun hash[Hasher](ord: Ordering, hasher: Hasher) {
+  switch ord
+  case less 'l.hash(hasher)
+  case equal 'e.hash(hasher)
+  case greater 'g.hash(hasher)
+}
 fun dump[W](ord: Ordering, writer: W) {
-  {
-    switch ord
-    case less "less"
-    case equal "equal"
-    case greater "greater"
-  }.dump(writer)
+  {switch ord case less "less" case equal "equal" case greater "greater"}
+    .dump(writer)
 }
 fun is_less_than[T](a: T, b: T): Bool { a.compare_to(b).is_less() }
 fun is_greater_than[T](a: T, b: T): Bool { a.compare_to(b).is_greater() }
@@ -279,6 +283,9 @@ fun to[T](start: T, end: T): Range[T] { Range[T].{ start = start, end = end } }
 fun until[T](start: T, end: T): Range[T] {
   Range[T].{ start = start, end = end.inc() }
 }
+fun range_by[T](start: T, len: T): Range[T] {
+  Range[T].{ start = start, end = start.add(len) }
+}
 fun contains[T](range: Range[T], value: T): Bool {
   value.is_at_least(range.start).and(value.is_less_than(range.end))
 }
@@ -306,14 +313,21 @@ fun next[T](iter: &RangeIter[T]): Maybe[T] {
 | functions are used to build type-safe abstractions on top:
 | - size_of_type[T](): U64
 | - malloc(U64): U64
-fun cast[T, U](value: &T): &U { value.to_address().to_reference[U]() }
+fun ref[T](): &T { malloc(size_of_type[T]()).to_reference[T]() }
 fun new[T](value: T): &T {
-  var ref = malloc(size_of_type[T]()).to_reference[T]()
+  var ref = ref[T]()
   ref.* = value
   ref
 }
+fun cast[T, U](value: &T): &U { value.to_address().to_reference[U]() }
+| TODO: remove?
 fun add[T](ref: &T, offset: U64): &T {
   ref.to_address().add(offset.multiply(size_of_type[T]())).to_reference[T]()
+}
+fun swap[T](a: &T, b: &T) {
+  var tmp = a.*
+  a.* = b.*
+  b.* = tmp
 }
 fun dump_address[W](address: U64, writer: W) {
   | max U64 is  18446744073709551615
@@ -369,12 +383,10 @@ fun lines(slice: Slice[U8]): Slice[Slice[U8]] { slice.split("
 ") }
 fun dump[T, W](slice: Slice[T], writer: W) {
   char('[).dump(writer)
-  var index = 0_U64
-  loop {
-    if index.equals(slice.len) then break
-    if index.is_greater_than(0_U64) then str(", ").dump(writer)
-    slice.get(index).dump(writer)
-    index = index.add(1_U64)
+  var first = Bool.true
+  for item in &slice.iter() do {
+    if first then first = Bool.false else str(", ").dump(writer)
+    item.dump(writer)
   }
   char(']).dump(writer)
 }
@@ -396,7 +408,7 @@ fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
 fun trim_prefix(slice: &Slice[U8], prefix: Slice[U8]) {
   if slice.starts_with(prefix)
   then slice.* = slice.subslice(prefix.len)
-  else panic("Slice doesn't start with prefix")
+  else panic("slice doesn't start with prefix")
 }
 fun compare_to[T](a: Slice[T], b: Slice[T]): Ordering {
   var i = 0_U64
@@ -408,9 +420,10 @@ fun compare_to[T](a: Slice[T], b: Slice[T]): Ordering {
     if not(ord.is_equal()) then return ord
     i = i.inc()
   }
-  panic("unreachable") | TODO: remove
+  unreachable() | TODO: remove
 }
 fun equals[T](a: Slice[T], b: Slice[T]): Bool {
+  | TODO: support for types that only have equals, not compare_to
   if a.len.equals(b.len) then compare_to(a, b).is_equal() else Bool.false
 }
 fun hash[T](slice: Slice[T], hasher: &Hasher) {
@@ -419,7 +432,7 @@ fun hash[T](slice: Slice[T], hasher: &Hasher) {
 fun find[T](slice: Slice[T], needle: T): Maybe[U64] {
   for i in &0_U64.to(slice.len).iter() do
     if slice.get(i).equals(needle) then return Maybe[U64].some(i)
-  return Maybe[U64].none
+  Maybe[U64].none
 }
 fun sort[T](slice: &Slice[T]) {
   | quick sort
@@ -492,6 +505,12 @@ fun min[T](slice: Set[T]): Maybe[T] {
     case none candidate = Maybe[T].some(item)
   return candidate
 }
+|fun enumerate[I](iter: I): Enumerated[I] {
+|  Enumerated[I].{ iter = iter, counter = 0_U64 }
+|}
+|struct Enumerated[T, I] { iter: I, counter: U64 }
+| TODO: Support inferring part of the return type like here
+|fun next[I](self: &Enumerated[I]): Maybe[Pair[U64, _]] { ... }
 
 | Vec  
 | A growable array where you can efficiently push and pop data to/from the back.
@@ -536,11 +555,6 @@ fun equals[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice().equals(b.to_slice()) }
 fun iter[T](vec: Vec[T]): SliceIter[T] { vec.to_slice().iter() }
 fun dump[T, W](vec: Vec[T], writer: W) { vec.to_slice().dump(writer) }
 
-| Point
-| Just 2D points.
-struct Point[T] { x: T, y: T }
-fun add[T](a: Point[T], b: Point[T]): Point[T] {
-  Point[T].{ x = a.x.add(b.x), y = a.y.add(b.y) }
 | Stack  
 | Something where you can push and pop items. Essentially just a Vec, but
 | sometimes this type expresses the intent more clearly.
@@ -596,13 +610,6 @@ fun pop_front[T](deque: &Deque[T]): T {
   deque.start = deque.start.inc().modulo(deque.data.len)
   item
 }
-fun dump[T, W](point: Point[T], writer: W) {
-  '(.dump(writer)
-  point.x.dump(writer)
-  ',.dump(writer)
-  ' .dump(writer)
-  point.y.dump(writer)
-  ').dump(writer)
 fun push_back[T](deque: &Deque[T], item: T) {
   if deque.data.len.equals(deque.len().dec())
   then deque.reserve(deque.data.len.multiply(2_U64))
