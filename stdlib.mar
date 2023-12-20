@@ -30,13 +30,13 @@ fun swap[T](a: &T, b: &T) {
 }
 
 | Hashing  
-| To use this hash function, implement a hash(T, Hasher) function that
-| contributes some uniqueness/entropy to the Hasher by calling its
-| contribute(U64) function. Internally, the Hasher uses the djb2 algorithm.
+| You should implement a hash(T, Hasher) function for types that can be hashed.
+| In this function, they can contribute some uniqueness/entropy to the Hasher by
+| calling its contribute(U64) function. The Hasher uses the djb2 algorithm.
 fun hash[T](value: T): U64 {
-  var hasher = Hasher.{ state = 5381_U64 }
-  value.hash(&hasher)
-  hasher.state
+  var h = Hasher.{ state = 5381_U64 }
+  value.hash(&h)
+  h.state
 }
 struct Hasher { state: U64 }
 fun contribute(hasher: &Hasher, val: U64) {
