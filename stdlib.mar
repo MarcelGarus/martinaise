@@ -1,4 +1,7 @@
 | Welcome to Martinaise!  
+| Martinaise is a language that's designed for solving simple puzzles such as
+| advent of code. Making a language that is widely-used is _not_ the goal.
+| Instead, this is a small, recreational project.
 | This is the standard library. Be careful when deleting code here because this
 | may crash the compiler.
 
