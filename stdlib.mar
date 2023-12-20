@@ -333,17 +333,22 @@ struct Slice[T] { data: &T, len: U64 }
 fun empty_slice[T](): Slice[T] {
   Slice[T].{ data = 0_U64.to_reference[T](), len = 0_U64 }
 }
-fun filled_slice[T](len: U64, fill: T): Slice[T] {
+fun uninitialized_slice[T](len: U64): Slice[T] {
+  if len.equals(0_U64) then return empty_slice[T]()
   var data = malloc(len.multiply(size_of_type[T]())).to_reference[T]()
-  for i in &0_U64.to(len).iter() do data.add(i).* = fill
   Slice[T].{ data = data, len = len }
+}
+fun filled_slice[T](len: U64, fill: T): Slice[T] {
+  var slice = uninitialized_slice[T](len)
+  for i in &0_U64.to(len).iter() do slice.get_ref(i).* = fill
+  slice
 }
 fun is_empty[T](slice: Slice[T]): Bool { slice.len.equals(0_U64) }
 fun get[T](slice: Slice[T], index: U64): T { slice.data.add(index).* }
 fun get_ref[T](slice: Slice[T], index: U64): &T {
   if 0_U64.to(slice.len).contains(index)
   then slice.data.add(index)
-  else panic("Index out of bounds")
+  else panic("index out of bounds")
 }
 fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
   Slice[T].{ data = slice.data.add(from), len = to.subtract(from) }
