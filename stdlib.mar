@@ -541,6 +541,19 @@ fun dump[T, W](vec: Vec[T], writer: W) { vec.to_slice().dump(writer) }
 struct Point[T] { x: T, y: T }
 fun add[T](a: Point[T], b: Point[T]): Point[T] {
   Point[T].{ x = a.x.add(b.x), y = a.y.add(b.y) }
+| Stack  
+| Something where you can push and pop items. Essentially just a Vec, but
+| sometimes this type expresses the intent more clearly.
+struct Stack[T] { vec: Vec[T] }
+fun push[T](stack: &Stack[T], item: T) { stack.vec.push(item) }
+fun pop[T](stack: &Stack[T]) { stack.vec.pop() }
+fun peek[T](stack: &Stack[T]): T { stack.peek(0_U64) }
+fun peek[T](stack: &Stack[T], n: U64): T {
+  stack.vec.get(stack.vec.len.subtract(1_U64).subtract(n))
+}
+fun equals[T](a: Stack[T], b: Stack[T]): Bool { a.vec.equals(b.vec) }
+fun dump[T, W](stack: Stack[T], writer: W) { stack.vec.dump(writer) }
+
 }
 fun dump[T, W](point: Point[T], writer: W) {
   '(.dump(writer)
