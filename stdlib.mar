@@ -494,26 +494,14 @@ fun min[T](slice: Set[T]): Maybe[T] {
 }
 
 | Vec  
-| A growable array.
-struct Vec[T] {
-  data: &T,
-  len: U64,
-  capacity: U64,
-}
-fun vec[T](): Vec[T] {
-  Vec[T].{ data = 0_U64.to_reference[T](), capacity = 0_U64, len = 0_U64 }
-}
-fun vec[T](a: T): Vec[T] {
-  var v = vec[T]()
-  v.&.push(a)
-  v
-}
-fun vec[T](a: T, b: T): Vec[T] {
-  var v = vec[T]()
-  v.&.push(a)
-  v.&.push(b)
-  v
-}
+| A growable array where you can efficiently push and pop data to/from the back.
+| This is implemented using a fixed-size slice. Once it fills up, a new slice is
+| allocated and the old items are copied over.
+struct Vec[T] { data: Slice[T], len: U64 }
+fun vec[T](): Vec[T] { Vec[T].{ data = empty_slice[T](), len = 0_U64 } }
+| TODO: remove when there are slice literals
+fun vec[T](a: T): Vec[T] { var v = vec[T]() v.&.push(a) v }
+fun vec[T](a: T, b: T): Vec[T] { var v = vec[T]() v.&.push(a) v.&.push(b) v }
 fun vec[T](a: T, b: T, c: T): Vec[T] {
   var v = vec[T]()
   v.&.push(a)
@@ -530,37 +518,20 @@ fun vec[T](a: T, b: T, c: T, d: T): Vec[T] {
   v
 }
 fun push[T](vec: &Vec[T], item: T) {
-  if vec.capacity.equals(0_U64) then {
-    vec.capacity = 8_U64
-    vec.data = malloc(vec.capacity.multiply(size_of_type[T]()))
-      .to_reference[T]()
+  if vec.data.len.equals(0_U64) then vec.data = uninitialized_slice[T](8_U64)
+  if vec.data.len.equals(vec.len) then {
+    var new_data = uninitialized_slice[T](vec.data.len.multiply(2_U64))
+    vec.data.copy_to(new_data.subslice(0_U64, vec.data.len))
+    vec.data = new_data
   }
-  if vec.capacity.equals(vec.len) then {
-    var previous_data = vec.data
-    vec.capacity = vec.capacity.multiply(2_U64)
-    vec.data = malloc(vec.capacity.multiply(size_of_type[T]()))
-      .to_reference[T]()
-    var i = 0_U64
-    loop {
-      if i.equals(vec.len) then break
-      var new_item = vec.data.add(i)
-      new_item.* = previous_data.add(i).*
-      i = i.add(1_U64)
-    }
-  }
-  var new_item = vec.data.add(vec.len)
-  new_item.* = item
+  vec.data.get_ref(vec.len).* = item
   vec.len = vec.len.add(1_U64)
 }
-fun get[T](vec: Vec[T], index: U64): T { vec.get_ref(index).* }
-fun get_ref[T](vec: Vec[T], index: U64): &T {
-  if 0_U64.to(vec.len).contains(index)
-  then vec.data.add(index)
-  else panic("Index out of bounds")
-}
-fun to_slice[T](vec: Vec[T]): Slice[T] {
-  Slice[T].{ data = vec.data, len = vec.len }
-}
+| TODO: return a Maybe
+fun pop[T](vec: &Vec[T]): T { vec.len.&.dec_mut() vec.data.get(vec.len) }
+fun get[T](vec: Vec[T], index: U64): T { vec.data.get(index) }
+fun get_ref[T](vec: Vec[T], index: U64): &T { vec.data.get_ref(index) }
+fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0_U64, vec.len) }
 fun equals[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice().equals(b.to_slice()) }
 fun iter[T](vec: Vec[T]): SliceIter[T] { vec.to_slice().iter() }
 fun dump[T, W](vec: Vec[T], writer: W) { vec.to_slice().dump(writer) }
