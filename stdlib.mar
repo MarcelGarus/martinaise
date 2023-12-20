@@ -165,14 +165,37 @@ fun is_at_most[T](a: T, b: T): Bool { a.compare_to(b).is_less_or_equal() }
 fun min[T](a: T, b: T): T { if a.is_less_than(b) then a else b }
 fun max[T](a: T, b: T): T { if a.is_greater_than(b) then a else b }
 
-| Pair  
-struct Pair[A, B] { a: A, b: B }
-|fun enumerate[I](iter: I): Enumerated[I] {
-|  Enumerated[I].{ iter = iter, counter = 0_U64 }
-|}
-|struct Enumerated[T, I] { iter: I, counter: U64 }
-| TODO: Support inferring part of the return type like here
-|fun next[I](self: &Enumerated[I]): Maybe[Pair[U64, _]] { ... }
+| Tuples  
+fun tuple[A, B](a: A, b: B): Tuple[A, B] {
+  Tuple[A, B].{ a = a, b = b }
+}
+fun tuple[A, B, C](a: A, b: B, c: C): Tuple[A, B, C] {
+  Tuple[A, B, C].{ a = a, b = b, c = c }
+}
+struct Tuple[A, B] { a: A, b: B }
+struct Tuple[A, B, C] { a: A, b: B, c: C }
+fun dump[A, B, W](tuple: Tuple[A, B], writer: W) {
+  '(.dump(writer)
+  tuple.a.dump(writer)
+  str(", ").dump(writer)
+  tuple.b.dump(writer)
+  ').dump(writer)
+}
+fun dump[A, B, C, W](tuple: Tuple[A, B, C], writer: W) {
+  '(.dump(writer)
+  tuple.a.dump(writer)
+  str(", ").dump(writer)
+  tuple.b.dump(writer)
+  str(", ").dump(writer)
+  tuple.c.dump(writer)
+  ').dump(writer)
+}
+
+| Point  
+struct Point[T] { x: T, y: T }
+fun dump[T, W](point: Point[T], writer: W) {
+  tuple(point.x, point.y).dump(writer)
+}
 
 | Int  
 | Integers are built into the language. There are several types with different
