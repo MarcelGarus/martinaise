@@ -11,7 +11,10 @@ fun dump[W](nothing: Nothing, writer: W) { str("nothing").dump(writer) }
 | Never  
 | Some expressions always abort control flow, for example `return 3`. These
 | evaluate to the Never type.
-struct Never {} | TODO: Make this an enum
+struct Never {} | TODO: Make this an enum when the C lowering supports that
+fun panic(): Never { panic("panicked") }
+fun unreachable(): Never { panic("unreachable") }
+fun todo(): Never { panic("todo") }
 
 fun identity[T](value: T): T { value }
 fun notEquals[T](a: T, b: T): Bool { not(a.equals(b)) }
