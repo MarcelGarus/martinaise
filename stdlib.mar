@@ -93,32 +93,21 @@ fun hash(value: Bool, hasher: &Hasher) {
 }
 
 | Maybe  
-| Like Option in Rust, but with the cooler Haskell name.
+| Represents optional values. Like Option in Rust, but with the cooler Haskell
+| name. Martinaise has an orelse keyword, which you can write after a Maybe[T]
+| to get the underlying T if it's a some, or execute the expression after the
+| orelse if it's a none:
+| - Maybe[U8].some(2_U8) orelse 3_U8 = 2_U8
+| - Maybe[U8].none orelse 3_U8 = 3_U8
 enum Maybe[T] { some: T, none }
-fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] {
-  inner orelse Maybe[T].none()
-}
+fun unwrap[T](maybe: Maybe[T]): T { maybe orelse panic("called none.unwrap") }
+fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { inner orelse Maybe[T].none }
 | TODO: remove when language feature exists
 fun is_some[T](maybe: Maybe[T]): Bool {
   switch maybe case some Bool.true case none Bool.false
 }
 fun is_none[T](maybe: Maybe[T]): Bool {
   switch maybe case some Bool.false case none Bool.true
-}
-fun equals(a: Maybe[T], b: Maybe[T]): Bool {
-  switch a
-  case some(a_val) {
-    switch b case some(b_val) a_val.equals(b_val) case none Bool.false
-  }
-  case none b.is_none()
-}
-fun hash[T](value: Maybe[T], hasher: &Hasher) {
-  switch value
-  case some(inner) {
-    hasher.contribute('s.to_U64())
-    inner.hash(hasher)
-  }
-  case none hasher.contribute('n.to_U64())
 }
 fun dump[T, W](maybe: Maybe[T], writer: W) {
   switch maybe
@@ -129,7 +118,19 @@ fun dump[T, W](maybe: Maybe[T], writer: W) {
   }
   case none str("none").dump(writer)
 }
-fun unwrap[T](maybe: Maybe[T]): T { maybe orelse panic("Called none.unwrap") }
+fun equals(a: Maybe[T], b: Maybe[T]): Bool {
+  switch a
+  case some(aa) { switch b case some(bb) aa.equals(bb) case none Bool.false }
+  case none b.is_none()
+}
+fun hash[T](value: Maybe[T], hasher: &Hasher) {
+  switch value
+  case some(inner) {
+    hasher.contribute('s.to_U64())
+    inner.hash(hasher)
+  }
+  case none hasher.contribute('n.to_U64())
+}
 
 | Comparing  
 | Comparing values results in an Ordering.
