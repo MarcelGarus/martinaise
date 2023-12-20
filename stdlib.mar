@@ -76,7 +76,8 @@ fun dump[W](str: Str, writer: W) {
 }
 
 | Bool  
-| The usual boolean values true and false.
+| The usual boolean values true and false. The if construct expects a Bool as
+| the condition.
 enum Bool { true, false }
 fun equals(a: Bool, b: Bool): Bool { if a then b else not(b) }
 fun not(a: Bool): Bool { if a then Bool.false else Bool.true }
@@ -84,11 +85,11 @@ fun and(a: Bool, b: Bool): Bool { if a then b else a }
 fun or(a: Bool, b: Bool): Bool { if a then Bool.true else b }
 fun xor(a: Bool, b: Bool): Bool { if a then not(b) else b }
 fun implies(a: Bool, b: Bool): Bool { if a then b else Bool.true }
-fun hash(value: I64, hasher: &Hasher) {
-  hasher.contribute(if value then 0_U64 else 1_U64)
-}
 fun dump[W](b: Bool, writer: W) {
   str({if b then "true" else "false"}).dump(writer)
+}
+fun hash(value: Bool, hasher: &Hasher) {
+  hasher.contribute(if value then 0_U64 else 1_U64)
 }
 
 | Maybe  
