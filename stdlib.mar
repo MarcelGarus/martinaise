@@ -554,6 +554,47 @@ fun peek[T](stack: &Stack[T], n: U64): T {
 fun equals[T](a: Stack[T], b: Stack[T]): Bool { a.vec.equals(b.vec) }
 fun dump[T, W](stack: Stack[T], writer: W) { stack.vec.dump(writer) }
 
+| Deque  
+| A growable array-like structure where you can push and pop from both ends.
+| It maintains an inclusive start and an exclusive end index. Basically, there
+| are two possibilities how this can be layed out:
+|
+| Start before end:           End before start:
+| [-][0][1][2][3][4][-][-]    [3][4][-][-][-][0][1][2]
+|     s              e               e        s
+struct Deque[T] { data: Slice[T], start: U64, end: U64 }
+fun deque[T](): Deque[T] {
+  Deque[T].{ data = uninitialized_slice[T](8_U64), start = 0_U64, end = 0_U64 }
+}
+fun len[T](deque: Deque[T]): U64 {
+  if deque.end.is_at_least(deque.start)
+  then deque.end.subtract(deque.start)
+  else deque.start.add(deque.data.len).subtract(deque.end)
+}
+fun is_empty[T](deque: Deque[T]): Bool { deque.len().equals(0_U64) }
+fun reserve[T](deque: &Deque[T], size: U64) {
+  if deque.data.len.is_at_least(size) then return
+  var slices = deque.to_slices()
+  var total_len = deque.len()
+  deque.data = uninitialized_slice[T](size)
+  slices.a.copy_to(deque.data.subslice(0_U64, slices.a.len))
+  slices.b.copy_to(deque.data.subslice(slices.a.len, total_len))
+  deque.start = 0_U64
+  deque.end = total_len
+}
+fun push_front[T](deque: &Deque[T], item: T) {
+  if deque.data.len.equals(deque.len().dec())
+  then deque.reserve(deque.data.len.multiply(2_U64))
+  deque.start = if deque.start.equals(0_U64)
+    then deque.data.len
+    else deque.start.dec()
+  deque.data.get_ref(deque.start).* = item
+}
+fun pop_front[T](deque: &Deque[T]): T {
+  if deque.is_empty() then panic("pop_front on empty deque")
+  var item = deque.data.get(deque.start)
+  deque.start = deque.start.inc().modulo(deque.data.len)
+  item
 }
 fun dump[T, W](point: Point[T], writer: W) {
   '(.dump(writer)
@@ -562,6 +603,36 @@ fun dump[T, W](point: Point[T], writer: W) {
   ' .dump(writer)
   point.y.dump(writer)
   ').dump(writer)
+fun push_back[T](deque: &Deque[T], item: T) {
+  if deque.data.len.equals(deque.len().dec())
+  then deque.reserve(deque.data.len.multiply(2_U64))
+  deque.data.get_ref(deque.end).* = item
+  deque.end = deque.end.inc().modulo(deque.data.len)
+}
+fun pop_back[T](deque: &Deque[T]): T {
+  if deque.is_empty() then panic("pop_back on empty deque")
+  deque.end = if deque.end.equals(0_U64)
+    then deque.data.len
+    else deque.end.dec()
+  deque.data.get(deque.end)
+}
+fun get[T](deque: Deque[T], index: U64): T { deque.get_ref(index).* }
+fun get_ref[T](deque: Deque[T], index: U64): &T {
+  deque.data.get_ref(index.add(deque.start).modulo(deque.data.len))
+}
+fun to_slices[T](deque: Deque[T]): Tuple[Slice[T], Slice[T]] {
+  if deque.end.is_at_least(deque.start)
+  then tuple(deque.data.subslice(deque.start, deque.end), empty_slice[T]())
+  else tuple(
+    deque.data.subslice(deque.start, deque.data.len),
+    deque.data.subslice(0_U64, deque.start)
+  )
+}
+fun equals[T](a: Deque[T], b: Deque[T]): Bool {
+  if a.len().notEquals(b.len()) then return Bool.false
+  for i in 0_U64.to(a.len()) do
+    if a.get(i).notEquals(b.get(i)) then return Bool.false
+  Bool.true
 }
 
 | Map   
