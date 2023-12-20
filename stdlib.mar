@@ -66,18 +66,13 @@ fun dump[W](c: Char, writer: W) { writer.write(c.value) }
 fun newline(): U8 { 10_U8 }
 
 | Str  
-| Strings are essentially just a Slice[U8], but they are formatted differently.
-| There's no enforcement of whether they are UTF-8 or anything. When formatting
-| strings, the raw bytes are simply sent to the writer.
+| Essentially just a Slice[U8], but it's formatted differently. There's no
+| enforcement of UTF-8 or anything. When formatting strings, the raw bytes are
+| simply sent to the writer.
 struct Str { bytes: Slice[U8] }
 fun str(bytes: Slice[U8]): Str { Str.{ bytes = bytes } }
 fun dump[W](str: Str, writer: W) {
-  var index = 0_U64
-  loop {
-    if index.equals(str.bytes.len) then break
-    writer.write(str.bytes.get(index))
-    index = index.add(1_U64)
-  }
+  for byte in &str.bytes.iter() do writer.write(byte)
 }
 
 | Bool  
