@@ -3,10 +3,12 @@
 | may crash the compiler.
 
 | Nothing  
-| A type with only one instance. Functions that don't explicitly return a value
-| return Nothing instead.
+| A type with only one instance. Functions without an explicit return type
+| return Nothing. Bodies with no expressions inside return Nothing. This is the
+| single Nothing instance: {}
 struct Nothing {}
 fun dump[W](nothing: Nothing, writer: W) { str("nothing").dump(writer) }
+fun equals(a: Nothing, b: Nothing): Bool { Bool.true }
 
 | Never  
 | Some expressions always abort control flow, for example `return 3`. These
