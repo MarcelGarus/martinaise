@@ -356,6 +356,10 @@ fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
 fun subslice[T](slice: Slice[T], from: U64): Slice[T] {
   slice.subslice(from, slice.len)
 }
+fun copy_to[T](from: Slice[T], to: Slice[T]) {
+  if not(from.len.equals(to.len)) then panic("copy_to slice lens don't match")
+  for i in &0_U64.to(from.len).iter() do to.get_ref(i).* = from.get(i)
+}
 fun split(slice: Slice[U8], separator: Slice[U8]): Slice[Slice[U8]] {
   var result = vec[Slice[U8]]()
   for part in &slice.iter().iter_split(separator) do result.&.push(part)
