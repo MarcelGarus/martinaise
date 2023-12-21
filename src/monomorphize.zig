@@ -71,7 +71,7 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !Result(mono
         else => return .{ .err = "Main is not a function.\n" },
     };
 
-    _ = FunMonomorphizer.compile(&monomorphizer, main_fun, TyEnv.init(alloc)) catch |error_| {
+    const main_signature = FunMonomorphizer.compile(&monomorphizer, main_fun, TyEnv.init(alloc)) catch |error_| {
         if (error_ != error.CompileError) return error_;
 
         var err_with_context = String.init(alloc);
@@ -84,6 +84,13 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !Result(mono
 
         return .{ .err = err_with_context.items };
     };
+
+    const return_ty = monomorphizer.funs.get(main_signature).?.return_ty;
+    if (!string.eql(return_ty, "U8")) {
+        var err = String.init(alloc);
+        try format(err.writer(), "The main function should return a U8, but it returns a {s}.\n", .{return_ty});
+        return .{ .err = err.items };
+    }
 
     return .{ .ok = mono.Mono{
         .ty_defs = monomorphizer.ty_defs,
