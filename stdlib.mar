@@ -16,7 +16,7 @@ fun equals(a: Nothing, b: Nothing): Bool { Bool.true }
 | Never  
 | Some expressions always abort control flow, for example `return 3`. These
 | evaluate to the Never type.
-struct Never {} | TODO: Make this an enum when the C lowering supports that
+enum Never {}
 fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
 fun todo(): Never { panic("todo") }

@@ -27,18 +27,6 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
     var builtin_funs = StringHashMap(Str).init(alloc);
     { // Generate code for builtins
 
-        // Nothing
-        try builtin_tys.put("Nothing",
-            \\struct {}
-        );
-
-        // Never
-        try builtin_tys.put("Never",
-            \\struct {
-            \\  // TODO: Is this needed?
-            \\}
-        );
-
         // panic(Slice[U8]): Never
         try builtin_funs.put("panic(Slice[U8])",
             \\  fprintf(stderr, "Panic: ");
@@ -58,6 +46,41 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
             \\  }
             \\  return address;
         );
+
+        // print_to_stdout(U8): Nothing
+        // TODO: Check the return value of putc
+        try builtin_funs.put("print_to_stdout(U8)", formata(alloc,
+            \\  putc(arg0.value, stdout);
+            \\  mar_Nothing n;
+            \\  return n;
+        , .{}));
+
+        // read_file(Slice[U8]): Slice[U8]
+        try builtin_funs.put("read_file(Slice[U8])", formata(alloc,
+            \\  char* path = (char*)arg0.mar_data.pointer;
+            \\  FILE* file = fopen(path, "r");
+            \\  if (!file) {{
+            \\    printf("Not able to open %s.\\n", path);
+            \\    exit(-1);
+            \\  }}
+            \\  int capacity = 32, len = 0;
+            \\  char* content = malloc(capacity);
+            \\  char c;
+            \\  while ((c = fgetc(file)) != EOF) {{
+            \\    if (len == capacity) {{
+            \\      capacity *= 2;
+            \\      content = realloc(content, capacity);
+            \\    }}
+            \\    content[len] = c;
+            \\    len++;
+            \\  }}
+            \\  fclose(file);
+            \\
+            \\  mar_Slice_of_U8_end_ content_slice;
+            \\  content_slice.mar_data.pointer = (mar_U8*) content;
+            \\  content_slice.mar_len.value = len;
+            \\  return content_slice;
+        , .{}));
 
         for (numbers.all_int_configs()) |config| {
             const ty = try numbers.int_ty_name(alloc, config);
@@ -155,41 +178,6 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                 );
             }
         }
-
-        // print_to_stdout(U8): Nothing
-        // TODO: Check the return value of putc
-        try builtin_funs.put("print_to_stdout(U8)", formata(alloc,
-            \\  putc(arg0.value, stdout);
-            \\  mar_Nothing n;
-            \\  return n;
-        , .{}));
-
-        // read_file(Slice[U8]): Slice[U8]
-        try builtin_funs.put("read_file(Slice[U8])", formata(alloc,
-            \\  char* path = (char*)arg0.mar_data.pointer;
-            \\  FILE* file = fopen(path, "r");
-            \\  if (!file) {{
-            \\    printf("Not able to open %s.\\n", path);
-            \\    exit(-1);
-            \\  }}
-            \\  int capacity = 32, len = 0;
-            \\  char* content = malloc(capacity);
-            \\  char c;
-            \\  while ((c = fgetc(file)) != EOF) {{
-            \\    if (len == capacity) {{
-            \\      capacity *= 2;
-            \\      content = realloc(content, capacity);
-            \\    }}
-            \\    content[len] = c;
-            \\    len++;
-            \\  }}
-            \\  fclose(file);
-            \\
-            \\  mar_Slice_of_U8_end_ content_slice;
-            \\  content_slice.mar_data.pointer = (mar_U8*) content;
-            \\  content_slice.mar_len.value = len;
-            \\  return content_slice;
-        , .{}));
     }
 
     { // Types
@@ -212,24 +200,34 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                     try format(out, "struct {{\n", .{});
                     for (s.fields.items) |f|
                         if (string.eql(f.name, "*"))
-                            try format(out, "  {s}* pointer;\n", .{try mangle(alloc, f.ty)})
+                            try format(out, "  {s}* pointer;\n", .{
+                                try mangle(alloc, f.ty),
+                            })
                         else
-                            try format(out, "  {s} {s};\n", .{ try mangle(alloc, f.ty), try mangle(alloc, f.name) });
+                            try format(out, "  {s} {s};\n", .{
+                                try mangle(alloc, f.ty),
+                                try mangle(alloc, f.name),
+                            });
                     try format(out, "}}", .{});
                 },
                 .enum_ => |e| {
                     try format(out, "struct {{\n", .{});
-                    try format(out, "  enum {{\n", .{});
-                    for (e.variants.items) |variant|
-                        try format(out, "    {s}_dot_{s},\n", .{
-                            try mangle(alloc, name),
-                            try mangle(alloc, variant.name),
-                        });
-                    try format(out, "  }} variant;\n", .{});
-                    try format(out, "  union {{\n", .{});
-                    for (e.variants.items) |variant|
-                        try format(out, "    {s} {s};\n", .{ try mangle(alloc, variant.ty), try mangle(alloc, variant.name) });
-                    try format(out, "  }} as;\n", .{});
+                    if (e.variants.items.len > 0) {
+                        try format(out, "  enum {{\n", .{});
+                        for (e.variants.items) |variant|
+                            try format(out, "    {s}_dot_{s},\n", .{
+                                try mangle(alloc, name),
+                                try mangle(alloc, variant.name),
+                            });
+                        try format(out, "  }} variant;\n", .{});
+                        try format(out, "  union {{\n", .{});
+                        for (e.variants.items) |variant|
+                            try format(out, "    {s} {s};\n", .{
+                                try mangle(alloc, variant.ty),
+                                try mangle(alloc, variant.name),
+                            });
+                        try format(out, "  }} as;\n", .{});
+                    }
                     try format(out, "}}", .{});
                 },
                 .fun => try format(out, "// TODO: compile fun types\n", .{}),
@@ -252,7 +250,11 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
         try format(out, "\n/// Function declarations\n\n", .{});
         for (ordered_funs) |fun_name| {
             const fun = the_mono.funs.get(fun_name) orelse unreachable;
-            try format(out, "/* {s} */ {s} {s}(", .{ fun_name, try mangle(alloc, fun.return_ty), try mangle(alloc, fun_name) });
+            try format(out, "/* {s} */ {s} {s}(", .{
+                fun_name,
+                try mangle(alloc, fun.return_ty),
+                try mangle(alloc, fun_name),
+            });
             for (fun.arg_tys.items, 0..) |arg_ty, i| {
                 if (i > 0) try format(out, ", ", .{});
                 try format(out, "{s} arg{}", .{ try mangle(alloc, arg_ty), i });
@@ -266,7 +268,10 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
             const fun = the_mono.funs.get(fun_name) orelse unreachable;
 
             try format(out, "\n// {s}\n", .{fun_name});
-            try format(out, "{s} {s}(", .{ try mangle(alloc, fun.return_ty), try mangle(alloc, fun_name) });
+            try format(out, "{s} {s}(", .{
+                try mangle(alloc, fun.return_ty),
+                try mangle(alloc, fun_name),
+            });
             for (fun.arg_tys.items, 0..) |arg_ty, i| {
                 if (i > 0) try format(out, ", ", .{});
                 try format(out, "{s} arg{}", .{ try mangle(alloc, arg_ty), i });
