@@ -5,6 +5,9 @@ fun main(): U8 {
   println(Maybe[U8].some(5_U8) orelse 6_U8)
   println(Maybe[U8].none orelse 6_U8)
 
+  var a = 2_U8
+  a = 3_U16
+
   0_U8
 }
 

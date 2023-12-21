@@ -622,6 +622,10 @@ const FunMonomorphizer = struct {
             .assign => |assign| {
                 const value = try self.compile_expr(assign.value.*);
                 const to = try self.compile_expr(assign.to.*);
+                if (!string.eql(value.ty, to.ty)) {
+                    try self.format_err("Tried to assign {s} to a variable of {s}.\n", .{ value.ty, to.ty });
+                    return error.CompileError;
+                }
                 return try self.fun.put_and_get_expr(.{ .assign = .{ .to = to, .value = value } }, "Nothing");
             },
             .struct_creation => |sc| {
