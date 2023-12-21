@@ -117,14 +117,14 @@ pub fn parse(alloc: std.mem.Allocator, code: Str, stdlib_size: usize) !Result(as
     { // size_of_type[T](): U64
         var ty_args = ArrayList(Str).init(alloc);
         try ty_args.append("T");
-        var args = ArrayList(ast.Argument).init(alloc);
+        const args = ArrayList(ast.Argument).init(alloc);
         const u64_: Ty = .{ .name = "U64", .args = ArrayList(Ty).init(alloc) };
         program.add_builtin_fun(alloc, "size_of_type", ty_args, args, u64_);
     }
 
     { // malloc(U64): U64
         const u64_: Ty = .{ .name = "U64", .args = ArrayList(Ty).init(alloc) };
-        var ty_args = ArrayList(Str).init(alloc);
+        const ty_args = ArrayList(Str).init(alloc);
         var args = ArrayList(ast.Argument).init(alloc);
         try args.append(.{ .name = "size", .ty = u64_ });
         program.add_builtin_fun(alloc, "malloc", ty_args, args, u64_);
@@ -618,7 +618,7 @@ const Parser = struct {
         while (self.code[i] != '\"') {
             i += 1;
         }
-        var str = self.code[0..i];
+        const str = self.code[0..i];
         self.code = self.code[i + 1 ..];
         return str;
     }
@@ -726,7 +726,7 @@ const Parser = struct {
         self.consume_prefix("=") orelse return error.ExpectedEquals;
         self.consume_whitespace();
 
-        var value = try self.parse_expression() orelse return error.ExpectedValueOfVar;
+        const value = try self.parse_expression() orelse return error.ExpectedValueOfVar;
         const heaped = try self.alloc.create(ast.Expr);
         heaped.* = value;
 
@@ -737,7 +737,7 @@ const Parser = struct {
         self.consume_keyword("return") orelse return null;
         self.consume_whitespace();
 
-        var returned = try self.parse_expression() orelse return error.ExpectedExpression;
+        const returned = try self.parse_expression() orelse return error.ExpectedExpression;
         const heaped = try self.alloc.create(ast.Expr);
         heaped.* = returned;
 

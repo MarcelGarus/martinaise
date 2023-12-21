@@ -49,7 +49,7 @@ pub const Watcher = struct {
                 // Why this works: In practice, the event.len field is
                 // guaranteed to be set to a value so that the following event
                 // is aligned as well.
-                var event: *libc.inotify_event = @alignCast(@ptrCast(&buf[i]));
+                const event: *libc.inotify_event = @alignCast(@ptrCast(&buf[i]));
                 // std.debug.print("Event: {}\n", .{event});
                 i += event_size_without_name + event.len;
                 if (event.wd == self.watch) return;
