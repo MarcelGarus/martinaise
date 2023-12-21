@@ -95,9 +95,9 @@ fn run_pipeline(original_alloc: Allocator, command: Command, file_path: Str) !bo
             return false;
         };
         defer file.close();
-        var file_len = (try file.stat()).size;
+        const file_len = (try file.stat()).size;
 
-        var total_len = stdlib_size + file_len + 2;
+        const total_len = stdlib_size + file_len + 2;
         var in = try alloc.alloc(u8, total_len);
         _ = try stdlib.read(in);
         in[stdlib_size] = '\n';

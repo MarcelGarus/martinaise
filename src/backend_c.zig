@@ -12,7 +12,7 @@ const numbers = @import("numbers.zig");
 
 pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
     var out_buffer = String.init(alloc);
-    var out = out_buffer.writer();
+    const out = out_buffer.writer();
 
     try format(out,
         \\// This file is a compiler target.
@@ -242,7 +242,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
         var ordered_funs_ = ArrayList(Str).init(alloc);
         var key_iter = the_mono.funs.keyIterator();
         while (key_iter.next()) |fun| try ordered_funs_.append(fun.*);
-        var ordered_funs = try ordered_funs_.toOwnedSlice();
+        const ordered_funs = try ordered_funs_.toOwnedSlice();
         std.mem.sort(Str, ordered_funs, {}, string.cmp);
         var funs_to_index = StringHashMap(usize).init(alloc);
         for (ordered_funs, 0..) |fun_name, index|
