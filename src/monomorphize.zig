@@ -1,3 +1,38 @@
+/// A rough sketch on how this compiler stage works: The AST functions are
+/// compiled into monomorphized functions, starting from the main function.
+/// The Mono contains all compiled functions and types, corresponding to code
+/// and type definitions that actually need to be generated later on.
+///
+/// # Generic functions
+///
+/// Generic functions can be compiled multiple times with multiple type
+/// arguments. For example, take this code:
+///
+/// ```
+/// fun main(): U8 {
+///   var foo = wrap_in_foo(wrap_in_foo(2_U8))
+///   0_U64
+/// }
+/// struct Foo[T] { inner: T }
+/// fun wrap_in_foo[T](val: T) { Foo.{ inner = val } }
+/// ```
+///
+/// The following types and functions are lowered:
+///
+/// - main
+///   - wrap_in_foo[U8]
+///     - Foo[U8]
+///   - wrap_in_foo[Foo[U8]]
+///     - Foo[Foo[U8]]
+///
+/// # Recursive functions
+///
+/// We want to allow recursive functions without the compiler itself getting
+/// into an infinitely recursing state. That's why even before a function is
+/// compiled, a mock-version of it is added to the function map. When this
+/// function is encountered recursively, only its signature is needed to figure
+/// out how to use it.
+///
 const std = @import("std");
 const ArrayList = std.ArrayList;
 const StringArrayHashMap = std.StringArrayHashMap;
@@ -230,7 +265,7 @@ const Monomorphizer = struct {
     // `{T: Int}` (resulting in `Maybe[Int]`). Also creates the needed specialized
     // types in the `mono.Types`.
     fn compile_type(self: *Self, ty: Ty, ty_env: TyEnv) !Str {
-        var args = try self.compile_types(ty.args, ty_env);
+        const args = try self.compile_types(ty.args, ty_env);
 
         if (ty_env.get(ty.name)) |name| {
             if (args.items.len > 0) {
@@ -302,8 +337,10 @@ const FunMonomorphizer = struct {
     monomorphizer: *Monomorphizer,
     alloc: std.mem.Allocator,
     fun: *mono.Fun,
-    ty_env: TyEnv,
-    var_env: *VarEnv,
+    ty_env: TyEnv, // the map from the fun's type parameters to concrete types
+    var_env: *VarEnv, // maps local variables to types
+    expected_return_ty: Str, // the return type explicitly given in the code
+    return_ty: ?Str, // the inferred return type
 
     // When lowering loops, breaks don't know where to jump to yet. Instead,
     // they fill this structure.
@@ -325,12 +362,7 @@ const FunMonomorphizer = struct {
     const VarInfo = struct { index: usize, ty: Str };
 
     fn compile(monomorphizer: *Monomorphizer, fun: ast.Fun, ty_env: TyEnv) !Str {
-        if (monomorphizer.context.items.len > 100) {
-            try monomorphizer.format_err("Probably a recursion\n", .{});
-            return error.Todo;
-        }
-
-        var alloc = monomorphizer.alloc;
+        const alloc = monomorphizer.alloc;
 
         var signature = String.init(alloc);
         var ty_args = ArrayList(Str).init(alloc);
@@ -382,7 +414,7 @@ const FunMonomorphizer = struct {
             print_on_same_line("{s}\n", .{s.items});
         }
 
-        const return_ty = if (fun.returns) |ty|
+        const expected_return_ty = if (fun.returns) |ty|
             try monomorphizer.compile_type(ty, ty_env)
         else
             "Nothing";
@@ -390,7 +422,7 @@ const FunMonomorphizer = struct {
         var mono_fun = mono.Fun{
             .ty_args = ty_args,
             .arg_tys = arg_tys,
-            .return_ty = return_ty,
+            .return_ty = expected_return_ty,
             .is_builtin = fun.is_builtin,
             .body = ArrayList(mono.Statement).init(alloc),
             .tys = ArrayList(Str).init(alloc),
@@ -406,13 +438,24 @@ const FunMonomorphizer = struct {
             .fun = &mono_fun,
             .ty_env = ty_env,
             .var_env = &var_env,
+            .expected_return_ty = expected_return_ty,
+            .return_ty = null,
             .breakable_scopes = ArrayList(BreakableScope).init(alloc),
             .continuable_scopes = ArrayList(ContinuableScope).init(alloc),
         };
 
         const body_result = try fun_monomorphizer.compile_body(fun.body.items);
-        _ = try mono_fun.put(.{ .return_ = body_result }, "Never");
-        // TODO: Make sure body has the correct type
+        if (!string.eql(body_result.ty, "Never")) {
+            _ = try mono_fun.put(.{ .return_ = body_result }, "Never");
+            // TODO: Make sure body has the correct type
+        }
+
+        // For builtin functions, we trust the fully specified return type.
+        // For user-written functions, we take the actual return type.
+        if (!fun.is_builtin) {
+            try fun_monomorphizer.new_returned_ty(body_result.ty);
+            mono_fun.return_ty = fun_monomorphizer.return_ty orelse body_result.ty;
+        }
 
         try monomorphizer.funs.put(signature.items, mono_fun);
 
@@ -422,6 +465,29 @@ const FunMonomorphizer = struct {
     }
     fn format_err(self: *Self, comptime fmt: Str, args: anytype) !void {
         try self.monomorphizer.format_err(fmt, args);
+    }
+
+    fn new_returned_ty(self: *Self, returned: Str) !void {
+        if (string.eql(returned, "Never")) return;
+
+        // TODO: Allow placeholders in types
+        if (!string.eql(returned, self.expected_return_ty)) {
+            try self.format_err(
+                "This function should return {s}, but it returns {s}.\n",
+                .{ self.expected_return_ty, returned },
+            );
+            return error.CompileError;
+        }
+
+        if (self.return_ty) |expected_ty| if (!string.eql(returned, expected_ty)) {
+            try self.format_err(
+                "This function returns {s} in a previous return, but {s} at some place.\n",
+                .{ expected_ty, returned },
+            );
+            return error.CompileError;
+        };
+
+        self.return_ty = returned;
     }
 
     fn compile_expr(self: *Self, expression: ast.Expr) error{ Todo, OutOfMemory, CompileError }!mono.Expr {
@@ -436,7 +502,7 @@ const FunMonomorphizer = struct {
                 try numbers.int_ty_name(self.alloc, .{ .signedness = int.signedness, .bits = int.bits }),
             ),
             .string => |str| {
-                var u8_ty: Ty = .{ .name = "U8", .args = ArrayList(Ty).init(self.alloc) };
+                const u8_ty: Ty = .{ .name = "U8", .args = ArrayList(Ty).init(self.alloc) };
 
                 var slice_ty_args = ArrayList(Ty).init(self.alloc);
                 try slice_ty_args.append(u8_ty);
@@ -507,7 +573,7 @@ const FunMonomorphizer = struct {
                     // dereference the receiver as often as necessary. For
                     // example, you can access point.x if point is a &&&Point.
                     if (!string.eql(m.name, "*") and string.starts_with(of.ty, "&")) {
-                        var dereference = try self.alloc.create(mono.Expr);
+                        const dereference = try self.alloc.create(mono.Expr);
                         dereference.* = .{
                             .ty = of.ty[1..], // trim the leading &
                             .kind = .{ .member = .{ .of = of, .name = "*" } },
@@ -552,7 +618,7 @@ const FunMonomorphizer = struct {
                 return try self.fun.put_and_get_expr(.{ .assign = .{ .to = to, .value = value } }, "Nothing");
             },
             .struct_creation => |sc| {
-                var ty = self.expr_to_type(sc.ty.*) orelse {
+                const ty = self.expr_to_type(sc.ty.*) orelse {
                     try self.format_err("You can only construct structs.\n", .{});
                     return error.CompileError;
                 };
@@ -834,9 +900,9 @@ const FunMonomorphizer = struct {
                 return self.compile_nothing_instance();
             },
             .return_ => |returned| {
-                const index = try self.compile_expr(returned.*);
-                // TODO: Make sure return has correct type
-                return try self.fun.put_and_get_expr(.{ .return_ = index }, "Never");
+                const compiled_arg = try self.compile_expr(returned.*);
+                try self.new_returned_ty(compiled_arg.ty);
+                return try self.fun.put_and_get_expr(.{ .return_ = compiled_arg }, "Never");
             },
             .ampersanded => |expr| {
                 const amped = try self.compile_expr(expr.*);
@@ -892,7 +958,7 @@ const FunMonomorphizer = struct {
 
                 if (callee != null and string.starts_with(arg_tys.items[0], "&")) {
                     // There is a callee and it's a reference. Dereference it.
-                    var derefed_callee = try self.alloc.create(mono.Expr);
+                    const derefed_callee = try self.alloc.create(mono.Expr);
                     derefed_callee.* = full_args.items[0];
                     const deref_ty = arg_tys.items[0][1..]; // trim &
                     full_args.items[0] = .{
@@ -935,7 +1001,7 @@ const FunMonomorphizer = struct {
                     .ref => |name| if (string.eql(name, "break")) {
                         if (call.args.items.len == 0) break :break_arg null;
                         if (call.args.items.len == 1) break :break_arg call.args.items[0];
-                        try self.format_err("Break can only take one argument.\n", .{});
+                        try self.format_err("break can only take one argument.\n", .{});
                         return error.CompileError;
                     } else return null,
                     else => return null,
@@ -1040,7 +1106,7 @@ const FunMonomorphizer = struct {
         };
         if (self.var_env.contains(enum_name)) return null;
 
-        var compiled_ty_args = try self.monomorphizer.compile_types(enum_ty_args, self.ty_env);
+        const compiled_ty_args = try self.monomorphizer.compile_types(enum_ty_args, self.ty_env);
         const solution = try self.monomorphizer.lookup(enum_name, compiled_ty_args.items, null);
         const enum_def = switch (solution.def) {
             .enum_ => |e| e,
@@ -1057,7 +1123,7 @@ const FunMonomorphizer = struct {
             return error.CompileError;
         }
 
-        var compiled_value = try self.alloc.create(mono.Expr);
+        const compiled_value = try self.alloc.create(mono.Expr);
         compiled_value.* = if (value) |val|
             try self.compile_expr(val)
         else
