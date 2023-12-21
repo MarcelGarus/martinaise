@@ -320,8 +320,7 @@ fun new[T](value: T): &T {
   ref
 }
 fun cast[T, U](value: &T): &U { value.to_address().to_reference[U]() }
-| TODO: remove?
-fun add[T](ref: &T, offset: U64): &T {
+fun add_offset[T](ref: &T, offset: U64): &T {
   ref.to_address().add(offset.multiply(size_of_type[T]())).to_reference[T]()
 }
 fun swap[T](a: &T, b: &T) {
@@ -358,14 +357,16 @@ fun filled_slice[T](len: U64, fill: T): Slice[T] {
   slice
 }
 fun is_empty[T](slice: Slice[T]): Bool { slice.len.equals(0_U64) }
-fun get[T](slice: Slice[T], index: U64): T { slice.data.add(index).* }
+fun get[T](slice: Slice[T], index: U64): T { slice.data.add_offset(index).* }
 fun get_ref[T](slice: Slice[T], index: U64): &T {
   if 0_U64.to(slice.len).contains(index)
-  then slice.data.add(index)
+  then slice.data.add_offset(index)
   else panic("index out of bounds")
 }
 fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
-  Slice[T].{ data = slice.data.add(from), len = to.subtract(from) }
+  if to.is_greater_than(slice.len)
+  then panic("subslice needs to be inside original slice")
+  Slice[T].{ data = slice.data.add_offset(from), len = to.subtract(from) }
 }
 fun subslice[T](slice: Slice[T], from: U64): Slice[T] {
   slice.subslice(from, slice.len)
