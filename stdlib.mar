@@ -421,7 +421,6 @@ fun compare_to[T](a: Slice[T], b: Slice[T]): Ordering {
     if not(ord.is_equal()) then return ord
     i = i.inc()
   }
-  unreachable() | TODO: remove
 }
 fun equals[T](a: Slice[T], b: Slice[T]): Bool {
   | TODO: support for types that only have equals, not compare_to

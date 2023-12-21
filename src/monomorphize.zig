@@ -839,7 +839,7 @@ const FunMonomorphizer = struct {
                 return .{ .kind = .{ .statement = result }, .ty = final_ty };
             },
             .loop => |expr| {
-                const result = try self.fun.put(.{ .uninitialized = {} }, "Nothing"); // type will be replaced
+                const result = try self.fun.put(.{ .uninitialized = {} }, "Something"); // type will be replaced
                 try self.breakable_scopes.append(.{
                     .result = result,
                     .result_ty = null,
@@ -856,7 +856,7 @@ const FunMonomorphizer = struct {
                 const after_loop = self.fun.next_index();
                 {
                     const scope = self.breakable_scopes.pop();
-                    if (scope.result_ty) |ty| self.fun.tys.items[result] = ty;
+                    self.fun.tys.items[result] = scope.result_ty orelse "Never";
                     for (scope.breaks.items) |b| self.fun.body.items[b] = .{ .jump = .{ .target = after_loop } };
                 }
                 {
