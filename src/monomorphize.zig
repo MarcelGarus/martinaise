@@ -365,7 +365,7 @@ const FunMonomorphizer = struct {
 
     // Maps variable names to their expression index.
     const VarEnv = StringHashMap(VarInfo);
-    // TODO: Type is already available as fun.types, no need for it here
+    // TODO: Type is already available as fun.tys, no need for it here
     const VarInfo = struct { index: usize, ty: Str };
 
     fn compile(monomorphizer: *Monomorphizer, fun: ast.Fun, ty_env: TyEnv) !Str {
@@ -452,15 +452,13 @@ const FunMonomorphizer = struct {
         };
 
         const body_result = try fun_monomorphizer.compile_body(fun.body.items);
-        if (!string.eql(body_result.ty, "Never")) {
-            _ = try mono_fun.put(.{ .return_ = body_result }, "Never");
-            // TODO: Make sure body has the correct type
-        }
 
         // For builtin functions, we trust the fully specified return type.
         // For user-written functions, we take the actual return type.
         if (!fun.is_builtin) {
             try fun_monomorphizer.new_returned_ty(body_result.ty);
+            if (!string.eql(body_result.ty, "Never"))
+                _ = try mono_fun.put(.{ .return_ = body_result }, "Never");
             mono_fun.return_ty = fun_monomorphizer.return_ty orelse body_result.ty;
         }
 

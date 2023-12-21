@@ -17,7 +17,7 @@ fun equals(a: Nothing, b: Nothing): Bool { Bool.true }
 | Some expressions always abort control flow, for example `return 3`. These
 | evaluate to the Never type.
 enum Never {}
-fun panic(): Never { panic("panicked") }
+fun panic(): Never { panic("panicked") } | TODO: add more general exit builtin
 fun unreachable(): Never { panic("unreachable") }
 fun todo(): Never { panic("todo") }
 
@@ -27,7 +27,7 @@ fun todo(): Never { panic("todo") }
 | function. Writers are anything with a write(W, U8) function. The prints and
 | printsln functions print the argument as a string.
 struct StdoutWriter {} | Uses the builtin print_to_stdout function.
-fun write(sow: StdoutWriter, c: U8) { print_to_stdout(c) } | TODO: add generic write builtin
+fun write(sow: StdoutWriter, c: U8) { print_to_stdout(c) } | TODO: add more general write builtin
 fun print[T](value: T) { value.dump(StdoutWriter.{}) }
 fun println[T](value: T) { print(value) println() }
 fun println() { StdoutWriter.{}.write(newline()) }
@@ -546,8 +546,11 @@ fun push[T](vec: &Vec[T], item: T) {
   vec.data.get_ref(vec.len).* = item
   vec.len = vec.len.add(1_U64)
 }
-| TODO: return a Maybe
-fun pop[T](vec: &Vec[T]): T { vec.len.&.dec_mut() vec.data.get(vec.len) }
+fun pop[T](vec: &Vec[T]): T {
+  if vec.len.equals(0_U64) then panic("called pop on empty Vec")
+  vec.len.&.dec_mut()
+  vec.data.get(vec.len)
+}
 fun get[T](vec: Vec[T], index: U64): T { vec.data.get(index) }
 fun get_ref[T](vec: Vec[T], index: U64): &T { vec.data.get_ref(index) }
 fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0_U64, vec.len) }
@@ -707,8 +710,6 @@ fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
       then return Maybe[&V].some(&entry.value)
       else i = i.add(1_U64).modulo(map.buckets.len)
   }
-  | TODO: make it so that this is no longer necessary
-  Maybe[&V].none
 }
 fun dump[K, V, W](map: Map[K, V], writer: W) {
   char('{).dump(writer)
@@ -737,7 +738,6 @@ fun next[K, V](map: &MapIter[K, V]): Maybe[MapEntry[K, V]] {
     case empty {}
     case filled(entry) return Maybe[MapEntry[K, V]].some(entry)
   }
-  Maybe[MapEntry[K, V]].none | TODO: remove
 }
 
 | Set  
@@ -767,7 +767,6 @@ fun next[T](set: &SetIter[T]): Maybe[T] {
     case empty {}
     case filled(entry) return Maybe[T].some(entry.key)
   }
-  Maybe[U64].none | TODO: remove
 }
 
 | TODO: segment tree, treap

@@ -12,8 +12,9 @@ const numbers = @import("numbers.zig");
 
 pub fn parse(alloc: std.mem.Allocator, code: Str, stdlib_size: usize) !Result(ast.Program) {
     var parser = Parser{ .code = code, .alloc = alloc };
-    // TODO: Handle OOM error differently
     var program = parser.parse_program() catch |err| {
+        if (err == error.OutOfMemory) return err;
+
         var out_buf = String.init(alloc);
         const out = out_buf.writer();
 
