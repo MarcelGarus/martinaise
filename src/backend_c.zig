@@ -16,9 +16,10 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
 
     try format(out,
         \\// This file is a compiler target.
-        \\#include <stdio.h>
+        \\#include <unistd.h>
         \\#include <stdint.h>
         \\#include <stdlib.h>
+        \\#include <fcntl.h>
         \\
         \\
     , .{});
@@ -27,60 +28,47 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
     var builtin_funs = StringHashMap(Str).init(alloc);
     { // Generate code for builtins
 
-        // panic(Slice[U8]): Never
-        try builtin_funs.put("panic(Slice[U8])",
-            \\  fprintf(stderr, "Panic: ");
-            \\  for (uint64_t i = 0; i < arg0.mar_len.value; i++)
-            \\    putc(arg0.mar_data.pointer[i].value, stderr);
-            \\  putc('\n', stderr);
-            \\  exit(1);
-        );
-
-        // malloc(U64): U64
-        try builtin_funs.put("malloc(U64)",
+        // libc_malloc(size: U64): U64
+        try builtin_funs.put("libc_malloc(U64)",
             \\  mar_U64 address;
             \\  address.value = (uint64_t) malloc(arg0.value);
-            \\  if (!address.value) {
-            \\    printf("OOM");
-            \\    exit(-1);
-            \\  }
             \\  return address;
         );
 
-        // print_to_stdout(U8): Nothing
-        // TODO: Check the return value of putc
-        try builtin_funs.put("print_to_stdout(U8)", formata(alloc,
-            \\  putc(arg0.value, stdout);
-            \\  mar_Nothing n;
-            \\  return n;
-        , .{}));
+        // libc_exit(status: U8): Never
+        try builtin_funs.put("libc_exit(U8)",
+            \\  exit(arg0.value);
+            \\  mar_Nothing nothing;
+            \\  return nothing;
+        );
 
-        // read_file(Slice[U8]): Slice[U8]
-        try builtin_funs.put("read_file(Slice[U8])", formata(alloc,
-            \\  char* path = (char*)arg0.mar_data.pointer;
-            \\  FILE* file = fopen(path, "r");
-            \\  if (!file) {{
-            \\    printf("Not able to open %s.\\n", path);
-            \\    exit(-1);
-            \\  }}
-            \\  int capacity = 32, len = 0;
-            \\  char* content = malloc(capacity);
-            \\  char c;
-            \\  while ((c = fgetc(file)) != EOF) {{
-            \\    if (len == capacity) {{
-            \\      capacity *= 2;
-            \\      content = realloc(content, capacity);
-            \\    }}
-            \\    content[len] = c;
-            \\    len++;
-            \\  }}
-            \\  fclose(file);
-            \\
-            \\  mar_Slice_of_U8_end_ content_slice;
-            \\  content_slice.mar_data.pointer = (mar_U8*) content;
-            \\  content_slice.mar_len.value = len;
-            \\  return content_slice;
-        , .{}));
+        // libc_open(filename: U64, modes: U64): U64
+        try builtin_funs.put("libc_open(U64, U64)",
+            \\  mar_U64 fd;
+            \\  fd.value = (uint64_t) open((char*) arg0.value, arg1.value);
+            \\  return fd;
+        );
+
+        // libc_read(file: U64, buf: U64, len: U64): U8
+        try builtin_funs.put("libc_read(U64, U64, U64)",
+            \\  mar_U8 result;
+            \\  result.value = read(arg0.value, (void*) arg1.value, arg2.value);
+            \\  return result;
+        );
+
+        // libc_close(file: U64): U8
+        try builtin_funs.put("libc_close(U64)",
+            \\  mar_U8 result;
+            \\  result.value = close(arg0.value);
+            \\  return result;
+        );
+
+        // libc_write(file: U64, buf: U64, len: U64): U8
+        try builtin_funs.put("libc_write(U64, U64, U64)",
+            \\  mar_U8 result;
+            \\  result.value = write(arg0.value, (void*) arg1.value, arg2.value);
+            \\  return result;
+        );
 
         for (numbers.all_int_configs()) |config| {
             const ty = try numbers.int_ty_name(alloc, config);

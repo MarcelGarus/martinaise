@@ -69,38 +69,35 @@ pub fn parse(alloc: std.mem.Allocator, code: Str, stdlib_size: usize) !Result(as
 
     // Add builtins.
 
+    const nothing = .{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) };
+    const u8_ = .{ .name = "U8", .args = ArrayList(Ty).init(alloc) };
+    const u64_: Ty = .{ .name = "U64", .args = ArrayList(Ty).init(alloc) };
+    const t: Ty = .{ .name = "T", .args = ArrayList(Ty).init(alloc) };
+    var and_t_args = ArrayList(Ty).init(alloc);
+    try and_t_args.append(t);
+    const and_t: Ty = .{ .name = "&", .args = and_t_args };
+
     { // &T
         var ty_args = ArrayList(Str).init(alloc);
         try ty_args.append("T");
         var fields = ArrayList(ast.Field).init(alloc);
-        const t: Ty = .{ .name = "T", .args = ArrayList(Ty).init(alloc) };
         try fields.append(.{ .name = "*", .ty = t });
         try program.defs.append(.{ .struct_ = .{ .name = "&", .ty_args = ty_args, .fields = fields } });
     }
 
-    { // to_address[T](&T): U64
+    { // to_address[T](ref: &T): U64
         var ty_args = ArrayList(Str).init(alloc);
         try ty_args.append("T");
-        const t: Ty = .{ .name = "T", .args = ArrayList(Ty).init(alloc) };
-        var and_t_args = ArrayList(Ty).init(alloc);
-        try and_t_args.append(t);
-        const and_t: Ty = .{ .name = "&", .args = and_t_args };
         var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "a", .ty = and_t });
-        const u64_: Ty = .{ .name = "U64", .args = ArrayList(Ty).init(alloc) };
+        try args.append(.{ .name = "ref", .ty = and_t });
         program.add_builtin_fun(alloc, "to_address", ty_args, args, u64_);
     }
 
-    { // to_reference[T](U64): &T
-        const u64_: Ty = .{ .name = "U64", .args = ArrayList(Ty).init(alloc) };
+    { // to_reference[T](address: U64): &T
         var ty_args = ArrayList(Str).init(alloc);
         try ty_args.append("T");
         var args = ArrayList(ast.Argument).init(alloc);
         try args.append(.{ .name = "address", .ty = u64_ });
-        const t: Ty = .{ .name = "T", .args = ArrayList(Ty).init(alloc) };
-        var and_t_args = ArrayList(Ty).init(alloc);
-        try and_t_args.append(t);
-        const and_t: Ty = .{ .name = "&", .args = and_t_args };
         program.add_builtin_fun(alloc, "to_reference", ty_args, args, and_t);
     }
 
@@ -108,45 +105,56 @@ pub fn parse(alloc: std.mem.Allocator, code: Str, stdlib_size: usize) !Result(as
         var ty_args = ArrayList(Str).init(alloc);
         try ty_args.append("T");
         const args = ArrayList(ast.Argument).init(alloc);
-        const u64_: Ty = .{ .name = "U64", .args = ArrayList(Ty).init(alloc) };
         program.add_builtin_fun(alloc, "size_of_type", ty_args, args, u64_);
     }
 
-    { // panic(Slice[U8]): Never
-        const u8_ = .{ .name = "U8", .args = ArrayList(Ty).init(alloc) };
-        var ty_args = ArrayList(Ty).init(alloc);
-        try ty_args.append(u8_);
-        const slice = .{ .name = "Slice", .args = ty_args };
-        var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "message", .ty = slice });
-        const never = .{ .name = "Never", .args = ArrayList(Ty).init(alloc) };
-        program.add_builtin_fun(alloc, "panic", null, args, never);
-    }
-
-    { // malloc(U64): U64
-        const u64_: Ty = .{ .name = "U64", .args = ArrayList(Ty).init(alloc) };
+    { // libc_malloc(size: U64): U64
         const ty_args = ArrayList(Str).init(alloc);
         var args = ArrayList(ast.Argument).init(alloc);
         try args.append(.{ .name = "size", .ty = u64_ });
-        program.add_builtin_fun(alloc, "malloc", ty_args, args, u64_);
+        program.add_builtin_fun(alloc, "libc_malloc", ty_args, args, u64_);
     }
 
-    { // print_to_stdout(U8): Nothing
-        const u8_ = .{ .name = "U8", .args = ArrayList(Ty).init(alloc) };
-        const nothing = .{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) };
+    // TODO: realloc
+
+    { // libc_exit(status: U8): Nothing
+        const ty_args = ArrayList(Str).init(alloc);
         var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "c", .ty = u8_ });
-        program.add_builtin_fun(alloc, "print_to_stdout", null, args, nothing);
+        try args.append(.{ .name = "status", .ty = u8_ });
+        program.add_builtin_fun(alloc, "libc_exit", ty_args, args, nothing);
     }
 
-    { // read_file(Slice[U8]): Slice[U8]
-        const u8_ = .{ .name = "U8", .args = ArrayList(Ty).init(alloc) };
-        var ty_args = ArrayList(Ty).init(alloc);
-        try ty_args.append(u8_);
-        const slice = .{ .name = "Slice", .args = ty_args };
+    { // libc_open(filename: U64, modes: U64): U64
+        const ty_args = ArrayList(Str).init(alloc);
         var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "path", .ty = slice });
-        program.add_builtin_fun(alloc, "read_file", null, args, slice);
+        try args.append(.{ .name = "filename", .ty = u64_ });
+        try args.append(.{ .name = "modes", .ty = u64_ });
+        program.add_builtin_fun(alloc, "libc_open", ty_args, args, u64_);
+    }
+
+    { // libc_read(file: U64, buf: U64, len: U64): U8
+        const ty_args = ArrayList(Str).init(alloc);
+        var args = ArrayList(ast.Argument).init(alloc);
+        try args.append(.{ .name = "file", .ty = u64_ });
+        try args.append(.{ .name = "buf", .ty = u64_ });
+        try args.append(.{ .name = "len", .ty = u64_ });
+        program.add_builtin_fun(alloc, "libc_read", ty_args, args, u8_);
+    }
+
+    { // libc_write(file: U64, buf: U64, len: U64): U8
+        const ty_args = ArrayList(Str).init(alloc);
+        var args = ArrayList(ast.Argument).init(alloc);
+        try args.append(.{ .name = "file", .ty = u64_ });
+        try args.append(.{ .name = "buf", .ty = u64_ });
+        try args.append(.{ .name = "len", .ty = u64_ });
+        program.add_builtin_fun(alloc, "libc_write", ty_args, args, u8_);
+    }
+
+    { // libc_close(file: U64): U8
+        const ty_args = ArrayList(Str).init(alloc);
+        var args = ArrayList(ast.Argument).init(alloc);
+        try args.append(.{ .name = "file", .ty = u64_ });
+        program.add_builtin_fun(alloc, "libc_close", ty_args, args, u8_);
     }
 
     // Int stuff.

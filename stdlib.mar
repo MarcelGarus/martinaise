@@ -2,22 +2,48 @@
 | Martinaise is a language that's designed for solving simple puzzles such as
 | advent of code. Making a language that is widely-used is _not_ the goal.
 | Instead, this is a small, recreational project.
-| This is the standard library. Be careful when deleting code here because this
-| may crash the compiler.
+|
+| The language is quite small, so it doesn't have many built-in types and
+| functions. Apart from the integers {U, I} x {8, 16, 32, 64} as well as
+| mathematical functions for them, it provides very slim wrappers around libc
+| functions:
+|
+| - libc_malloc(size: U64): U64
+| - libc_realloc(ptr: U64, size: U64): U64
+| - libc_exit(status: U8): U8
+| - libc_fopen(filename: U64, modes: U64): U64
+| - libc_fgetc(file: U64): U8
+| - libc_fclose(file: U64): U8
+| - libc_putc(c: U8, file: U64): U8
+|
+| Everything else is defined in Martinaise code, even very basic things like
+| Bool. The compiler relies on some of these definitions, so be careful when
+| deleting code in this file because that may crash the compiler.
+
+| TODO: type aliases
+| TODO: define builtin functions in code
+| TODO: catch giving wrong types to fields
+| TODO: call iter().& on for loop target
+| TODO: global constants
 
 | Nothing  
-| A type with only one instance. Functions without an explicit return type
-| return Nothing. Bodies with no expressions inside return Nothing. This is the
-| single Nothing instance: {}
+| A type with only one instance. You might know it as unit or void type in other
+| languages. Functions without an explicit return type return Nothing. Bodies
+| with no expressions inside return Nothing. This is the single Nothing
+| instance: {}
 struct Nothing {}
 fun dump[W](nothing: Nothing, writer: W) { str("nothing").dump(writer) }
 fun equals(a: Nothing, b: Nothing): Bool { Bool.true }
+fun ignore[T](value: T) {}
 
 | Never  
 | Some expressions always abort control flow, for example `return 3`. These
 | evaluate to the Never type.
 enum Never {}
-fun panic(): Never { panic("panicked") } | TODO: add more general exit builtin
+fun halt(): Never { loop {} }
+fun exit(status: U8): Never { libc_exit(status) halt() }
+fun panic(message: Slice[U8]): Never { println(message) exit(1_U8) }
+fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
 fun todo(): Never { panic("todo") }
 
@@ -26,11 +52,13 @@ fun todo(): Never { panic("todo") }
 | The print and println functions can print any value with a dump(T, Writer)
 | function. Writers are anything with a write(W, U8) function. The prints and
 | printsln functions print the argument as a string.
-struct StdoutWriter {} | Uses the builtin print_to_stdout function.
-fun write(sow: StdoutWriter, c: U8) { print_to_stdout(c) } | TODO: add more general write builtin
-fun print[T](value: T) { value.dump(StdoutWriter.{}) }
+fun stdin(): File { File.{ descriptor = 0_U64 } }
+fun stdout(): File { File.{ descriptor = 1_U64 } }
+fun stderr(): File { File.{ descriptor = 2_U64 } }
+fun write(file: File, c: U8) { libc_write(file.descriptor, c.&.to_address(), 1_U64).ignore() }
+fun print[T](value: T) { value.dump(stdout()) }
 fun println[T](value: T) { print(value) println() }
-fun println() { StdoutWriter.{}.write(newline()) }
+fun println() { stdout().write(newline()) }
 fun prints(message: Slice[U8]) { print(str(message)) }
 fun printsln(message: Slice[U8]) { println(str(message)) }
 
@@ -300,7 +328,7 @@ fun next[T](iter: &RangeIter[T]): Maybe[T] {
   }
 }
 
-| Reference  
+| Memory  
 | References (pointers to memory locations) are built into the compiler. &T is a
 | reference to a T. You can get a reference to a value using the & operator on
 | an expression. You can follow a reference using the expr.* syntax. References
@@ -313,6 +341,12 @@ fun next[T](iter: &RangeIter[T]): Maybe[T] {
 | functions are used to build type-safe abstractions on top:
 | - size_of_type[T](): U64
 | - malloc(U64): U64
+fun malloc(size: U64): U64 {
+  var address = libc_malloc(size)
+  if address.equals(0_U64) then panic("out of memory")
+  address
+}
+
 fun ref[T](): &T { malloc(size_of_type[T]()).to_reference[T]() }
 fun new[T](value: T): &T {
   var ref = ref[T]()
@@ -337,6 +371,33 @@ fun dump_address[W](address: U64, writer: W) {
     if divisor.equals(1_U64) then break
     divisor = divisor.divide(16_U64)
   }
+}
+
+| File I/O  
+fun make_null_terminated(slice: Slice[U8]): Slice[U8] {
+  var new = uninitialized_slice[U8](slice.len.inc())
+  slice.copy_to(new.subslice(0_U64, slice.len))
+  new.get_ref(slice.len).* = 0_U8
+  new
+}
+struct File { descriptor: U64 }
+fun flag_RDONLY(): U64 { 0_U64 }
+fun flag_WEONLY(): U64 { 1_U64 }
+fun flag_RDWR(): U64 { 2_U64 }
+fun read_file(name: Slice[U8]): Slice[U8] {
+  var file = libc_open(
+    name.make_null_terminated().data.to_address(),
+    flag_RDONLY(),
+  )
+  if file.equals(0_U64) then panic("not able to open file")
+  var content = vec[U8]()
+  loop {
+    var c = 0_U8
+    if libc_read(file, c.&.to_address(), 1_U64).equals(0_U8) then break
+    content.&.push(c)
+  }
+  libc_close(file)
+  content.to_slice()
 }
 
 | Slice  
