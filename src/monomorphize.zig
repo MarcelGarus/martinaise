@@ -58,8 +58,8 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !Result(mono
         .funs = StringHashMap(mono.Fun).init(alloc),
         .err = String.init(alloc),
     };
-    try monomorphizer.put_ty(.{ .name = "Never", .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
-    try monomorphizer.put_ty(.{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
+    _ = try monomorphizer.compile_type(.{ .name = "Never", .args = ArrayList(Ty).init(alloc) }, TyEnv.init(alloc));
+    _ = try monomorphizer.compile_type(.{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) }, TyEnv.init(alloc));
     for (numbers.all_int_configs()) |config| {
         const name = try numbers.int_ty_name(alloc, config);
         try monomorphizer.put_ty(.{ .name = name, .args = ArrayList(Ty).init(alloc) }, .builtin_ty);
@@ -718,14 +718,35 @@ const FunMonomorphizer = struct {
                     },
                 };
 
+                // Ensure all cases refer to enum variants and all variants are
+                // handled exactly once.
+                var handled = StringHashMap(void).init(self.alloc);
+                cases: for (switch_.cases.items) |case| {
+                    if (handled.contains(case.variant)) {
+                        try self.format_err("When switching on {s}, you handle the \"{s}\" variant multiple times.\n", .{ value.ty, case.variant });
+                        return error.CompileError;
+                    }
+                    for (enum_def.variants.items) |variant|
+                        if (string.eql(variant.name, case.variant)) {
+                            try handled.put(case.variant, {});
+                            continue :cases;
+                        };
+                    try self.format_err("You switched on {s}, which doesn't have a \"{s}\" variant.\n", .{ value.ty, case.variant });
+                    try self.format_err("It only has these variants:\n", .{});
+                    for (enum_def.variants.items) |variant|
+                        try self.format_err("- {s}\n", .{variant.name});
+                    return error.CompileError;
+                }
+                for (enum_def.variants.items) |variant|
+                    if (!handled.contains(variant.name)) {
+                        try self.format_err("You switched on {s}, but you don't handle the \"{s}\" variant.\n", .{ value.ty, variant.name });
+                        return error.CompileError;
+                    };
+
                 // Jump table
                 const jump_table_start = self.fun.next_index();
                 for (switch_.cases.items) |_|
                     _ = try self.fun.put(.{ .uninitialized = {} }, "Nothing"); // Will be replaced with jump_if_variant
-
-                // TODO: instead of looping, ensure all cases are matched
-                // TODO: ensure cases aren't handled multiple times
-                _ = try self.fun.put(.{ .jump = .{ .target = jump_table_start } }, "Never"); // unreachable
 
                 // Case bodies
                 var after_switch_jumps = ArrayList(mono.StatementIndex).init(self.alloc);
@@ -739,8 +760,7 @@ const FunMonomorphizer = struct {
                         for (enum_def.variants.items) |variant|
                             if (string.eql(variant.name, case.variant))
                                 break :find_ty variant.ty;
-                        try self.format_err("You switched on {s}, which doesn't have a \"{s}\" variant.\n", .{ value.ty, case.variant });
-                        return error.CompileError;
+                        unreachable;
                     };
                     const unpacked = try self.fun.put(.{ .get_enum_value = .{ .of = value, .variant = case.variant, .ty = ty } }, ty);
                     // TODO: Create inner var env

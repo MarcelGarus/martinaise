@@ -2,13 +2,10 @@ struct Foo { bar: Bar }
 struct Bar {}
 
 fun main(): U8 {
-  println(Maybe[U8].some(5_U8) orelse 6_U8)
-  println(Maybe[U8].none orelse 6_U8)
-
-  var a = 2_U8
-  a = 3_U16
-
-  0_U8
+  switch Maybe[U8].none
+  case some(blub) 0_U8
+  | case none 0_U8
+  | case blub 0_U8
 }
 
 |fun map[T, X](maybe: Maybe[T], mapper: T -> X): Maybe[X] {
