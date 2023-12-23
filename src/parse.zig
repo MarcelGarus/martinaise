@@ -367,16 +367,9 @@ const Parser = struct {
 
         var is_builtin = false;
         const body = get_body: {
-            if (self.consume_prefix("=")) |_| {
-                self.consume_whitespace();
-                if (self.consume_keyword("builtin")) |_| {
-                    is_builtin = true;
-                    break :get_body ArrayList(ast.Expr).init(self.alloc);
-                } else {
-                    var body = ArrayList(ast.Expr).init(self.alloc);
-                    try body.append(try self.parse_expression() orelse return error.ExpectedBodyExpression);
-                    break :get_body body;
-                }
+            if (self.consume_prefix("{ ... }")) |_| {
+                is_builtin = true;
+                break :get_body ArrayList(ast.Expr).init(self.alloc);
             } else {
                 break :get_body try self.parse_body() orelse return error.ExpectedBody;
             }

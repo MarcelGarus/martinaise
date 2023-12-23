@@ -4,47 +4,39 @@
 | Instead, this is a small, recreational project.
 |
 | The language is quite small, so it doesn't have many built-in types and
-| functions. Apart from the integers {U, I} x {8, 16, 32, 64} as well as
-| mathematical functions for them, it provides very slim wrappers around libc
-| functions:
-|
-| - libc_malloc(size: U64): U64
-| - libc_realloc(ptr: U64, size: U64): U64
-| - libc_exit(status: U8): U8
-| - libc_fopen(filename: U64, modes: U64): U64
-| - libc_fgetc(file: U64): U8
-| - libc_fclose(file: U64): U8
-| - libc_putc(c: U8, file: U64): U8
-|
+| functions. Apart from integers as well as mathematical functions for them, it
+| only provides very slim wrappers around some libc functions.
 | Everything else is defined in Martinaise code, even very basic things like
 | Bool. The compiler relies on some of these definitions, so be careful when
 | deleting code in this file because that may crash the compiler.
 
-| TODO: type aliases
-| TODO: catch giving wrong types to fields
+| Language todos
 | TODO: call iter().& on for loop target
 | TODO: global constants
+| TODO: type aliases
+| TODO: catch giving wrong types to fields
+| TODO: remove orelse?
+| TODO: 
 
-| Nothing  
-| A type with only one instance. You might know it as unit or void type in other
-| languages. Functions without an explicit return type return Nothing. Bodies
-| with no expressions inside return Nothing. This is the single Nothing
-| instance: {}
+| Nothing (aka Unit or Void)  
+| A type with only one instance. Functions without an explicit return type
+| return Nothing. Bodies with no expressions inside return Nothing. This is the
+| single Nothing instance: {}
 struct Nothing {}
 fun dump[W](nothing: Nothing, writer: W) { str("nothing").dump(writer) }
 fun equals(a: Nothing, b: Nothing): Bool { Bool.true }
 fun ignore[T](value: T) {}
 
-| Never  
+| Never and Panics  
 | Some expressions always abort control flow, for example `return 3`. These
 | evaluate to the Never type.
 enum Never {}
 fun halt(): Never { loop {} }
-fun libc_exit(status: U8): Nothing = builtin
+fun libc_exit(status: U8): Nothing { ... }
 fun exit(status: U8): Never { libc_exit(status) halt() }
 fun panic(message: Slice[U8]): Never {
   str(message).dump(stderr())
-  char(newline()).dump(stderr())
+  stderr().write(newline())
   exit(1_U8)
 }
 fun panic(): Never { panic("panicked") }
@@ -52,8 +44,8 @@ fun unreachable(): Never { panic("unreachable") }
 fun todo(): Never { panic("todo") }
 
 | Equality  
-| You should implement an equals(T, T) function for types that can be compared
-| for equality.
+| You should implement an equals(T, T): Bool function for types that can be
+| compared for equality.
 fun not_equals[T](a: T, b: T): Bool { not(a.equals(b)) }
 
 | Hashing  
@@ -71,8 +63,8 @@ fun contribute(hasher: &Hasher, val: U64) {
 }
 
 | Bool  
-| The usual boolean values true and false. The if construct expects a Bool as
-| the condition.
+| The usual boolean values true and false. Martinaise's if expects a Bool as the
+| condition: if Bool.true then 0_U8 else 1_U8
 enum Bool { true, false }
 fun equals(a: Bool, b: Bool): Bool { if a then b else not(b) }
 fun not(a: Bool): Bool { if a then Bool.false else Bool.true }
@@ -99,7 +91,7 @@ fun hash(value: Bool, hasher: &Hasher) {
 | - modulo(Int, Int): Int
 | - compare_to(Int, Int): Ordering
 | - to_<OtherInt>(Int): OtherInt, e.g. to_U8() for non-U8 ints
-fun inc(a: U8): U8 = a.add(1_U8)
+fun inc(a: U8): U8 { a.add(1_U8) }
 fun inc(a: U16): U16 { a.add(1_U16) }
 fun inc(a: U32): U32 { a.add(1_U32) }
 fun inc(a: U64): U64 { a.add(1_U64) }
@@ -162,6 +154,48 @@ fun parse_U64(bytes: Slice[U8]): U64 {
   num
 }
 
+| Comparing  
+| You should implement a compare_to(T, T): Ordering function for types that can
+| be compared. This allows you to use functions such as is_at_least or min.
+enum Ordering { less, equal, greater }
+fun is_less(ord: Ordering): Bool {
+  switch ord case less Bool.true case equal Bool.false case greater Bool.false
+}
+fun is_equal(ord: Ordering): Bool {
+  switch ord case less Bool.false case equal Bool.true case greater Bool.false
+}
+fun is_greater(ord: Ordering): Bool {
+  switch ord case less Bool.false case equal Bool.false case greater Bool.true
+}
+fun is_less_or_equal(ord: Ordering): Bool {
+  switch ord case less Bool.true case equal Bool.true case greater Bool.false
+}
+fun is_greater_or_equal(ord: Ordering): Bool {
+  switch ord case less Bool.false case equal Bool.true case greater Bool.true
+}
+fun equals(a: Ordering, b: Ordering): Bool {
+  switch a
+  case less b.is_less()
+  case equal b.is_equal()
+  case greater b.is_greater()
+}
+fun hash[Hasher](ord: Ordering, hasher: Hasher) {
+  switch ord
+  case less 'l.hash(hasher)
+  case equal 'e.hash(hasher)
+  case greater 'g.hash(hasher)
+}
+fun dump[W](ord: Ordering, writer: W) {
+  {switch ord case less "less" case equal "equal" case greater "greater"}
+    .dump(writer)
+}
+fun is_less_than[T](a: T, b: T): Bool { a.compare_to(b).is_less() }
+fun is_greater_than[T](a: T, b: T): Bool { a.compare_to(b).is_greater() }
+fun is_at_least[T](a: T, b: T): Bool { a.compare_to(b).is_greater_or_equal() }
+fun is_at_most[T](a: T, b: T): Bool { a.compare_to(b).is_less_or_equal() }
+fun min[T](a: T, b: T): T { if a.is_less_than(b) then a else b }
+fun max[T](a: T, b: T): T { if a.is_greater_than(b) then a else b }
+
 | Maybe  
 | Represents optional values. Like Option in Rust, but with the cooler Haskell
 | name. Martinaise has an orelse keyword, which you can write after a Maybe[T]
@@ -203,28 +237,28 @@ fun hash[T](value: Maybe[T], hasher: &Hasher) {
 }
 
 | Memory  
-| In Martinaise, you can have references: &T is a reference to a T. You can get
-| a reference to a value using the expr.& syntax. You can follow a reference
+| Martinaise supports references: &T is a reference to a T. You can get a
+| reference to a value using the expr.& syntax. You can follow a reference
 | using the expr.* syntax.
-| The builtin functions work with addresses (U64) instead of references. These
-| addresses don't have any information about what kind of object is stored
+| The builtin libc functions work with addresses (U64) instead of references.
+| These addresses don't have any information about what kind of object is stored
 | at the address.
-fun libc_malloc(size: U64): U64 = builtin
+fun libc_malloc(size: U64): U64 { ... }
 fun malloc(size: U64): U64 {
   var address = libc_malloc(size)
   if address.equals(0_U64) then panic("out of memory")
   address
 }
-fun malloc[T](): &T { malloc(size_of_type[T]()).to_reference[T]() }
-fun size_of_type[T](): U64 = builtin
-fun to_address[T](ref: &T): U64 = builtin
-fun to_reference[T](address: U64): &T = builtin
+fun size_of_type[T](): U64 { ... }
+fun to_address[T](ref: &T): U64 { ... }
+fun to_reference[T](address: U64): &T { ... }
+fun uninitialized[T](): &T { malloc(size_of_type[T]()).to_reference[T]() }
 fun new[T](value: T): &T {
-  var ref = malloc[T]()
+  var ref = uninitialized[T]()
   ref.* = value
   ref
 }
-fun cast[A, B](value: &A): &B { value.to_address().to_reference[B]() }
+fun cast[A, B](ref: &A): &B { ref.to_address().to_reference[B]() }
 fun add_offset[T](ref: &T, offset: U64): &T {
   ref.to_address().add(offset.multiply(size_of_type[T]())).to_reference[T]()
 }
@@ -244,10 +278,14 @@ fun dump_address[W](address: U64, writer: W) {
   }
 }
 
-
 | Slice  
-| A slice is a memory region where values of the same type are right next to
-| each other.
+| A slice refers to a memory region where values of the same type are right next
+| to each other. A slice has a pointer to the first element as well as a length.
+| In memory, it looks something like this:
+|
+|   [  item  ][  item  ][  item  ][  item  ]
+|   ^
+| [address + len 4]  <--  slice
 struct Slice[T] { data: &T, len: U64 }
 fun empty_slice[T](): Slice[T] {
   Slice[T].{ data = 0_U64.to_reference[T](), len = 0_U64 }
@@ -316,10 +354,14 @@ fun dump[T, W](slice: Slice[T], writer: W) {
 }
 
 | Files, Input & Output  
+| In C, you usually work with FILE* pointers, which you get from fopen, etc.
+| These contain file descriptors (small integers that are handles to objects in
+| the operating system kernel). Here, we construct something similar: A File is
+| a wrapper around a file descriptor.
 struct File { descriptor: U64 }
-fun libc_open(filename: U64, modes: U64): U64 = builtin
+fun libc_open(filename: U64, modes: U64): U64 { ... }
 enum OpenFileMode { read_only, write_only, read_write }
-fun open_file(filename: Slice[U8], mode: OpenFileMode): File {
+fun open_file(filename: Slice[U8], mode: OpenFileMode): Maybe[File] {
   var fd = libc_open(
     filename.make_null_terminated().data.to_address(),
     switch mode
@@ -327,10 +369,11 @@ fun open_file(filename: Slice[U8], mode: OpenFileMode): File {
     case write_only 1_U64
     case read_write 2_U64,
   )
-  if fd.equals(0_U64) then panic("not able to open file")
-  File.{ descriptor = fd }
+  if fd.equals(0_U64)
+  then Maybe[File].none
+  else Maybe[File].some(File.{ descriptor = fd })
 }
-fun libc_read(file: U64, buf: U64, len: U64): U64 = builtin
+fun libc_read(file: U64, buf: U64, len: U64): U64 { ... }
 fun read(file: File, buffer: Slice[U8]): U64 {
   libc_read(file.descriptor, buffer.data.to_address(), buffer.len)
 }
@@ -340,14 +383,14 @@ fun read_byte(file: File): Maybe[U8] {
   then Maybe[U8].none
   else Maybe[U8].some(c)
 }
-fun libc_write(file: U64, buf: U64, len: U64): U64 = builtin
+fun libc_write(file: U64, buf: U64, len: U64): U64 { ... }
 fun write(file: File, buffer: Slice[U8]): U64 {
   libc_write(file.descriptor, buffer.data.to_address(), buffer.len)
 }
 fun write(file: File, byte: U8) {
   libc_write(file.descriptor, byte.&.to_address(), 1_U64).ignore()
 }
-fun libc_close(file: U64): U8 = builtin
+fun libc_close(file: U64): U8 { ... }
 fun close(file: File) { libc_close(file.descriptor).ignore() }
 fun read_file(name: Slice[U8]): Slice[U8] {
   var file = open_file(name, OpenFileMode.read_only)
@@ -391,80 +434,6 @@ fun dump[W](str: Str, writer: W) {
   for byte in &str.bytes.iter() do writer.write(byte)
 }
 
-| Comparing  
-| You should implement a compare_to(T, T): Ordering function for types that can
-| be compared. This allows you to use functions such as is_at_least or min.
-enum Ordering { less, equal, greater }
-fun is_less(ord: Ordering): Bool {
-  switch ord case less Bool.true case equal Bool.false case greater Bool.false
-}
-fun is_equal(ord: Ordering): Bool {
-  switch ord case less Bool.false case equal Bool.true case greater Bool.false
-}
-fun is_greater(ord: Ordering): Bool {
-  switch ord case less Bool.false case equal Bool.false case greater Bool.true
-}
-fun is_less_or_equal(ord: Ordering): Bool {
-  switch ord case less Bool.true case equal Bool.true case greater Bool.false
-}
-fun is_greater_or_equal(ord: Ordering): Bool {
-  switch ord case less Bool.false case equal Bool.true case greater Bool.true
-}
-fun equals(a: Ordering, b: Ordering): Bool {
-  switch a
-  case less b.is_less()
-  case equal b.is_equal()
-  case greater b.is_greater()
-}
-fun hash[Hasher](ord: Ordering, hasher: Hasher) {
-  switch ord
-  case less 'l.hash(hasher)
-  case equal 'e.hash(hasher)
-  case greater 'g.hash(hasher)
-}
-fun dump[W](ord: Ordering, writer: W) {
-  {switch ord case less "less" case equal "equal" case greater "greater"}
-    .dump(writer)
-}
-fun is_less_than[T](a: T, b: T): Bool { a.compare_to(b).is_less() }
-fun is_greater_than[T](a: T, b: T): Bool { a.compare_to(b).is_greater() }
-fun is_at_least[T](a: T, b: T): Bool { a.compare_to(b).is_greater_or_equal() }
-fun is_at_most[T](a: T, b: T): Bool { a.compare_to(b).is_less_or_equal() }
-fun min[T](a: T, b: T): T { if a.is_less_than(b) then a else b }
-fun max[T](a: T, b: T): T { if a.is_greater_than(b) then a else b }
-
-| Tuples  
-fun tuple[A, B](a: A, b: B): Tuple[A, B] {
-  Tuple[A, B].{ a = a, b = b }
-}
-fun tuple[A, B, C](a: A, b: B, c: C): Tuple[A, B, C] {
-  Tuple[A, B, C].{ a = a, b = b, c = c }
-}
-struct Tuple[A, B] { a: A, b: B }
-struct Tuple[A, B, C] { a: A, b: B, c: C }
-fun dump[A, B, W](tuple: Tuple[A, B], writer: W) {
-  '(.dump(writer)
-  tuple.a.dump(writer)
-  str(", ").dump(writer)
-  tuple.b.dump(writer)
-  ').dump(writer)
-}
-fun dump[A, B, C, W](tuple: Tuple[A, B, C], writer: W) {
-  '(.dump(writer)
-  tuple.a.dump(writer)
-  str(", ").dump(writer)
-  tuple.b.dump(writer)
-  str(", ").dump(writer)
-  tuple.c.dump(writer)
-  ').dump(writer)
-}
-
-| Point  
-struct Point[T] { x: T, y: T }
-fun dump[T, W](point: Point[T], writer: W) {
-  tuple(point.x, point.y).dump(writer)
-}
-
 | Range  
 | Ranges have an inclusive start and exclusive end value.
 struct Range[T] { start: T, end: T }
@@ -487,6 +456,38 @@ fun next[T](iter: &RangeIter[T]): Maybe[T] {
     iter.rest.start = current.inc()
     Maybe[T].some(current)
   }
+}
+
+| Tuples  
+fun tuple[A, B](a: A, b: B): Tuple[A, B] {
+  Tuple[A, B].{ a = a, b = b }
+}
+fun tuple[A, B, C](a: A, b: B, c: C): Tuple[A, B, C] {
+  Tuple[A, B, C].{ a = a, b = b, c = c }
+}
+struct Tuple[A, B] { a: A, b: B }
+struct Tuple[A, B, C] { a: A, b: B, c: C }
+fun dump[A, B, W](tuple: Tuple[A, B], writer: W) {
+  char('().dump(writer)
+  tuple.a.dump(writer)
+  str(", ").dump(writer)
+  tuple.b.dump(writer)
+  char(')).dump(writer)
+}
+fun dump[A, B, C, W](tuple: Tuple[A, B, C], writer: W) {
+  char('().dump(writer)
+  tuple.a.dump(writer)
+  str(", ").dump(writer)
+  tuple.b.dump(writer)
+  str(", ").dump(writer)
+  tuple.c.dump(writer)
+  char(')).dump(writer)
+}
+
+| Point  
+struct Point[T] { x: T, y: T }
+fun dump[T, W](point: Point[T], writer: W) {
+  tuple(point.x, point.y).dump(writer)
 }
 
 | Vec  
