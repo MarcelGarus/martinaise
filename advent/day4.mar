@@ -1,30 +1,30 @@
 fun card_score(card: Slice[U8]): U64 {
   var prefix_and_turns = card.split(": ")
-  var all_numbers = prefix_and_turns.get(1_U64).split(" | ")
+  var all_numbers = prefix_and_turns.get(1).split(" | ")
 
   | TODO: use hash set when implemented
   var winning_numbers = vec[U64]()
-  for num in &all_numbers.get(0_U64).split(" ").iter() do
+  for num in &all_numbers.get(0).split(" ").iter() do
     if not(num.is_empty()) then winning_numbers.&.push(num.parse_U64())
   var my_numbers = vec[U64]()
-  for num in &all_numbers.get(1_U64).split(" ").iter() do
+  for num in &all_numbers.get(1).split(" ").iter() do
     if not(num.is_empty()) then my_numbers.&.push(num.parse_U64())
   println(winning_numbers)
 
-  var score = 0_U64
+  var score = 0
   for num in &my_numbers.iter() do {
     var wins = Bool.false
     for winning in &winning_numbers.iter() do
       if num.equals(winning) then wins = Bool.true
     if wins
-    then score = if score.equals(0_U64) then 1_U64 else score.multiply(2_U64)
+    then score = if score.equals(0) then 1 else score.multiply(2)
   }
 
   score
 }
 
 fun main(): U8 {
-  var sum = 0_U64
+  var sum = 0
   for line in &read_file("advent/day4.big").lines().iter() do
     sum = sum.add(line.card_score())
   println(sum)

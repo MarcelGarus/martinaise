@@ -53,13 +53,13 @@ fun not_equals[T](a: T, b: T): Bool { not(a.equals(b)) }
 | In this function, they can contribute some uniqueness/entropy to the Hasher by
 | calling its contribute(U64) function. The Hasher uses the djb2 algorithm.
 fun hash[T](value: T): U64 {
-  var h = Hasher.{ state = 5381_U64 }
+  var h = Hasher.{ state = 5381 }
   value.hash(&h)
   h.state
 }
 struct Hasher { state: U64 }
 fun contribute(hasher: &Hasher, val: U64) {
-  hasher.state = hasher.state.multiply(33_U64).add(val)
+  hasher.state = hasher.state.multiply(33).add(val)
 }
 
 | Bool  
@@ -76,7 +76,7 @@ fun dump[W](b: Bool, writer: W) {
   str({if b then "true" else "false"}).dump(writer)
 }
 fun hash(value: Bool, hasher: &Hasher) {
-  hasher.contribute(if value then 0_U64 else 1_U64)
+  hasher.contribute(if value then 0 else 1)
 }
 
 | Int  
@@ -124,14 +124,14 @@ fun hash(value: I16, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
 fun hash(value: I32, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
 fun hash(value: I64, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
 fun dump[W](int: U64, radix: U64, writer: W) {
-  var divisor = 1_U64
+  var divisor = 1
   loop {
     if int.divide(divisor).is_less_than(radix) then break
     divisor = divisor.multiply(radix)
   }
   loop {
     writer.write(int.divide(divisor).modulo(radix).to_U8().digit_to_char())
-    if divisor.equals(1_U64) then break
+    if divisor.equals(1) then break
     divisor = divisor.divide(radix)
   }
 }
@@ -143,13 +143,13 @@ fun digit_to_char(digit: U8): U8 {
 fun dump[W](int: U8, writer: W) { int.to_U64().dump(writer) }
 fun dump[W](int: U16, writer: W) { int.to_U64().dump(writer) }
 fun dump[W](int: U32, writer: W) { int.to_U64().dump(writer) }
-fun dump[W](int: U64, writer: W) { int.dump(10_U64, writer) }
+fun dump[W](int: U64, writer: W) { int.dump(10, writer) }
 fun parse_U64(bytes: Slice[U8]): U64 {
-  var num = 0_U64
+  var num = 0
   for char in &bytes.iter() do {
     if not('0.until('9).contains(char))
     then panic("non-digit in supposed number")
-    num = num.multiply(10_U64).add(char.subtract('0).to_U64())
+    num = num.multiply(10).add(char.subtract('0).to_U64())
   }
   num
 }
@@ -230,10 +230,10 @@ fun equals(a: Maybe[T], b: Maybe[T]): Bool {
 fun hash[T](value: Maybe[T], hasher: &Hasher) {
   switch value
   case some(inner) {
-    hasher.contribute('s.to_U64())
+    's.hash(hasher)
     inner.hash(hasher)
   }
-  case none hasher.contribute('n.to_U64())
+  case none 'n.hash(hasher)
 }
 
 | Memory  
@@ -246,7 +246,7 @@ fun hash[T](value: Maybe[T], hasher: &Hasher) {
 fun libc_malloc(size: U64): U64 { ... }
 fun malloc(size: U64): U64 {
   var address = libc_malloc(size)
-  if address.equals(0_U64) then panic("out of memory")
+  if address.equals(0) then panic("out of memory")
   address
 }
 fun size_of_type[T](): U64 { ... }
@@ -269,12 +269,12 @@ fun swap[T](a: &T, b: &T) {
 }
 fun dump_address[W](address: U64, writer: W) {
   | max U64 is  18446744073709551615
-  var divisor = 1152921504606846976_U64 | 16 ^ something
+  var divisor = 1152921504606846976 | 16 ^ something
   "0x".dump(writer)
   loop {
-    writer.write(address.divide(divisor).modulo(16_U64).to_U8().digit_to_char())
-    if divisor.equals(1_U64) then break
-    divisor = divisor.divide(16_U64)
+    writer.write(address.divide(divisor).modulo(16).to_U8().digit_to_char())
+    if divisor.equals(1) then break
+    divisor = divisor.divide(16)
   }
 }
 
@@ -288,22 +288,22 @@ fun dump_address[W](address: U64, writer: W) {
 | [address + len 4]  <--  slice
 struct Slice[T] { data: &T, len: U64 }
 fun empty_slice[T](): Slice[T] {
-  Slice[T].{ data = 0_U64.to_reference[T](), len = 0_U64 }
+  Slice[T].{ data = 0.to_reference[T](), len = 0 }
 }
 fun uninitialized_slice[T](len: U64): Slice[T] {
-  if len.equals(0_U64) then return empty_slice[T]()
+  if len.equals(0) then return empty_slice[T]()
   var data = malloc(len.multiply(size_of_type[T]())).to_reference[T]()
   Slice[T].{ data = data, len = len }
 }
 fun filled_slice[T](len: U64, fill: T): Slice[T] {
   var slice = uninitialized_slice[T](len)
-  for i in &0_U64.to(len).iter() do slice.get_ref(i).* = fill
+  for i in &0.to(len).iter() do slice.get_ref(i).* = fill
   slice
 }
-fun is_empty[T](slice: Slice[T]): Bool { slice.len.equals(0_U64) }
+fun is_empty[T](slice: Slice[T]): Bool { slice.len.equals(0) }
 fun get[T](slice: Slice[T], index: U64): T { slice.data.add_offset(index).* }
 fun get_ref[T](slice: Slice[T], index: U64): &T {
-  if 0_U64.to(slice.len).contains(index)
+  if 0.to(slice.len).contains(index)
   then slice.data.add_offset(index)
   else panic("index out of bounds")
 }
@@ -317,16 +317,16 @@ fun subslice[T](slice: Slice[T], from: U64): Slice[T] {
 }
 fun copy_to[T](from: Slice[T], to: Slice[T]) {
   if not(from.len.equals(to.len)) then panic("copy_to slice lens don't match")
-  for i in &0_U64.to(from.len).iter() do to.get_ref(i).* = from.get(i)
+  for i in &0.to(from.len).iter() do to.get_ref(i).* = from.get(i)
 }
 fun make_null_terminated(slice: Slice[U8]): Slice[U8] {
   var new = uninitialized_slice[U8](slice.len.inc())
-  slice.copy_to(new.subslice(0_U64, slice.len))
+  slice.copy_to(new.subslice(0, slice.len))
   new.get_ref(slice.len).* = 0_U8
   new
 }
 fun compare_to[T](a: Slice[T], b: Slice[T]): Ordering {
-  var i = 0_U64
+  var i = 0
   loop {
     if i.equals(a.len).and(i.equals(b.len)) then return Ordering.equal
     if i.equals(a.len) then return Ordering.less
@@ -365,11 +365,11 @@ fun open_file(filename: Slice[U8], mode: OpenFileMode): Maybe[File] {
   var fd = libc_open(
     filename.make_null_terminated().data.to_address(),
     switch mode
-    case read_only 0_U64
-    case write_only 1_U64
-    case read_write 2_U64,
+    case read_only 0
+    case write_only 1
+    case read_write 2,
   )
-  if fd.equals(0_U64)
+  if fd.equals(0)
   then Maybe[File].none
   else Maybe[File].some(File.{ descriptor = fd })
 }
@@ -379,7 +379,7 @@ fun read(file: File, buffer: Slice[U8]): U64 {
 }
 fun read_byte(file: File): Maybe[U8] {
   var c = 0_U8
-  if libc_read(file.descriptor, c.&.to_address(), 1_U64).equals(0_U64)
+  if libc_read(file.descriptor, c.&.to_address(), 1).equals(0)
   then Maybe[U8].none
   else Maybe[U8].some(c)
 }
@@ -388,12 +388,13 @@ fun write(file: File, buffer: Slice[U8]): U64 {
   libc_write(file.descriptor, buffer.data.to_address(), buffer.len)
 }
 fun write(file: File, byte: U8) {
-  libc_write(file.descriptor, byte.&.to_address(), 1_U64).ignore()
+  libc_write(file.descriptor, byte.&.to_address(), 1).ignore()
 }
 fun libc_close(file: U64): U8 { ... }
 fun close(file: File) { libc_close(file.descriptor).ignore() }
 fun read_file(name: Slice[U8]): Slice[U8] {
   var file = open_file(name, OpenFileMode.read_only)
+    orelse panic("unable to open file")
   var content = vec[U8]()
   loop
     switch file.read_byte()
@@ -408,9 +409,9 @@ fun read_file(name: Slice[U8]): Slice[U8] {
 | The print and println functions can print any value with a dump(T, Writer)
 | function. Writers are anything with a write(W, U8) function. The prints and
 | printsln functions print the argument as a string.
-fun stdin(): File { File.{ descriptor = 0_U64 } }
-fun stdout(): File { File.{ descriptor = 1_U64 } }
-fun stderr(): File { File.{ descriptor = 2_U64 } }
+fun stdin(): File { File.{ descriptor = 0 } }
+fun stdout(): File { File.{ descriptor = 1 } }
+fun stderr(): File { File.{ descriptor = 2 } }
 fun print[T](value: T) { value.dump(stdout()) }
 fun println[T](value: T) { print(value) println() }
 fun println() { stdout().write(newline()) }
@@ -495,7 +496,7 @@ fun dump[T, W](point: Point[T], writer: W) {
 | This is implemented using a fixed-size slice. Once it fills up, a new slice is
 | allocated and the old items are copied over.
 struct Vec[T] { data: Slice[T], len: U64 }
-fun vec[T](): Vec[T] { Vec[T].{ data = empty_slice[T](), len = 0_U64 } }
+fun vec[T](): Vec[T] { Vec[T].{ data = empty_slice[T](), len = 0 } }
 | TODO: remove when there are slice literals
 fun vec[T](a: T): Vec[T] { var v = vec[T]() v.&.push(a) v }
 fun vec[T](a: T, b: T): Vec[T] { var v = vec[T]() v.&.push(a) v.&.push(b) v }
@@ -515,23 +516,23 @@ fun vec[T](a: T, b: T, c: T, d: T): Vec[T] {
   v
 }
 fun push[T](vec: &Vec[T], item: T) {
-  if vec.data.len.equals(0_U64) then vec.data = uninitialized_slice[T](8_U64)
+  if vec.data.len.equals(0) then vec.data = uninitialized_slice[T](8)
   if vec.data.len.equals(vec.len) then {
-    var new_data = uninitialized_slice[T](vec.data.len.multiply(2_U64))
-    vec.data.copy_to(new_data.subslice(0_U64, vec.data.len))
+    var new_data = uninitialized_slice[T](vec.data.len.multiply(2))
+    vec.data.copy_to(new_data.subslice(0, vec.data.len))
     vec.data = new_data
   }
   vec.data.get_ref(vec.len).* = item
-  vec.len = vec.len.add(1_U64)
+  vec.len = vec.len.add(1)
 }
 fun pop[T](vec: &Vec[T]): T {
-  if vec.len.equals(0_U64) then panic("called pop on empty Vec")
+  if vec.len.equals(0) then panic("called pop on empty Vec")
   vec.len.&.dec_mut()
   vec.data.get(vec.len)
 }
 fun get[T](vec: Vec[T], index: U64): T { vec.data.get(index) }
 fun get_ref[T](vec: Vec[T], index: U64): &T { vec.data.get_ref(index) }
-fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0_U64, vec.len) }
+fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0, vec.len) }
 fun equals[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice().equals(b.to_slice()) }
 fun iter[T](vec: Vec[T]): SliceIter[T] { vec.to_slice().iter() }
 fun dump[T, W](vec: Vec[T], writer: W) { vec.to_slice().dump(writer) }
@@ -542,9 +543,9 @@ fun dump[T, W](vec: Vec[T], writer: W) { vec.to_slice().dump(writer) }
 struct Stack[T] { vec: Vec[T] }
 fun push[T](stack: &Stack[T], item: T) { stack.vec.push(item) }
 fun pop[T](stack: &Stack[T]) { stack.vec.pop() }
-fun peek[T](stack: &Stack[T]): T { stack.peek(0_U64) }
+fun peek[T](stack: &Stack[T]): T { stack.peek(0) }
 fun peek[T](stack: &Stack[T], n: U64): T {
-  stack.vec.get(stack.vec.len.subtract(1_U64).subtract(n))
+  stack.vec.get(stack.vec.len.subtract(1).subtract(n))
 }
 fun equals[T](a: Stack[T], b: Stack[T]): Bool { a.vec.equals(b.vec) }
 fun dump[T, W](stack: Stack[T], writer: W) { stack.vec.dump(writer) }
@@ -559,28 +560,28 @@ fun dump[T, W](stack: Stack[T], writer: W) { stack.vec.dump(writer) }
 |     s              e               e        s
 struct Deque[T] { data: Slice[T], start: U64, end: U64 }
 fun deque[T](): Deque[T] {
-  Deque[T].{ data = uninitialized_slice[T](8_U64), start = 0_U64, end = 0_U64 }
+  Deque[T].{ data = uninitialized_slice[T](8), start = 0, end = 0 }
 }
 fun len[T](deque: Deque[T]): U64 {
   if deque.end.is_at_least(deque.start)
   then deque.end.subtract(deque.start)
   else deque.start.add(deque.data.len).subtract(deque.end)
 }
-fun is_empty[T](deque: Deque[T]): Bool { deque.len().equals(0_U64) }
+fun is_empty[T](deque: Deque[T]): Bool { deque.len().equals(0) }
 fun reserve[T](deque: &Deque[T], size: U64) {
   if deque.data.len.is_at_least(size) then return
   var slices = deque.to_slices()
   var total_len = deque.len()
   deque.data = uninitialized_slice[T](size)
-  slices.a.copy_to(deque.data.subslice(0_U64, slices.a.len))
+  slices.a.copy_to(deque.data.subslice(0, slices.a.len))
   slices.b.copy_to(deque.data.subslice(slices.a.len, total_len))
-  deque.start = 0_U64
+  deque.start = 0
   deque.end = total_len
 }
 fun push_front[T](deque: &Deque[T], item: T) {
   if deque.data.len.equals(deque.len().dec())
-  then deque.reserve(deque.data.len.multiply(2_U64))
-  deque.start = if deque.start.equals(0_U64)
+  then deque.reserve(deque.data.len.multiply(2))
+  deque.start = if deque.start.equals(0)
     then deque.data.len
     else deque.start.dec()
   deque.data.get_ref(deque.start).* = item
@@ -593,13 +594,13 @@ fun pop_front[T](deque: &Deque[T]): T {
 }
 fun push_back[T](deque: &Deque[T], item: T) {
   if deque.data.len.equals(deque.len().dec())
-  then deque.reserve(deque.data.len.multiply(2_U64))
+  then deque.reserve(deque.data.len.multiply(2))
   deque.data.get_ref(deque.end).* = item
   deque.end = deque.end.inc().modulo(deque.data.len)
 }
 fun pop_back[T](deque: &Deque[T]): T {
   if deque.is_empty() then panic("pop_back on empty deque")
-  deque.end = if deque.end.equals(0_U64)
+  deque.end = if deque.end.equals(0)
     then deque.data.len
     else deque.end.dec()
   deque.data.get(deque.end)
@@ -613,12 +614,12 @@ fun to_slices[T](deque: Deque[T]): Tuple[Slice[T], Slice[T]] {
   then tuple(deque.data.subslice(deque.start, deque.end), empty_slice[T]())
   else tuple(
     deque.data.subslice(deque.start, deque.data.len),
-    deque.data.subslice(0_U64, deque.start)
+    deque.data.subslice(0, deque.start)
   )
 }
 fun equals[T](a: Deque[T], b: Deque[T]): Bool {
   if a.len().notEquals(b.len()) then return Bool.false
-  for i in 0_U64.to(a.len()) do
+  for i in 0.to(a.len()) do
     if a.get(i).notEquals(b.get(i)) then return Bool.false
   Bool.true
 }
@@ -630,22 +631,19 @@ struct Map[K, V] { buckets: Slice[MapBucket[K, V]], size: U64 }
 enum MapBucket[K, V] { empty, filled: MapEntry[K, V] }
 struct MapEntry[K, V] { key: K, value: V }
 fun map[K, V](): Map[K, V] {
-  Map[K, V].{
-    buckets = filled_slice(8_U64, MapBucket[K, V].empty),
-    size = 0_U64,
-  }
+  Map[K, V].{ buckets = filled_slice(8, MapBucket[K, V].empty), size = 0 }
 }
-fun is_empty[K, V](map: Map[K, V]): Bool { map.size.equals(0_U64) }
+fun is_empty[K, V](map: Map[K, V]): Bool { map.size.equals(0) }
 fun insert[K, V](map: &Map[K, V], key: K, value: V) {
-  var fill_percentage = 100_U64.multiply(map.size).divide(map.buckets.len)
-  if fill_percentage.is_at_least(60_U64) then {
+  var fill_percentage = 100.multiply(map.size).divide(map.buckets.len)
+  if fill_percentage.is_at_least(60) then {
     var old_buckets = map.buckets
     map.* = Map[K, V].{
       buckets = filled_slice(
-        map.buckets.len.multiply(2_U64),
+        map.buckets.len.multiply(2),
         MapBucket[K, V].empty
       ),
-      size = 0_U64,
+      size = 0,
     }
     for bucket in &old_buckets.iter() do
       switch bucket
@@ -660,15 +658,17 @@ fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
     var bucket = map.buckets.get_ref(i)
     switch bucket.*
     case empty {
-      bucket.* = MapBucket[K, V].filled(MapEntry[K, V].{ key = key, value = value })
-      map.size = map.size.add(1_U64)
+      bucket.* = MapBucket[K, V]
+        .filled(MapEntry[K, V].{ key = key, value = value })
+      map.size = map.size.add(1)
       break
     }
     case filled(entry)
       if entry.key.equals(key) then {
-        bucket.* = MapBucket[K, V].filled(MapEntry[K, V].{ key = key, value = value })
+        bucket.* = MapBucket[K, V]
+          .filled(MapEntry[K, V].{ key = key, value = value })
         break
-      } else i = i.add(1_U64).modulo(map.buckets.len)
+      } else i = i.add(1).modulo(map.buckets.len)
   }
 }
 fun contains[K, V](map: Map[K, V], key: K): Bool { map.get(key).is_some() }
@@ -686,7 +686,7 @@ fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
     case filled(entry)
       if entry.key.equals(key)
       then return Maybe[&V].some(&entry.value)
-      else i = i.add(1_U64).modulo(map.buckets.len)
+      else i = i.add(1).modulo(map.buckets.len)
   }
 }
 fun dump[K, V, W](map: Map[K, V], writer: W) {
@@ -704,15 +704,15 @@ fun dump[K, V, W](map: Map[K, V], writer: W) {
   char('}).dump(writer)
 }
 fun iter[K, V](map: Map[K, V]): MapIter[K, V] {
-  MapIter[K, V].{ buckets = map.buckets, index = 0_U64 }
+  MapIter[K, V].{ buckets = map.buckets, index = 0 }
 }
 struct MapIter[K, V] { buckets: Slice[MapBucket[K, V]], index: U64 }
 fun next[K, V](map: &MapIter[K, V]): Maybe[MapEntry[K, V]] {
   loop {
     if map.index.is_at_least(map.buckets.len)
     then return Maybe[MapEntry[K, V]].none
-    map.index = map.index.add(1_U64)
-    switch map.buckets.get(map.index.subtract(1_U64))
+    map.index = map.index.add(1)
+    switch map.buckets.get(map.index.subtract(1))
     case empty {}
     case filled(entry) return Maybe[MapEntry[K, V]].some(entry)
   }
@@ -721,7 +721,7 @@ fun next[K, V](map: &MapIter[K, V]): Maybe[MapEntry[K, V]] {
 | Set  
 struct Set[T] { map: Map[T, Nothing] }
 fun set[T](): Set[T] { Set[T].{ map = map[T, Nothing]() } }
-fun is_empty[T](set: Set[T]): Bool { set.map.size.equals(0_U64) }
+fun is_empty[T](set: Set[T]): Bool { set.map.size.equals(0) }
 fun insert[T](set: &Set[T], value: T) { set.map.&.insert(value, {}) }
 fun contains[T](set: &Set[T], value: T): Bool { set.map.get(value).is_some() }
 fun dump[T, W](set: Set[T], writer: W) {
@@ -734,14 +734,14 @@ fun dump[T, W](set: Set[T], writer: W) {
   char('}).dump(writer)
 }
 fun iter[T](set: Set[T]): SetIter[T] {
-  SetIter[T].{ buckets = set.map.buckets, index = 0_U64 }
+  SetIter[T].{ buckets = set.map.buckets, index = 0 }
 }
 struct SetIter[T] { buckets: Slice[MapBucket[T, Nothing]], index: U64 }
 fun next[T](set: &SetIter[T]): Maybe[T] {
   loop {
     if set.index.is_at_least(set.buckets.len) then return Maybe[T].none
-    set.index = set.index.add(1_U64)
-    switch set.buckets.get(set.index.subtract(1_U64))
+    set.index = set.index.add(1)
+    switch set.buckets.get(set.index.subtract(1))
     case empty {}
     case filled(entry) return Maybe[T].some(entry.key)
   }
@@ -757,13 +757,13 @@ fun lines(slice: Slice[U8]): Slice[Slice[U8]] { slice.split("
 ") }
 fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
   if prefix.len.is_greater_than(slice.len) then return Bool.false
-  for i in &0_U64.to(prefix.len).iter() do
+  for i in &0.to(prefix.len).iter() do
     if not(slice.get(i).equals(prefix.get(i))) then return Bool.false
   Bool.true
 }
 fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
   if suffix.len.is_greater_than(slice.len) then return Bool.false
-  for i in &0_U64.to(suffix.len).iter() do
+  for i in &0.to(suffix.len).iter() do
     if not(
       slice.get(slice.len.subtract(suffix.len).add(i)).equals(suffix.get(i))
     )
@@ -776,26 +776,26 @@ fun trim_prefix(slice: &Slice[U8], prefix: Slice[U8]) {
   else panic("slice doesn't start with prefix")
 }
 fun find[T](slice: Slice[T], needle: T): Maybe[U64] {
-  for i in &0_U64.to(slice.len).iter() do
+  for i in &0.to(slice.len).iter() do
     if slice.get(i).equals(needle) then return Maybe[U64].some(i)
   Maybe[U64].none
 }
 fun sort[T](slice: &Slice[T]) {
   | quick sort
-  if slice.len.is_at_most(1_U64) then return {}
+  if slice.len.is_at_most(1) then return {}
   var pivot = slice.get(slice.len.dec())
-  var i = 0_U64
-  for j in &0_U64.to(slice.len).iter() do
+  var i = 0
+  for j in &0.to(slice.len).iter() do
     if slice.get(j).is_less_than(pivot) then {
       i = i.inc()
       swap(slice.get_ref(i.dec()), slice.get_ref(j))
     }
   swap(slice.get_ref(i), slice.get_ref(slice.len.dec()))
-  sort(&slice.subslice(0_U64, i))
+  sort(&slice.subslice(0, i))
   sort(&slice.subslice(min(i.inc(), slice.len.dec()), slice.len))
 }
 fun iter[T](slice: Slice[T]): SliceIter[T] {
-  SliceIter[T].{ slice = slice, index = 0_U64 }
+  SliceIter[T].{ slice = slice, index = 0 }
 }
 struct SliceIter[T] {
   slice: Slice[T],
@@ -805,7 +805,7 @@ fun next[T](iter: &SliceIter[T]): Maybe[T] {
   var item = if iter.index.is_less_than(iter.slice.len)
     then Maybe[T].some(iter.slice.get(iter.index))
     else Maybe[T].none
-  iter.index = iter.index.add(1_U64)
+  iter.index = iter.index.add(1)
   item
 }
 fun rev_iter[T](slice: Slice[T]): SliceRevIter[T] {
@@ -816,8 +816,8 @@ struct SliceRevIter[T] {
   index: U64, | last yielded item
 }
 fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
-  if iter.index.is_greater_than(0_U64) then {
-    iter.index = iter.index.subtract(1_U64)
+  if iter.index.is_greater_than(0) then {
+    iter.index = iter.index.subtract(1)
     Maybe[T].some(iter.slice.get(iter.index))
   } else Maybe[T].none
 }
@@ -830,7 +830,7 @@ fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
   loop
     switch self.iter.&.next()
     case none
-      if line.len.is_greater_than(0_U64)
+      if line.len.is_greater_than(0)
       then break
       else return Maybe[Slice[U8]].none
     case some(c) {
@@ -838,7 +838,7 @@ fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
       if line.to_slice().subslice(line.len.subtract(self.separator.len))
         .equals(self.separator)
       then return Maybe[Slice[U8]].some(
-        line.to_slice().subslice(0_U64, line.len.subtract(self.separator.len))
+        line.to_slice().subslice(0, line.len.subtract(self.separator.len))
       )
     }
   Maybe[Slice[U8]].some(line.to_slice())
@@ -852,7 +852,7 @@ fun min[T](slice: Set[T]): Maybe[T] {
   return candidate
 }
 |fun enumerate[I](iter: I): Enumerated[I] {
-|  Enumerated[I].{ iter = iter, counter = 0_U64 }
+|  Enumerated[I].{ iter = iter, counter = 0 }
 |}
 |struct Enumerated[T, I] { iter: I, counter: U64 }
 | TODO: Support inferring part of the return type like here

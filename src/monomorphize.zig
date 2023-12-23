@@ -11,7 +11,7 @@
 /// ```
 /// fun main(): U8 {
 ///   var foo = wrap_in_foo(wrap_in_foo(2_U8))
-///   0_U64
+///   0_U8
 /// }
 /// struct Foo[T] { inner: T }
 /// fun wrap_in_foo[T](val: T) { Foo.{ inner = val } }

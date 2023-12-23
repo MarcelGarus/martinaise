@@ -1,4 +1,4 @@
-fun width(grid: Slice[Slice[U8]]): U64 { grid.get(0_U64).len }
+fun width(grid: Slice[Slice[U8]]): U64 { grid.get(0).len }
 fun height(grid: Slice[Slice[U8]]): U64 { grid.len }
 fun get(grid: Slice[Slice[U8]], x: I64, y: I64): U8 {
   if x.is_less_than(0_I64).or(x.is_at_least(grid.width().to_I64()))
@@ -16,9 +16,9 @@ fun main(): U8 {
   println(grid.height())
 
   var maybe_gears = vec[Vec[Vec[U64]]]()
-  for y in &0_U64.to(grid.height()).iter() do {
+  for y in &0.to(grid.height()).iter() do {
     var row = vec[Vec[U64]]()
-    for x in &0_U64.to(grid.width()).iter() do row.&.push(vec[U64]())
+    for x in &0.to(grid.width()).iter() do row.&.push(vec[U64]())
     maybe_gears.&.push(row)
   }
 
@@ -53,13 +53,13 @@ fun main(): U8 {
 
   println(maybe_gears)
 
-  var sum = 0_U64
-  for y in &0_U64.to(grid.height()).iter() do
-    for x in &0_U64.to(grid.width()).iter() do {
+  var sum = 0
+  for y in &0.to(grid.height()).iter() do
+    for x in &0.to(grid.width()).iter() do {
       var adjacent_parts = maybe_gears.get(y).get(x)
-      if adjacent_parts.len.equals(2_U64)
+      if adjacent_parts.len.equals(2)
       then sum = sum
-        .add(adjacent_parts.get(0_U64).multiply(adjacent_parts.get(1_U64)))
+        .add(adjacent_parts.get(0).multiply(adjacent_parts.get(1)))
     }
   println(sum)
 

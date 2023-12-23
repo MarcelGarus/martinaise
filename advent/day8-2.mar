@@ -1,7 +1,7 @@
 | TODO: Doesn't work yet
 fun main(): U8 {
   var lines = read_file("advent/day8.big").lines()
-  var directions = lines.get_ref(0_U64)
+  var directions = lines.get_ref(0)
 
   var name_to_index = map[Slice[U8], U64]()
   var names = vec[Slice[U8]]()
@@ -10,23 +10,23 @@ fun main(): U8 {
   var is_initial = vec[Bool]()
   var is_final = vec[Bool]()
 
-  for line in &lines.subslice(2_U64).iter() do {
-    var name = line.subslice(0_U64, 3_U64)
+  for line in &lines.subslice(2).iter() do {
+    var name = line.subslice(0, 3)
     name_to_index.&.insert(name, names.len)
     names.&.push(name)
     is_initial.&.push(name.ends_with("A"))
     is_final.&.push(name.ends_with("Z"))
   }
-  for line in &lines.subslice(2_U64).iter() do {
-    var left = line.subslice(7_U64, 10_U64)
-    var right = line.subslice(12_U64, 15_U64)
+  for line in &lines.subslice(2).iter() do {
+    var left = line.subslice(7, 10)
+    var right = line.subslice(12, 15)
     lefts.&.push(name_to_index.get(left).unwrap().to_U16())
     rights.&.push(name_to_index.get(right).unwrap().to_U16())
   }
 
-  var step = 0_U64
+  var step = 0
   var initials = vec[U64]()
-  for node in &0_U64.to(names.len).iter() do
+  for node in &0.to(names.len).iter() do
     if is_initial.get(node) then initials.&.push(node)
 
   for initial in &initials.iter() do {
@@ -47,7 +47,7 @@ fun main(): U8 {
 
       step = step.inc()
 
-      if current.equals(initial).and(step.modulo(directions.len).equals(0_U64))
+      if current.equals(initial).and(step.modulo(directions.len).equals(0))
       then break
     }
     println(finals)

@@ -1,10 +1,10 @@
-fun windows(s: Slice[U8]): Windows { Windows.{ slice = s, index = 0_U64 } }
+fun windows(s: Slice[U8]): Windows { Windows.{ slice = s, index = 0 } }
 struct Windows { slice: Slice[U8], index: U64 }
 fun next(iter: &Windows): Maybe[Slice[U8]] {
   var item = if iter.index.is_less_than(iter.slice.len)
     then Maybe[Slice[U8]].some(iter.slice.subslice(iter.index))
     else Maybe[Slice[U8]].none
-  iter.index = iter.index.add(1_U64)
+  iter.index = iter.index.add(1)
   item
 }
 
@@ -13,7 +13,7 @@ fun rev_windows(s: Slice[U8]): RevWindows {
 }
 struct RevWindows { slice: Slice[U8], index: U64 }
 fun next(iter: &RevWindows): Maybe[Slice[U8]] {
-  iter.index = iter.index.subtract(1_U64)
+  iter.index = iter.index.subtract(1)
   if iter.index.is_less_than(iter.slice.len)
   then Maybe[Slice[U8]].some(iter.slice.subslice(iter.index))
   else Maybe[Slice[U8]].none
@@ -22,8 +22,8 @@ fun next(iter: &RevWindows): Maybe[Slice[U8]] {
 fun find_first_digit[I](iter: I, digit_names: Vec[Slice[U8]]): U8 {
   loop {
     var part = iter.next() orelse empty_slice[U8]()
-    if '0.to('9).contains(part.get(0_U64))
-    then break(part.get(0_U64).subtract('0))
+    if '0.to('9).contains(part.get(0))
+    then break(part.get(0).subtract('0))
     var j = 0_U8
     for name in &digit_names.iter() do {
       if part.starts_with(name) then break
@@ -45,12 +45,12 @@ fun main(): U8 {
   digit_names.&.push("eight")
   digit_names.&.push("nine")
 
-  var sum = 0_U64
+  var sum = 0
   for line in &read_file("advent/day1-2.smol").lines().iter() do {
     var first_digit = line.windows().&.find_first_digit(digit_names)
     var last_digit = line.rev_windows().&.find_first_digit(digit_names)
     sum = sum
-      .add(first_digit.to_U64().multiply(10_U64).add(last_digit.to_U64()))
+      .add(first_digit.to_U64().multiply(10).add(last_digit.to_U64()))
   }
   println(sum)
   0_U8

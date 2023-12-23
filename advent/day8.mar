@@ -4,17 +4,17 @@ struct Node {
 }
 fun main(): U8 {
   var lines = read_file("advent/day8.big").lines()
-  var directions = lines.get_ref(0_U64)
+  var directions = lines.get_ref(0)
   var nodes = map[Slice[U8], Node]()
 
-  for line in &lines.subslice(2_U64).iter() do {
-    var name = line.subslice(0_U64, 3_U64)
-    var left = line.subslice(7_U64, 10_U64)
-    var right = line.subslice(12_U64, 15_U64)
+  for line in &lines.subslice(2).iter() do {
+    var name = line.subslice(0, 3)
+    var left = line.subslice(7, 10)
+    var right = line.subslice(12, 15)
     nodes.&.insert(name, Node.{ left = left, right = right })
   }
 
-  var step = 0_U64
+  var step = 0
   var current = "AAA"
   loop {
     if current.equals("ZZZ") then break

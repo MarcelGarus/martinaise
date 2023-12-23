@@ -7,7 +7,7 @@ fun compare_to(a: Hand, b: Hand): Ordering {
   switch a.score.compare_to(b.score)
   case less return Ordering.less
   case greater return Ordering.greater
-  case equal for i in &0_U64.to(5_U64).iter() do {
+  case equal for i in &0.to(5).iter() do {
     var values = "J23456789TQKA"
     var a_index = values.find(a.hand.get(i)).unwrap()
     var b_index = values.find(b.hand.get(i)).unwrap()
@@ -48,15 +48,15 @@ fun main(): U8 {
   var hands = vec[Hand]()
   for line in &read_file("advent/day7.big").lines().iter() do {
     var parts = line.split(" ")
-    var hand = parts.get(0_U64)
-    var bid = parts.get(1_U64).parse_U64()
+    var hand = parts.get(0)
+    var bid = parts.get(1).parse_U64()
     var score = hand_score(hand)
     hands.&.push(Hand.{ score = score, hand = hand, bid = bid })
   }
   hands.to_slice().&.sort()
 
-  var total = 0_U64
-  for i in &0_U64.to(hands.len).iter() do {
+  var total = 0
+  for i in &0.to(hands.len).iter() do {
     var hand = hands.get(i)
     print(i.inc())
     prints(" ")

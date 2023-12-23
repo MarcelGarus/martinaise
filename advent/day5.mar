@@ -11,15 +11,15 @@ fun main(): U8 {
 
   loop {
     var category = {lines.next() orelse break}
-      .split(" ").get(0_U64).split("-to-").get(1_U64)
+      .split(" ").get(0).split("-to-").get(1)
     var next_ids = set[U64]()
     var mapped_ids = set[U64]()
     loop {
       var line = lines.next() orelse break
       if line.is_empty() then break
-      var dest = line.split(" ").get(0_U64).parse_U64()
-      var source = line.split(" ").get(1_U64).parse_U64()
-      var len = line.split(" ").get(2_U64).parse_U64()
+      var dest = line.split(" ").get(0).parse_U64()
+      var source = line.split(" ").get(1).parse_U64()
+      var len = line.split(" ").get(2).parse_U64()
 
       for id in &ids.iter() do
         if source.to(source.add(len)).contains(id) then {

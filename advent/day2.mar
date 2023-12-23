@@ -1,8 +1,8 @@
 | returns the game id if it's possible, 0 otherwise
 fun game_score(game: Slice[U8]): U64 {
   var prefix_and_turns = game.split(": ")
-  var prefix = prefix_and_turns.get(0_U64)
-  var turns = prefix_and_turns.get(1_U64)
+  var prefix = prefix_and_turns.get(0)
+  var turns = prefix_and_turns.get(1)
 
   prefix.&.trim_prefix("Game ")
   var id = prefix.parse_U64()
@@ -10,20 +10,20 @@ fun game_score(game: Slice[U8]): U64 {
   for turn in &turns.split("; ").iter() do
     for cubes in &turn.split(", ").iter() do {
       var parts = cubes.split(" ")
-      var num = parts.get(0_U64).parse_U64()
-      var color = parts.get(1_U64)
+      var num = parts.get(0).parse_U64()
+      var color = parts.get(1)
 
-      var is_possible = color.equals("red").and(num.is_at_most(12_U64))
-        .or(color.equals("green").and(num.is_at_most(13_U64)))
-        .or(color.equals("blue").and(num.is_at_most(14_U64)))
-      if not(is_possible) then return 0_U64
+      var is_possible = color.equals("red").and(num.is_at_most(12))
+        .or(color.equals("green").and(num.is_at_most(13)))
+        .or(color.equals("blue").and(num.is_at_most(14)))
+      if not(is_possible) then return 0
     }
 
   id | Game is possible
 }
 
 fun main(): U8 {
-  var sum = 0_U64
+  var sum = 0
   for line in &read_file("advent/day2.big").lines().iter() do
     sum = sum.add(line.game_score())
   println(sum)

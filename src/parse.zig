@@ -507,7 +507,11 @@ const Parser = struct {
 
     fn parse_int(self: *Self) !?ast.Int {
         const value = self.parse_digits() orelse return null;
-        self.consume_prefix("_") orelse return error.ExpectedUnderscore;
+        self.consume_prefix("_") orelse return .{
+            .value = value,
+            .signedness = .unsigned,
+            .bits = 64,
+        };
         const signedness: numbers.Signedness = sign: {
             if (self.consume_prefix("I")) |_| {
                 break :sign .signed;

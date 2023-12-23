@@ -1,4 +1,4 @@
-fun width(grid: Slice[Slice[U8]]): U64 { grid.get(0_U64).len }
+fun width(grid: Slice[Slice[U8]]): U64 { grid.get(0).len }
 fun height(grid: Slice[Slice[U8]]): U64 { grid.len }
 fun get(grid: Slice[Slice[U8]], x: I64, y: I64): U8 {
   if x.is_less_than(0_I64).or(x.is_at_least(grid.width().to_I64()))
@@ -15,7 +15,7 @@ fun main(): U8 {
   println(grid.width())
   println(grid.height())
 
-  var sum = 0_U64
+  var sum = 0
   for y in &0_I64.to(grid.height().to_I64()).iter() do
     for x in &0_I64.to(grid.width().to_I64()).iter() do {
       var char = grid.get(x, y)
