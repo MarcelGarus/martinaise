@@ -8,9 +8,9 @@ fun main(): U8 {
 
   var times = vec[U64]()
   var distances = vec[U64]()
-  for time in &lines.get(0).split(" ").iter() do
+  for time in lines.get(0).split(" ") do
     if not(time.is_empty()) then times.&.push(time.parse_U64())
-  for dist in &lines.get(1).split(" ").iter() do
+  for dist in lines.get(1).split(" ") do
     if not(dist.is_empty()) then distances.&.push(dist.parse_U64())
 
   println(times)
@@ -24,7 +24,7 @@ fun main(): U8 {
     var goal = distances.get(i)
 
     var ways_to_win = 0
-    for hold in &1.to(time).iter() do {
+    for hold in 1.to(time) do {
       var speed = hold
       var release = time.subtract(hold)
       var dist = release.multiply(speed)
@@ -38,7 +38,7 @@ fun main(): U8 {
 
   println(wins)
   var product = 1
-  for win in &wins.iter() do product = product.multiply(win)
+  for win in wins do product = product.multiply(win)
   println(product)
 
   0_U8

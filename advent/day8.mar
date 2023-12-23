@@ -7,7 +7,7 @@ fun main(): U8 {
   var directions = lines.get_ref(0)
   var nodes = map[Slice[U8], Node]()
 
-  for line in &lines.subslice(2).iter() do {
+  for line in lines.subslice(2) do {
     var name = line.subslice(0, 3)
     var left = line.subslice(7, 10)
     var right = line.subslice(12, 15)

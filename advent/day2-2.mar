@@ -10,8 +10,8 @@ fun game_score(game: Slice[U8]): U64 {
   var red = 0
   var green = 0
   var blue = 0
-  for turn in &turns.split("; ").iter() do
-    for cubes in &turn.split(", ").iter() do {
+  for turn in turns.split("; ") do
+    for cubes in turn.split(", ") do {
       var parts = cubes.split(" ")
       var num = parts.get(0).parse_U64()
       var color = parts.get(1)
@@ -26,7 +26,7 @@ fun game_score(game: Slice[U8]): U64 {
 
 fun main(): U8 {
   var sum = 0
-  for line in &read_file("advent/day2.big").lines().iter() do
+  for line in read_file("advent/day2.big").lines() do
     sum = sum.add(line.game_score())
   println(sum)
   0_U8

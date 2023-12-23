@@ -165,7 +165,10 @@ const Monomorphizer = struct {
                         try solver_ty_env.put(from, self.tys.get(to) orelse unreachable);
                 }
                 for (fun.args.items, args_) |param, arg_mono_ty| {
-                    const arg_ty = self.tys.get(arg_mono_ty) orelse unreachable;
+                    const arg_ty = self.tys.get(arg_mono_ty) orelse {
+                        std.debug.print("Type {s} unknown.\n", .{arg_mono_ty});
+                        unreachable;
+                    };
                     const is_assignable = arg_ty.is_assignable_to(solver_ty_vars, &solver_ty_env, param.ty) catch |err| {
                         if (err == error.TypeArgumentCantHaveGenerics) {
                             try self.format_err("Type arguments can't have generics.\n", .{});
@@ -891,7 +894,15 @@ const FunMonomorphizer = struct {
                     .breaks = ArrayList(mono.StatementIndex).init(self.alloc),
                 });
 
-                const iter = try self.compile_expr(for_.iter.*);
+                const iterable = try self.compile_expr(for_.iter.*);
+                const owned_iter = try self.compile_call("iter", iterable, null, &[_]mono.Expr{});
+                const ty = self.monomorphizer.tys.get(owned_iter.ty) orelse unreachable;
+                var args = ArrayList(Ty).init(self.alloc);
+                try args.append(ty);
+                const ref_ty: Ty = .{ .name = "&", .args = args };
+                const compiled_ref_ty = try self.monomorphizer.compile_type(ref_ty, self.ty_env);
+                const iter = try self.fun.put_and_get_expr(.{ .ref = owned_iter }, compiled_ref_ty);
+
                 const loop_start = self.fun.next_index();
 
                 const result_of_next = try self.compile_call("next", iter, null, &[_]mono.Expr{});

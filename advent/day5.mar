@@ -5,7 +5,7 @@ fun main(): U8 {
   {
     var first_line = lines.next().unwrap()
     first_line.&.trim_prefix("seeds: ")
-    for n in &first_line.split(" ").iter() do ids.&.insert(n.parse_U64())
+    for n in first_line.split(" ") do ids.&.insert(n.parse_U64())
     var _ = lines.next().unwrap()
   }
 
@@ -21,13 +21,13 @@ fun main(): U8 {
       var source = line.split(" ").get(1).parse_U64()
       var len = line.split(" ").get(2).parse_U64()
 
-      for id in &ids.iter() do
+      for id in ids do
         if source.to(source.add(len)).contains(id) then {
           mapped_ids.&.insert(id)
           next_ids.&.insert(id.add(dest).subtract(source))
         }
     }
-    for id in &ids.iter() do
+    for id in ids do
       if not(mapped_ids.&.contains(id)) then next_ids.&.insert(id)
     ids = next_ids
     if category.equals("location") then break

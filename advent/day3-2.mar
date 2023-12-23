@@ -16,14 +16,14 @@ fun main(): U8 {
   println(grid.height())
 
   var maybe_gears = vec[Vec[Vec[U64]]]()
-  for y in &0.to(grid.height()).iter() do {
+  for y in 0.to(grid.height()) do {
     var row = vec[Vec[U64]]()
-    for x in &0.to(grid.width()).iter() do row.&.push(vec[U64]())
+    for x in 0.to(grid.width()) do row.&.push(vec[U64]())
     maybe_gears.&.push(row)
   }
 
-  for y in &0_I64.to(grid.height().to_I64()).iter() do
-    for x in &0_I64.to(grid.width().to_I64()).iter() do {
+  for y in 0_I64.to(grid.height().to_I64()) do
+    for x in 0_I64.to(grid.width().to_I64()) do {
       var char = grid.get(x, y)
       if char.is_digit().and(not(grid.get(x.subtract(1_I64), y).is_digit()))
       then {
@@ -33,14 +33,14 @@ fun main(): U8 {
           .parse_U64()
 
         var adjacent = vec[Point[I64]]()
-        for xx in &x.subtract(1_I64).until(end).iter() do {
+        for xx in x.subtract(1_I64).until(end) do {
           adjacent.&.push(Point[I64].{ x = xx, y = y.subtract(1_I64) })
           adjacent.&.push(Point[I64].{ x = xx, y = y.add(1_I64) })
         }
         adjacent.&.push(Point[I64].{ x = x.subtract(1_I64), y = y })
         adjacent.&.push(Point[I64].{ x = end, y = y })
 
-        for pos in &adjacent.iter() do
+        for pos in adjacent do
           if grid.get(pos.x, pos.y).is_gear() then {
             prints("There might be a gear at ")
             print(pos.x.to_U64())
@@ -54,8 +54,8 @@ fun main(): U8 {
   println(maybe_gears)
 
   var sum = 0
-  for y in &0.to(grid.height()).iter() do
-    for x in &0.to(grid.width()).iter() do {
+  for y in 0.to(grid.height()) do
+    for x in 0.to(grid.width()) do {
       var adjacent_parts = maybe_gears.get(y).get(x)
       if adjacent_parts.len.equals(2)
       then sum = sum

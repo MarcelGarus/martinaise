@@ -16,8 +16,8 @@ fun main(): U8 {
   println(grid.height())
 
   var sum = 0
-  for y in &0_I64.to(grid.height().to_I64()).iter() do
-    for x in &0_I64.to(grid.width().to_I64()).iter() do {
+  for y in 0_I64.to(grid.height().to_I64()) do
+    for x in 0_I64.to(grid.width().to_I64()) do {
       var char = grid.get(x, y)
       if char.is_digit().and(not(grid.get(x.subtract(1_I64), y).is_digit()))
       then {
@@ -28,7 +28,7 @@ fun main(): U8 {
           .parse_U64()
 
         var adjacent = vec[Point[I64]]()
-        for xx in &x.subtract(1_I64).until(end).iter() do {
+        for xx in x.subtract(1_I64).until(end) do {
           adjacent.&.push(Point[I64].{ x = xx, y = y.subtract(1_I64) })
           adjacent.&.push(Point[I64].{ x = xx, y = y.add(1_I64) })
         }
@@ -36,7 +36,7 @@ fun main(): U8 {
         adjacent.&.push(Point[I64].{ x = end, y = y })
 
         var next_to_symbol = Bool.false
-        for pos in &adjacent.iter() do
+        for pos in adjacent do
           if grid.get(pos.x, pos.y).is_symbol() then next_to_symbol = Bool.true
 
         if next_to_symbol then {

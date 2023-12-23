@@ -7,7 +7,7 @@ fun compare_to(a: Hand, b: Hand): Ordering {
   switch a.score.compare_to(b.score)
   case less return Ordering.less
   case greater return Ordering.greater
-  case equal for i in &0.to(5).iter() do {
+  case equal for i in 0.to(5) do {
     var values = "23456789TJQKA"
     var a_index = values.find(a.hand.get(i)).unwrap()
     var b_index = values.find(b.hand.get(i)).unwrap()
@@ -18,13 +18,13 @@ fun compare_to(a: Hand, b: Hand): Ordering {
 }
 fun hand_score(hand: Slice[U8]): U8 {
   var card_to_amount = map[U8, U8]()
-  for card in &hand.iter() do
+  for card in hand do
     if card_to_amount.contains(card)
     then card_to_amount.&.insert(card, card_to_amount.get(card).unwrap().inc())
     else card_to_amount.&.insert(card, 1_U8)
 
   var amounts = vec[U8]()
-  for card_and_amount in &card_to_amount.iter() do
+  for card_and_amount in card_to_amount do
     amounts.&.push(card_and_amount.value)
   amounts.to_slice().&.sort()
 
@@ -39,7 +39,7 @@ fun hand_score(hand: Slice[U8]): U8 {
 
 fun main(): U8 {
   var hands = vec[Hand]()
-  for line in &read_file("advent/day7.big").lines().iter() do {
+  for line in read_file("advent/day7.big").lines() do {
     var parts = line.split(" ")
     var hand = parts.get(0)
     var bid = parts.get(1).parse_U64()
@@ -48,7 +48,7 @@ fun main(): U8 {
   hands.to_slice().&.sort()
 
   var total = 0
-  for i in &0.to(hands.len).iter() do {
+  for i in 0.to(hands.len) do {
     var hand = hands.get(i)
     println(hand.bid)
     total = total.add(i.inc().multiply(hand.bid))

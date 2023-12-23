@@ -25,7 +25,7 @@ fun find_first_digit[I](iter: I, digit_names: Vec[Slice[U8]]): U8 {
     if '0.to('9).contains(part.get(0))
     then break(part.get(0).subtract('0))
     var j = 0_U8
-    for name in &digit_names.iter() do {
+    for name in digit_names do {
       if part.starts_with(name) then break
       j = j.add(1_U8)
     }
@@ -46,7 +46,7 @@ fun main(): U8 {
   digit_names.&.push("nine")
 
   var sum = 0
-  for line in &read_file("advent/day1-2.smol").lines().iter() do {
+  for line in read_file("advent/day1-2.smol").lines() do {
     var first_digit = line.windows().&.find_first_digit(digit_names)
     var last_digit = line.rev_windows().&.find_first_digit(digit_names)
     sum = sum
