@@ -20,7 +20,6 @@
 | TODO: remove orelse?
 | TODO: slice literals? array literals?
 | TODO: struct destructuring? probably not
-| TODO: underscores in nums
 | TODO: funs as values, function types, higher-order funs
 
 | Nothing (aka Unit or Void)  
@@ -274,11 +273,13 @@ fun swap[T](a: &T, b: &T) {
   b.* = tmp
 }
 fun write_address[W](writer: W, address: U64) {
-  | max U64 is  18446744073709551615
-  var divisor = 1152921504606846976 | 16 ^ something
+  | max U64 is 18_446_744_073_709_551_615
+  var divisor = 1_152_921_504_606_846_976 | 16 ^ something
   writer.write_str("0x")
   loop {
-    writer.write_char(address.divide(divisor).modulo(16).to_U8().digit_to_char())
+    writer.write_char(
+      address.divide(divisor).modulo(16).to_U8().digit_to_char()
+    )
     if divisor.equals(1) then break
     divisor = divisor.divide(16)
   }

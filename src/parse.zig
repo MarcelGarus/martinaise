@@ -537,12 +537,12 @@ const Parser = struct {
                     num = num * 10 + (self.code[i] - '0');
                     i += 1;
                 },
+                '_' => i += 1,
                 else => break :loop,
             }
         }
-        if (i == 0) {
-            return null;
-        }
+        if (i == 0) return null;
+        if (self.code[i - 1] == '_') i -= 1;
         self.code = self.code[i..];
         return num;
     }
