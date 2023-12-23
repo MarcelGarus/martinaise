@@ -13,16 +13,18 @@
 | Language todos
 | TODO: call iter().& on for loop target
 | TODO: global constants
+| TODO: type arg inference for struct/enum creation
 | TODO: type aliases
 | TODO: catch giving wrong types to fields
 | TODO: remove orelse?
+| TODO: slice literals? array literals?
 
 | Nothing (aka Unit or Void)  
 | A type with only one instance. Functions without an explicit return type
 | return Nothing. Bodies with no expressions inside return Nothing. This is the
 | single Nothing instance: {}
 struct Nothing {}
-fun dump[W](nothing: Nothing, writer: W) { str("nothing").dump(writer) }
+fun write[W](writer: W, nothing: Nothing) { writer.write_str("nothing") }
 fun equals(a: Nothing, b: Nothing): Bool { Bool.true }
 fun ignore[T](value: T) {}
 
@@ -34,8 +36,8 @@ fun halt(): Never { loop {} }
 fun libc_exit(status: U8): Nothing { ... }
 fun exit(status: U8): Never { libc_exit(status) halt() }
 fun panic(message: Slice[U8]): Never {
-  str(message).dump(stderr())
-  stderr().write(newline())
+  stderr().write_str(message)
+  stderr().write_char(newline())
   exit(1_U8)
 }
 fun panic(): Never { panic("panicked") }
@@ -71,8 +73,8 @@ fun and(a: Bool, b: Bool): Bool { if a then b else a }
 fun or(a: Bool, b: Bool): Bool { if a then Bool.true else b }
 fun xor(a: Bool, b: Bool): Bool { if a then not(b) else b }
 fun implies(a: Bool, b: Bool): Bool { if a then b else Bool.true }
-fun dump[W](b: Bool, writer: W) {
-  str({if b then "true" else "false"}).dump(writer)
+fun write[W](writer: W, b: Bool) {
+  writer.write_str(if b then "true" else "false")
 }
 fun hash(value: Bool, hasher: &Hasher) {
   hasher.contribute(if value then 0 else 1)
@@ -122,14 +124,14 @@ fun hash(value: I8, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
 fun hash(value: I16, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
 fun hash(value: I32, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
 fun hash(value: I64, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
-fun dump[W](int: U64, radix: U64, writer: W) {
+fun write_with_radix[W](writer: W, radix: U64, int: U64) {
   var divisor = 1
   loop {
     if int.divide(divisor).is_less_than(radix) then break
     divisor = divisor.multiply(radix)
   }
   loop {
-    writer.write(int.divide(divisor).modulo(radix).to_U8().digit_to_char())
+    writer.write_char(int.divide(divisor).modulo(radix).to_U8().digit_to_char())
     if divisor.equals(1) then break
     divisor = divisor.divide(radix)
   }
@@ -139,10 +141,10 @@ fun digit_to_char(digit: U8): U8 {
   then digit.subtract(10_U8).add('a)
   else digit.add('0)
 }
-fun dump[W](int: U8, writer: W) { int.to_U64().dump(writer) }
-fun dump[W](int: U16, writer: W) { int.to_U64().dump(writer) }
-fun dump[W](int: U32, writer: W) { int.to_U64().dump(writer) }
-fun dump[W](int: U64, writer: W) { int.dump(10, writer) }
+fun write[W](writer: W, int: U8) { writer.write_with_radix(10, int.to_U64()) }
+fun write[W](writer: W, int: U16) { writer.write_with_radix(10, int.to_U64()) }
+fun write[W](writer: W, int: U32) { writer.write_with_radix(10, int.to_U64()) }
+fun write[W](writer: W, int: U64) { writer.write_with_radix(10, int) }
 fun parse_U64(bytes: Slice[U8]): U64 {
   var num = 0
   for char in &bytes.iter() do {
@@ -184,9 +186,10 @@ fun hash[Hasher](ord: Ordering, hasher: Hasher) {
   case equal 'e.hash(hasher)
   case greater 'g.hash(hasher)
 }
-fun dump[W](ord: Ordering, writer: W) {
-  {switch ord case less "less" case equal "equal" case greater "greater"}
-    .dump(writer)
+fun write[W](writer: W, ord: Ordering) {
+  writer.write_str(
+    switch ord case less "less" case equal "equal" case greater "greater"
+  )
 }
 fun is_less_than[T](a: T, b: T): Bool { a.compare_to(b).is_less() }
 fun is_greater_than[T](a: T, b: T): Bool { a.compare_to(b).is_greater() }
@@ -212,14 +215,14 @@ fun is_some[T](maybe: Maybe[T]): Bool {
 fun is_none[T](maybe: Maybe[T]): Bool {
   switch maybe case some Bool.false case none Bool.true
 }
-fun dump[T, W](maybe: Maybe[T], writer: W) {
+fun write[W, T](writer: W, maybe: Maybe[T]) {
   switch maybe
   case some(val) {
-    str("some(").dump(writer)
-    val.dump(writer)
-    char(')).dump(writer)
+    writer.write_str("some(")
+    writer.write(val)
+    writer.write_char('))
   }
-  case none str("none").dump(writer)
+  case none writer.write_str("none")
 }
 fun equals(a: Maybe[T], b: Maybe[T]): Bool {
   switch a
@@ -266,12 +269,12 @@ fun swap[T](a: &T, b: &T) {
   a.* = b.*
   b.* = tmp
 }
-fun dump_address[W](address: U64, writer: W) {
+fun write_address[W](writer: W, address: U64) {
   | max U64 is  18446744073709551615
   var divisor = 1152921504606846976 | 16 ^ something
-  "0x".dump(writer)
+  writer.write_str("0x")
   loop {
-    writer.write(address.divide(divisor).modulo(16).to_U8().digit_to_char())
+    writer.write_char(address.divide(divisor).modulo(16).to_U8().digit_to_char())
     if divisor.equals(1) then break
     divisor = divisor.divide(16)
   }
@@ -342,14 +345,14 @@ fun equals[T](a: Slice[T], b: Slice[T]): Bool {
 fun hash[T](slice: Slice[T], hasher: &Hasher) {
   for item in &slice.iter() do item.hash(hasher)
 }
-fun dump[T, W](slice: Slice[T], writer: W) {
-  char('[).dump(writer)
+fun write[W, T](writer: W, slice: Slice[T]) {
+  writer.write_char('[)
   var first = Bool.true
   for item in &slice.iter() do {
-    if first then first = Bool.false else str(", ").dump(writer)
-    item.dump(writer)
+    if first then first = Bool.false else writer.write_str(", ")
+    writer.write(item)
   }
-  char(']).dump(writer)
+  writer.write_char('])
 }
 
 | Files, Input & Output  
@@ -383,10 +386,10 @@ fun read_byte(file: File): Maybe[U8] {
   else Maybe[U8].some(c)
 }
 fun libc_write(file: U64, buf: U64, len: U64): U64 { ... }
-fun write(file: File, buffer: Slice[U8]): U64 {
+fun write_bytes(file: File, buffer: Slice[U8]): U64 {
   libc_write(file.descriptor, buffer.data.to_address(), buffer.len)
 }
-fun write(file: File, byte: U8) {
+fun write_byte(file: File, byte: U8) {
   libc_write(file.descriptor, byte.&.to_address(), 1).ignore()
 }
 fun libc_close(file: U64): U8 { ... }
@@ -404,34 +407,23 @@ fun read_file(name: Slice[U8]): Slice[U8] {
 }
 
 | Printing  
-| You should implement a dump(T, Writer) function for types that can be printed.
-| The print and println functions can print any value with a dump(T, Writer)
-| function. Writers are anything with a write(W, U8) function. The prints and
-| printsln functions print the argument as a string.
+| You should implement a write[Writer](Writer, T) function for types that can be
+| printed. Writers are anything that has these functions:
+| - write_byte(Writer, U8)
+| - write_bytes(Writer, Slice[U8])
+| TODO: Use libc_write function more efficiently (not 1 byte per syscall)
 fun stdin(): File { File.{ descriptor = 0 } }
 fun stdout(): File { File.{ descriptor = 1 } }
 fun stderr(): File { File.{ descriptor = 2 } }
-fun print[T](value: T) { value.dump(stdout()) }
+fun print[T](value: T) { stdout().write(value) }
 fun println[T](value: T) { print(value) println() }
-fun println() { stdout().write(newline()) }
-fun prints(message: Slice[U8]) { print(str(message)) }
-fun printsln(message: Slice[U8]) { println(str(message)) }
-
-| Char  
-| Essentially just a U8, but it's formatted differently.
-struct Char { value: U8 }
-fun char(value: U8): Char { Char.{ value = value } }
-fun dump[W](c: Char, writer: W) { writer.write(c.value) }
+fun println() { stdout().write_char(newline()) }
+fun prints(message: Slice[U8]) { stdout().write_str(message) }
+fun printsln(message: Slice[U8]) { prints(message) println() }
 fun newline(): U8 { 10_U8 } | TODO: refactor to variable when we have global variables
-
-| Str  
-| Essentially just a Slice[U8], but it's formatted differently. There's no
-| enforcement of UTF-8 or anything. When formatting strings, the raw bytes are
-| simply sent to the writer.
-struct Str { bytes: Slice[U8] }
-fun str(bytes: Slice[U8]): Str { Str.{ bytes = bytes } }
-fun dump[W](str: Str, writer: W) {
-  for byte in &str.bytes.iter() do writer.write(byte)
+fun write_char[W](writer: W, char: U8) { writer.write_byte(char) }
+fun write_str[W](writer: W, str: Slice[U8]) {
+  for char in &str.iter() do writer.write_char(char)
 }
 
 | Range  
@@ -467,27 +459,27 @@ fun tuple[A, B, C](a: A, b: B, c: C): Tuple[A, B, C] {
 }
 struct Tuple[A, B] { a: A, b: B }
 struct Tuple[A, B, C] { a: A, b: B, c: C }
-fun dump[A, B, W](tuple: Tuple[A, B], writer: W) {
-  char('().dump(writer)
-  tuple.a.dump(writer)
-  str(", ").dump(writer)
-  tuple.b.dump(writer)
-  char(')).dump(writer)
+fun write[W, A, B](writer: W, tuple: Tuple[A, B]) {
+  writer.write_char('()
+  writer.write(tuple.a)
+  writer.write_str(", ")
+  writer.write(tuple.b)
+  writer.write_char('))
 }
-fun dump[A, B, C, W](tuple: Tuple[A, B, C], writer: W) {
-  char('().dump(writer)
-  tuple.a.dump(writer)
-  str(", ").dump(writer)
-  tuple.b.dump(writer)
-  str(", ").dump(writer)
-  tuple.c.dump(writer)
-  char(')).dump(writer)
+fun writer[W, A, B, C](writer: W, tuple: Tuple[A, B, C]) {
+  writer.write_char('()
+  writer.write(tuple.a)
+  writer.write_str(", ")
+  writer.write(tuple.b)
+  writer.write_str(", ")
+  writer.write(tuple.c)
+  writer.write_char('))
 }
 
 | Point  
 struct Point[T] { x: T, y: T }
-fun dump[T, W](point: Point[T], writer: W) {
-  tuple(point.x, point.y).dump(writer)
+fun write[W, T](writer: W, point: Point[T]) {
+  writer.write(tuple(point.x, point.y))
 }
 
 | Vec  
@@ -534,7 +526,7 @@ fun get_ref[T](vec: Vec[T], index: U64): &T { vec.data.get_ref(index) }
 fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0, vec.len) }
 fun equals[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice().equals(b.to_slice()) }
 fun iter[T](vec: Vec[T]): SliceIter[T] { vec.to_slice().iter() }
-fun dump[T, W](vec: Vec[T], writer: W) { vec.to_slice().dump(writer) }
+fun write[W, T](writer: W, vec: Vec[T]) { writer.write(vec.to_slice()) }
 
 | Stack  
 | Something where you can push and pop items. Essentially just a Vec, but
@@ -547,7 +539,7 @@ fun peek[T](stack: &Stack[T], n: U64): T {
   stack.vec.get(stack.vec.len.subtract(1).subtract(n))
 }
 fun equals[T](a: Stack[T], b: Stack[T]): Bool { a.vec.equals(b.vec) }
-fun dump[T, W](stack: Stack[T], writer: W) { stack.vec.dump(writer) }
+fun write[W, T](writer: W, stack: Stack[T]) { writer.write(stack.vec) }
 
 | Deque  
 | A growable array-like structure where you can push and pop from both ends.
@@ -688,19 +680,19 @@ fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
       else i = i.add(1).modulo(map.buckets.len)
   }
 }
-fun dump[K, V, W](map: Map[K, V], writer: W) {
-  char('{).dump(writer)
+fun write[W, K, V](writer: W, map: Map[K, V]) {
+  writer.write_char('{)
   var first = Bool.true
   for bucket in &map.buckets.iter() do
     switch bucket
     case empty {}
     case filled(entry) {
-      if first then first = Bool.false else str(", ").dump(writer)
-      entry.key.dump(writer)
-      str(": ").dump(writer)
-      entry.value.dump(writer)
+      if first then first = Bool.false else writer.write_str(", ")
+      writer.write(entry.key)
+      writer.write_str(": ")
+      writer.write(entry.value)
     }
-  char('}).dump(writer)
+  writer.write_char('})
 }
 fun iter[K, V](map: Map[K, V]): MapIter[K, V] {
   MapIter[K, V].{ buckets = map.buckets, index = 0 }
@@ -723,14 +715,14 @@ fun set[T](): Set[T] { Set[T].{ map = map[T, Nothing]() } }
 fun is_empty[T](set: Set[T]): Bool { set.map.size.equals(0) }
 fun insert[T](set: &Set[T], value: T) { set.map.&.insert(value, {}) }
 fun contains[T](set: &Set[T], value: T): Bool { set.map.get(value).is_some() }
-fun dump[T, W](set: Set[T], writer: W) {
-  char('{).dump(writer)
+fun write[W, T](writer: W, set: Set[T]) {
+  writer.write_char('{)
   var first = Bool.true
   for item in &set.iter() do {
-    if first then first = Bool.false else str(", ").dump(writer)
-    item.dump(writer)
+    if first then first = Bool.false else writer.write_str(", ")
+    writer.write(item)
   }
-  char('}).dump(writer)
+  writer.write_char('})
 }
 fun iter[T](set: Set[T]): SetIter[T] {
   SetIter[T].{ buckets = set.map.buckets, index = 0 }
