@@ -51,8 +51,15 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
 
         // libc_read(file: U64, buf: U64, len: U64): U8
         try builtin_funs.put("libc_read(U64, U64, U64)",
-            \\  mar_U8 result;
+            \\  mar_U64 result;
             \\  result.value = read(arg0.value, (void*) arg1.value, arg2.value);
+            \\  return result;
+        );
+
+        // libc_write(file: U64, buf: U64, len: U64): U8
+        try builtin_funs.put("libc_write(U64, U64, U64)",
+            \\  mar_U64 result;
+            \\  result.value = write(arg0.value, (void*) arg1.value, arg2.value);
             \\  return result;
         );
 
@@ -60,13 +67,6 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
         try builtin_funs.put("libc_close(U64)",
             \\  mar_U8 result;
             \\  result.value = close(arg0.value);
-            \\  return result;
-        );
-
-        // libc_write(file: U64, buf: U64, len: U64): U8
-        try builtin_funs.put("libc_write(U64, U64, U64)",
-            \\  mar_U8 result;
-            \\  result.value = write(arg0.value, (void*) arg1.value, arg2.value);
             \\  return result;
         );
 

@@ -21,7 +21,6 @@
 | deleting code in this file because that may crash the compiler.
 
 | TODO: type aliases
-| TODO: define builtin functions in code
 | TODO: catch giving wrong types to fields
 | TODO: call iter().& on for loop target
 | TODO: global constants
@@ -41,26 +40,16 @@ fun ignore[T](value: T) {}
 | evaluate to the Never type.
 enum Never {}
 fun halt(): Never { loop {} }
+fun libc_exit(status: U8): Nothing = builtin
 fun exit(status: U8): Never { libc_exit(status) halt() }
-fun panic(message: Slice[U8]): Never { println(message) exit(1_U8) }
+fun panic(message: Slice[U8]): Never {
+  str(message).dump(stderr())
+  char(newline()).dump(stderr())
+  exit(1_U8)
+}
 fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
 fun todo(): Never { panic("todo") }
-
-| Printing  
-| You should implement a dump(T, Writer) function for types that can be printed.
-| The print and println functions can print any value with a dump(T, Writer)
-| function. Writers are anything with a write(W, U8) function. The prints and
-| printsln functions print the argument as a string.
-fun stdin(): File { File.{ descriptor = 0_U64 } }
-fun stdout(): File { File.{ descriptor = 1_U64 } }
-fun stderr(): File { File.{ descriptor = 2_U64 } }
-fun write(file: File, c: U8) { libc_write(file.descriptor, c.&.to_address(), 1_U64).ignore() }
-fun print[T](value: T) { value.dump(stdout()) }
-fun println[T](value: T) { print(value) println() }
-fun println() { stdout().write(newline()) }
-fun prints(message: Slice[U8]) { print(str(message)) }
-fun printsln(message: Slice[U8]) { println(str(message)) }
 
 | Equality  
 | You should implement an equals(T, T) function for types that can be compared
@@ -81,23 +70,6 @@ fun contribute(hasher: &Hasher, val: U64) {
   hasher.state = hasher.state.multiply(33_U64).add(val)
 }
 
-| Char  
-| Essentially just a U8, but it's formatted differently.
-struct Char { value: U8 }
-fun char(value: U8): Char { Char.{ value = value } }
-fun dump[W](c: Char, writer: W) { writer.write(c.value) }
-fun newline(): U8 { 10_U8 } | TODO: refactor to variable when we have global variables
-
-| Str  
-| Essentially just a Slice[U8], but it's formatted differently. There's no
-| enforcement of UTF-8 or anything. When formatting strings, the raw bytes are
-| simply sent to the writer.
-struct Str { bytes: Slice[U8] }
-fun str(bytes: Slice[U8]): Str { Str.{ bytes = bytes } }
-fun dump[W](str: Str, writer: W) {
-  for byte in &str.bytes.iter() do writer.write(byte)
-}
-
 | Bool  
 | The usual boolean values true and false. The if construct expects a Bool as
 | the condition.
@@ -113,6 +85,81 @@ fun dump[W](b: Bool, writer: W) {
 }
 fun hash(value: Bool, hasher: &Hasher) {
   hasher.contribute(if value then 0_U64 else 1_U64)
+}
+
+| Int  
+| Integers are built into the language. There are several types with different
+| signedness and bit amount available as {U, I} x {8, 16, 32, 64}. For example,
+| U64 is an unsigned integer of 64 bits.
+| All integers also support the following mathematical operations:
+| - add(Int, Int): Int
+| - subtract(Int, Int): Int
+| - multiply(Int, Int): Int
+| - divide(Int, Int): Int
+| - modulo(Int, Int): Int
+| - compare_to(Int, Int): Ordering
+| - to_<OtherInt>(Int): OtherInt, e.g. to_U8() for non-U8 ints
+fun inc(a: U8): U8 = a.add(1_U8)
+fun inc(a: U16): U16 { a.add(1_U16) }
+fun inc(a: U32): U32 { a.add(1_U32) }
+fun inc(a: U64): U64 { a.add(1_U64) }
+fun inc(a: I8): I8 { a.add(1_I8) }
+fun inc(a: I16): I16 { a.add(1_I16) }
+fun inc(a: I32): I32 { a.add(1_I32) }
+fun inc(a: I64): I64 { a.add(1_I64) }
+fun dec(a: U8): U8 { a.subtract(1_U8) }
+fun dec(a: U16): U16 { a.subtract(1_U16) }
+fun dec(a: U32): U32 { a.subtract(1_U32) }
+fun dec(a: U64): U64 { a.subtract(1_U64) }
+fun dec(a: I8): I8 { a.subtract(1_I8) }
+fun dec(a: I16): I16 { a.subtract(1_I16) }
+fun dec(a: I32): I32 { a.subtract(1_I32) }
+fun dec(a: I64): I64 { a.subtract(1_I64) }
+fun equals(a: U8, b: U8): Bool { a.compare_to(b).is_equal() }
+fun equals(a: U16, b: U16): Bool { a.compare_to(b).is_equal() }
+fun equals(a: U32, b: U32): Bool { a.compare_to(b).is_equal() }
+fun equals(a: U64, b: U64): Bool { a.compare_to(b).is_equal() }
+fun equals(a: I8, b: I8): Bool { a.compare_to(b).is_equal() }
+fun equals(a: I16, b: I16): Bool { a.compare_to(b).is_equal() }
+fun equals(a: I32, b: I32): Bool { a.compare_to(b).is_equal() }
+fun equals(a: I64, b: I64): Bool { a.compare_to(b).is_equal() }
+fun hash(value: U8, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
+fun hash(value: U16, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
+fun hash(value: U32, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
+fun hash(value: U64, hasher: &Hasher) { hasher.contribute(value) }
+fun hash(value: I8, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
+fun hash(value: I16, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
+fun hash(value: I32, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
+fun hash(value: I64, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
+fun dump[W](int: U64, radix: U64, writer: W) {
+  var divisor = 1_U64
+  loop {
+    if int.divide(divisor).is_less_than(radix) then break
+    divisor = divisor.multiply(radix)
+  }
+  loop {
+    writer.write(int.divide(divisor).modulo(radix).to_U8().digit_to_char())
+    if divisor.equals(1_U64) then break
+    divisor = divisor.divide(radix)
+  }
+}
+fun digit_to_char(digit: U8): U8 {
+  if digit.is_greater_than(9_U8)
+  then digit.subtract(10_U8).add('a)
+  else digit.add('0)
+}
+fun dump[W](int: U8, writer: W) { int.to_U64().dump(writer) }
+fun dump[W](int: U16, writer: W) { int.to_U64().dump(writer) }
+fun dump[W](int: U32, writer: W) { int.to_U64().dump(writer) }
+fun dump[W](int: U64, writer: W) { int.dump(10_U64, writer) }
+fun parse_U64(bytes: Slice[U8]): U64 {
+  var num = 0_U64
+  for char in &bytes.iter() do {
+    if not('0.until('9).contains(char))
+    then panic("non-digit in supposed number")
+    num = num.multiply(10_U64).add(char.subtract('0).to_U64())
+  }
+  num
 }
 
 | Maybe  
@@ -153,6 +200,195 @@ fun hash[T](value: Maybe[T], hasher: &Hasher) {
     inner.hash(hasher)
   }
   case none hasher.contribute('n.to_U64())
+}
+
+| Memory  
+| In Martinaise, you can have references: &T is a reference to a T. You can get
+| a reference to a value using the expr.& syntax. You can follow a reference
+| using the expr.* syntax.
+| The builtin functions work with addresses (U64) instead of references. These
+| addresses don't have any information about what kind of object is stored
+| at the address.
+fun libc_malloc(size: U64): U64 = builtin
+fun malloc(size: U64): U64 {
+  var address = libc_malloc(size)
+  if address.equals(0_U64) then panic("out of memory")
+  address
+}
+fun malloc[T](): &T { malloc(size_of_type[T]()).to_reference[T]() }
+fun size_of_type[T](): U64 = builtin
+fun to_address[T](ref: &T): U64 = builtin
+fun to_reference[T](address: U64): &T = builtin
+fun new[T](value: T): &T {
+  var ref = malloc[T]()
+  ref.* = value
+  ref
+}
+fun cast[A, B](value: &A): &B { value.to_address().to_reference[B]() }
+fun add_offset[T](ref: &T, offset: U64): &T {
+  ref.to_address().add(offset.multiply(size_of_type[T]())).to_reference[T]()
+}
+fun swap[T](a: &T, b: &T) {
+  var tmp = a.*
+  a.* = b.*
+  b.* = tmp
+}
+fun dump_address[W](address: U64, writer: W) {
+  | max U64 is  18446744073709551615
+  var divisor = 1152921504606846976_U64 | 16 ^ something
+  "0x".dump(writer)
+  loop {
+    writer.write(address.divide(divisor).modulo(16_U64).to_U8().digit_to_char())
+    if divisor.equals(1_U64) then break
+    divisor = divisor.divide(16_U64)
+  }
+}
+
+
+| Slice  
+| A slice is a memory region where values of the same type are right next to
+| each other.
+struct Slice[T] { data: &T, len: U64 }
+fun empty_slice[T](): Slice[T] {
+  Slice[T].{ data = 0_U64.to_reference[T](), len = 0_U64 }
+}
+fun uninitialized_slice[T](len: U64): Slice[T] {
+  if len.equals(0_U64) then return empty_slice[T]()
+  var data = malloc(len.multiply(size_of_type[T]())).to_reference[T]()
+  Slice[T].{ data = data, len = len }
+}
+fun filled_slice[T](len: U64, fill: T): Slice[T] {
+  var slice = uninitialized_slice[T](len)
+  for i in &0_U64.to(len).iter() do slice.get_ref(i).* = fill
+  slice
+}
+fun is_empty[T](slice: Slice[T]): Bool { slice.len.equals(0_U64) }
+fun get[T](slice: Slice[T], index: U64): T { slice.data.add_offset(index).* }
+fun get_ref[T](slice: Slice[T], index: U64): &T {
+  if 0_U64.to(slice.len).contains(index)
+  then slice.data.add_offset(index)
+  else panic("index out of bounds")
+}
+fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
+  if to.is_greater_than(slice.len)
+  then panic("subslice needs to be inside original slice")
+  Slice[T].{ data = slice.data.add_offset(from), len = to.subtract(from) }
+}
+fun subslice[T](slice: Slice[T], from: U64): Slice[T] {
+  slice.subslice(from, slice.len)
+}
+fun copy_to[T](from: Slice[T], to: Slice[T]) {
+  if not(from.len.equals(to.len)) then panic("copy_to slice lens don't match")
+  for i in &0_U64.to(from.len).iter() do to.get_ref(i).* = from.get(i)
+}
+fun make_null_terminated(slice: Slice[U8]): Slice[U8] {
+  var new = uninitialized_slice[U8](slice.len.inc())
+  slice.copy_to(new.subslice(0_U64, slice.len))
+  new.get_ref(slice.len).* = 0_U8
+  new
+}
+fun compare_to[T](a: Slice[T], b: Slice[T]): Ordering {
+  var i = 0_U64
+  loop {
+    if i.equals(a.len).and(i.equals(b.len)) then return Ordering.equal
+    if i.equals(a.len) then return Ordering.less
+    if i.equals(b.len) then return Ordering.greater
+    var ord = a.get(i).compare_to(b.get(i))
+    if not(ord.is_equal()) then return ord
+    i = i.inc()
+  }
+}
+fun equals[T](a: Slice[T], b: Slice[T]): Bool {
+  | TODO: support for types that only have equals, not compare_to
+  if a.len.equals(b.len) then compare_to(a, b).is_equal() else Bool.false
+}
+fun hash[T](slice: Slice[T], hasher: &Hasher) {
+  for item in &slice.iter() do item.hash(hasher)
+}
+fun dump[T, W](slice: Slice[T], writer: W) {
+  char('[).dump(writer)
+  var first = Bool.true
+  for item in &slice.iter() do {
+    if first then first = Bool.false else str(", ").dump(writer)
+    item.dump(writer)
+  }
+  char(']).dump(writer)
+}
+
+| Files, Input & Output  
+struct File { descriptor: U64 }
+fun libc_open(filename: U64, modes: U64): U64 = builtin
+enum OpenFileMode { read_only, write_only, read_write }
+fun open_file(filename: Slice[U8], mode: OpenFileMode): File {
+  var fd = libc_open(
+    filename.make_null_terminated().data.to_address(),
+    switch mode
+    case read_only 0_U64
+    case write_only 1_U64
+    case read_write 2_U64,
+  )
+  if fd.equals(0_U64) then panic("not able to open file")
+  File.{ descriptor = fd }
+}
+fun libc_read(file: U64, buf: U64, len: U64): U64 = builtin
+fun read(file: File, buffer: Slice[U8]): U64 {
+  libc_read(file.descriptor, buffer.data.to_address(), buffer.len)
+}
+fun read_byte(file: File): Maybe[U8] {
+  var c = 0_U8
+  if libc_read(file.descriptor, c.&.to_address(), 1_U64).equals(0_U64)
+  then Maybe[U8].none
+  else Maybe[U8].some(c)
+}
+fun libc_write(file: U64, buf: U64, len: U64): U64 = builtin
+fun write(file: File, buffer: Slice[U8]): U64 {
+  libc_write(file.descriptor, buffer.data.to_address(), buffer.len)
+}
+fun write(file: File, byte: U8) {
+  libc_write(file.descriptor, byte.&.to_address(), 1_U64).ignore()
+}
+fun libc_close(file: U64): U8 = builtin
+fun close(file: File) { libc_close(file.descriptor).ignore() }
+fun read_file(name: Slice[U8]): Slice[U8] {
+  var file = open_file(name, OpenFileMode.read_only)
+  var content = vec[U8]()
+  loop
+    switch file.read_byte()
+    case some(byte) content.&.push(byte)
+    case none break
+  file.close()
+  content.to_slice()
+}
+
+| Printing  
+| You should implement a dump(T, Writer) function for types that can be printed.
+| The print and println functions can print any value with a dump(T, Writer)
+| function. Writers are anything with a write(W, U8) function. The prints and
+| printsln functions print the argument as a string.
+fun stdin(): File { File.{ descriptor = 0_U64 } }
+fun stdout(): File { File.{ descriptor = 1_U64 } }
+fun stderr(): File { File.{ descriptor = 2_U64 } }
+fun print[T](value: T) { value.dump(stdout()) }
+fun println[T](value: T) { print(value) println() }
+fun println() { stdout().write(newline()) }
+fun prints(message: Slice[U8]) { print(str(message)) }
+fun printsln(message: Slice[U8]) { println(str(message)) }
+
+| Char  
+| Essentially just a U8, but it's formatted differently.
+struct Char { value: U8 }
+fun char(value: U8): Char { Char.{ value = value } }
+fun dump[W](c: Char, writer: W) { writer.write(c.value) }
+fun newline(): U8 { 10_U8 } | TODO: refactor to variable when we have global variables
+
+| Str  
+| Essentially just a Slice[U8], but it's formatted differently. There's no
+| enforcement of UTF-8 or anything. When formatting strings, the raw bytes are
+| simply sent to the writer.
+struct Str { bytes: Slice[U8] }
+fun str(bytes: Slice[U8]): Str { Str.{ bytes = bytes } }
+fun dump[W](str: Str, writer: W) {
+  for byte in &str.bytes.iter() do writer.write(byte)
 }
 
 | Comparing  
@@ -229,81 +465,6 @@ fun dump[T, W](point: Point[T], writer: W) {
   tuple(point.x, point.y).dump(writer)
 }
 
-| Int  
-| Integers are built into the language. There are several types with different
-| signedness and bit amount available as {U, I} x {8, 16, 32, 64}. For example,
-| U64 is an unsigned integer of 64 bits.
-| All integers also support the following mathematical operations:
-| - add(Int, Int): Int
-| - subtract(Int, Int): Int
-| - multiply(Int, Int): Int
-| - divide(Int, Int): Int
-| - modulo(Int, Int): Int
-| - compare_to(Int, Int): Ordering
-| - to_<OtherInt>(Int): OtherInt, e.g. to_U8() for non-U8 ints
-fun inc(a: U8): U8 { a.add(1_U8) }
-fun inc(a: U16): U16 { a.add(1_U16) }
-fun inc(a: U32): U32 { a.add(1_U32) }
-fun inc(a: U64): U64 { a.add(1_U64) }
-fun inc(a: I8): I8 { a.add(1_I8) }
-fun inc(a: I16): I16 { a.add(1_I16) }
-fun inc(a: I32): I32 { a.add(1_I32) }
-fun inc(a: I64): I64 { a.add(1_I64) }
-fun dec(a: U8): U8 { a.subtract(1_U8) }
-fun dec(a: U16): U16 { a.subtract(1_U16) }
-fun dec(a: U32): U32 { a.subtract(1_U32) }
-fun dec(a: U64): U64 { a.subtract(1_U64) }
-fun dec(a: I8): I8 { a.subtract(1_I8) }
-fun dec(a: I16): I16 { a.subtract(1_I16) }
-fun dec(a: I32): I32 { a.subtract(1_I32) }
-fun dec(a: I64): I64 { a.subtract(1_I64) }
-fun equals(a: U8, b: U8): Bool { a.compare_to(b).is_equal() }
-fun equals(a: U16, b: U16): Bool { a.compare_to(b).is_equal() }
-fun equals(a: U32, b: U32): Bool { a.compare_to(b).is_equal() }
-fun equals(a: U64, b: U64): Bool { a.compare_to(b).is_equal() }
-fun equals(a: I8, b: I8): Bool { a.compare_to(b).is_equal() }
-fun equals(a: I16, b: I16): Bool { a.compare_to(b).is_equal() }
-fun equals(a: I32, b: I32): Bool { a.compare_to(b).is_equal() }
-fun equals(a: I64, b: I64): Bool { a.compare_to(b).is_equal() }
-fun hash(value: U8, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
-fun hash(value: U16, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
-fun hash(value: U32, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
-fun hash(value: U64, hasher: &Hasher) { hasher.contribute(value) }
-fun hash(value: I8, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
-fun hash(value: I16, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
-fun hash(value: I32, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
-fun hash(value: I64, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
-fun dump[W](int: U64, radix: U64, writer: W) {
-  var divisor = 1_U64
-  loop {
-    if int.divide(divisor).is_less_than(radix) then break
-    divisor = divisor.multiply(radix)
-  }
-  loop {
-    writer.write(int.divide(divisor).modulo(radix).to_U8().digit_to_char())
-    if divisor.equals(1_U64) then break
-    divisor = divisor.divide(radix)
-  }
-}
-fun digit_to_char(digit: U8): U8 {
-  if digit.is_greater_than(9_U8)
-  then digit.subtract(10_U8).add('a)
-  else digit.add('0)
-}
-fun dump[W](int: U8, writer: W) { int.to_U64().dump(writer) }
-fun dump[W](int: U16, writer: W) { int.to_U64().dump(writer) }
-fun dump[W](int: U32, writer: W) { int.to_U64().dump(writer) }
-fun dump[W](int: U64, writer: W) { int.dump(10_U64, writer) }
-fun parse_U64(bytes: Slice[U8]): U64 {
-  var num = 0_U64
-  for char in &bytes.iter() do {
-    if not('0.until('9).contains(char))
-    then panic("non-digit in supposed number")
-    num = num.multiply(10_U64).add(char.subtract('0).to_U64())
-  }
-  num
-}
-
 | Range  
 | Ranges have an inclusive start and exclusive end value.
 struct Range[T] { start: T, end: T }
@@ -327,251 +488,6 @@ fun next[T](iter: &RangeIter[T]): Maybe[T] {
     Maybe[T].some(current)
   }
 }
-
-| Memory  
-| References (pointers to memory locations) are built into the compiler. &T is a
-| reference to a T. You can get a reference to a value using the & operator on
-| an expression. You can follow a reference using the expr.* syntax. References
-| can also be converted to and from the address they are pointing at these
-| builtin functions:
-| - to_address(&T): U64
-| - to_reference[T](U64): &T
-| The builtin memory allocation functions don't have anything to do with
-| references – they just deal with untyped memory. The following builtin
-| functions are used to build type-safe abstractions on top:
-| - size_of_type[T](): U64
-| - malloc(U64): U64
-fun malloc(size: U64): U64 {
-  var address = libc_malloc(size)
-  if address.equals(0_U64) then panic("out of memory")
-  address
-}
-
-fun ref[T](): &T { malloc(size_of_type[T]()).to_reference[T]() }
-fun new[T](value: T): &T {
-  var ref = ref[T]()
-  ref.* = value
-  ref
-}
-fun cast[T, U](value: &T): &U { value.to_address().to_reference[U]() }
-fun add_offset[T](ref: &T, offset: U64): &T {
-  ref.to_address().add(offset.multiply(size_of_type[T]())).to_reference[T]()
-}
-fun swap[T](a: &T, b: &T) {
-  var tmp = a.*
-  a.* = b.*
-  b.* = tmp
-}
-fun dump_address[W](address: U64, writer: W) {
-  | max U64 is  18446744073709551615
-  var divisor = 1152921504606846976_U64 | 16 ^ something
-  "0x".dump(writer)
-  loop {
-    writer.write(address.divide(divisor).modulo(16_U64).to_U8().digit_to_char())
-    if divisor.equals(1_U64) then break
-    divisor = divisor.divide(16_U64)
-  }
-}
-
-| File I/O  
-fun make_null_terminated(slice: Slice[U8]): Slice[U8] {
-  var new = uninitialized_slice[U8](slice.len.inc())
-  slice.copy_to(new.subslice(0_U64, slice.len))
-  new.get_ref(slice.len).* = 0_U8
-  new
-}
-struct File { descriptor: U64 }
-fun flag_RDONLY(): U64 { 0_U64 }
-fun flag_WEONLY(): U64 { 1_U64 }
-fun flag_RDWR(): U64 { 2_U64 }
-fun read_file(name: Slice[U8]): Slice[U8] {
-  var file = libc_open(
-    name.make_null_terminated().data.to_address(),
-    flag_RDONLY(),
-  )
-  if file.equals(0_U64) then panic("not able to open file")
-  var content = vec[U8]()
-  loop {
-    var c = 0_U8
-    if libc_read(file, c.&.to_address(), 1_U64).equals(0_U8) then break
-    content.&.push(c)
-  }
-  libc_close(file)
-  content.to_slice()
-}
-
-| Slice  
-| A slice is a memory region where values of the same type are right next to
-| each other.
-struct Slice[T] { data: &T, len: U64 }
-fun empty_slice[T](): Slice[T] {
-  Slice[T].{ data = 0_U64.to_reference[T](), len = 0_U64 }
-}
-fun uninitialized_slice[T](len: U64): Slice[T] {
-  if len.equals(0_U64) then return empty_slice[T]()
-  var data = malloc(len.multiply(size_of_type[T]())).to_reference[T]()
-  Slice[T].{ data = data, len = len }
-}
-fun filled_slice[T](len: U64, fill: T): Slice[T] {
-  var slice = uninitialized_slice[T](len)
-  for i in &0_U64.to(len).iter() do slice.get_ref(i).* = fill
-  slice
-}
-fun is_empty[T](slice: Slice[T]): Bool { slice.len.equals(0_U64) }
-fun get[T](slice: Slice[T], index: U64): T { slice.data.add_offset(index).* }
-fun get_ref[T](slice: Slice[T], index: U64): &T {
-  if 0_U64.to(slice.len).contains(index)
-  then slice.data.add_offset(index)
-  else panic("index out of bounds")
-}
-fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
-  if to.is_greater_than(slice.len)
-  then panic("subslice needs to be inside original slice")
-  Slice[T].{ data = slice.data.add_offset(from), len = to.subtract(from) }
-}
-fun subslice[T](slice: Slice[T], from: U64): Slice[T] {
-  slice.subslice(from, slice.len)
-}
-fun copy_to[T](from: Slice[T], to: Slice[T]) {
-  if not(from.len.equals(to.len)) then panic("copy_to slice lens don't match")
-  for i in &0_U64.to(from.len).iter() do to.get_ref(i).* = from.get(i)
-}
-fun split(slice: Slice[U8], separator: Slice[U8]): Slice[Slice[U8]] {
-  var result = vec[Slice[U8]]()
-  for part in &slice.iter().iter_split(separator) do result.&.push(part)
-  result.to_slice()
-}
-fun lines(slice: Slice[U8]): Slice[Slice[U8]] { slice.split("
-") }
-fun dump[T, W](slice: Slice[T], writer: W) {
-  char('[).dump(writer)
-  var first = Bool.true
-  for item in &slice.iter() do {
-    if first then first = Bool.false else str(", ").dump(writer)
-    item.dump(writer)
-  }
-  char(']).dump(writer)
-}
-fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
-  if prefix.len.is_greater_than(slice.len) then return Bool.false
-  for i in &0_U64.to(prefix.len).iter() do
-    if not(slice.get(i).equals(prefix.get(i))) then return Bool.false
-  Bool.true
-}
-fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
-  if suffix.len.is_greater_than(slice.len) then return Bool.false
-  for i in &0_U64.to(suffix.len).iter() do
-    if not(
-      slice.get(slice.len.subtract(suffix.len).add(i)).equals(suffix.get(i))
-    )
-    then return Bool.false
-  Bool.true
-}
-fun trim_prefix(slice: &Slice[U8], prefix: Slice[U8]) {
-  if slice.starts_with(prefix)
-  then slice.* = slice.subslice(prefix.len)
-  else panic("slice doesn't start with prefix")
-}
-fun compare_to[T](a: Slice[T], b: Slice[T]): Ordering {
-  var i = 0_U64
-  loop {
-    if i.equals(a.len).and(i.equals(b.len)) then return Ordering.equal
-    if i.equals(a.len) then return Ordering.less
-    if i.equals(b.len) then return Ordering.greater
-    var ord = a.get(i).compare_to(b.get(i))
-    if not(ord.is_equal()) then return ord
-    i = i.inc()
-  }
-}
-fun equals[T](a: Slice[T], b: Slice[T]): Bool {
-  | TODO: support for types that only have equals, not compare_to
-  if a.len.equals(b.len) then compare_to(a, b).is_equal() else Bool.false
-}
-fun hash[T](slice: Slice[T], hasher: &Hasher) {
-  for item in &slice.iter() do item.hash(hasher)
-}
-fun find[T](slice: Slice[T], needle: T): Maybe[U64] {
-  for i in &0_U64.to(slice.len).iter() do
-    if slice.get(i).equals(needle) then return Maybe[U64].some(i)
-  Maybe[U64].none
-}
-fun sort[T](slice: &Slice[T]) {
-  | quick sort
-  if slice.len.is_at_most(1_U64) then return {}
-  var pivot = slice.get(slice.len.dec())
-  var i = 0_U64
-  for j in &0_U64.to(slice.len).iter() do
-    if slice.get(j).is_less_than(pivot) then {
-      i = i.inc()
-      swap(slice.get_ref(i.dec()), slice.get_ref(j))
-    }
-  swap(slice.get_ref(i), slice.get_ref(slice.len.dec()))
-  sort(&slice.subslice(0_U64, i))
-  sort(&slice.subslice(min(i.inc(), slice.len.dec()), slice.len))
-}
-fun iter[T](slice: Slice[T]): SliceIter[T] {
-  SliceIter[T].{ slice = slice, index = 0_U64 }
-}
-struct SliceIter[T] {
-  slice: Slice[T],
-  index: U64,
-}
-fun next[T](iter: &SliceIter[T]): Maybe[T] {
-  var item = if iter.index.is_less_than(iter.slice.len)
-    then Maybe[T].some(iter.slice.get(iter.index))
-    else Maybe[T].none
-  iter.index = iter.index.add(1_U64)
-  item
-}
-fun rev_iter[T](slice: Slice[T]): SliceRevIter[T] {
-  SliceRevIter[T].{ slice = slice, index = slice.len }
-}
-struct SliceRevIter[T] {
-  slice: Slice[T],
-  index: U64, | last yielded item
-}
-fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
-  if iter.index.is_greater_than(0_U64) then {
-    iter.index = iter.index.subtract(1_U64)
-    Maybe[T].some(iter.slice.get(iter.index))
-  } else Maybe[T].none
-}
-fun iter_split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
-  SplitIter[I].{ iter = iter, separator = separator }
-}
-struct SplitIter[I] { iter: I, separator: Slice[U8] }
-fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
-  var line = vec[U8]()
-  loop
-    switch self.iter.&.next()
-    case none
-      if line.len.is_greater_than(0_U64)
-      then break
-      else return Maybe[Slice[U8]].none
-    case some(c) {
-      line.&.push(c)
-      if line.to_slice().subslice(line.len.subtract(self.separator.len))
-        .equals(self.separator)
-      then return Maybe[Slice[U8]].some(
-        line.to_slice().subslice(0_U64, line.len.subtract(self.separator.len))
-      )
-    }
-  Maybe[Slice[U8]].some(line.to_slice())
-}
-fun min[T](slice: Set[T]): Maybe[T] {
-  var candidate = Maybe[T].none
-  for item in &slice.iter() do
-    switch candidate
-    case some(c) candidate = Maybe[T].some(min(c, item))
-    case none candidate = Maybe[T].some(item)
-  return candidate
-}
-|fun enumerate[I](iter: I): Enumerated[I] {
-|  Enumerated[I].{ iter = iter, counter = 0_U64 }
-|}
-|struct Enumerated[T, I] { iter: I, counter: U64 }
-| TODO: Support inferring part of the return type like here
-|fun next[I](self: &Enumerated[I]): Maybe[Pair[U64, _]] { ... }
 
 | Vec  
 | A growable array where you can efficiently push and pop data to/from the back.
@@ -829,5 +745,116 @@ fun next[T](set: &SetIter[T]): Maybe[T] {
     case filled(entry) return Maybe[T].some(entry.key)
   }
 }
+
+| Slice utility stuff  
+fun split(slice: Slice[U8], separator: Slice[U8]): Slice[Slice[U8]] {
+  var result = vec[Slice[U8]]()
+  for part in &slice.iter().iter_split(separator) do result.&.push(part)
+  result.to_slice()
+}
+fun lines(slice: Slice[U8]): Slice[Slice[U8]] { slice.split("
+") }
+fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
+  if prefix.len.is_greater_than(slice.len) then return Bool.false
+  for i in &0_U64.to(prefix.len).iter() do
+    if not(slice.get(i).equals(prefix.get(i))) then return Bool.false
+  Bool.true
+}
+fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
+  if suffix.len.is_greater_than(slice.len) then return Bool.false
+  for i in &0_U64.to(suffix.len).iter() do
+    if not(
+      slice.get(slice.len.subtract(suffix.len).add(i)).equals(suffix.get(i))
+    )
+    then return Bool.false
+  Bool.true
+}
+fun trim_prefix(slice: &Slice[U8], prefix: Slice[U8]) {
+  if slice.starts_with(prefix)
+  then slice.* = slice.subslice(prefix.len)
+  else panic("slice doesn't start with prefix")
+}
+fun find[T](slice: Slice[T], needle: T): Maybe[U64] {
+  for i in &0_U64.to(slice.len).iter() do
+    if slice.get(i).equals(needle) then return Maybe[U64].some(i)
+  Maybe[U64].none
+}
+fun sort[T](slice: &Slice[T]) {
+  | quick sort
+  if slice.len.is_at_most(1_U64) then return {}
+  var pivot = slice.get(slice.len.dec())
+  var i = 0_U64
+  for j in &0_U64.to(slice.len).iter() do
+    if slice.get(j).is_less_than(pivot) then {
+      i = i.inc()
+      swap(slice.get_ref(i.dec()), slice.get_ref(j))
+    }
+  swap(slice.get_ref(i), slice.get_ref(slice.len.dec()))
+  sort(&slice.subslice(0_U64, i))
+  sort(&slice.subslice(min(i.inc(), slice.len.dec()), slice.len))
+}
+fun iter[T](slice: Slice[T]): SliceIter[T] {
+  SliceIter[T].{ slice = slice, index = 0_U64 }
+}
+struct SliceIter[T] {
+  slice: Slice[T],
+  index: U64,
+}
+fun next[T](iter: &SliceIter[T]): Maybe[T] {
+  var item = if iter.index.is_less_than(iter.slice.len)
+    then Maybe[T].some(iter.slice.get(iter.index))
+    else Maybe[T].none
+  iter.index = iter.index.add(1_U64)
+  item
+}
+fun rev_iter[T](slice: Slice[T]): SliceRevIter[T] {
+  SliceRevIter[T].{ slice = slice, index = slice.len }
+}
+struct SliceRevIter[T] {
+  slice: Slice[T],
+  index: U64, | last yielded item
+}
+fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
+  if iter.index.is_greater_than(0_U64) then {
+    iter.index = iter.index.subtract(1_U64)
+    Maybe[T].some(iter.slice.get(iter.index))
+  } else Maybe[T].none
+}
+fun iter_split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
+  SplitIter[I].{ iter = iter, separator = separator }
+}
+struct SplitIter[I] { iter: I, separator: Slice[U8] }
+fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
+  var line = vec[U8]()
+  loop
+    switch self.iter.&.next()
+    case none
+      if line.len.is_greater_than(0_U64)
+      then break
+      else return Maybe[Slice[U8]].none
+    case some(c) {
+      line.&.push(c)
+      if line.to_slice().subslice(line.len.subtract(self.separator.len))
+        .equals(self.separator)
+      then return Maybe[Slice[U8]].some(
+        line.to_slice().subslice(0_U64, line.len.subtract(self.separator.len))
+      )
+    }
+  Maybe[Slice[U8]].some(line.to_slice())
+}
+fun min[T](slice: Set[T]): Maybe[T] {
+  var candidate = Maybe[T].none
+  for item in &slice.iter() do
+    switch candidate
+    case some(c) candidate = Maybe[T].some(min(c, item))
+    case none candidate = Maybe[T].some(item)
+  return candidate
+}
+|fun enumerate[I](iter: I): Enumerated[I] {
+|  Enumerated[I].{ iter = iter, counter = 0_U64 }
+|}
+|struct Enumerated[T, I] { iter: I, counter: U64 }
+| TODO: Support inferring part of the return type like here
+|fun next[I](self: &Enumerated[I]): Maybe[Pair[U64, _]] { ... }
 
 | TODO: segment tree, treap

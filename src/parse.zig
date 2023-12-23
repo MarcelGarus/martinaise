@@ -69,92 +69,13 @@ pub fn parse(alloc: std.mem.Allocator, code: Str, stdlib_size: usize) !Result(as
 
     // Add builtins.
 
-    const nothing = .{ .name = "Nothing", .args = ArrayList(Ty).init(alloc) };
-    const u8_ = .{ .name = "U8", .args = ArrayList(Ty).init(alloc) };
-    const u64_: Ty = .{ .name = "U64", .args = ArrayList(Ty).init(alloc) };
-    const t: Ty = .{ .name = "T", .args = ArrayList(Ty).init(alloc) };
-    var and_t_args = ArrayList(Ty).init(alloc);
-    try and_t_args.append(t);
-    const and_t: Ty = .{ .name = "&", .args = and_t_args };
-
-    { // &T
+    { // struct &[T] { *: T }
         var ty_args = ArrayList(Str).init(alloc);
         try ty_args.append("T");
+        const t: Ty = .{ .name = "T", .args = ArrayList(Ty).init(alloc) };
         var fields = ArrayList(ast.Field).init(alloc);
         try fields.append(.{ .name = "*", .ty = t });
         try program.defs.append(.{ .struct_ = .{ .name = "&", .ty_args = ty_args, .fields = fields } });
-    }
-
-    { // to_address[T](ref: &T): U64
-        var ty_args = ArrayList(Str).init(alloc);
-        try ty_args.append("T");
-        var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "ref", .ty = and_t });
-        program.add_builtin_fun(alloc, "to_address", ty_args, args, u64_);
-    }
-
-    { // to_reference[T](address: U64): &T
-        var ty_args = ArrayList(Str).init(alloc);
-        try ty_args.append("T");
-        var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "address", .ty = u64_ });
-        program.add_builtin_fun(alloc, "to_reference", ty_args, args, and_t);
-    }
-
-    { // size_of_type[T](): U64
-        var ty_args = ArrayList(Str).init(alloc);
-        try ty_args.append("T");
-        const args = ArrayList(ast.Argument).init(alloc);
-        program.add_builtin_fun(alloc, "size_of_type", ty_args, args, u64_);
-    }
-
-    { // libc_malloc(size: U64): U64
-        const ty_args = ArrayList(Str).init(alloc);
-        var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "size", .ty = u64_ });
-        program.add_builtin_fun(alloc, "libc_malloc", ty_args, args, u64_);
-    }
-
-    // TODO: realloc
-
-    { // libc_exit(status: U8): Nothing
-        const ty_args = ArrayList(Str).init(alloc);
-        var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "status", .ty = u8_ });
-        program.add_builtin_fun(alloc, "libc_exit", ty_args, args, nothing);
-    }
-
-    { // libc_open(filename: U64, modes: U64): U64
-        const ty_args = ArrayList(Str).init(alloc);
-        var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "filename", .ty = u64_ });
-        try args.append(.{ .name = "modes", .ty = u64_ });
-        program.add_builtin_fun(alloc, "libc_open", ty_args, args, u64_);
-    }
-
-    { // libc_read(file: U64, buf: U64, len: U64): U8
-        const ty_args = ArrayList(Str).init(alloc);
-        var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "file", .ty = u64_ });
-        try args.append(.{ .name = "buf", .ty = u64_ });
-        try args.append(.{ .name = "len", .ty = u64_ });
-        program.add_builtin_fun(alloc, "libc_read", ty_args, args, u8_);
-    }
-
-    { // libc_write(file: U64, buf: U64, len: U64): U8
-        const ty_args = ArrayList(Str).init(alloc);
-        var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "file", .ty = u64_ });
-        try args.append(.{ .name = "buf", .ty = u64_ });
-        try args.append(.{ .name = "len", .ty = u64_ });
-        program.add_builtin_fun(alloc, "libc_write", ty_args, args, u8_);
-    }
-
-    { // libc_close(file: U64): U8
-        const ty_args = ArrayList(Str).init(alloc);
-        var args = ArrayList(ast.Argument).init(alloc);
-        try args.append(.{ .name = "file", .ty = u64_ });
-        program.add_builtin_fun(alloc, "libc_close", ty_args, args, u8_);
     }
 
     // Int stuff.
@@ -443,14 +364,30 @@ const Parser = struct {
         }
 
         self.consume_whitespace();
-        const body = try self.parse_body() orelse return error.ExpectedBody;
+
+        var is_builtin = false;
+        const body = get_body: {
+            if (self.consume_prefix("=")) |_| {
+                self.consume_whitespace();
+                if (self.consume_keyword("builtin")) |_| {
+                    is_builtin = true;
+                    break :get_body ArrayList(ast.Expr).init(self.alloc);
+                } else {
+                    var body = ArrayList(ast.Expr).init(self.alloc);
+                    try body.append(try self.parse_expression() orelse return error.ExpectedBodyExpression);
+                    break :get_body body;
+                }
+            } else {
+                break :get_body try self.parse_body() orelse return error.ExpectedBody;
+            }
+        };
 
         return .{
             .name = name,
             .ty_args = type_args,
             .args = args,
             .returns = return_type,
-            .is_builtin = false,
+            .is_builtin = is_builtin,
             .body = body,
         };
     }
