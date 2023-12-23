@@ -16,7 +16,6 @@
 | TODO: type aliases
 | TODO: catch giving wrong types to fields
 | TODO: remove orelse?
-| TODO: 
 
 | Nothing (aka Unit or Void)  
 | A type with only one instance. Functions without an explicit return type
