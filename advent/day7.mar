@@ -43,7 +43,7 @@ fun main(): U8 {
     var parts = line.split(" ")
     var hand = parts.get(0)
     var bid = parts.get(1).parse_U64()
-    hands.&.push(Hand.{ score = hand_score(hand), hand = hand, bid = bid })
+    hands.&.push(Hand.{ score = hand_score(hand), hand, bid })
   }
   hands.to_slice().&.sort()
 

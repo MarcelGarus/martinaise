@@ -11,7 +11,7 @@ fun main(): U8 {
     var name = line.subslice(0, 3)
     var left = line.subslice(7, 10)
     var right = line.subslice(12, 15)
-    nodes.&.insert(name, Node.{ left = left, right = right })
+    nodes.&.insert(name, Node.{ left, right })
   }
 
   var step = 0

@@ -631,9 +631,12 @@ const Parser = struct {
             while (true) {
                 const name = self.parse_name() orelse break;
                 self.consume_whitespace();
-                self.consume_prefix("=") orelse return error.ExpectedEquals;
-                self.consume_whitespace();
-                const value = try self.parse_expression() orelse return error.ExpectedValueOfField;
+                const value = find_value: {
+                    if (self.consume_prefix("=")) |_| {
+                        self.consume_whitespace();
+                        break :find_value try self.parse_expression() orelse return error.ExpectedValueOfField;
+                    } else break :find_value ast.Expr{ .ref = name };
+                };
                 try fields.append(.{ .name = name, .value = value });
                 self.consume_whitespace();
                 self.consume_prefix(",") orelse break;

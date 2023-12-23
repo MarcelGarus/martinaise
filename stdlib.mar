@@ -11,16 +11,16 @@
 | deleting code in this file because that may crash the compiler.
 
 | Language todos
+| TODO: validate all fun signatures before lowering
 | TODO: global constants
-| TODO: shorthand struct syntax
 | TODO: type arg inference for struct/enum creation
 | TODO: type aliases
 | TODO: catch giving wrong types to fields
+| TODO: funs as values, function types, higher-order funs
 | TODO: operators?
 | TODO: remove orelse?
 | TODO: slice literals? array literals?
 | TODO: struct destructuring? probably not
-| TODO: funs as values, function types, higher-order funs
 
 | Nothing (aka Unit or Void)  
 | A type with only one instance. Functions without an explicit return type
@@ -300,7 +300,7 @@ fun empty_slice[T](): Slice[T] {
 fun uninitialized_slice[T](len: U64): Slice[T] {
   if len.equals(0) then return empty_slice[T]()
   var data = malloc(len.multiply(size_of_type[T]())).to_reference[T]()
-  Slice[T].{ data = data, len = len }
+  Slice[T].{ data, len }
 }
 fun filled_slice[T](len: U64, fill: T): Slice[T] {
   var slice = uninitialized_slice[T](len)
@@ -434,12 +434,12 @@ fun write_str[W](writer: W, str: Slice[U8]) {
 | Range  
 | Ranges have an inclusive start and exclusive end value.
 struct Range[T] { start: T, end: T }
-fun to[T](start: T, end: T): Range[T] { Range[T].{ start = start, end = end } }
+fun to[T](start: T, end: T): Range[T] { Range[T].{ start, end } }
 fun until[T](start: T, end: T): Range[T] {
-  Range[T].{ start = start, end = end.inc() }
+  Range[T].{ start, end = end.inc() }
 }
 fun range_by[T](start: T, len: T): Range[T] {
-  Range[T].{ start = start, end = start.add(len) }
+  Range[T].{ start, end = start.add(len) }
 }
 fun contains[T](range: Range[T], value: T): Bool {
   value.is_at_least(range.start).and(value.is_less_than(range.end))
@@ -456,11 +456,9 @@ fun next[T](iter: &RangeIter[T]): Maybe[T] {
 }
 
 | Tuples  
-fun tuple[A, B](a: A, b: B): Tuple[A, B] {
-  Tuple[A, B].{ a = a, b = b }
-}
+fun tuple[A, B](a: A, b: B): Tuple[A, B] { Tuple[A, B].{ a, b } }
 fun tuple[A, B, C](a: A, b: B, c: C): Tuple[A, B, C] {
-  Tuple[A, B, C].{ a = a, b = b, c = c }
+  Tuple[A, B, C].{ a, b, c }
 }
 struct Tuple[A, B] { a: A, b: B }
 struct Tuple[A, B, C] { a: A, b: B, c: C }
@@ -654,15 +652,14 @@ fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
     var bucket = map.buckets.get_ref(i)
     switch bucket.*
     case empty {
-      bucket.* = MapBucket[K, V]
-        .filled(MapEntry[K, V].{ key = key, value = value })
+      bucket.* = MapBucket[K, V].filled(MapEntry[K, V].{ key, value })
       map.size = map.size.add(1)
       break
     }
     case filled(entry)
       if entry.key.equals(key) then {
         bucket.* = MapBucket[K, V]
-          .filled(MapEntry[K, V].{ key = key, value = value })
+          .filled(MapEntry[K, V].{ key, value })
         break
       } else i = i.add(1).modulo(map.buckets.len)
   }
@@ -790,13 +787,8 @@ fun sort[T](slice: &Slice[T]) {
   sort(&slice.subslice(0, i))
   sort(&slice.subslice(min(i.inc(), slice.len.dec()), slice.len))
 }
-fun iter[T](slice: Slice[T]): SliceIter[T] {
-  SliceIter[T].{ slice = slice, index = 0 }
-}
-struct SliceIter[T] {
-  slice: Slice[T],
-  index: U64,
-}
+fun iter[T](slice: Slice[T]): SliceIter[T] { SliceIter[T].{ slice, index = 0 } }
+struct SliceIter[T] { slice: Slice[T], index: U64 }
 fun next[T](iter: &SliceIter[T]): Maybe[T] {
   var item = if iter.index.is_less_than(iter.slice.len)
     then Maybe[T].some(iter.slice.get(iter.index))
@@ -805,7 +797,7 @@ fun next[T](iter: &SliceIter[T]): Maybe[T] {
   item
 }
 fun rev_iter[T](slice: Slice[T]): SliceRevIter[T] {
-  SliceRevIter[T].{ slice = slice, index = slice.len }
+  SliceRevIter[T].{ slice, index = slice.len }
 }
 struct SliceRevIter[T] {
   slice: Slice[T],
@@ -818,7 +810,7 @@ fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
   } else Maybe[T].none
 }
 fun iter_split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
-  SplitIter[I].{ iter = iter, separator = separator }
+  SplitIter[I].{ iter, separator }
 }
 struct SplitIter[I] { iter: I, separator: Slice[U8] }
 fun iter[I](iter: SplitIter[I]): SplitIter[I] { iter }
@@ -849,7 +841,7 @@ fun min[T](slice: Set[T]): Maybe[T] {
   return candidate
 }
 |fun enumerate[I](iter: I): Enumerated[I] {
-|  Enumerated[I].{ iter = iter, counter = 0 }
+|  Enumerated[I].{ iter, counter = 0 }
 |}
 |struct Enumerated[T, I] { iter: I, counter: U64 }
 | TODO: Support inferring part of the return type like here

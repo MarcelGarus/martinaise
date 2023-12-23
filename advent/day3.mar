@@ -19,21 +19,21 @@ fun main(): U8 {
   for y in 0_I64.to(grid.height().to_I64()) do
     for x in 0_I64.to(grid.width().to_I64()) do {
       var char = grid.get(x, y)
-      if char.is_digit().and(not(grid.get(x.subtract(1_I64), y).is_digit()))
+      if char.is_digit().and(not(grid.get(x.dec(), y).is_digit()))
       then {
         var end = x
         loop
-          if grid.get(end, y).is_digit() then end = end.add(1_I64) else break
+          if grid.get(end, y).is_digit() then end = end.inc() else break
         var num = grid.get(y.to_U64()).subslice(x.to_U64(), end.to_U64())
           .parse_U64()
 
         var adjacent = vec[Point[I64]]()
-        for xx in x.subtract(1_I64).until(end) do {
-          adjacent.&.push(Point[I64].{ x = xx, y = y.subtract(1_I64) })
-          adjacent.&.push(Point[I64].{ x = xx, y = y.add(1_I64) })
+        for xx in x.dec().until(end) do {
+          adjacent.&.push(Point[I64].{ x = xx, y = y.dec() })
+          adjacent.&.push(Point[I64].{ x = xx, y = y.inc() })
         }
-        adjacent.&.push(Point[I64].{ x = x.subtract(1_I64), y = y })
-        adjacent.&.push(Point[I64].{ x = end, y = y })
+        adjacent.&.push(Point[I64].{ x = x.dec(), y })
+        adjacent.&.push(Point[I64].{ x = end, y })
 
         var next_to_symbol = Bool.false
         for pos in adjacent do

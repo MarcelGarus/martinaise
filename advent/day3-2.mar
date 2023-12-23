@@ -28,17 +28,17 @@ fun main(): U8 {
       if char.is_digit().and(not(grid.get(x.subtract(1_I64), y).is_digit()))
       then {
         var end = x
-        loop if grid.get(end, y).is_digit() then end = end.add(1_I64) else break
+        loop if grid.get(end, y).is_digit() then end = end.inc() else break
         var num = grid.get(y.to_U64()).subslice(x.to_U64(), end.to_U64())
           .parse_U64()
 
         var adjacent = vec[Point[I64]]()
-        for xx in x.subtract(1_I64).until(end) do {
-          adjacent.&.push(Point[I64].{ x = xx, y = y.subtract(1_I64) })
-          adjacent.&.push(Point[I64].{ x = xx, y = y.add(1_I64) })
+        for xx in x.dec().until(end) do {
+          adjacent.&.push(Point[I64].{ x = xx, y = y.dec() })
+          adjacent.&.push(Point[I64].{ x = xx, y = y.inc() })
         }
-        adjacent.&.push(Point[I64].{ x = x.subtract(1_I64), y = y })
-        adjacent.&.push(Point[I64].{ x = end, y = y })
+        adjacent.&.push(Point[I64].{ x = x.dec(), y })
+        adjacent.&.push(Point[I64].{ x = end, y })
 
         for pos in adjacent do
           if grid.get(pos.x, pos.y).is_gear() then {
