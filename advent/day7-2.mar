@@ -51,7 +51,7 @@ fun main(): Never {
     var hand = parts.get(0)
     var bid = parts.get(1).parse_U64()
     var score = hand_score(hand)
-    hands.&.push(Hand.{ score, hand, bid })
+    hands.&.push(Hand { score, hand, bid })
   }
   hands.to_slice().&.sort()
 

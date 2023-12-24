@@ -1,4 +1,4 @@
-fun windows(s: Slice[U8]): Windows { Windows.{ slice = s, index = 0 } }
+fun windows(s: Slice[U8]): Windows { Windows { slice = s, index = 0 } }
 struct Windows { slice: Slice[U8], index: U64 }
 fun next(iter: &Windows): Maybe[Slice[U8]] {
   var item = if iter.index.is_less_than(iter.slice.len)
@@ -9,7 +9,7 @@ fun next(iter: &Windows): Maybe[Slice[U8]] {
 }
 
 fun rev_windows(s: Slice[U8]): RevWindows {
-  RevWindows.{ slice = s, index = s.len }
+  RevWindows { slice = s, index = s.len }
 }
 struct RevWindows { slice: Slice[U8], index: U64 }
 fun next(iter: &RevWindows): Maybe[Slice[U8]] {

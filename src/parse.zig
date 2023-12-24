@@ -429,6 +429,7 @@ const Parser = struct {
         ExpectedStatementOrClosingBrace,
         ExpectedClosingBrace,
         ExpectedValueOfField,
+        ExpectedStructOrEnumCreation,
         ExpectedExpression,
         ExpectedOpeningBrace,
         ExpectedVariantArgument,
@@ -754,8 +755,6 @@ const Parser = struct {
     fn parse_struct_or_enum_creation(self: *Self) !?ast.Expr {
         const ty = try self.parse_type() orelse return null;
         self.consume_whitespace();
-        self.consume_prefix(".") orelse return error.ExpectedDot; // TODO: reconsider?
-        self.consume_whitespace();
 
         if (self.consume_prefix("{")) |_| {
             self.consume_whitespace();
@@ -779,6 +778,8 @@ const Parser = struct {
 
             return .{ .struct_creation = .{ .ty = ty, .fields = fields.items } };
         } else {
+            self.consume_prefix(".") orelse return error.ExpectedStructOrEnumCreation;
+            self.consume_whitespace();
             const variant = self.parse_lower_name() orelse return error.ExpectedVariant;
             self.consume_whitespace();
 
