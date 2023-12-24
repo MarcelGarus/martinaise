@@ -44,6 +44,7 @@ pub const Expr = union(enum) {
     ty_arged: TyArged, // ...[T]
     call: Call, // ...(arg)
     struct_creation: StructCreation, // Foo.{ a = ... }
+    enum_creation: EnumCreation, // Maybe[U64].some(5)
     member: Member, // foo.bar
     var_: Var, // var foo = ...
     assign: Assign, // foo = ...
@@ -59,8 +60,9 @@ pub const Expr = union(enum) {
 pub const Int = struct { value: i128, signedness: numbers.Signedness, bits: numbers.Bits };
 pub const TyArged = struct { arged: *const Expr, ty_args: []const Ty };
 pub const Call = struct { callee: *const Expr, args: []const Expr };
-pub const StructCreation = struct { ty: *const Expr, fields: []const StructCreationField };
+pub const StructCreation = struct { ty: Ty, fields: []const StructCreationField };
 pub const StructCreationField = struct { name: Str, value: Expr };
+pub const EnumCreation = struct { ty: Ty, variant: Str, arg: ?*const Expr };
 pub const Member = struct { of: *const Expr, name: Str };
 pub const Var = struct { name: Str, value: *Expr };
 pub const Assign = struct { to: *Expr, value: *Expr };
@@ -200,8 +202,7 @@ pub fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
             try writer.print(")", .{});
         },
         .struct_creation => |sc| {
-            try print_expr(writer, indent, sc.ty.*);
-            try writer.print(".{{", .{});
+            try writer.print("{}.{{", .{sc.ty});
             for (sc.fields) |field| {
                 try writer.print("\n", .{});
                 try print_indent(writer, indent + 1);
@@ -212,6 +213,14 @@ pub fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
             try writer.print("\n", .{});
             try print_indent(writer, indent);
             try writer.print("}}", .{});
+        },
+        .enum_creation => |ec| {
+            try writer.print("{}.{s}", .{ ec.ty, ec.variant });
+            if (ec.arg) |arg| {
+                try writer.print("(", .{});
+                try print_expr(writer, indent, arg.*);
+                try writer.print(")", .{});
+            }
         },
         .member => |member| {
             try print_expr(writer, indent, member.of.*);

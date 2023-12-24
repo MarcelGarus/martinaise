@@ -229,6 +229,14 @@ const Parser = struct {
         self.code = self.code[i..];
         return name;
     }
+    fn parse_lower_name(self: *Self) ?Str {
+        if (self.code[0] < 'a' or self.code[0] > 'z') return null;
+        return self.parse_name();
+    }
+    fn parse_upper_name(self: *Self) ?Str {
+        if (self.code[0] < 'A' or self.code[0] > 'Z') return null;
+        return self.parse_name();
+    }
 
     fn parse_type(self: *Self) error{ OutOfMemory, ExpectedTypeArgument, ExpectedClosingBracket, ExpectedType }!?Ty {
         if (self.consume_prefix("&")) |_| {
@@ -237,7 +245,7 @@ const Parser = struct {
             return .{ .name = "&", .args = args.items };
         }
 
-        const name = self.parse_name() orelse return null;
+        const name = self.parse_upper_name() orelse return null;
         self.consume_whitespace();
         const type_args = try self.parse_type_args() orelse &[_]Ty{};
         return .{ .name = name, .args = type_args };
@@ -261,7 +269,7 @@ const Parser = struct {
         self.consume_prefix("[") orelse return null;
         self.consume_whitespace();
         while (true) {
-            const arg = self.parse_name() orelse break;
+            const arg = self.parse_upper_name() orelse break;
             try type_params.append(arg);
             self.consume_whitespace();
             self.consume_prefix(",") orelse break;
@@ -274,7 +282,7 @@ const Parser = struct {
     fn parse_struct(self: *Self) !?ast.Struct {
         self.consume_keyword("struct") orelse return null;
         self.consume_whitespace();
-        const name = self.parse_name() orelse return error.ExpectedNameOfStruct;
+        const name = self.parse_upper_name() orelse return error.ExpectedNameOfStruct;
         self.consume_whitespace();
         const type_args = try self.parse_type_params() orelse &[_]Str{};
         self.consume_whitespace();
@@ -283,7 +291,7 @@ const Parser = struct {
 
         var fields = ArrayList(ast.Field).init(self.alloc);
         while (true) {
-            const field_name = self.parse_name() orelse break;
+            const field_name = self.parse_lower_name() orelse break;
             self.consume_whitespace();
             self.consume_prefix(":") orelse return error.ExpectedColon;
             self.consume_whitespace();
@@ -302,7 +310,7 @@ const Parser = struct {
     fn parse_enum(self: *Self) !?ast.Enum {
         self.consume_keyword("enum") orelse return null;
         self.consume_whitespace();
-        const name = self.parse_name() orelse return error.ExpectedNameOfEnum;
+        const name = self.parse_upper_name() orelse return error.ExpectedNameOfEnum;
         self.consume_whitespace();
         const type_args = try self.parse_type_params() orelse &[_]Str{};
         self.consume_whitespace();
@@ -311,7 +319,7 @@ const Parser = struct {
 
         var variants = ArrayList(ast.Variant).init(self.alloc);
         while (true) {
-            const variant_name = self.parse_name() orelse break;
+            const variant_name = self.parse_lower_name() orelse break;
             var variant_type: ?Ty = null;
 
             self.consume_whitespace();
@@ -333,7 +341,7 @@ const Parser = struct {
     fn parse_fun(self: *Self) !?ast.Fun {
         self.consume_keyword("fun") orelse return null;
         self.consume_whitespace();
-        const name = self.parse_name() orelse return error.ExpectedNameOfFunction;
+        const name = self.parse_lower_name() orelse return error.ExpectedNameOfFunction;
         self.consume_whitespace();
         const type_args = try self.parse_type_params() orelse &[_]Str{};
         self.consume_whitespace();
@@ -341,7 +349,7 @@ const Parser = struct {
         self.consume_prefix("(") orelse return error.ExpectedOpeningParenthesis;
         self.consume_whitespace();
         while (true) {
-            const arg_name = self.parse_name() orelse break;
+            const arg_name = self.parse_lower_name() orelse break;
             self.consume_whitespace();
             self.consume_prefix(":") orelse return error.ExpectedColon;
             self.consume_whitespace();
@@ -423,6 +431,8 @@ const Parser = struct {
         ExpectedValueOfField,
         ExpectedExpression,
         ExpectedOpeningBrace,
+        ExpectedVariantArgument,
+        ExpectedDot,
         ExpectedBody,
         ExpectedBinding,
         ExpectedSignedness,
@@ -464,10 +474,12 @@ const Parser = struct {
             const heaped = try self.alloc.create(ast.Expr);
             heaped.* = amp;
             expression = .{ .ampersanded = heaped };
-        } else if (self.parse_name()) |name|
+        } else if (self.parse_lower_name()) |name|
             expression = .{ .ref = name }
         else if (try self.parse_body()) |body|
-            expression = .{ .body = body };
+            expression = .{ .body = body }
+        else if (try self.parse_struct_or_enum_creation()) |expr|
+            expression = expr;
 
         while (true) {
             self.consume_whitespace();
@@ -611,29 +623,7 @@ const Parser = struct {
         self.consume_whitespace();
         if (self.consume_prefix("*")) |_| return .{ .member = .{ .of = heaped, .name = "*" } };
         if (self.consume_prefix("&")) |_| return .{ .ampersanded = heaped };
-        if (self.parse_name()) |name| return .{ .member = .{ .of = heaped, .name = name } };
-        if (self.consume_prefix("{")) |_| {
-            self.consume_whitespace();
-
-            var fields = ArrayList(ast.StructCreationField).init(self.alloc);
-            while (true) {
-                const name = self.parse_name() orelse break;
-                self.consume_whitespace();
-                const value = find_value: {
-                    if (self.consume_prefix("=")) |_| {
-                        self.consume_whitespace();
-                        break :find_value try self.parse_expression() orelse return error.ExpectedValueOfField;
-                    } else break :find_value ast.Expr{ .ref = name };
-                };
-                try fields.append(.{ .name = name, .value = value });
-                self.consume_whitespace();
-                self.consume_prefix(",") orelse break;
-                self.consume_whitespace();
-            }
-            self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
-
-            return .{ .struct_creation = .{ .ty = heaped, .fields = fields.items } };
-        }
+        if (self.parse_lower_name()) |name| return .{ .member = .{ .of = heaped, .name = name } };
         return error.ExpectedMemberOrConstructor;
     }
 
@@ -654,7 +644,7 @@ const Parser = struct {
         self.consume_keyword("var") orelse return null;
         self.consume_whitespace();
 
-        const name = self.parse_name() orelse return error.ExpectedNameOfVar;
+        const name = self.parse_lower_name() orelse return error.ExpectedNameOfVar;
         self.consume_whitespace();
 
         self.consume_prefix("=") orelse return error.ExpectedEquals;
@@ -716,13 +706,13 @@ const Parser = struct {
             self.consume_keyword("case") orelse break;
             self.consume_whitespace();
 
-            const variant = self.parse_name() orelse return error.ExpectedVariant;
+            const variant = self.parse_lower_name() orelse return error.ExpectedVariant;
             self.consume_whitespace();
 
             var binding: ?Str = null;
             if (self.consume_prefix("(")) |_| {
                 self.consume_whitespace();
-                binding = self.parse_name() orelse return error.ExpectedBinding;
+                binding = self.parse_lower_name() orelse return error.ExpectedBinding;
                 self.consume_whitespace();
                 self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
                 self.consume_whitespace();
@@ -747,7 +737,7 @@ const Parser = struct {
     fn parse_for(self: *Self) !?ast.For {
         self.consume_keyword("for") orelse return null;
         self.consume_whitespace();
-        const iter_var = self.parse_name() orelse return error.ExpectedIterationVariable;
+        const iter_var = self.parse_lower_name() orelse return error.ExpectedIterationVariable;
         self.consume_whitespace();
         self.consume_keyword("in") orelse return error.ExpectedIn;
         self.consume_whitespace();
@@ -759,5 +749,50 @@ const Parser = struct {
         const expr = try self.alloc.create(ast.Expr);
         expr.* = try self.parse_expression() orelse return error.ExpectedLoopExpr;
         return .{ .iter_var = iter_var, .iter = iter, .expr = expr };
+    }
+
+    fn parse_struct_or_enum_creation(self: *Self) !?ast.Expr {
+        const ty = try self.parse_type() orelse return null;
+        self.consume_whitespace();
+        self.consume_prefix(".") orelse return error.ExpectedDot; // TODO: reconsider?
+        self.consume_whitespace();
+
+        if (self.consume_prefix("{")) |_| {
+            self.consume_whitespace();
+
+            var fields = ArrayList(ast.StructCreationField).init(self.alloc);
+            while (true) {
+                const name = self.parse_lower_name() orelse break;
+                self.consume_whitespace();
+                const value = find_value: {
+                    if (self.consume_prefix("=")) |_| {
+                        self.consume_whitespace();
+                        break :find_value try self.parse_expression() orelse return error.ExpectedValueOfField;
+                    } else break :find_value ast.Expr{ .ref = name };
+                };
+                try fields.append(.{ .name = name, .value = value });
+                self.consume_whitespace();
+                self.consume_prefix(",") orelse break;
+                self.consume_whitespace();
+            }
+            self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
+
+            return .{ .struct_creation = .{ .ty = ty, .fields = fields.items } };
+        } else {
+            const variant = self.parse_lower_name() orelse return error.ExpectedVariant;
+            self.consume_whitespace();
+
+            var arg: ?*const ast.Expr = null;
+            if (self.consume_prefix("(")) |_| {
+                self.consume_whitespace();
+                const arg_ = try self.alloc.create(ast.Expr);
+                arg_.* = try self.parse_expression() orelse return error.ExpectedVariantArgument;
+                arg = arg_;
+                self.consume_whitespace();
+                self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
+            }
+
+            return .{ .enum_creation = .{ .ty = ty, .variant = variant, .arg = arg } };
+        }
     }
 };

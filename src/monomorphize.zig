@@ -500,8 +500,6 @@ const FunMonomorphizer = struct {
         if (try self.compile_break(expression)) |expr| return expr;
         if (try self.compile_continue(expression)) |expr| return expr;
 
-        // This may be an enum variant instantiation such as `Maybe[Int].some(3)`.
-        if (try self.compile_enum_creation(expression)) |expr| return expr;
         switch (expression) {
             .int => |int| return try self.fun.put_and_get_expr(
                 .{ .int = .{ .value = int.value, .signedness = int.signedness, .bits = int.bits } },
@@ -628,20 +626,35 @@ const FunMonomorphizer = struct {
                 return try self.fun.put_and_get_expr(.{ .assign = .{ .to = to, .value = value } }, "Nothing");
             },
             .struct_creation => |sc| {
-                const ty = expr_to_type(sc.ty.*) orelse {
-                    try self.format_err("You can only construct structs.\n", .{});
-                    return error.CompileError;
-                };
-                const struct_type = try self.monomorphizer.compile_type(ty, self.ty_env);
+                const struct_ty = try self.monomorphizer.compile_type(sc.ty, self.ty_env);
 
                 var fields = StringHashMap(mono.Expr).init(self.alloc);
                 for (sc.fields) |f|
                     try fields.put(f.name, try self.compile_expr(f.value));
 
+                // TODO: Make sure fields have the correct types
+
                 return try self.fun.put_and_get_expr(.{ .struct_creation = .{
-                    .struct_ty = struct_type,
+                    .struct_ty = struct_ty,
                     .fields = fields,
-                } }, struct_type);
+                } }, struct_ty);
+            },
+            .enum_creation => |ec| {
+                const enum_ty = try self.monomorphizer.compile_type(ec.ty, self.ty_env);
+
+                const arg = try self.alloc.create(mono.Expr);
+                arg.* = if (ec.arg) |arg_|
+                    try self.compile_expr(arg_.*)
+                else
+                    try self.compile_nothing_instance();
+
+                // TODO: Make sure the variant exists and arg has the correct type
+
+                return try self.fun.put_and_get_expr(.{ .variant_creation = .{
+                    .enum_ty = enum_ty,
+                    .variant = ec.variant,
+                    .value = arg,
+                } }, enum_ty);
             },
             .if_ => |if_| {
                 const result = try self.fun.put(.{ .uninitialized = {} }, "Something"); // Type will be replaced later
@@ -1099,94 +1112,5 @@ const FunMonomorphizer = struct {
         const jump = try self.fun.put(.{ .uninitialized = {} }, "Never"); // will be replaced by jump to loop start
         try scope.continues.append(jump);
         return .{ .kind = .{ .statement = jump }, .ty = "Never" };
-    }
-
-    // Some calls and some members may be enum creations. For example, `Maybe[U8].some(4_u8)` and
-    // `Bool.true` both create enum variants.
-    fn compile_enum_creation(self: *Self, expr_: ast.Expr) !?mono.Expr {
-        var expr = expr_;
-
-        const value: ?ast.Expr = find_value: {
-            switch (expr) {
-                .call => |call| {
-                    if (call.args.len == 0) {
-                        expr = call.callee.*;
-                        break :find_value null;
-                    }
-                    if (call.args.len == 1) {
-                        expr = call.callee.*;
-                        break :find_value call.args[0];
-                    }
-                    return null;
-                },
-                else => break :find_value null,
-            }
-        };
-
-        const member = switch (expr) {
-            .member => |member| member,
-            else => return null,
-        };
-        var potential_enum = member.of.*;
-        const enum_ty_args = ty_args: {
-            switch (potential_enum) {
-                .ty_arged => |ta| {
-                    potential_enum = ta.arged.*;
-                    break :ty_args ta.ty_args;
-                },
-                .ref => break :ty_args &[_]Ty{},
-                else => return null,
-            }
-        };
-        const enum_name = switch (potential_enum) {
-            .ref => |ref| ref,
-            else => return null,
-        };
-        if (self.var_env.contains(enum_name)) return null;
-
-        const compiled_ty_args = try self.monomorphizer.compile_types(enum_ty_args, self.ty_env);
-        const solution = try self.monomorphizer.lookup(enum_name, compiled_ty_args, null);
-        const enum_def = switch (solution.def) {
-            .enum_ => |e| e,
-            else => return null,
-        };
-        const enum_ty = try self.monomorphizer.compile_type(.{ .name = enum_name, .args = enum_ty_args }, self.ty_env);
-
-        find_variant: {
-            for (enum_def.variants) |variant| {
-                if (string.eql(variant.name, member.name)) break :find_variant;
-            }
-            // Did not find a variant. Restore the sacred timeline.
-            try self.format_err("You tried to instantiate the enum {s}, which doesn't have a \"{s}\" variant.\n", .{ enum_ty, member.name });
-            return error.CompileError;
-        }
-
-        const compiled_value = try self.alloc.create(mono.Expr);
-        compiled_value.* = if (value) |val|
-            try self.compile_expr(val)
-        else
-            try self.compile_nothing_instance();
-
-        return try self.fun.put_and_get_expr(.{ .variant_creation = .{
-            .enum_ty = enum_ty,
-            .variant = member.name,
-            .value = compiled_value,
-        } }, enum_ty);
-    }
-
-    fn expr_to_type(expr: ast.Expr) ?Ty {
-        var expression = expr;
-        var ty_args: []const Ty = &[_]Ty{};
-        switch (expression) {
-            .ty_arged => |ta| {
-                expression = ta.arged.*;
-                ty_args = ta.ty_args;
-            },
-            else => {},
-        }
-        switch (expression) {
-            .ref => |name| return Ty{ .name = name, .args = ty_args },
-            else => return null,
-        }
     }
 };

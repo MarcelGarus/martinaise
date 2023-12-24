@@ -18,6 +18,10 @@
 | TODO: type aliases
 | TODO: catch giving wrong types to fields
 | TODO: funs as values, function types, higher-order funs
+| TODO: if foo is some(blub) then ...
+| TODO: var bool = foo is some
+| TODO: allow underscore for ignoring values
+| TODO: struct creation without dot?
 | TODO: operators?
 | TODO: remove orelse?
 | TODO: slice literals? array literals?

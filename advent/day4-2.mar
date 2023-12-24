@@ -26,7 +26,7 @@ fun main(): U8 {
   var input = read_file("advent/day4.big")
 
   var num_cards = vec[U64]()
-  for _ in 0.to(input.lines().len) do num_cards.&.push(1)
+  for i in 0.to(input.lines().len) do num_cards.&.push(1)
 
   var i = 0
   for line in input.lines() do {
