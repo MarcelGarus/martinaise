@@ -9,7 +9,7 @@ fun get(grid: Slice[Slice[U8]], x: I64, y: I64): U8 {
 fun is_digit(char: U8): Bool { '0.until('9).contains(char) }
 fun is_symbol(char: U8): Bool { not(char.is_digit()).and(not(char.equals('.))) }
 
-fun main(): U8 {
+fun main(): Never {
   var grid = read_file("advent/day3.big").lines()
   printsln("hi")
   println(grid.width())
@@ -52,5 +52,5 @@ fun main(): U8 {
 
   println(sum)
 
-  0_U8
+  exit(0_U8)
 }

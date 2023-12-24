@@ -86,9 +86,9 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !Result(mono
     };
 
     const return_ty = monomorphizer.funs.get(main_signature).?.return_ty;
-    if (!string.eql(return_ty, "U8")) {
+    if (!string.eql(return_ty, "Never")) {
         var err = String.init(alloc);
-        try format(err.writer(), "The main function should return a U8, but it returns a {s}.\n", .{return_ty});
+        try format(err.writer(), "The main function should return Never, but it returns a {s}. You can call exit(U8) if you want the program to stop.\n", .{return_ty});
         return .{ .err = err.items };
     }
 

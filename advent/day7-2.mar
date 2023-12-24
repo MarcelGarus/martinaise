@@ -44,7 +44,7 @@ fun hand_score(hand: Slice[U8]): U8 {
   max_score
 }
 
-fun main(): U8 {
+fun main(): Never {
   var hands = vec[Hand]()
   for line in read_file("advent/day7.big").lines() do {
     var parts = line.split(" ")
@@ -67,5 +67,5 @@ fun main(): U8 {
   }
   println(total)
 
-  return 0_U8
+  exit(0_U8)
 }

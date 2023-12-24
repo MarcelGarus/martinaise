@@ -1,4 +1,4 @@
-fun main(): U8 {
+fun main(): Never {
   var lines = &read_file("advent/day5.big").lines().iter()
 
   var ids = set[U64]()
@@ -35,5 +35,5 @@ fun main(): U8 {
   println(ids)
   println(ids.min())
 
-  0_U8
+  exit(0_U8)
 }

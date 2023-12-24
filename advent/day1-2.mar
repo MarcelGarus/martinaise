@@ -33,7 +33,7 @@ fun find_first_digit[I](iter: I, digit_names: Vec[Slice[U8]]): U8 {
   }
 }
 
-fun main(): U8 {
+fun main(): Never {
   var digit_names = vec[Slice[U8]]()
   digit_names.&.push("one")
   digit_names.&.push("two")
@@ -53,5 +53,5 @@ fun main(): U8 {
       .add(first_digit.to_U64().multiply(10).add(last_digit.to_U64()))
   }
   println(sum)
-  0_U8
+  exit(0_U8)
 }

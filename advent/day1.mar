@@ -7,7 +7,7 @@ fun find_first_digit[I](iter: I): U8 {
   }.subtract('0)
 }
 
-fun main(): U8 {
+fun main(): Never {
   var sum = 0
   for line in read_file("advent/day1.smol").lines() do {
     var first_digit = line.iter().&.find_first_digit().to_U64()
@@ -15,5 +15,5 @@ fun main(): U8 {
     sum = sum.add(first_digit.multiply(10).add(last_digit))
   }
   println(sum)
-  0_U8
+  exit(0_U8)
 }

@@ -22,7 +22,7 @@ fun card_matches(card: Slice[U8]): U64 {
   matches
 }
 
-fun main(): U8 {
+fun main(): Never {
   var input = read_file("advent/day4.big")
 
   var num_cards = vec[U64]()
@@ -43,5 +43,5 @@ fun main(): U8 {
   for amount in num_cards do total = total.add(amount)
   println(num_cards)
   println(total)
-  0_U8
+  exit(0_U8)
 }

@@ -1,5 +1,5 @@
 | TODO: Doesn't work yet
-fun main(): U8 {
+fun main(): Never {
   var lines = read_file("advent/day8.big").lines()
   var directions = lines.get_ref(0)
 
@@ -54,6 +54,5 @@ fun main(): U8 {
   }
   println()
 
-
-  0_U8
+  exit(0_U8)
 }

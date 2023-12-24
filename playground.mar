@@ -1,11 +1,9 @@
-struct Foo { bar: Bar }
-struct Bar {}
+struct Foo {}
 
-fun main(): U8 {
-  switch Maybe[U8].none
-  case some(blub) 0_U8
-  | case none 0_U8
-  | case blub 0_U8
+fun main(): Never {
+  Foo.{}
+  printsln("Hello, world!")
+  exit(0_U8)
 }
 
 |fun map[T, X](maybe: Maybe[T], mapper: T -> X): Maybe[X] {

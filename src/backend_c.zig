@@ -403,7 +403,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
 
         try format(out, "\n// actual main function\n", .{});
         try format(out, "int main() {{\n", .{});
-        try format(out, "  return {s}().value;\n", .{try mangle(alloc, "main()")});
+        try format(out, "  {s}();\n", .{try mangle(alloc, "main()")});
         try format(out, "}}", .{});
     }
 

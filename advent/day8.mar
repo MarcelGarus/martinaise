@@ -2,7 +2,7 @@ struct Node {
   left: Slice[U8],
   right: Slice[U8],
 }
-fun main(): U8 {
+fun main(): Never {
   var lines = read_file("advent/day8.big").lines()
   var directions = lines.get_ref(0)
   var nodes = map[Slice[U8], Node]()
@@ -26,5 +26,5 @@ fun main(): U8 {
   }
   println(step)
 
-  0_U8
+  exit(0_U8)
 }

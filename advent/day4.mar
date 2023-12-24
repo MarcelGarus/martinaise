@@ -23,10 +23,10 @@ fun card_score(card: Slice[U8]): U64 {
   score
 }
 
-fun main(): U8 {
+fun main(): Never {
   var sum = 0
   for line in read_file("advent/day4.big").lines() do
     sum = sum.add(line.card_score())
   println(sum)
-  0_U8
+  exit(0_U8)
 }

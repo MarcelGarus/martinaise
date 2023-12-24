@@ -1,4 +1,4 @@
-fun main(): U8 {
+fun main(): Never {
   var lines = read_file("advent/day6-2.big").lines()
   println(lines)
   lines.get_ref(0).trim_prefix("Time:")
@@ -41,5 +41,5 @@ fun main(): U8 {
   for win in wins do product = product.multiply(win)
   println(product)
 
-  0_U8
+  exit(0_U8)
 }
