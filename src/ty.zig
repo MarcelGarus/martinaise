@@ -9,23 +9,12 @@ const Str = string.Str;
 /// A type such as `Int` or `Maybe[T]`.
 pub const Ty = struct {
     name: Str,
-    args: ArrayList(Ty),
+    args: []const Ty,
 
     // Type arguments to concrete types, for example `T` to `Int`.
     const TyEnv = StringHashMap(Ty);
 
     const Self = @This();
-
-    pub fn specialize(self: Self, alloc: Alloc, ty_env: TyEnv) !Ty {
-        if (ty_env.get(self.name)) |mapped| {
-            if (self.args.items.len > 0) return error.TypeArgumentCantHaveGenerics;
-            return mapped;
-        }
-
-        var mapped_args = ArrayList(Ty).init(alloc);
-        for (self.args) |arg| try mapped_args.append(arg.specialize(alloc, ty_env));
-        return .{ .name = self.name, .args = mapped_args };
-    }
 
     // Checks if `self` is assignable to `other` under the given type env.
     // Adds constraints to the type env.
@@ -35,14 +24,14 @@ pub const Ty = struct {
         // Under ty env `{A: Int}`, is `A` assignable to `B`? Depends on whether
         // `Int` is assignable to `B`.
         if (ty_env.get(self.name)) |mapped| {
-            if (self.args.items.len > 0) return error.TypeArgumentCantHaveGenerics;
+            if (self.args.len > 0) return error.TypeArgumentCantHaveGenerics;
             return mapped.is_assignable_to(ty_vars, ty_env, other);
         }
 
         // Under ty env `{A: Int}`, is `B` assignable to `A`? Depends on whether
         // `B` is assignable to `Int`.
         if (ty_env.get(other.name)) |mapped| {
-            if (other.args.items.len > 0) return error.TypeArgumentCantHaveGenerics;
+            if (other.args.len > 0) return error.TypeArgumentCantHaveGenerics;
             return self.is_assignable_to(ty_vars, ty_env, mapped);
         }
 
@@ -60,8 +49,8 @@ pub const Ty = struct {
         }
 
         if (!string.eql(self.name, other.name)) return false;
-        if (self.args.items.len != other.args.items.len) return false;
-        for (self.args.items, other.args.items) |self_arg, other_arg|
+        if (self.args.len != other.args.len) return false;
+        for (self.args, other.args) |self_arg, other_arg|
             if (!try self_arg.is_assignable_to(ty_vars, ty_env, other_arg))
                 return false;
 
@@ -76,9 +65,9 @@ pub const Ty = struct {
     ) !void {
         try writer.print("{s}", .{self.name});
         if (string.eql(self.name, "&"))
-            try self.args.items[0].format(fmt, options, writer)
+            try self.args[0].format(fmt, options, writer)
         else
-            try print_args_of_tys(writer, self.args.items);
+            try print_args_of_tys(writer, self.args);
     }
 
     pub fn print_args_of_tys(writer: anytype, args: ?[]const Ty) !void {

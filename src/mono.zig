@@ -18,15 +18,15 @@ pub const TyDef = union(enum) {
     fun,
 };
 
-pub const Struct = struct { fields: ArrayList(Field) };
+pub const Struct = struct { fields: []const Field };
 pub const Field = struct { name: Str, ty: Str };
 
-pub const Enum = struct { variants: ArrayList(Variant) };
+pub const Enum = struct { variants: []const Variant };
 pub const Variant = struct { name: Str, ty: Str };
 
 pub const Fun = struct {
-    ty_args: ArrayList(Str),
-    arg_tys: ArrayList(Str),
+    ty_args: []const Str,
+    arg_tys: []const Str,
     return_ty: Str,
     is_builtin: bool,
     body: ArrayList(Statement),
@@ -67,7 +67,7 @@ pub const Statement = union(enum) {
 };
 pub const Assign = struct { to: Expr, value: Expr };
 pub const Int = struct { value: i128, signedness: numbers.Signedness, bits: numbers.Bits };
-pub const Call = struct { fun: Str, args: ArrayList(Expr) };
+pub const Call = struct { fun: Str, args: []const Expr };
 pub const VariantCreation = struct { enum_ty: Str, variant: Str, value: *const Expr };
 pub const StructCreation = struct { struct_ty: Str, fields: StringHashMap(Expr) };
 pub const Jump = struct { target: StatementIndex };
@@ -87,9 +87,8 @@ pub const Member = struct { of: *const Expr, name: Str };
 pub fn print(writer: anytype, mono: Mono) !void {
     {
         try writer.print("Types:\n", .{});
-        for (mono.ty_defs.keys()) |ty| {
+        for (mono.ty_defs.keys()) |ty|
             try writer.print("- {s}\n", .{ty});
-        }
     }
     {
         try writer.print("Funs:\n", .{});
@@ -108,9 +107,7 @@ fn print_fun(writer: anytype, name: Str, fun: Fun) !void {
         return;
     }
     for (fun.body.items, fun.tys.items, 0..) |statement, ty, i| {
-        if (i > 0) {
-            try writer.print("\n", .{});
-        }
+        if (i > 0) try writer.print("\n", .{});
         try writer.print("  _{d} = ", .{i});
         try print_statement(writer, statement);
         try writer.print(": {s}", .{ty});
@@ -125,10 +122,8 @@ fn print_statement(writer: anytype, statement: Statement) !void {
         .string => |string| try writer.print("\"{s}\"", .{string}),
         .call => |call| {
             try writer.print("{s} called with (", .{call.fun});
-            for (call.args.items, 0..) |arg, i| {
-                if (i > 0) {
-                    try writer.print(", ", .{});
-                }
+            for (call.args, 0..) |arg, i| {
+                if (i > 0) try writer.print(", ", .{});
                 try print_expr(writer, arg);
             }
             try writer.print(")", .{});

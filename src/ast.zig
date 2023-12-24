@@ -4,20 +4,7 @@ const Str = @import("string.zig").Str;
 const Ty = @import("ty.zig").Ty;
 const numbers = @import("numbers.zig");
 
-pub const Program = struct {
-    defs: ArrayList(Def),
-
-    pub fn add_builtin_fun(self: *@This(), alloc: std.mem.Allocator, name: Str, ty_args: ?ArrayList(Str), args: ArrayList(Argument), returns: Ty) void {
-        self.defs.append(.{ .fun = .{
-            .name = name,
-            .ty_args = ty_args orelse ArrayList(Str).init(alloc),
-            .args = args,
-            .returns = returns,
-            .is_builtin = true,
-            .body = ArrayList(Expr).init(alloc),
-        } }) catch return;
-    }
-};
+pub const Program = []const Def;
 pub const Def = union(enum) {
     builtin_ty: Str,
     struct_: Struct,
@@ -27,29 +14,29 @@ pub const Def = union(enum) {
 
 pub const Struct = struct {
     name: Str,
-    ty_args: ArrayList(Str),
-    fields: ArrayList(Field),
+    ty_args: []const Str,
+    fields: []const Field,
 };
 pub const Field = struct { name: Str, ty: Ty };
 
 pub const Enum = struct {
     name: Str,
-    ty_args: ArrayList(Str),
-    variants: ArrayList(Variant),
+    ty_args: []const Str,
+    variants: []const Variant,
 };
 pub const Variant = struct { name: Str, ty: ?Ty };
 
 pub const Fun = struct {
     name: Str,
-    ty_args: ArrayList(Str),
-    args: ArrayList(Argument),
+    ty_args: []const Str,
+    args: []const Argument,
     returns: ?Ty,
     is_builtin: bool,
     body: Body,
 };
 pub const Argument = struct { name: Str, ty: Ty };
 
-pub const Body = ArrayList(Expr);
+pub const Body = []const Expr;
 pub const Expr = union(enum) {
     int: Int, // 0_u64
     string: Str, // "foo"
@@ -70,21 +57,21 @@ pub const Expr = union(enum) {
     body: Body,
 };
 pub const Int = struct { value: i128, signedness: numbers.Signedness, bits: numbers.Bits };
-pub const TyArged = struct { arged: *const Expr, ty_args: ArrayList(Ty) };
-pub const Call = struct { callee: *const Expr, args: ArrayList(Expr) };
-pub const StructCreation = struct { ty: *const Expr, fields: ArrayList(StructCreationField) };
+pub const TyArged = struct { arged: *const Expr, ty_args: []const Ty };
+pub const Call = struct { callee: *const Expr, args: []const Expr };
+pub const StructCreation = struct { ty: *const Expr, fields: []const StructCreationField };
 pub const StructCreationField = struct { name: Str, value: Expr };
 pub const Member = struct { of: *const Expr, name: Str };
 pub const Var = struct { name: Str, value: *Expr };
 pub const Assign = struct { to: *Expr, value: *Expr };
 pub const If = struct { condition: *const Expr, then: *const Expr, else_: ?*const Expr };
-pub const Switch = struct { value: *const Expr, cases: ArrayList(Case) };
+pub const Switch = struct { value: *const Expr, cases: []const Case };
 pub const Orelse = struct { primary: *const Expr, alternative: *const Expr };
 pub const Case = struct { variant: Str, binding: ?Str, then: *const Expr };
 pub const For = struct { iter_var: Str, iter: *const Expr, expr: *const Expr };
 
 pub fn print(writer: anytype, program: Program) !void {
-    for (program.defs.items) |def| {
+    for (program) |def| {
         try print_definition(writer, def);
         try writer.print("\n", .{});
     }
@@ -94,31 +81,26 @@ pub fn print_definition(writer: anytype, definition: Def) !void {
         .builtin_ty => |name| try writer.print("builtinType {s}", .{name}),
         .struct_ => |s| {
             try writer.print("struct {s}", .{s.name});
-            try Ty.print_args_of_strs(writer, s.ty_args.items);
-            const fields = s.fields.items;
-            if (fields.len == 0) {
-                try writer.print(" {{}}", .{});
-            } else {
+            try Ty.print_args_of_strs(writer, s.ty_args);
+            if (s.fields.len == 0)
+                try writer.print(" {{}}", .{})
+            else {
                 try writer.print(" {{\n", .{});
-                for (fields) |field| {
+                for (s.fields) |field|
                     try writer.print("  {s}: {},\n", .{ field.name, field.ty });
-                }
                 try writer.print("}}", .{});
             }
         },
         .enum_ => |e| {
             try writer.print("enum {s}", .{e.name});
-            try Ty.print_args_of_strs(writer, e.ty_args.items);
-            const variants = e.variants.items;
-            if (variants.len == 0) {
-                try writer.print(" {{}}", .{});
-            } else {
+            try Ty.print_args_of_strs(writer, e.ty_args);
+            if (e.variants.len == 0)
+                try writer.print(" {{}}", .{})
+            else {
                 try writer.print(" {{\n", .{});
-                for (variants) |variant| {
+                for (e.variants) |variant| {
                     try writer.print("  {s}", .{variant.name});
-                    if (variant.ty) |ty| {
-                        try writer.print(": {}", .{ty});
-                    }
+                    if (variant.ty) |ty| try writer.print(": {}", .{ty});
                     try writer.print(",\n", .{});
                 }
                 try writer.print("}}", .{});
@@ -132,20 +114,18 @@ pub fn print_signature(writer: anytype, definition: Def) !void {
         .builtin_ty => |bt| try writer.print("{s}", .{bt}),
         .struct_ => |s| {
             try writer.print("{s}", .{s.name});
-            try Ty.print_args_of_strs(writer, s.ty_args.items);
+            try Ty.print_args_of_strs(writer, s.ty_args);
         },
         .enum_ => |e| {
             try writer.print("{s}", .{e.name});
-            try Ty.print_args_of_strs(writer, e.ty_args.items);
+            try Ty.print_args_of_strs(writer, e.ty_args);
         },
         .fun => |fun| {
             try writer.print("{s}", .{fun.name});
-            try Ty.print_args_of_strs(writer, fun.ty_args.items);
+            try Ty.print_args_of_strs(writer, fun.ty_args);
             try writer.print("(", .{});
-            for (fun.args.items, 0..) |arg, i| {
-                if (i > 0) {
-                    try writer.print(", ", .{});
-                }
+            for (fun.args, 0..) |arg, i| {
+                if (i > 0) try writer.print(", ", .{});
                 try writer.print("{}", .{arg.ty});
             }
             try writer.print(")", .{});
@@ -154,37 +134,29 @@ pub fn print_signature(writer: anytype, definition: Def) !void {
 }
 pub fn print_fun(writer: anytype, fun: Fun) !void {
     try writer.print("fun {s}", .{fun.name});
-    try Ty.print_args_of_strs(writer, fun.ty_args.items);
+    try Ty.print_args_of_strs(writer, fun.ty_args);
 
-    const args = fun.args.items;
     try writer.print("(", .{});
-    for (args, 0..) |arg, i| {
-        if (i > 0) {
-            try writer.print(", ", .{});
-        }
+    for (fun.args, 0..) |arg, i| {
+        if (i > 0) try writer.print(", ", .{});
         try writer.print("{s}: {}", .{ arg.name, arg.ty });
     }
     try writer.print(")", .{});
 
-    if (fun.returns) |ty| {
-        try writer.print(": {}", .{ty});
-    }
+    if (fun.returns) |ty| try writer.print(": {}", .{ty});
 
     try writer.print(" ", .{});
-    if (fun.is_builtin) {
-        try writer.print("{{ ... }}", .{});
-    } else {
+    if (fun.is_builtin)
+        try writer.print("{{ ... }}", .{})
+    else
         try print_body(writer, 0, fun.body);
-    }
 }
 fn print_indent(writer: anytype, indent: usize) !void {
-    for (0..indent) |_| {
-        try writer.print("  ", .{});
-    }
+    for (0..indent) |_| try writer.print("  ", .{});
 }
 fn print_body(writer: anytype, indent: usize, body: Body) !void {
     try writer.print("{{\n", .{});
-    for (body.items) |statement| {
+    for (body) |statement| {
         try print_indent(writer, indent + 1);
         try print_expr(writer, indent + 1, statement);
         try writer.print("\n", .{});
@@ -216,12 +188,12 @@ pub fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
         .ref => |name| try writer.print("{s}", .{name}),
         .ty_arged => |ty_arged| {
             try print_expr(writer, indent, ty_arged.arged.*);
-            try Ty.print_args_of_tys(writer, ty_arged.ty_args.items);
+            try Ty.print_args_of_tys(writer, ty_arged.ty_args);
         },
         .call => |call| {
             try print_expr(writer, indent, call.callee.*);
             try writer.print("(", .{});
-            for (call.args.items, 0..) |arg, i| {
+            for (call.args, 0..) |arg, i| {
                 if (i > 0) try writer.print(", ", .{});
                 try print_expr(writer, indent, arg);
             }
@@ -230,7 +202,7 @@ pub fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
         .struct_creation => |sc| {
             try print_expr(writer, indent, sc.ty.*);
             try writer.print(".{{", .{});
-            for (sc.fields.items) |field| {
+            for (sc.fields) |field| {
                 try writer.print("\n", .{});
                 try print_indent(writer, indent + 1);
                 try writer.print("{s} = ", .{field.name});
@@ -269,7 +241,7 @@ pub fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
             try writer.print("switch ", .{});
             try print_expr(writer, indent, switch_.value.*);
             try writer.print(" {{\n", .{});
-            for (switch_.cases.items) |case| {
+            for (switch_.cases) |case| {
                 try print_indent(writer, indent);
                 try writer.print("case {s}", .{case.variant});
                 if (case.binding) |binding| try writer.print("({s})", .{binding});

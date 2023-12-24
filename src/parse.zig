@@ -12,7 +12,7 @@ const numbers = @import("numbers.zig");
 
 pub fn parse(alloc: std.mem.Allocator, code: Str, stdlib_size: usize) !Result(ast.Program) {
     var parser = Parser{ .code = code, .alloc = alloc };
-    var program = parser.parse_program() catch |err| {
+    var defs = parser.parse_defs() catch |err| {
         if (err == error.OutOfMemory) return err;
 
         var out_buf = String.init(alloc);
@@ -72,52 +72,71 @@ pub fn parse(alloc: std.mem.Allocator, code: Str, stdlib_size: usize) !Result(as
     { // struct &[T] { *: T }
         var ty_args = ArrayList(Str).init(alloc);
         try ty_args.append("T");
-        const t: Ty = .{ .name = "T", .args = ArrayList(Ty).init(alloc) };
+        const t: Ty = .{ .name = "T", .args = &[_]Ty{} };
         var fields = ArrayList(ast.Field).init(alloc);
         try fields.append(.{ .name = "*", .ty = t });
-        try program.defs.append(.{ .struct_ = .{ .name = "&", .ty_args = ty_args, .fields = fields } });
+        try defs.append(.{ .struct_ = .{ .name = "&", .ty_args = ty_args.items, .fields = fields.items } });
     }
 
     // Int stuff.
     for (numbers.all_int_configs()) |config| {
-        try program.defs.append(.{ .builtin_ty = try numbers.int_ty_name(alloc, config) });
+        try defs.append(.{ .builtin_ty = try numbers.int_ty_name(alloc, config) });
         const ty = try numbers.int_ty(alloc, config);
 
-        var two_args = ArrayList(ast.Argument).init(alloc);
-        try two_args.append(.{ .name = "a", .ty = ty });
-        try two_args.append(.{ .name = "b", .ty = ty });
+        var two_args_buf = ArrayList(ast.Argument).init(alloc);
+        try two_args_buf.append(.{ .name = "a", .ty = ty });
+        try two_args_buf.append(.{ .name = "b", .ty = ty });
+        const two_args = two_args_buf.items;
 
-        program.add_builtin_fun(alloc, "add", null, two_args, ty);
-        program.add_builtin_fun(alloc, "subtract", null, two_args, ty);
-        program.add_builtin_fun(alloc, "multiply", null, two_args, ty);
-        program.add_builtin_fun(alloc, "divide", null, two_args, ty);
-        program.add_builtin_fun(alloc, "modulo", null, two_args, ty);
-        program.add_builtin_fun(alloc, "compare_to", null, two_args, .{ .name = "Ordering", .args = ArrayList(Ty).init(alloc) });
-        // program.add_builtin_fun(alloc, "shiftLeft", two_args, ty);
-        // program.add_builtin_fun(alloc, "shiftRight", two_args, ty);
-        // program.add_builtin_fun(alloc, "bitLength", two_args, ty);
-        // program.add_builtin_fun(alloc, "and", two_args, ty);
-        // program.add_builtin_fun(alloc, "or", two_args, ty);
-        // program.add_builtin_fun(alloc, "xor", two_args, ty);
+        add_builtin_fun(&defs, "add", null, two_args, ty);
+        add_builtin_fun(&defs, "subtract", null, two_args, ty);
+        add_builtin_fun(&defs, "multiply", null, two_args, ty);
+        add_builtin_fun(&defs, "divide", null, two_args, ty);
+        add_builtin_fun(&defs, "modulo", null, two_args, ty);
+        add_builtin_fun(&defs, "compare_to", null, two_args, .{ .name = "Ordering", .args = &[_]Ty{} });
+        // add_builtin_fun(&defs, "shiftLeft", two_args, ty);
+        // add_builtin_fun(&defs, "shiftRight", two_args, ty);
+        // add_builtin_fun(&defs, "bitLength", two_args, ty);
+        // add_builtin_fun(&defs, "and", two_args, ty);
+        // add_builtin_fun(&defs, "or", two_args, ty);
+        // add_builtin_fun(&defs, "xor", two_args, ty);
 
         // Conversion functions
         for (numbers.all_int_configs()) |target_config| {
             // if (config == target_config) {
-            if (config.signedness == target_config.signedness and config.bits == target_config.bits) {
+            if (config.signedness == target_config.signedness and config.bits == target_config.bits)
                 continue;
-            }
 
-            var fun_name = ArrayList(u8).init(alloc);
-            try std.fmt.format(fun_name.writer(), "to_{s}", .{try numbers.int_ty_name(alloc, target_config)});
-
+            const target_ty = try numbers.int_ty_name(alloc, target_config);
             var args = ArrayList(ast.Argument).init(alloc);
             try args.append(.{ .name = "i", .ty = ty });
-
-            program.add_builtin_fun(alloc, fun_name.items, null, args, try numbers.int_ty(alloc, target_config));
+            add_builtin_fun(
+                &defs,
+                try string.formata(alloc, "to_{s}", .{target_ty}),
+                null,
+                args.items,
+                .{ .name = target_ty, .args = &[_]Ty{} },
+            );
         }
     }
 
-    return .{ .ok = program };
+    return .{ .ok = defs.items };
+}
+pub fn add_builtin_fun(
+    defs: *ArrayList(ast.Def),
+    name: Str,
+    ty_args: ?[]const Str,
+    args: []const ast.Argument,
+    returns: Ty,
+) void {
+    defs.append(.{ .fun = .{
+        .name = name,
+        .ty_args = ty_args orelse &[_]Str{},
+        .args = args,
+        .returns = returns,
+        .is_builtin = true,
+        .body = &[_]ast.Expr{},
+    } }) catch return;
 }
 
 const Parser = struct {
@@ -132,51 +151,37 @@ const Parser = struct {
             switch (self.code[i]) {
                 ' ', '\t', '\n' => {},
                 '|' => while (i < self.code.len) : (i += 1) {
-                    if (self.code[i] == '\n') {
-                        break;
-                    }
+                    if (self.code[i] == '\n') break;
                 },
                 else => break :loop,
             }
         }
-        if (i >= self.code.len) {
+        if (i >= self.code.len)
             i = self.code.len;
-        }
         self.code = self.code[i..];
     }
 
     fn consume_prefix(self: *Self, prefix: Str) ?void {
-        if (self.code.len < prefix.len) {
-            return null;
-        }
-        for (prefix, self.code[0..prefix.len]) |a, b| {
-            if (a != b) {
-                return null;
-            }
-        }
+        if (self.code.len < prefix.len) return null;
+        for (prefix, self.code[0..prefix.len]) |a, b|
+            if (a != b) return null;
         self.code = self.code[prefix.len..];
     }
     // Also makes sure there's a whitespace following, so
     // `consume_keyword("fun")` doesn't match the code `funny`.
     fn consume_keyword(self: *Self, keyword: Str) ?void {
-        if (self.code.len < keyword.len) {
-            return null;
-        }
-        for (keyword, self.code[0..keyword.len]) |a, b| {
-            if (a != b) {
-                return null;
-            }
-        }
-        if (self.code.len > keyword.len) {
+        if (self.code.len < keyword.len) return null;
+        for (keyword, self.code[0..keyword.len]) |a, b|
+            if (a != b) return null;
+        if (self.code.len > keyword.len)
             switch (self.code[keyword.len]) {
                 ' ', '\t', '\n' => {},
                 else => return null,
-            }
-        }
+            };
         self.code = self.code[keyword.len..];
     }
 
-    fn parse_program(self: *Self) !ast.Program {
+    fn parse_defs(self: *Self) !ArrayList(ast.Def) {
         var defs = ArrayList(ast.Def).init(self.alloc);
         while (true) {
             self.consume_whitespace();
@@ -197,10 +202,8 @@ const Parser = struct {
             break; // Nothing more got parsed.
         }
         self.consume_whitespace();
-        if (self.code.len > 0) {
-            return error.ExpectedDefinition;
-        }
-        return .{ .defs = defs };
+        if (self.code.len > 0) return error.ExpectedDefinition;
+        return defs;
     }
 
     fn parse_name(self: *Self) ?Str {
@@ -221,9 +224,7 @@ const Parser = struct {
                 else => break :loop,
             }
         }
-        if (i == 0) {
-            return null;
-        }
+        if (i == 0) return null;
         const name = self.code[0..i];
         self.code = self.code[i..];
         return name;
@@ -233,41 +234,41 @@ const Parser = struct {
         if (self.consume_prefix("&")) |_| {
             var args = ArrayList(Ty).init(self.alloc);
             try args.append(try self.parse_type() orelse return error.ExpectedType);
-            return .{ .name = "&", .args = args };
+            return .{ .name = "&", .args = args.items };
         }
 
         const name = self.parse_name() orelse return null;
         self.consume_whitespace();
-        const type_args = try self.parse_type_args() orelse ArrayList(Ty).init(self.alloc);
+        const type_args = try self.parse_type_args() orelse &[_]Ty{};
         return .{ .name = name, .args = type_args };
     }
-    fn parse_type_args(self: *Self) !?ArrayList(Ty) {
+    fn parse_type_args(self: *Self) !?[]Ty {
         var type_args = ArrayList(Ty).init(self.alloc);
         self.consume_prefix("[") orelse return null;
         self.consume_whitespace();
         while (true) {
-            const arg = try self.parse_type() orelse return error.ExpectedTypeArgument;
+            const arg = try self.parse_type() orelse break;
             try type_args.append(arg);
             self.consume_whitespace();
             self.consume_prefix(",") orelse break;
             self.consume_whitespace();
         }
         self.consume_prefix("]") orelse return error.ExpectedClosingBracket;
-        return type_args;
+        return type_args.items;
     }
-    fn parse_type_params(self: *Self) !?ArrayList(Str) {
+    fn parse_type_params(self: *Self) !?[]const Str {
         var type_params = ArrayList(Str).init(self.alloc);
         self.consume_prefix("[") orelse return null;
         self.consume_whitespace();
         while (true) {
-            const arg = self.parse_name() orelse return error.ExpectedTypeArgument;
+            const arg = self.parse_name() orelse break;
             try type_params.append(arg);
             self.consume_whitespace();
             self.consume_prefix(",") orelse break;
             self.consume_whitespace();
         }
         self.consume_prefix("]") orelse return error.ExpectedClosingBracket;
-        return type_params;
+        return type_params.items;
     }
 
     fn parse_struct(self: *Self) !?ast.Struct {
@@ -275,7 +276,7 @@ const Parser = struct {
         self.consume_whitespace();
         const name = self.parse_name() orelse return error.ExpectedNameOfStruct;
         self.consume_whitespace();
-        const type_args = try self.parse_type_params() orelse ArrayList(Str).init(self.alloc);
+        const type_args = try self.parse_type_params() orelse &[_]Str{};
         self.consume_whitespace();
         self.consume_prefix("{") orelse return error.ExpectedOpeningBrace;
         self.consume_whitespace();
@@ -286,9 +287,7 @@ const Parser = struct {
             self.consume_whitespace();
             self.consume_prefix(":") orelse return error.ExpectedColon;
             self.consume_whitespace();
-            const field_type = try self.parse_type() orelse {
-                return error.ExpectedTypeOfField;
-            };
+            const field_type = try self.parse_type() orelse return error.ExpectedTypeOfField;
             try fields.append(.{ .name = field_name, .ty = field_type });
             self.consume_prefix(",") orelse break;
             self.consume_whitespace();
@@ -297,7 +296,7 @@ const Parser = struct {
         self.consume_whitespace();
         self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
 
-        return ast.Struct{ .name = name, .ty_args = type_args, .fields = fields };
+        return ast.Struct{ .name = name, .ty_args = type_args, .fields = fields.items };
     }
 
     fn parse_enum(self: *Self) !?ast.Enum {
@@ -305,7 +304,7 @@ const Parser = struct {
         self.consume_whitespace();
         const name = self.parse_name() orelse return error.ExpectedNameOfEnum;
         self.consume_whitespace();
-        const type_args = try self.parse_type_params() orelse ArrayList(Str).init(self.alloc);
+        const type_args = try self.parse_type_params() orelse &[_]Str{};
         self.consume_whitespace();
         self.consume_prefix("{") orelse return error.ExpectedOpeningBrace;
         self.consume_whitespace();
@@ -328,7 +327,7 @@ const Parser = struct {
 
         self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
 
-        return ast.Enum{ .name = name, .ty_args = type_args, .variants = variants };
+        return ast.Enum{ .name = name, .ty_args = type_args, .variants = variants.items };
     }
 
     fn parse_fun(self: *Self) !?ast.Fun {
@@ -336,7 +335,7 @@ const Parser = struct {
         self.consume_whitespace();
         const name = self.parse_name() orelse return error.ExpectedNameOfFunction;
         self.consume_whitespace();
-        const type_args = try self.parse_type_params() orelse ArrayList(Str).init(self.alloc);
+        const type_args = try self.parse_type_params() orelse &[_]Str{};
         self.consume_whitespace();
         var args = ArrayList(ast.Argument).init(self.alloc);
         self.consume_prefix("(") orelse return error.ExpectedOpeningParenthesis;
@@ -346,9 +345,7 @@ const Parser = struct {
             self.consume_whitespace();
             self.consume_prefix(":") orelse return error.ExpectedColon;
             self.consume_whitespace();
-            const arg_type = try self.parse_type() orelse {
-                return error.ExpectedTypeOfArgument;
-            };
+            const arg_type = try self.parse_type() orelse return error.ExpectedTypeOfArgument;
             try args.append(.{ .name = arg_name, .ty = arg_type });
             self.consume_prefix(",") orelse break;
             self.consume_whitespace();
@@ -369,7 +366,7 @@ const Parser = struct {
         const body = get_body: {
             if (self.consume_prefix("{ ... }")) |_| {
                 is_builtin = true;
-                break :get_body ArrayList(ast.Expr).init(self.alloc);
+                break :get_body &[_]ast.Expr{};
             } else {
                 break :get_body try self.parse_body() orelse return error.ExpectedBody;
             }
@@ -378,7 +375,7 @@ const Parser = struct {
         return .{
             .name = name,
             .ty_args = type_args,
-            .args = args,
+            .args = args.items,
             .returns = return_type,
             .is_builtin = is_builtin,
             .body = body,
@@ -401,7 +398,7 @@ const Parser = struct {
         }
 
         self.consume_prefix("}") orelse return error.ExpectedStatementOrClosingBrace;
-        return statements;
+        return statements.items;
     }
 
     fn parse_expression(self: *Self) error{
@@ -443,35 +440,34 @@ const Parser = struct {
     }!?ast.Expr {
         var expression: ?ast.Expr = null;
 
-        if (try self.parse_var()) |var_| {
-            expression = .{ .var_ = var_ };
-        } else if (try self.parse_return()) |returned| {
-            expression = .{ .return_ = returned };
-        } else if (try self.parse_if()) |if_| {
-            expression = .{ .if_ = if_ };
-        } else if (try self.parse_switch()) |switch_| {
-            expression = .{ .switch_ = switch_ };
-        } else if (try self.parse_loop()) |loop| {
+        if (try self.parse_var()) |var_|
+            expression = .{ .var_ = var_ }
+        else if (try self.parse_return()) |returned|
+            expression = .{ .return_ = returned }
+        else if (try self.parse_if()) |if_|
+            expression = .{ .if_ = if_ }
+        else if (try self.parse_switch()) |switch_|
+            expression = .{ .switch_ = switch_ }
+        else if (try self.parse_loop()) |loop| {
             const heaped = try self.alloc.create(ast.Expr);
             heaped.* = loop;
             expression = .{ .loop = heaped };
-        } else if (try self.parse_for()) |for_| {
-            expression = .{ .for_ = for_ };
-        } else if (try self.parse_int()) |int| {
-            expression = .{ .int = int };
-        } else if (try self.parse_char()) |c| {
-            expression = .{ .int = .{ .value = c, .signedness = .unsigned, .bits = 8 } };
-        } else if (try self.parse_string()) |s| {
-            expression = .{ .string = s };
-        } else if (try self.parse_ampersanded()) |amp| {
+        } else if (try self.parse_for()) |for_|
+            expression = .{ .for_ = for_ }
+        else if (try self.parse_int()) |int|
+            expression = .{ .int = int }
+        else if (try self.parse_char()) |c|
+            expression = .{ .int = .{ .value = c, .signedness = .unsigned, .bits = 8 } }
+        else if (try self.parse_string()) |s|
+            expression = .{ .string = s }
+        else if (try self.parse_ampersanded()) |amp| {
             const heaped = try self.alloc.create(ast.Expr);
             heaped.* = amp;
             expression = .{ .ampersanded = heaped };
-        } else if (self.parse_name()) |name| {
-            expression = .{ .ref = name };
-        } else if (try self.parse_body()) |body| {
+        } else if (self.parse_name()) |name|
+            expression = .{ .ref = name }
+        else if (try self.parse_body()) |body|
             expression = .{ .body = body };
-        }
 
         while (true) {
             self.consume_whitespace();
@@ -513,19 +509,14 @@ const Parser = struct {
             .bits = 64,
         };
         const signedness: numbers.Signedness = sign: {
-            if (self.consume_prefix("I")) |_| {
-                break :sign .signed;
-            }
-            if (self.consume_prefix("U")) |_| {
-                break :sign .unsigned;
-            }
+            if (self.consume_prefix("I")) |_| break :sign .signed;
+            if (self.consume_prefix("U")) |_| break :sign .unsigned;
             return error.ExpectedSignedness;
         };
         const bits_ = self.parse_digits() orelse return error.ExpectedBits;
         const bits: numbers.Bits = @intCast(bits_);
-        if (std.mem.count(u8, &numbers.all_bits, &[_]numbers.Bits{bits}) == 0) {
+        if (std.mem.count(u8, &numbers.all_bits, &[_]numbers.Bits{bits}) == 0)
             return error.InvalidBits;
-        }
         return .{ .value = value, .signedness = signedness, .bits = bits };
     }
     fn parse_digits(self: *Self) ?i128 {
@@ -558,9 +549,7 @@ const Parser = struct {
     fn parse_string(self: *Self) !?Str {
         self.consume_prefix("\"") orelse return null;
         var i: usize = 0;
-        while (self.code[i] != '\"') {
-            i += 1;
-        }
+        while (self.code[i] != '\"') i += 1;
         const str = self.code[0..i];
         self.code = self.code[i + 1 ..];
         return str;
@@ -568,8 +557,7 @@ const Parser = struct {
 
     fn parse_ampersanded(self: *Self) !?ast.Expr {
         self.consume_prefix("&") orelse return null;
-        const expr = try self.parse_expression() orelse return error.ExpectedExpression;
-        return expr;
+        return try self.parse_expression() orelse error.ExpectedExpression;
     }
 
     fn parse_expression_suffix_type_arged(self: *Self, current: ast.Expr) !?ast.TyArged {
@@ -611,7 +599,7 @@ const Parser = struct {
         }
         self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
 
-        return .{ .callee = heaped, .args = args };
+        return .{ .callee = heaped, .args = args.items };
     }
 
     fn parse_expression_suffix_member_or_constructor(self: *Self, current: ast.Expr) !?ast.Expr {
@@ -644,7 +632,7 @@ const Parser = struct {
             }
             self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
 
-            return .{ .struct_creation = .{ .ty = heaped, .fields = fields } };
+            return .{ .struct_creation = .{ .ty = heaped, .fields = fields.items } };
         }
         return error.ExpectedMemberOrConstructor;
     }
@@ -747,7 +735,7 @@ const Parser = struct {
             try cases.append(.{ .variant = variant, .binding = binding, .then = then });
         }
 
-        return .{ .value = value, .cases = cases };
+        return .{ .value = value, .cases = cases.items };
     }
 
     fn parse_loop(self: *Self) !?ast.Expr {

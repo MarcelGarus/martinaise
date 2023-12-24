@@ -20,8 +20,8 @@ pub fn cmp(context: void, a: Str, b: Str) bool {
 }
 
 // Formats to a newly allocated string, leaking the memory.
-pub fn formata(alloc: std.mem.Allocator, comptime s: Str, args: anytype) Str {
+pub fn formata(alloc: std.mem.Allocator, comptime s: Str, args: anytype) !Str {
     var out = String.init(alloc);
-    std.fmt.format(out.writer(), s, args) catch @panic("couldn't format");
+    try std.fmt.format(out.writer(), s, args);
     return out.items;
 }

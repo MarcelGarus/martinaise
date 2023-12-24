@@ -13,6 +13,7 @@
 | Language todos
 | TODO: validate all fun signatures before lowering
 | TODO: global constants
+| TODO: enforce upper/lower case of types/vars
 | TODO: type arg inference for struct/enum creation
 | TODO: type aliases
 | TODO: catch giving wrong types to fields

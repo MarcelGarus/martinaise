@@ -74,7 +74,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
             const ty = try numbers.int_ty_name(alloc, config);
 
             // Type
-            try builtin_tys.put(ty, formata(alloc,
+            try builtin_tys.put(ty, try formata(alloc,
                 \\ struct {{
                 \\  {s}int{}_t value;
                 \\}}
@@ -88,8 +88,8 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
 
             // add(Int, Int): Int
             try builtin_funs.put(
-                formata(alloc, "add({s}, {s})", .{ ty, ty }),
-                formata(alloc,
+                try formata(alloc, "add({s}, {s})", .{ ty, ty }),
+                try formata(alloc,
                     \\  mar_{s} i;
                     \\  i.value = arg0.value + arg1.value;
                     \\  return i;
@@ -98,8 +98,8 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
 
             // subtract(Int, Int): Int
             try builtin_funs.put(
-                formata(alloc, "subtract({s}, {s})", .{ ty, ty }),
-                formata(alloc,
+                try formata(alloc, "subtract({s}, {s})", .{ ty, ty }),
+                try formata(alloc,
                     \\  mar_{s} i;
                     \\  i.value = arg0.value - arg1.value;
                     \\  return i;
@@ -108,8 +108,8 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
 
             // multiply(Int, Int): Int
             try builtin_funs.put(
-                formata(alloc, "multiply({s}, {s})", .{ ty, ty }),
-                formata(alloc,
+                try formata(alloc, "multiply({s}, {s})", .{ ty, ty }),
+                try formata(alloc,
                     \\  mar_{s} i;
                     \\  i.value = arg0.value * arg1.value;
                     \\  return i;
@@ -118,8 +118,8 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
 
             // divide(Int, Int): Int
             try builtin_funs.put(
-                formata(alloc, "divide({s}, {s})", .{ ty, ty }),
-                formata(alloc,
+                try formata(alloc, "divide({s}, {s})", .{ ty, ty }),
+                try formata(alloc,
                     \\  mar_{s} i;
                     \\  i.value = arg0.value / arg1.value;
                     \\  return i;
@@ -128,8 +128,8 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
 
             // modulo(Int, Int): Int
             try builtin_funs.put(
-                formata(alloc, "modulo({s}, {s})", .{ ty, ty }),
-                formata(alloc,
+                try formata(alloc, "modulo({s}, {s})", .{ ty, ty }),
+                try formata(alloc,
                     \\  mar_{s} i;
                     \\  i.value = arg0.value % arg1.value;
                     \\  return i;
@@ -138,8 +138,8 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
 
             // compare_to(Int, Int): Ordering
             try builtin_funs.put(
-                formata(alloc, "compare_to({s}, {s})", .{ ty, ty }),
-                formata(alloc,
+                try formata(alloc, "compare_to({s}, {s})", .{ ty, ty }),
+                try formata(alloc,
                     \\  mar_Ordering ordering;
                     \\  ordering.variant = (arg0.value == arg1.value) ?
                     \\    mar_Ordering_dot_mar_equal : (arg0.value > arg1.value) ?
@@ -157,8 +157,8 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
 
                 const target_ty = try numbers.int_ty_name(alloc, target_config);
                 try builtin_funs.put(
-                    formata(alloc, "to_{s}({s})", .{ target_ty, ty }),
-                    formata(alloc,
+                    try formata(alloc, "to_{s}({s})", .{ target_ty, ty }),
+                    try formata(alloc,
                         \\  mar_{s} i;
                         \\  i.value = arg0.value;
                         \\  return i;
@@ -186,7 +186,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                 },
                 .struct_ => |s| {
                     try format(out, "struct {{\n", .{});
-                    for (s.fields.items) |f|
+                    for (s.fields) |f|
                         if (string.eql(f.name, "*"))
                             try format(out, "  {s}* pointer;\n", .{
                                 try mangle(alloc, f.ty),
@@ -200,16 +200,16 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                 },
                 .enum_ => |e| {
                     try format(out, "struct {{\n", .{});
-                    if (e.variants.items.len > 0) {
+                    if (e.variants.len > 0) {
                         try format(out, "  enum {{\n", .{});
-                        for (e.variants.items) |variant|
+                        for (e.variants) |variant|
                             try format(out, "    {s}_dot_{s},\n", .{
                                 try mangle(alloc, name),
                                 try mangle(alloc, variant.name),
                             });
                         try format(out, "  }} variant;\n", .{});
                         try format(out, "  union {{\n", .{});
-                        for (e.variants.items) |variant|
+                        for (e.variants) |variant|
                             try format(out, "    {s} {s};\n", .{
                                 try mangle(alloc, variant.ty),
                                 try mangle(alloc, variant.name),
@@ -243,7 +243,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                 try mangle(alloc, fun.return_ty),
                 try mangle(alloc, fun_name),
             });
-            for (fun.arg_tys.items, 0..) |arg_ty, i| {
+            for (fun.arg_tys, 0..) |arg_ty, i| {
                 if (i > 0) try format(out, ", ", .{});
                 try format(out, "{s} arg{}", .{ try mangle(alloc, arg_ty), i });
             }
@@ -260,7 +260,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                 try mangle(alloc, fun.return_ty),
                 try mangle(alloc, fun_name),
             });
-            for (fun.arg_tys.items, 0..) |arg_ty, i| {
+            for (fun.arg_tys, 0..) |arg_ty, i| {
                 if (i > 0) try format(out, ", ", .{});
                 try format(out, "{s} arg{}", .{ try mangle(alloc, arg_ty), i });
             }
@@ -283,14 +283,14 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                             \\  return ref;
                         , .{
                             try mangle(alloc, fun.return_ty),
-                            try mangle(alloc, fun.ty_args.items[0]),
+                            try mangle(alloc, fun.ty_args[0]),
                         })
                     else if (string.starts_with(fun_name, "size_of_type"))
                         try format(out,
                             \\  mar_U64 size;
                             \\  size.value = (uint64_t) sizeof({s});
                             \\  return size;
-                        , .{try mangle(alloc, fun.ty_args.items[0])})
+                        , .{try mangle(alloc, fun.ty_args[0])})
                     else {
                         std.debug.print("Fun is {s}.\n", .{fun_name});
                         @panic("Unknown builtin fun");
@@ -323,7 +323,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                                 "{s} _{} = {s}(",
                                 .{ try mangle(alloc, ty), i, try mangle(alloc, call.fun) },
                             );
-                            for (call.args.items, 0..) |arg, j| {
+                            for (call.args, 0..) |arg, j| {
                                 if (j > 0) try format(out, ", ", .{});
                                 try format_expr(alloc, out, arg);
                             }

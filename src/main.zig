@@ -206,8 +206,8 @@ test "run all days" {
 
     for (1..5) |day| {
         for ([_]Str{
-            string.formata(alloc, "advent/day{}.mar", .{day}),
-            string.formata(alloc, "advent/day{}-2.mar", .{day}),
+            try string.formata(alloc, "advent/day{}.mar", .{day}),
+            try string.formata(alloc, "advent/day{}-2.mar", .{day}),
         }) |file| {
             std.debug.print("File: {s}\n", .{file});
             if (!try run_pipeline(alloc, .run, file))
