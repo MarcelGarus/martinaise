@@ -2,14 +2,17 @@
 
 A small, statically typed, low-level language.
 
-Take a look at the files in the `advent` folder.
+To get a feeling for how Martinaise programs look, take a look at the files in the `advent` folder.
+To get an in-depth understanding of Martinaise, take a look at the `stdlib.mar`. It's well-documented.
 
-## This language is not optimized for use, but for fun during implementation
+## Don't Use It
 
-This language is not meant to become a programming language for serious projects.
-It's just a small recreational project to get familiar with monomorphization and Zig.
+Martinaise is just a small recreational project to get familiar with monomorphization and Zig.
+Martinaise is **not optimized for use**, but for fun during implementation.
+Martinaise is **not meant for serious projects**.
 
-It has no robust parser (it gives up at the first error), does not support multiple files, etc.
+Some consequences:
+Martinaise has no robust parser (it gives up at the first error), does not support multiple files, etc.
 
 ## Usage
 

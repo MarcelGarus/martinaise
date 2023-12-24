@@ -11,17 +11,16 @@
 | deleting code in this file because that may crash the compiler.
 
 | Language todos
-| TODO: validate all fun signatures before lowering
+| TODO: validate all signatures before lowering
 | TODO: global constants
-| TODO: enforce upper/lower case of types/vars
 | TODO: type arg inference for struct/enum creation
 | TODO: type aliases
 | TODO: catch giving wrong types to fields
 | TODO: funs as values, function types, higher-order funs
 | TODO: if foo is some(blub) then ...
 | TODO: var bool = foo is some
+| TODO: try operator?
 | TODO: allow underscore for ignoring values
-| TODO: struct creation without dot?
 | TODO: operators?
 | TODO: remove orelse?
 | TODO: slice literals? array literals?
@@ -263,7 +262,7 @@ fun size_of_type[T](): U64 { ... }
 fun to_address[T](ref: &T): U64 { ... }
 fun to_reference[T](address: U64): &T { ... }
 fun uninitialized[T](): &T { malloc(size_of_type[T]()).to_reference[T]() }
-fun new[T](value: T): &T {
+fun put_on_heap[T](value: T): &T {
   var ref = uninitialized[T]()
   ref.* = value
   ref
