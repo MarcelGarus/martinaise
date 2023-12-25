@@ -22,37 +22,35 @@ pub const Struct = struct {
 pub const Enum = struct {
     name: Str,
     ty_args: []const Str,
-    variants: []const Variant,
+    variants: StringArrayHashMap(Ty),
 };
-pub const Variant = struct { name: Str, ty: ?Ty };
 
 pub const Fun = struct {
     name: Str,
     ty_args: []const Str,
-    args: []const Argument,
-    returns: ?Ty,
+    args: StringArrayHashMap(Ty),
+    returns: Ty,
     is_builtin: bool,
     body: Body,
 };
-pub const Argument = struct { name: Str, ty: Ty };
 
 pub const Body = []const Expr;
 pub const Expr = union(enum) {
     int: Int, // 0_u64
     string: Str, // "foo"
-    ref: Str, // foo
+    name: Str, // foo
     ty_arged: TyArged, // ...[T]
     call: Call, // ...(arg)
-    struct_creation: StructCreation, // Foo.{ a = ... }
-    enum_creation: EnumCreation, // Maybe[U64].some(5)
+    struct_creation: StructCreation, // Foo { a = ... }
+    enum_creation: EnumCreation, // Maybe.some(5)
     member: Member, // foo.bar
     var_: Var, // var foo = ...
     assign: Assign, // foo = ...
-    if_: If, // if foo { ... }
-    switch_: Switch, // switch foo { a { ... } b(bar) { ... } }
+    if_: If, // if foo then ... else ...
+    switch_: Switch, // switch foo case a ... case b(bar) ...
     orelse_: Orelse, // a orelse b
-    loop: *const Expr, // loop { ... }
-    for_: For, // for a in b { ... }
+    loop: *const Expr, // loop ...
+    for_: For, // for a in b do ...
     return_: *const Expr, // return ...
     ampersanded: *const Expr, // &...
     body: Body,
@@ -97,15 +95,13 @@ pub fn print_definition(writer: anytype, definition: Def) !void {
         .enum_ => |e| {
             try writer.print("enum {s}", .{e.name});
             try Ty.print_args_of_strs(writer, e.ty_args);
-            if (e.variants.len == 0)
+            if (e.variants.count() == 0)
                 try writer.print(" {{}}", .{})
             else {
                 try writer.print(" {{\n", .{});
-                for (e.variants) |variant| {
-                    try writer.print("  {s}", .{variant.name});
-                    if (variant.ty) |ty| try writer.print(": {}", .{ty});
-                    try writer.print(",\n", .{});
-                }
+                var iter = e.variants.iterator();
+                while (iter.next()) |variant|
+                    try writer.print("  {s}: {},\n", .{ variant.key_ptr.*, variant.value_ptr.* });
                 try writer.print("}}", .{});
             }
         },
@@ -127,9 +123,11 @@ pub fn print_signature(writer: anytype, definition: Def) !void {
             try writer.print("{s}", .{fun.name});
             try Ty.print_args_of_strs(writer, fun.ty_args);
             try writer.print("(", .{});
-            for (fun.args, 0..) |arg, i| {
+            var args = fun.args.iterator();
+            for (0..fun.args.count()) |i| {
+                const arg = args.next().?;
                 if (i > 0) try writer.print(", ", .{});
-                try writer.print("{}", .{arg.ty});
+                try writer.print("{}", .{arg.value_ptr.*});
             }
             try writer.print(")", .{});
         },
@@ -140,15 +138,13 @@ pub fn print_fun(writer: anytype, fun: Fun) !void {
     try Ty.print_args_of_strs(writer, fun.ty_args);
 
     try writer.print("(", .{});
-    for (fun.args, 0..) |arg, i| {
+    var args = fun.args.iterator();
+    for (0..fun.args.count()) |i| {
+        const arg = args.next().?;
         if (i > 0) try writer.print(", ", .{});
-        try writer.print("{s}: {}", .{ arg.name, arg.ty });
+        try writer.print("{s}: {}", .{ arg.key_ptr.*, arg.value_ptr.* });
     }
-    try writer.print(")", .{});
-
-    if (fun.returns) |ty| try writer.print(": {}", .{ty});
-
-    try writer.print(" ", .{});
+    try writer.print("): {} ", .{fun.returns});
     if (fun.is_builtin)
         try writer.print("{{ ... }}", .{})
     else
@@ -188,7 +184,7 @@ pub fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
     switch (expr) {
         .int => |int| try writer.print("{d}{c}{d}", .{ int.value, int.signedness.to_char(), int.bits }),
         .string => |str| try writer.print("\"{s}\"", .{str}),
-        .ref => |name| try writer.print("{s}", .{name}),
+        .name => |name| try writer.print("{s}", .{name}),
         .ty_arged => |ty_arged| {
             try print_expr(writer, indent, ty_arged.arged.*);
             try Ty.print_args_of_tys(writer, ty_arged.ty_args);

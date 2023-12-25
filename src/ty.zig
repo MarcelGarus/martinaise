@@ -13,6 +13,10 @@ pub const Ty = struct {
 
     const Self = @This();
 
+    pub fn named(name: Str) Self {
+        return .{ .name = name, .args = &[_]Ty{} };
+    }
+
     pub fn format(
         self: Self,
         comptime fmt: Str,

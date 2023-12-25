@@ -35,9 +35,7 @@ pub fn all_int_configs() [num_ints]IntConfig {
     return configs;
 }
 
-pub fn int_ty_name(alloc: Allocator, config: IntConfig) !Str {
-    return string.formata(alloc, "{c}{}", .{ config.signedness.to_char(), config.bits });
-}
 pub fn int_ty(alloc: Allocator, config: IntConfig) !Ty {
-    return .{ .name = try int_ty_name(alloc, config), .args = &[_]Ty{} };
+    const name = try string.formata(alloc, "{c}{}", .{ config.signedness.to_char(), config.bits });
+    return Ty.named(name);
 }

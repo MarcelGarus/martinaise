@@ -71,7 +71,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
         );
 
         for (numbers.all_int_configs()) |config| {
-            const ty = try numbers.int_ty_name(alloc, config);
+            const ty = (try numbers.int_ty(alloc, config)).name;
 
             // Type
             try builtin_tys.put(ty, try formata(alloc,
@@ -155,7 +155,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                 if (config.signedness == target_config.signedness and config.bits == target_config.bits)
                     continue;
 
-                const target_ty = try numbers.int_ty_name(alloc, target_config);
+                const target_ty = (try numbers.int_ty(alloc, target_config)).name;
                 try builtin_funs.put(
                     try formata(alloc, "to_{s}({s})", .{ target_ty, ty }),
                     try formata(alloc,
