@@ -29,11 +29,11 @@ fun main(): Never {
 
         var adjacent = vec[Point[I64]]()
         for xx in x.dec().until(end) do {
-          adjacent.&.push(Point[I64] { x = xx, y = y.dec() })
-          adjacent.&.push(Point[I64] { x = xx, y = y.inc() })
+          adjacent.&.push(Point { x = xx, y = y.dec() })
+          adjacent.&.push(Point { x = xx, y = y.inc() })
         }
-        adjacent.&.push(Point[I64] { x = x.dec(), y })
-        adjacent.&.push(Point[I64] { x = end, y })
+        adjacent.&.push(Point { x = x.dec(), y })
+        adjacent.&.push(Point { x = end, y })
 
         var next_to_symbol = Bool.false
         for pos in adjacent do

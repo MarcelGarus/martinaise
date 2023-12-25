@@ -13,13 +13,12 @@
 | Language todos
 | TODO: validate all signatures before lowering
 | TODO: global constants
-| TODO: type arg inference for struct/enum creation
 | TODO: type aliases
-| TODO: catch giving wrong types to fields
 | TODO: funs as values, function types, higher-order funs
 | TODO: if foo is some(blub) then ...
 | TODO: var bool = foo is some
 | TODO: try operator?
+| TODO: enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
 | TODO: allow underscore for ignoring values
 | TODO: operators?
 | TODO: remove orelse?
@@ -298,13 +297,11 @@ fun write_address[W](writer: W, address: U64) {
 |   ^
 | [address + len 4]  <--  slice
 struct Slice[T] { data: &T, len: U64 }
-fun empty_slice[T](): Slice[T] {
-  Slice[T] { data = 0.to_reference[T](), len = 0 }
-}
+fun empty_slice[T](): Slice[T] { Slice { data = 0.to_reference[T](), len = 0 } }
 fun uninitialized_slice[T](len: U64): Slice[T] {
   if len.equals(0) then return empty_slice[T]()
   var data = malloc(len.multiply(size_of_type[T]())).to_reference[T]()
-  Slice[T] { data, len }
+  Slice { data, len }
 }
 fun filled_slice[T](len: U64, fill: T): Slice[T] {
   var slice = uninitialized_slice[T](len)
@@ -321,7 +318,7 @@ fun get_ref[T](slice: Slice[T], index: U64): &T {
 fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
   if to.is_greater_than(slice.len)
   then panic("subslice needs to be inside original slice")
-  Slice[T] { data = slice.data.add_offset(from), len = to.subtract(from) }
+  Slice { data = slice.data.add_offset(from), len = to.subtract(from) }
 }
 fun subslice[T](slice: Slice[T], from: U64): Slice[T] {
   slice.subslice(from, slice.len)
@@ -438,42 +435,38 @@ fun write_str[W](writer: W, str: Slice[U8]) {
 | Range  
 | Ranges have an inclusive start and exclusive end value.
 struct Range[T] { start: T, end: T }
-fun to[T](start: T, end: T): Range[T] { Range[T] { start, end } }
-fun until[T](start: T, end: T): Range[T] {
-  Range[T] { start, end = end.inc() }
-}
+fun to[T](start: T, end: T): Range[T] { Range { start, end } }
+fun until[T](start: T, end: T): Range[T] { Range { start, end = end.inc() } }
 fun range_by[T](start: T, len: T): Range[T] {
-  Range[T] { start, end = start.add(len) }
+  Range { start, end = start.add(len) }
 }
 fun contains[T](range: Range[T], value: T): Bool {
   value.is_at_least(range.start).and(value.is_less_than(range.end))
 }
 fun is_empty[T](range: Range[T]): Bool { range.start.is_at_least(range.end) }
-fun iter[T](range: Range[T]): RangeIter[T] { RangeIter[T] { rest = range } }
+fun iter[T](range: Range[T]): RangeIter[T] { RangeIter { rest = range } }
 struct RangeIter[T] { rest: Range[T] }
 fun next[T](iter: &RangeIter[T]): Maybe[T] {
   if iter.rest.is_empty() then Maybe[T].none else {
     var current = iter.rest.start
     iter.rest.start = current.inc()
-    Maybe[T].some(current)
+    Maybe.some(current)
   }
 }
 
 | Tuples  
-fun tuple[A, B](a: A, b: B): Tuple[A, B] { Tuple[A, B] { a, b } }
-fun tuple[A, B, C](a: A, b: B, c: C): Tuple[A, B, C] {
-  Tuple[A, B, C] { a, b, c }
-}
-struct Tuple[A, B] { a: A, b: B }
-struct Tuple[A, B, C] { a: A, b: B, c: C }
-fun write[W, A, B](writer: W, tuple: Tuple[A, B]) {
+fun tuple[A, B](a: A, b: B): Tuple2[A, B] { Tuple2 { a, b } }
+fun tuple[A, B, C](a: A, b: B, c: C): Tuple3[A, B, C] { Tuple3 { a, b, c } }
+struct Tuple2[A, B] { a: A, b: B }
+struct Tuple3[A, B, C] { a: A, b: B, c: C }
+fun write[W, A, B](writer: W, tuple: Tuple2[A, B]) {
   writer.write_char('()
   writer.write(tuple.a)
   writer.write_str(", ")
   writer.write(tuple.b)
   writer.write_char('))
 }
-fun writer[W, A, B, C](writer: W, tuple: Tuple[A, B, C]) {
+fun writer[W, A, B, C](writer: W, tuple: Tuple3[A, B, C]) {
   writer.write_char('()
   writer.write(tuple.a)
   writer.write_str(", ")
@@ -494,7 +487,7 @@ fun write[W, T](writer: W, point: Point[T]) {
 | This is implemented using a fixed-size slice. Once it fills up, a new slice is
 | allocated and the old items are copied over.
 struct Vec[T] { data: Slice[T], len: U64 }
-fun vec[T](): Vec[T] { Vec[T] { data = empty_slice[T](), len = 0 } }
+fun vec[T](): Vec[T] { Vec { data = empty_slice[T](), len = 0 } }
 | TODO: remove when there are slice literals
 fun vec[T](a: T): Vec[T] { var v = vec[T]() v.&.push(a) v }
 fun vec[T](a: T, b: T): Vec[T] { var v = vec[T]() v.&.push(a) v.&.push(b) v }
@@ -558,7 +551,7 @@ fun write[W, T](writer: W, stack: Stack[T]) { writer.write(stack.vec) }
 |     s              e               e        s
 struct Deque[T] { data: Slice[T], start: U64, end: U64 }
 fun deque[T](): Deque[T] {
-  Deque[T] { data = uninitialized_slice[T](8), start = 0, end = 0 }
+  Deque { data = uninitialized_slice[T](8), start = 0, end = 0 }
 }
 fun len[T](deque: Deque[T]): U64 {
   if deque.end.is_at_least(deque.start)
@@ -629,14 +622,14 @@ struct Map[K, V] { buckets: Slice[MapBucket[K, V]], size: U64 }
 enum MapBucket[K, V] { empty, filled: MapEntry[K, V] }
 struct MapEntry[K, V] { key: K, value: V }
 fun map[K, V](): Map[K, V] {
-  Map[K, V] { buckets = filled_slice(8, MapBucket[K, V].empty), size = 0 }
+  Map { buckets = filled_slice(8, MapBucket[K, V].empty), size = 0 }
 }
 fun is_empty[K, V](map: Map[K, V]): Bool { map.size.equals(0) }
 fun insert[K, V](map: &Map[K, V], key: K, value: V) {
   var fill_percentage = 100.multiply(map.size).divide(map.buckets.len)
   if fill_percentage.is_at_least(60) then {
     var old_buckets = map.buckets
-    map.* = Map[K, V] {
+    map.* = Map {
       buckets = filled_slice(
         map.buckets.len.multiply(2),
         MapBucket[K, V].empty
@@ -656,14 +649,13 @@ fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
     var bucket = map.buckets.get_ref(i)
     switch bucket.*
     case empty {
-      bucket.* = MapBucket[K, V].filled(MapEntry[K, V] { key, value })
+      bucket.* = MapBucket.filled(MapEntry { key, value })
       map.size = map.size.add(1)
       break
     }
     case filled(entry)
       if entry.key.equals(key) then {
-        bucket.* = MapBucket[K, V]
-          .filled(MapEntry[K, V] { key, value })
+        bucket.* = MapBucket.filled(MapEntry { key, value })
         break
       } else i = i.add(1).modulo(map.buckets.len)
   }
@@ -671,7 +663,7 @@ fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
 fun contains[K, V](map: Map[K, V], key: K): Bool { map.get(key).is_some() }
 fun get[K, V](map: Map[K, V], key: K): Maybe[V] {
   switch map.get_ref(key)
-  case some(val) Maybe[V].some(val.*)
+  case some(val) Maybe.some(val.*)
   case none Maybe[V].none
 }
 fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
@@ -682,7 +674,7 @@ fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
     case empty return Maybe[&V].none
     case filled(entry)
       if entry.key.equals(key)
-      then return Maybe[&V].some(&entry.value)
+      then return Maybe.some(&entry.value)
       else i = i.add(1).modulo(map.buckets.len)
   }
 }
@@ -701,7 +693,7 @@ fun write[W, K, V](writer: W, map: Map[K, V]) {
   writer.write_char('})
 }
 fun iter[K, V](map: Map[K, V]): MapIter[K, V] {
-  MapIter[K, V] { buckets = map.buckets, index = 0 }
+  MapIter { buckets = map.buckets, index = 0 }
 }
 struct MapIter[K, V] { buckets: Slice[MapBucket[K, V]], index: U64 }
 fun next[K, V](map: &MapIter[K, V]): Maybe[MapEntry[K, V]] {
@@ -711,7 +703,7 @@ fun next[K, V](map: &MapIter[K, V]): Maybe[MapEntry[K, V]] {
     map.index = map.index.add(1)
     switch map.buckets.get(map.index.subtract(1))
     case empty {}
-    case filled(entry) return Maybe[MapEntry[K, V]].some(entry)
+    case filled(entry) return Maybe.some(entry)
   }
 }
 
@@ -731,7 +723,7 @@ fun write[W, T](writer: W, set: Set[T]) {
   writer.write_char('})
 }
 fun iter[T](set: Set[T]): SetIter[T] {
-  SetIter[T] { buckets = set.map.buckets, index = 0 }
+  SetIter { buckets = set.map.buckets, index = 0 }
 }
 struct SetIter[T] { buckets: Slice[MapBucket[T, Nothing]], index: U64 }
 fun next[T](set: &SetIter[T]): Maybe[T] {
@@ -740,7 +732,7 @@ fun next[T](set: &SetIter[T]): Maybe[T] {
     set.index = set.index.add(1)
     switch set.buckets.get(set.index.subtract(1))
     case empty {}
-    case filled(entry) return Maybe[T].some(entry.key)
+    case filled(entry) return Maybe.some(entry.key)
   }
 }
 
@@ -774,7 +766,7 @@ fun trim_prefix(slice: &Slice[U8], prefix: Slice[U8]) {
 }
 fun find[T](slice: Slice[T], needle: T): Maybe[U64] {
   for i in 0.to(slice.len) do
-    if slice.get(i).equals(needle) then return Maybe[U64].some(i)
+    if slice.get(i).equals(needle) then return Maybe.some(i)
   Maybe[U64].none
 }
 fun sort[T](slice: &Slice[T]) {
@@ -801,7 +793,7 @@ fun next[T](iter: &SliceIter[T]): Maybe[T] {
   item
 }
 fun rev_iter[T](slice: Slice[T]): SliceRevIter[T] {
-  SliceRevIter[T] { slice, index = slice.len }
+  SliceRevIter { slice, index = slice.len }
 }
 struct SliceRevIter[T] {
   slice: Slice[T],
@@ -810,7 +802,7 @@ struct SliceRevIter[T] {
 fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
   if iter.index.is_greater_than(0) then {
     iter.index = iter.index.subtract(1)
-    Maybe[T].some(iter.slice.get(iter.index))
+    Maybe.some(iter.slice.get(iter.index))
   } else Maybe[T].none
 }
 fun iter_split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
@@ -830,18 +822,18 @@ fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
       line.&.push(c)
       if line.to_slice().subslice(line.len.subtract(self.separator.len))
         .equals(self.separator)
-      then return Maybe[Slice[U8]].some(
+      then return Maybe.some(
         line.to_slice().subslice(0, line.len.subtract(self.separator.len))
       )
     }
-  Maybe[Slice[U8]].some(line.to_slice())
+  Maybe.some(line.to_slice())
 }
 fun min[T](slice: Set[T]): Maybe[T] {
   var candidate = Maybe[T].none
   for item in slice do
     switch candidate
-    case some(c) candidate = Maybe[T].some(min(c, item))
-    case none candidate = Maybe[T].some(item)
+    case some(c) candidate = Maybe.some(min(c, item))
+    case none candidate = Maybe.some(item)
   return candidate
 }
 |fun enumerate[I](iter: I): Enumerated[I] {

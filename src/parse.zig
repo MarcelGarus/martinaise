@@ -1,6 +1,7 @@
 const std = @import("std");
 const format = std.fmt.format;
 const ArrayList = std.ArrayList;
+const StringArrayHashMap = std.StringArrayHashMap;
 const Allocator = std.mem.Allocator;
 const ast = @import("ast.zig");
 const string = @import("string.zig");
@@ -73,9 +74,9 @@ pub fn parse(alloc: std.mem.Allocator, code: Str, stdlib_size: usize) !Result(as
         var ty_args = ArrayList(Str).init(alloc);
         try ty_args.append("T");
         const t: Ty = .{ .name = "T", .args = &[_]Ty{} };
-        var fields = ArrayList(ast.Field).init(alloc);
-        try fields.append(.{ .name = "*", .ty = t });
-        try defs.append(.{ .struct_ = .{ .name = "&", .ty_args = ty_args.items, .fields = fields.items } });
+        var fields = StringArrayHashMap(Ty).init(alloc);
+        try fields.put("*", t);
+        try defs.append(.{ .struct_ = .{ .name = "&", .ty_args = ty_args.items, .fields = fields } });
     }
 
     // Int stuff.
@@ -289,14 +290,14 @@ const Parser = struct {
         self.consume_prefix("{") orelse return error.ExpectedOpeningBrace;
         self.consume_whitespace();
 
-        var fields = ArrayList(ast.Field).init(self.alloc);
+        var fields = StringArrayHashMap(Ty).init(self.alloc);
         while (true) {
             const field_name = self.parse_lower_name() orelse break;
             self.consume_whitespace();
             self.consume_prefix(":") orelse return error.ExpectedColon;
             self.consume_whitespace();
             const field_type = try self.parse_type() orelse return error.ExpectedTypeOfField;
-            try fields.append(.{ .name = field_name, .ty = field_type });
+            try fields.put(field_name, field_type);
             self.consume_prefix(",") orelse break;
             self.consume_whitespace();
         }
@@ -304,7 +305,7 @@ const Parser = struct {
         self.consume_whitespace();
         self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
 
-        return ast.Struct{ .name = name, .ty_args = type_args, .fields = fields.items };
+        return ast.Struct{ .name = name, .ty_args = type_args, .fields = fields };
     }
 
     fn parse_enum(self: *Self) !?ast.Enum {

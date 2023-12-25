@@ -1,5 +1,6 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
+const StringArrayHashMap = std.StringArrayHashMap;
 const Str = @import("string.zig").Str;
 const Ty = @import("ty.zig").Ty;
 const numbers = @import("numbers.zig");
@@ -15,9 +16,8 @@ pub const Def = union(enum) {
 pub const Struct = struct {
     name: Str,
     ty_args: []const Str,
-    fields: []const Field,
+    fields: StringArrayHashMap(Ty),
 };
-pub const Field = struct { name: Str, ty: Ty };
 
 pub const Enum = struct {
     name: Str,
@@ -84,12 +84,13 @@ pub fn print_definition(writer: anytype, definition: Def) !void {
         .struct_ => |s| {
             try writer.print("struct {s}", .{s.name});
             try Ty.print_args_of_strs(writer, s.ty_args);
-            if (s.fields.len == 0)
+            if (s.fields.count() == 0)
                 try writer.print(" {{}}", .{})
             else {
                 try writer.print(" {{\n", .{});
-                for (s.fields) |field|
-                    try writer.print("  {s}: {},\n", .{ field.name, field.ty });
+                var iter = s.fields.iterator();
+                while (iter.next()) |field|
+                    try writer.print("  {s}: {},\n", .{ field.key_ptr.*, field.value_ptr.* });
                 try writer.print("}}", .{});
             }
         },

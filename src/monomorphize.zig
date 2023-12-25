@@ -65,13 +65,9 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !Result(mono
         try monomorphizer.put_ty(.{ .name = name, .args = &[_]Ty{} }, .builtin_ty);
     }
 
-    const main = try monomorphizer.lookup("main", &[_]Str{}, &[_]Str{});
-    const main_fun = switch (main.def) {
-        .fun => |f| f,
-        else => return .{ .err = "Main is not a function.\n" },
-    };
+    const main = (try monomorphizer.lookup_fun("main", &[_]Str{}, &[_]Str{})).fun;
 
-    const main_signature = FunMonomorphizer.compile(&monomorphizer, main_fun, TyEnv.init(alloc)) catch |error_| {
+    const main_signature = FunMonomorphizer.compile(&monomorphizer, main, TyEnv.init(alloc)) catch |error_| {
         if (error_ != error.CompileError) return error_;
 
         var err_with_context = String.init(alloc);
@@ -126,91 +122,79 @@ const Monomorphizer = struct {
         try format(self.err.writer(), fmt, args);
     }
 
-    // Looks up the given name with the given number of type args and the args
-    // of the given types.
-    const LookupSolution = struct { def: ast.Def, ty_env: TyEnv };
-    fn lookup(
-        self: *Self,
-        name: Str,
-        ty_args: ?[]const Str,
-        args: ?[]const Str,
-    ) error{ Todo, OutOfMemory, CompileError }!LookupSolution {
-        var name_matches = ArrayList(ast.Def).init(self.alloc);
+    // Looks up a type with the given name. Type names have to be unique.
+    fn lookup_ty(self: *Self, name: Str) error{ Todo, OutOfMemory, CompileError }!ast.Def {
+        var matches = ArrayList(ast.Def).init(self.alloc);
         for (self.program) |def| {
             const def_name = switch (def) {
                 .builtin_ty => |n| n,
                 inline else => |it| it.name,
             };
-            if (string.eql(name, def_name)) try name_matches.append(def);
+            if (string.eql(name, def_name)) try matches.append(def);
         }
 
-        var full_matches = ArrayList(LookupSolution).init(self.alloc);
-        defs: for (name_matches.items) |def| {
-            if (args) |args_| {
-                const fun = switch (def) {
-                    .fun => |f| f,
-                    else => continue :defs, // Only funs can accept args.
-                };
-                if (args_.len != fun.args.len) continue :defs;
+        if (matches.items.len == 0) {
+            try self.format_err("There are no definitions named \"{s}\".\n", .{name});
+            return error.CompileError;
+        }
+        if (matches.items.len > 1) {
+            try self.format_err("There are multiple types named \"{s}\".\n", .{name});
+            return error.CompileError;
+        }
 
-                var solver_ty_vars = StringHashMap(void).init(self.alloc);
-                var solver_ty_env = StringHashMap(Ty).init(self.alloc);
-                for (fun.ty_args) |ta| {
-                    // TODO: Make sure type var only exists once
-                    try solver_ty_vars.put(ta, {});
-                }
+        return matches.items[0];
+    }
+
+    // Looks up the function with the given name, the given number of type args
+    // (null means they might be inferred) and the args of the given types.
+    const LookupFunSolution = struct { fun: ast.Fun, ty_env: TyEnv };
+    fn lookup_fun(
+        self: *Self,
+        name: Str,
+        ty_args: ?[]const Str,
+        args: ?[]const Str,
+    ) error{ Todo, OutOfMemory, CompileError }!LookupFunSolution {
+        var name_matches = ArrayList(ast.Fun).init(self.alloc);
+        for (self.program) |def| {
+            const def_name = switch (def) {
+                .fun => |f| f.name,
+                else => continue,
+            };
+            if (string.eql(name, def_name)) try name_matches.append(def.fun);
+        }
+
+        var full_matches = ArrayList(LookupFunSolution).init(self.alloc);
+        funs: for (name_matches.items) |fun| {
+            if (args) |args_| {
+                if (args_.len != fun.args.len) continue :funs;
+
+                var solver = try TySolver.init(self, fun.ty_args);
                 if (ty_args) |ty_args_| {
-                    if (fun.ty_args.len != ty_args_.len) continue :defs;
-                    for (fun.ty_args, ty_args_) |from, to|
-                        try solver_ty_env.put(from, self.tys.get(to) orelse unreachable);
+                    if (fun.ty_args.len != ty_args_.len) continue :funs;
+                    for (fun.ty_args, ty_args_) |param, arg| {
+                        const param_ = .{ .name = param, .args = &[_]Ty{} };
+                        const arg_ = self.tys.get(arg).?;
+                        if (!try solver.unify(param_, arg_)) unreachable;
+                    }
                 }
                 for (fun.args, args_) |param, arg_mono_ty| {
                     const arg_ty = self.tys.get(arg_mono_ty) orelse {
                         std.debug.print("Type {s} unknown.\n", .{arg_mono_ty});
                         unreachable;
                     };
-                    const is_assignable = arg_ty.is_assignable_to(solver_ty_vars, &solver_ty_env, param.ty) catch |err| {
-                        if (err == error.TypeArgumentCantHaveGenerics) {
-                            try self.format_err("Type arguments can't have generics.\n", .{});
-                            return error.CompileError;
-                        }
-                        return error.Todo;
-                    };
-                    if (!is_assignable) continue :defs;
+                    if (!try solver.unify(param.ty, arg_ty)) continue :funs;
                 }
+                const ty_env = try solver.finish("When considering fun {s}:\n", .{fun.name});
 
-                // TODO: Check if there are still unbound type parameters.
-
-                // Compile types from solver ty env into mono ty env.
-                var ty_env = StringHashMap(Str).init(self.alloc);
-                {
-                    var iter = solver_ty_env.iterator();
-                    while (iter.next()) |constraint| {
-                        try ty_env.put(
-                            constraint.key_ptr.*,
-                            self.compile_type(constraint.value_ptr.*, TyEnv.init(self.alloc)) catch |err| {
-                                if (err == error.TypeArgumentCantHaveGenerics) {
-                                    try self.format_err("Type arguments can't have generics.\n", .{});
-                                    return error.CompileError;
-                                }
-                                return error.Todo;
-                            },
-                        );
-                    }
-                }
-
-                try full_matches.append(.{ .def = .{ .fun = fun }, .ty_env = ty_env });
+                try full_matches.append(.{ .fun = fun, .ty_env = ty_env });
             } else {
                 var ty_env = StringHashMap(Str).init(self.alloc);
-                const ty_params = switch (def) {
-                    .builtin_ty => |_| ArrayList(Str).init(self.alloc).items,
-                    inline else => |it| it.ty_args,
-                };
+                const ty_params = fun.ty_args;
                 const ty_args_ = ty_args orelse &[_]Str{};
-                if (ty_args_.len != ty_params.len) continue :defs;
+                if (ty_args_.len != ty_params.len) continue :funs;
                 for (ty_params, ty_args_) |from, to|
                     try ty_env.put(from, to);
-                try full_matches.append(.{ .def = def, .ty_env = ty_env });
+                try full_matches.append(.{ .fun = fun, .ty_env = ty_env });
             }
         }
 
@@ -233,7 +217,7 @@ const Monomorphizer = struct {
                 try self.format_err("These definitions have the same name, but arguments don't match:\n", .{});
                 for (name_matches.items) |match| {
                     try self.format_err("- ", .{});
-                    ast.print_signature(self.err.writer(), match) catch @panic("couldn't write signature");
+                    ast.print_signature(self.err.writer(), .{ .fun = match }) catch @panic("couldn't write signature");
                     try self.format_err("\n", .{});
                 }
             } else try self.format_err("There are no definitions named \"{s}\".\n", .{name});
@@ -245,8 +229,8 @@ const Monomorphizer = struct {
             for (full_matches.items) |match| {
                 try self.format_err("- ", .{});
 
-                var padded_signature = ArrayList(u8).init(self.alloc);
-                ast.print_signature(padded_signature.writer(), match.def) catch @panic("couldn't write signature");
+                var padded_signature = String.init(self.alloc);
+                ast.print_signature(padded_signature.writer(), .{ .fun = match.fun }) catch @panic("couldn't write signature");
                 while (padded_signature.items.len < 30) try padded_signature.append(' ');
                 try self.format_err("{s}", .{padded_signature.items});
 
@@ -296,7 +280,7 @@ const Monomorphizer = struct {
         }
         const name = name_buf.items;
 
-        switch ((try self.lookup(ty.name, args, null)).def) {
+        switch (try self.lookup_ty(ty.name)) {
             .builtin_ty => |_| try self.put_ty(ty, .builtin_ty),
             .struct_ => |s| {
                 var specialized_args = ArrayList(Ty).init(self.alloc);
@@ -307,10 +291,11 @@ const Monomorphizer = struct {
                 }
 
                 var fields = ArrayList(mono.Field).init(self.alloc);
-                for (s.fields) |field|
+                var iter = s.fields.iterator();
+                while (iter.next()) |field|
                     try fields.append(.{
-                        .name = field.name,
-                        .ty = try self.compile_type(field.ty, inner_ty_env),
+                        .name = field.key_ptr.*,
+                        .ty = try self.compile_type(field.value_ptr.*, inner_ty_env),
                     });
                 try self.put_ty(
                     .{ .name = ty.name, .args = specialized_args.items },
@@ -342,6 +327,105 @@ const Monomorphizer = struct {
         }
 
         return name;
+    }
+};
+
+// When using generic code, the free type variables need to be bound to concrete
+// types. This struct helps with that. How to use:
+//
+// 1. Create it, passing type variables that need to be bound.
+// 2. Repeatedly call unify with the concrete types of the usage site and the
+//    type in the generic code.
+//    - For calls, unify all arguments.
+//    - For struct creations, unify all fields.
+//    - For enum creations, unify the argument.
+// 3. Call finish. This ensures that no type variables are unbound and it
+//    returns a new TyEnv that can be used to specialize the generic code to the
+//    usage site.
+//
+// Example:
+// You want to specialize the function foo[A](Foo[A], A) for a call site with
+// the argument types foo(Foo[Baz], Baz).
+// 1. Create a solver with A as a type var.
+// 2. Call unify:
+//    - unify(Foo[Baz], A)
+//    - unify(Baz, A)
+// 3. Call finish to get the TyEnv {A: Baz}.
+const TySolver = struct {
+    monomorphizer: *Monomorphizer, // used for alloc, compile_type and error reporting
+    ty_vars: StringHashMap(void),
+    ty_env: StringHashMap(Ty), // note: not the same type as TyEnv from monomorphizer (StringHashMap(Str))
+
+    const Self = @This();
+
+    fn init(monomorphizer: *Monomorphizer, ty_vars: []const Str) !Self {
+        // TODO: Make sure type var only exists once
+        var ty_vars_ = StringHashMap(void).init(monomorphizer.alloc);
+        for (ty_vars) |var_| try ty_vars_.put(var_, {});
+        return Self{
+            .monomorphizer = monomorphizer,
+            .ty_vars = ty_vars_,
+            .ty_env = StringHashMap(Ty).init(monomorphizer.alloc),
+        };
+    }
+
+    // Calling this adds the constraint that `concrete` needs to be assignable
+    // to `generic`. Returns whether that works.
+    fn unify(self: *Self, generic: Ty, concrete: Ty) !bool {
+        // Under ty env `{A: Int}`, is `Str` assignable to `A`? Depends on
+        // whether `Str` is assignable to `Int`.
+        if (self.ty_env.get(generic.name)) |mapped| {
+            if (generic.args.len > 0) {
+                try self.monomorphizer.format_err("Generics can't have type arguments.\n", .{});
+                return error.CompileError;
+            }
+            if (self.ty_vars.contains(mapped.name)) unreachable;
+            return self.unify(mapped, concrete);
+        }
+
+        if (self.ty_vars.get(generic.name)) |_| {
+            try self.ty_env.put(generic.name, concrete);
+            return true;
+        }
+
+        if (!string.eql(generic.name, concrete.name)) return false;
+        if (generic.args.len != concrete.args.len) return false;
+        for (generic.args, concrete.args) |generic_arg, concrete_arg|
+            if (!try self.unify(generic_arg, concrete_arg))
+                return false;
+
+        return true;
+    }
+
+    fn finish(self: Self, comptime err_fmt: Str, err_args: anytype) !TyEnv {
+        var var_iter = self.ty_vars.iterator();
+        while (var_iter.next()) |var_| {
+            const name = var_.key_ptr.*;
+            if (!self.ty_env.contains(name)) {
+                try self.monomorphizer.format_err(err_fmt, err_args);
+                if (self.ty_env.count() > 0) {
+                    try self.monomorphizer.format_err("These type variables are bound:", .{});
+                    var iter = self.ty_env.iterator();
+                    while (iter.next()) |entry|
+                        try self.monomorphizer.format_err("- {s} = {}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+                }
+                try self.monomorphizer.format_err("The type variable {s} is unbound.\n", .{name});
+                return error.CompileError;
+            }
+        }
+
+        var ty_env = TyEnv.init(self.monomorphizer.alloc);
+        var env_iter = self.ty_env.iterator();
+        while (env_iter.next()) |constraint| {
+            const from = constraint.key_ptr.*;
+            const to = constraint.value_ptr.*;
+            try ty_env.put(
+                from,
+                try self.monomorphizer.compile_type(to, TyEnv.init(self.monomorphizer.alloc)),
+            );
+        }
+
+        return ty_env;
     }
 };
 
@@ -497,6 +581,7 @@ const FunMonomorphizer = struct {
     }
 
     fn compile_expr(self: *Self, expression: ast.Expr) error{ Todo, OutOfMemory, CompileError }!mono.Expr {
+        // TODO: special-case these in the parser instead
         if (try self.compile_break(expression)) |expr| return expr;
         if (try self.compile_continue(expression)) |expr| return expr;
 
@@ -626,13 +711,59 @@ const FunMonomorphizer = struct {
                 return try self.fun.put_and_get_expr(.{ .assign = .{ .to = to, .value = value } }, "Nothing");
             },
             .struct_creation => |sc| {
-                const struct_ty = try self.monomorphizer.compile_type(sc.ty, self.ty_env);
+                const struct_ = switch (try self.monomorphizer.lookup_ty(sc.ty.name)) {
+                    .struct_ => |s| s,
+                    else => {
+                        try self.format_err("Tried to create a struct, but {s} is not a struct type.", .{sc.ty.name});
+                        return error.CompileError;
+                    },
+                };
 
                 var fields = StringHashMap(mono.Expr).init(self.alloc);
                 for (sc.fields) |f|
                     try fields.put(f.name, try self.compile_expr(f.value));
 
-                // TODO: Make sure fields have the correct types
+                var solver = try TySolver.init(self.monomorphizer, struct_.ty_args);
+                // TODO: Foo[] { ... } should not be treated like Foo { ... }
+                if (sc.ty.args.len > 0) {
+                    if (sc.ty.args.len != struct_.ty_args.len) {
+                        try self.format_err(
+                            "Tried to create struct {s} with {} type arguments, but it needs {}.",
+                            .{ struct_.name, sc.ty.args.len, struct_.ty_args.len },
+                        );
+                        return error.CompileError;
+                    }
+                    var ty_env = StringHashMap(Ty).init(self.alloc);
+                    var iter = self.ty_env.iterator();
+                    while (iter.next()) |entry|
+                        try ty_env.put(entry.key_ptr.*, self.monomorphizer.tys.get(entry.value_ptr.*).?);
+                    for (struct_.ty_args, sc.ty.args) |param, arg| {
+                        const param_ = .{ .name = param, .args = &[_]Ty{} };
+                        if (!try solver.unify(param_, try arg.specialize(self.alloc, ty_env))) unreachable;
+                    }
+                }
+                var iter = fields.iterator();
+                while (iter.next()) |entry| {
+                    const name = entry.key_ptr.*;
+                    const struct_field_ty = struct_.fields.get(name).?;
+                    const field_ty = self.monomorphizer.tys.get(entry.value_ptr.*.ty).?;
+                    if (!try solver.unify(struct_field_ty, field_ty)) {
+                        try self.format_err(
+                            "Tried to assign {s} to field {s} with type {s}",
+                            .{ field_ty, name, struct_field_ty },
+                        );
+                    }
+                }
+                const ty_env = try solver.finish("When creating struct {s}:", .{sc.ty.name});
+
+                var struct_args = ArrayList(Ty).init(self.alloc);
+                for (struct_.ty_args) |ty_arg| {
+                    try struct_args.append(self.monomorphizer.tys.get(ty_env.get(ty_arg).?).?);
+                }
+                const struct_ty = try self.monomorphizer.compile_type(
+                    .{ .name = struct_.name, .args = struct_args.items },
+                    ty_env,
+                );
 
                 return try self.fun.put_and_get_expr(.{ .struct_creation = .{
                     .struct_ty = struct_ty,
@@ -640,20 +771,65 @@ const FunMonomorphizer = struct {
                 } }, struct_ty);
             },
             .enum_creation => |ec| {
-                const enum_ty = try self.monomorphizer.compile_type(ec.ty, self.ty_env);
+                const enum_ = switch (try self.monomorphizer.lookup_ty(ec.ty.name)) {
+                    .enum_ => |s| s,
+                    else => {
+                        try self.format_err("Tried to create an enum, but {s} is not an enum type.", .{ec.ty.name});
+                        return error.CompileError;
+                    },
+                };
+                const arg_ = try self.alloc.create(mono.Expr);
+                arg_.* = try if (ec.arg) |arg| self.compile_expr(arg.*) else self.compile_nothing_instance();
 
-                const arg = try self.alloc.create(mono.Expr);
-                arg.* = if (ec.arg) |arg_|
-                    try self.compile_expr(arg_.*)
-                else
-                    try self.compile_nothing_instance();
+                const variant_ty = find_variant: {
+                    for (enum_.variants) |variant|
+                        if (string.eql(variant.name, ec.variant))
+                            break :find_variant variant.ty orelse Ty{ .name = "Nothing", .args = &[_]Ty{} };
+                    try self.format_err("Unknown variant {s}{s}.\n", .{ ec.ty.name, ec.variant });
+                    return error.CompileError;
+                };
+                const arg_ty = self.monomorphizer.tys.get(arg_.ty).?;
 
-                // TODO: Make sure the variant exists and arg has the correct type
+                var solver = try TySolver.init(self.monomorphizer, enum_.ty_args);
+                // TODO: Maybe[].some(3) should not be treated like Maybe.some(3)
+                if (ec.ty.args.len > 0) {
+                    if (ec.ty.args.len != enum_.ty_args.len) {
+                        try self.format_err(
+                            "Tried to create enum {s} with {} type arguments, but it needs {}.",
+                            .{ enum_.name, ec.ty.args.len, enum_.ty_args.len },
+                        );
+                        return error.CompileError;
+                    }
+                    var ty_env = StringHashMap(Ty).init(self.alloc);
+                    var iter = self.ty_env.iterator();
+                    while (iter.next()) |entry|
+                        try ty_env.put(entry.key_ptr.*, self.monomorphizer.tys.get(entry.value_ptr.*).?);
+                    for (enum_.ty_args, ec.ty.args) |param, arg| {
+                        const param_ = .{ .name = param, .args = &[_]Ty{} };
+                        if (!try solver.unify(param_, try arg.specialize(self.alloc, ty_env))) unreachable;
+                    }
+                }
+                if (!try solver.unify(variant_ty, arg_ty)) {
+                    try self.format_err(
+                        "Tried to create {s}.{s} with {s}, but it needs a {s}.\n",
+                        .{ ec.ty.name, ec.variant, arg_.ty, variant_ty },
+                    );
+                }
+                const ty_env = try solver.finish("When creating enum {s}:\n", .{ec.ty.name});
+
+                var enum_args = ArrayList(Ty).init(self.alloc);
+                for (enum_.ty_args) |ty_arg| {
+                    try enum_args.append(self.monomorphizer.tys.get(ty_env.get(ty_arg).?).?);
+                }
+                const enum_ty = try self.monomorphizer.compile_type(
+                    .{ .name = enum_.name, .args = enum_args.items },
+                    ty_env,
+                );
 
                 return try self.fun.put_and_get_expr(.{ .variant_creation = .{
                     .enum_ty = enum_ty,
                     .variant = ec.variant,
-                    .value = arg,
+                    .value = arg_,
                 } }, enum_ty);
             },
             .if_ => |if_| {
@@ -995,14 +1171,17 @@ const FunMonomorphizer = struct {
         var arg_tys = ArrayList(Str).init(self.alloc);
         for (full_args.items) |arg| try arg_tys.append(arg.ty);
 
-        // If a call has a callee and it's a ref, it also matches functions
-        // where it's dereferenced. For example, if you have a value of type T,
-        // calling value.foo() also matches foo(&T).
+        // Because of auto-deref, we have to try looking for matching funs in a
+        // loop. For example, if you call value.foo() on a value of type &T, we
+        // first look for functions matching foo(&T). If none match, we try
+        // dereferencing the value and looking for functions matching foo(T). If
+        // we find one, the resulting expression is basically the same as
+        // value.*.foo().
         var first_error: ?String = null;
         var called_fun: ?ast.Fun = null;
         var call_ty_env: ?TyEnv = null;
         while (true) {
-            const lookup_solution = self.monomorphizer.lookup(name, ty_args, arg_tys.items) catch |err| {
+            const lookup_solution = self.monomorphizer.lookup_fun(name, ty_args, arg_tys.items) catch |err| {
                 if (err != error.CompileError) return err;
                 if (first_error == null) first_error = self.monomorphizer.err;
                 self.monomorphizer.err = String.init(self.alloc);
@@ -1024,7 +1203,7 @@ const FunMonomorphizer = struct {
                 }
             };
 
-            called_fun = lookup_solution.def.fun;
+            called_fun = lookup_solution.fun;
             call_ty_env = lookup_solution.ty_env;
             break;
         }
