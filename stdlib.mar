@@ -246,6 +246,38 @@ fun hash[T](value: Maybe[T], hasher: &Hasher) {
   case none 'n.hash(hasher)
 }
 
+| Result  
+| The result of something that can either work or fail.
+enum Result[O, E] { ok: O, error: E }
+fun ok[O, E](o: O): Result[O, E] { Result[O, E].ok(o) }
+fun error[O, E](e: E): Result[O, E] { Result[O, E].error(e) }
+fun unwrap[O, E](result: Result[O, E]): O {
+  switch result case ok(o) o case error(e) panic("called error.unwrap")
+}
+fun write[W, O, E](writer: W, result: Result[O, E]) {
+  switch result
+  case ok(o) {
+    writer.write_str("ok(")
+    writer.write(o)
+    writer.write_char('))
+  }
+  case error(e) {
+    writer.write_str("error(")
+    writer.write(e)
+    writer.write_char('))
+  }
+}
+fun equals[O, E](a: Result[O, E], b: Result[O, E]): Bool {
+  switch a
+  case ok(ao) { switch b case ok(bo) ao.equals(bo) case error Bool.false }
+  case error(ae) { switch b case error(be) ae.equals(be) case ok Bool.false }
+}
+fun hash[O, E](result: Result[O, E], hasher: &Hasher) {
+  switch result
+  case ok(o) { 'o.hash(hasher) o.hash(hasher) }
+  case error(e) { 'e.hash(hasher) e.hash(hasher) }
+}
+
 | Memory  
 | Martinaise supports references: &T is a reference to a T. You can get a
 | reference to a value using the expr.& syntax. You can follow a reference
