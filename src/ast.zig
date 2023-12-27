@@ -53,6 +53,7 @@ pub const Expr = union(enum) {
     for_: For, // for a in b do ...
     return_: *const Expr, // return ...
     ampersanded: *const Expr, // &...
+    try_: *const Expr, // ...?
     body: Body,
 };
 pub const Int = struct { value: i128, signedness: numbers.Signedness, bits: numbers.Bits };
@@ -280,6 +281,10 @@ pub fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
         .ampersanded => |e| {
             try writer.print("&", .{});
             try print_expr(writer, indent, e.*);
+        },
+        .try_ => |e| {
+            try print_expr(writer, indent, e.*);
+            try writer.print("?", .{});
         },
         .body => |b| try print_body(writer, indent, b),
     }

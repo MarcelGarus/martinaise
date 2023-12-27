@@ -17,7 +17,6 @@
 | TODO: funs as values, function types, higher-order funs
 | TODO: if foo is some(blub) then ...
 | TODO: var bool = foo is some
-| TODO: try operator?
 | TODO: enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
 | TODO: allow underscore for ignoring values
 | TODO: operators?

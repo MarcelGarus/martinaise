@@ -447,63 +447,57 @@ const Parser = struct {
         ExpectedIterationVariable,
         ExpectedIter,
     }!?ast.Expr {
-        var expression: ?ast.Expr = null;
-
-        if (try self.parse_var()) |var_|
-            expression = .{ .var_ = var_ }
-        else if (try self.parse_return()) |returned|
-            expression = .{ .return_ = returned }
-        else if (try self.parse_if()) |if_|
-            expression = .{ .if_ = if_ }
-        else if (try self.parse_switch()) |switch_|
-            expression = .{ .switch_ = switch_ }
-        else if (try self.parse_loop()) |loop| {
-            const heaped = try self.alloc.create(ast.Expr);
-            heaped.* = loop;
-            expression = .{ .loop = heaped };
-        } else if (try self.parse_for()) |for_|
-            expression = .{ .for_ = for_ }
-        else if (try self.parse_int()) |int|
-            expression = .{ .int = int }
-        else if (try self.parse_char()) |c|
-            expression = .{ .int = .{ .value = c, .signedness = .unsigned, .bits = 8 } }
-        else if (try self.parse_string()) |s|
-            expression = .{ .string = s }
-        else if (try self.parse_ampersanded()) |amp| {
-            const heaped = try self.alloc.create(ast.Expr);
-            heaped.* = amp;
-            expression = .{ .ampersanded = heaped };
-        } else if (self.parse_lower_name()) |name|
-            expression = .{ .name = name }
-        else if (try self.parse_body()) |body|
-            expression = .{ .body = body }
-        else if (try self.parse_struct_or_enum_creation()) |expr|
-            expression = expr;
+        var expression: ast.Expr = expr: {
+            if (try self.parse_var()) |var_| break :expr .{ .var_ = var_ };
+            if (try self.parse_return()) |returned| break :expr .{ .return_ = returned };
+            if (try self.parse_if()) |if_| break :expr .{ .if_ = if_ };
+            if (try self.parse_switch()) |switch_| break :expr .{ .switch_ = switch_ };
+            if (try self.parse_loop()) |loop| {
+                const heaped = try self.alloc.create(ast.Expr);
+                heaped.* = loop;
+                break :expr .{ .loop = heaped };
+            }
+            if (try self.parse_for()) |for_| break :expr .{ .for_ = for_ };
+            if (try self.parse_int()) |int| break :expr .{ .int = int };
+            if (try self.parse_char()) |c| break :expr .{ .int = .{ .value = c, .signedness = .unsigned, .bits = 8 } };
+            if (try self.parse_string()) |s| break :expr .{ .string = s };
+            if (try self.parse_ampersanded()) |amp| {
+                const heaped = try self.alloc.create(ast.Expr);
+                heaped.* = amp;
+                break :expr .{ .ampersanded = heaped };
+            }
+            if (self.parse_lower_name()) |name| break :expr .{ .name = name };
+            if (try self.parse_body()) |body| break :expr .{ .body = body };
+            if (try self.parse_struct_or_enum_creation()) |expr| break :expr expr;
+            return null;
+        };
 
         while (true) {
             self.consume_whitespace();
 
-            if (expression) |expr| {
-                if (try self.parse_expression_suffix_type_arged(expr)) |type_arged| {
-                    expression = .{ .ty_arged = type_arged };
-                    continue;
-                }
-                if (try self.parse_expression_suffix_assign(expr)) |assign| {
-                    expression = .{ .assign = assign };
-                    continue;
-                }
-                if (try self.parse_expression_suffix_call(expr)) |call| {
-                    expression = .{ .call = call };
-                    continue;
-                }
-                if (try self.parse_expression_suffix_member_or_constructor(expr)) |e| {
-                    expression = e;
-                    continue;
-                }
-                if (try self.parse_expression_suffix_orelse(expr)) |e| {
-                    expression = .{ .orelse_ = e };
-                    continue;
-                }
+            if (try self.parse_expression_suffix_type_arged(expression)) |type_arged| {
+                expression = .{ .ty_arged = type_arged };
+                continue;
+            }
+            if (try self.parse_expression_suffix_assign(expression)) |assign| {
+                expression = .{ .assign = assign };
+                continue;
+            }
+            if (try self.parse_expression_suffix_call(expression)) |call| {
+                expression = .{ .call = call };
+                continue;
+            }
+            if (try self.parse_expression_suffix_member(expression)) |e| {
+                expression = e;
+                continue;
+            }
+            if (try self.parse_expression_suffix_try(expression)) |e| {
+                expression = e;
+                continue;
+            }
+            if (try self.parse_expression_suffix_orelse(expression)) |e| {
+                expression = .{ .orelse_ = e };
+                continue;
             }
 
             break; // Nothing more got parsed.
@@ -613,7 +607,7 @@ const Parser = struct {
         return .{ .callee = heaped, .args = args.items };
     }
 
-    fn parse_expression_suffix_member_or_constructor(self: *Self, current: ast.Expr) !?ast.Expr {
+    fn parse_expression_suffix_member(self: *Self, current: ast.Expr) !?ast.Expr {
         self.consume_prefix(".") orelse return null;
 
         const heaped = try self.alloc.create(ast.Expr);
@@ -624,6 +618,15 @@ const Parser = struct {
         if (self.consume_prefix("&")) |_| return .{ .ampersanded = heaped };
         if (self.parse_lower_name()) |name| return .{ .member = .{ .of = heaped, .name = name } };
         return error.ExpectedMemberOrConstructor;
+    }
+
+    fn parse_expression_suffix_try(self: *Self, current: ast.Expr) !?ast.Expr {
+        self.consume_prefix("?") orelse return null;
+
+        const heaped = try self.alloc.create(ast.Expr);
+        heaped.* = current;
+
+        return .{ .try_ = heaped };
     }
 
     fn parse_expression_suffix_orelse(self: *Self, current: ast.Expr) !?ast.Orelse {

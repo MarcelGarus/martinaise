@@ -1143,6 +1143,62 @@ const FunMonomorphizer = struct {
 
                 return try self.fun.put_and_get_expr(.{ .ref = amped }, compiled_ref_ty);
             },
+            .try_ => |expr| {
+                const tried = try self.compile_expr(expr.*);
+                const tried_ty = self.monomorphizer.tys.get(tried.ty) orelse unreachable;
+                if (!string.eql(tried_ty.name, "Result")) {
+                    try self.format_err("The try operator ? can only be used on Results.\n", .{});
+                    return error.CompileError;
+                }
+
+                const return_ty = self.monomorphizer.tys.get(self.expected_return_ty).?;
+                if (!string.eql(return_ty.name, "Result")) {
+                    try self.format_err("The try operator ? can only be used in functions that return Result.\n", .{});
+                    return error.CompileError;
+                }
+
+                // TODO: Ensure the error variants are equal.
+                // if (tried_ty.args[1] != return_ty.args[1]) return CompileError;
+
+                const ok_payload_ty = format_ty: {
+                    var buf = String.init(self.alloc);
+                    try format(buf.writer(), "{}", .{tried_ty.args[0]});
+                    break :format_ty buf.items;
+                };
+                const error_payload_ty = format_ty: {
+                    var buf = String.init(self.alloc);
+                    try format(buf.writer(), "{}", .{tried_ty.args[1]});
+                    break :format_ty buf.items;
+                };
+
+                const jump_if_ok = try self.fun.put(.{ .jump_if_variant = .{
+                    .condition = tried,
+                    .variant = "ok",
+                    .target = 0,
+                } }, "Nothing");
+
+                const error_payload = try self.alloc.create(mono.Expr);
+                error_payload.* = try self.fun.put_and_get_expr(.{ .get_enum_value = .{
+                    .of = tried,
+                    .variant = "error",
+                    .ty = error_payload_ty,
+                } }, error_payload_ty);
+                const error_to_return = try self.fun.put_and_get_expr(.{ .variant_creation = .{
+                    .enum_ty = self.expected_return_ty,
+                    .variant = "error",
+                    .value = error_payload,
+                } }, self.expected_return_ty);
+                _ = try self.fun.put(.{ .return_ = error_to_return }, "Never");
+
+                const after_error_handling = self.fun.next_index();
+                self.fun.body.items[jump_if_ok].jump_if_variant.target = after_error_handling;
+
+                return try self.fun.put_and_get_expr(.{ .get_enum_value = .{
+                    .of = tried,
+                    .variant = "ok",
+                    .ty = ok_payload_ty,
+                } }, ok_payload_ty);
+            },
             .body => |body| return try self.compile_body(body),
             else => {
                 try self.format_err("Compiling {any}\n", .{expression});
