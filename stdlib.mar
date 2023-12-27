@@ -11,9 +11,9 @@
 | deleting code in this file because that may crash the compiler.
 
 | Language todos
+| TODO: type aliases
 | TODO: validate all signatures before lowering
 | TODO: global constants
-| TODO: type aliases
 | TODO: funs as values, function types, higher-order funs
 | TODO: if foo is some(blub) then ...
 | TODO: var bool = foo is some
@@ -58,6 +58,7 @@ fun not_equals[T](a: T, b: T): Bool { not(a.equals(b)) }
 | You should implement a hash(T, Hasher) function for types that can be hashed.
 | In this function, they can contribute some uniqueness/entropy to the Hasher by
 | calling its contribute(U64) function. The Hasher uses the djb2 algorithm.
+| TODO: refactor so there's only a hash fun
 fun hash[T](value: T): U64 {
   var h = Hasher { state = 5381 }
   value.hash(&h)
@@ -211,8 +212,10 @@ fun max[T](a: T, b: T): T { if a.is_greater_than(b) then a else b }
 | - Maybe[U8].some(2_U8) orelse 3_U8 = 2_U8
 | - Maybe[U8].none orelse 3_U8 = 3_U8
 enum Maybe[T] { some: T, none }
+fun some[T](value: T): Maybe[T] { Maybe.some(value) }
+fun none[T](): Maybe[T] { Maybe[T].none }
 fun unwrap[T](maybe: Maybe[T]): T { maybe orelse panic("called none.unwrap") }
-fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { inner orelse Maybe[T].none }
+fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { inner orelse none[T]() }
 | TODO: remove when language feature exists
 fun is_some[T](maybe: Maybe[T]): Bool {
   switch maybe case some Bool.true case none Bool.false
@@ -229,7 +232,7 @@ fun write[W, T](writer: W, maybe: Maybe[T]) {
   }
   case none writer.write_str("none")
 }
-fun equals(a: Maybe[T], b: Maybe[T]): Bool {
+fun equals[T](a: Maybe[T], b: Maybe[T]): Bool {
   switch a
   case some(aa) { switch b case some(bb) aa.equals(bb) case none Bool.false }
   case none b.is_none()
@@ -376,9 +379,7 @@ fun open_file(filename: Slice[U8], mode: OpenFileMode): Maybe[File] {
     case write_only 1
     case read_write 2,
   )
-  if fd.equals(0)
-  then Maybe[File].none
-  else Maybe[File].some(File { descriptor = fd })
+  if fd.equals(0) then none[File]() else some(File { descriptor = fd })
 }
 fun libc_read(file: U64, buf: U64, len: U64): U64 { ... }
 fun read(file: File, buffer: Slice[U8]): U64 {
@@ -387,8 +388,8 @@ fun read(file: File, buffer: Slice[U8]): U64 {
 fun read_byte(file: File): Maybe[U8] {
   var c = 0_U8
   if libc_read(file.descriptor, c.&.to_address(), 1).equals(0)
-  then Maybe[U8].none
-  else Maybe[U8].some(c)
+  then none[U8]()
+  else some(c)
 }
 fun libc_write(file: U64, buf: U64, len: U64): U64 { ... }
 fun write_bytes(file: File, buffer: Slice[U8]): U64 {
@@ -446,10 +447,10 @@ fun is_empty[T](range: Range[T]): Bool { range.start.is_at_least(range.end) }
 fun iter[T](range: Range[T]): RangeIter[T] { RangeIter { rest = range } }
 struct RangeIter[T] { rest: Range[T] }
 fun next[T](iter: &RangeIter[T]): Maybe[T] {
-  if iter.rest.is_empty() then Maybe[T].none else {
+  if iter.rest.is_empty() then none[T]() else {
     var current = iter.rest.start
     iter.rest.start = current.inc()
-    Maybe.some(current)
+    some(current)
   }
 }
 
@@ -661,19 +662,17 @@ fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
 }
 fun contains[K, V](map: Map[K, V], key: K): Bool { map.get(key).is_some() }
 fun get[K, V](map: Map[K, V], key: K): Maybe[V] {
-  switch map.get_ref(key)
-  case some(val) Maybe.some(val.*)
-  case none Maybe[V].none
+  switch map.get_ref(key) case some(val) some(val.*) case none none[V]()
 }
 fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
   var i = key.hash().modulo(map.buckets.len)
   loop {
     var bucket = map.buckets.get_ref(i)
     switch bucket.*
-    case empty return Maybe[&V].none
+    case empty return none[&V]()
     case filled(entry)
       if entry.key.equals(key)
-      then return Maybe.some(&entry.value)
+      then return some(&entry.value)
       else i = i.add(1).modulo(map.buckets.len)
   }
 }
@@ -698,11 +697,11 @@ struct MapIter[K, V] { buckets: Slice[MapBucket[K, V]], index: U64 }
 fun next[K, V](map: &MapIter[K, V]): Maybe[MapEntry[K, V]] {
   loop {
     if map.index.is_at_least(map.buckets.len)
-    then return Maybe[MapEntry[K, V]].none
+    then return none[MapEntry[K, V]]()
     map.index = map.index.add(1)
     switch map.buckets.get(map.index.subtract(1))
     case empty {}
-    case filled(entry) return Maybe.some(entry)
+    case filled(entry) return some(entry)
   }
 }
 
@@ -727,11 +726,11 @@ fun iter[T](set: Set[T]): SetIter[T] {
 struct SetIter[T] { buckets: Slice[MapBucket[T, Nothing]], index: U64 }
 fun next[T](set: &SetIter[T]): Maybe[T] {
   loop {
-    if set.index.is_at_least(set.buckets.len) then return Maybe[T].none
+    if set.index.is_at_least(set.buckets.len) then return none[T]()
     set.index = set.index.add(1)
     switch set.buckets.get(set.index.subtract(1))
     case empty {}
-    case filled(entry) return Maybe.some(entry.key)
+    case filled(entry) return some(entry.key)
   }
 }
 
@@ -764,9 +763,8 @@ fun trim_prefix(slice: &Slice[U8], prefix: Slice[U8]) {
   else panic("slice doesn't start with prefix")
 }
 fun find[T](slice: Slice[T], needle: T): Maybe[U64] {
-  for i in 0.to(slice.len) do
-    if slice.get(i).equals(needle) then return Maybe.some(i)
-  Maybe[U64].none
+  for i in 0.to(slice.len) do if slice.get(i).equals(needle) then return some(i)
+  none[U64]()
 }
 fun sort[T](slice: &Slice[T]) {
   | quick sort
@@ -786,8 +784,8 @@ fun iter[T](slice: Slice[T]): SliceIter[T] { SliceIter[T] { slice, index = 0 } }
 struct SliceIter[T] { slice: Slice[T], index: U64 }
 fun next[T](iter: &SliceIter[T]): Maybe[T] {
   var item = if iter.index.is_less_than(iter.slice.len)
-    then Maybe[T].some(iter.slice.get(iter.index))
-    else Maybe[T].none
+    then some(iter.slice.get(iter.index))
+    else none[T]()
   iter.index = iter.index.add(1)
   item
 }
@@ -801,8 +799,8 @@ struct SliceRevIter[T] {
 fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
   if iter.index.is_greater_than(0) then {
     iter.index = iter.index.subtract(1)
-    Maybe.some(iter.slice.get(iter.index))
-  } else Maybe[T].none
+    some[T](iter.slice.get(iter.index))
+  } else none[T]()
 }
 fun iter_split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
   SplitIter[I] { iter, separator }
@@ -814,25 +812,23 @@ fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
   loop
     switch self.iter.&.next()
     case none
-      if line.len.is_greater_than(0)
-      then break
-      else return Maybe[Slice[U8]].none
+      if line.len.is_greater_than(0) then break else return none[Slice[U8]]()
     case some(c) {
       line.&.push(c)
       if line.to_slice().subslice(line.len.subtract(self.separator.len))
         .equals(self.separator)
-      then return Maybe.some(
+      then return some(
         line.to_slice().subslice(0, line.len.subtract(self.separator.len))
       )
     }
-  Maybe.some(line.to_slice())
+  some(line.to_slice())
 }
 fun min[T](slice: Set[T]): Maybe[T] {
-  var candidate = Maybe[T].none
+  var candidate = none[T]()
   for item in slice do
     switch candidate
-    case some(c) candidate = Maybe.some(min(c, item))
-    case none candidate = Maybe.some(item)
+    case some(c) candidate = some(min(c, item))
+    case none candidate = some(item)
   return candidate
 }
 |fun enumerate[I](iter: I): Enumerated[I] {

@@ -2,8 +2,8 @@ fun windows(s: Slice[U8]): Windows { Windows { slice = s, index = 0 } }
 struct Windows { slice: Slice[U8], index: U64 }
 fun next(iter: &Windows): Maybe[Slice[U8]] {
   var item = if iter.index.is_less_than(iter.slice.len)
-    then Maybe[Slice[U8]].some(iter.slice.subslice(iter.index))
-    else Maybe[Slice[U8]].none
+    then some(iter.slice.subslice(iter.index))
+    else none[Slice[U8]]()
   iter.index = iter.index.add(1)
   item
 }
@@ -15,8 +15,8 @@ struct RevWindows { slice: Slice[U8], index: U64 }
 fun next(iter: &RevWindows): Maybe[Slice[U8]] {
   iter.index = iter.index.subtract(1)
   if iter.index.is_less_than(iter.slice.len)
-  then Maybe[Slice[U8]].some(iter.slice.subslice(iter.index))
-  else Maybe[Slice[U8]].none
+  then some(iter.slice.subslice(iter.index))
+  else none[Slice[U8]]()
 }
 
 fun find_first_digit[I](iter: I, digit_names: Vec[Slice[U8]]): U8 {
