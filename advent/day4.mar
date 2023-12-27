@@ -13,9 +13,9 @@ fun card_score(card: Slice[U8]): U64 {
 
   var score = 0
   for num in my_numbers do {
-    var wins = Bool.false
+    var wins = false()
     for winning in winning_numbers do
-      if num.equals(winning) then wins = Bool.true
+      if num.equals(winning) then wins = true()
     if wins
     then score = if score.equals(0) then 1 else score.multiply(2)
   }

@@ -30,7 +30,7 @@
 | single Nothing instance: {}
 struct Nothing {}
 fun write[W](writer: W, nothing: Nothing) { writer.write_str("nothing") }
-fun equals(a: Nothing, b: Nothing): Bool { Bool.true }
+fun equals(a: Nothing, b: Nothing): Bool { true() }
 fun ignore[T](value: T) {}
 
 | Never and Panics  
@@ -71,14 +71,16 @@ fun contribute(hasher: &Hasher, val: U64) {
 
 | Bool  
 | The usual boolean values true and false. Martinaise's if expects a Bool as the
-| condition: if Bool.true then 0_U8 else 1_U8
+| condition: if true() then 0_U8 else 1_U8
 enum Bool { true, false }
+fun true(): Bool { Bool.true }
+fun false(): Bool { Bool.false }
 fun equals(a: Bool, b: Bool): Bool { if a then b else not(b) }
-fun not(a: Bool): Bool { if a then Bool.false else Bool.true }
+fun not(a: Bool): Bool { if a then false() else true() }
 fun and(a: Bool, b: Bool): Bool { if a then b else a }
-fun or(a: Bool, b: Bool): Bool { if a then Bool.true else b }
+fun or(a: Bool, b: Bool): Bool { if a then true() else b }
 fun xor(a: Bool, b: Bool): Bool { if a then not(b) else b }
-fun implies(a: Bool, b: Bool): Bool { if a then b else Bool.true }
+fun implies(a: Bool, b: Bool): Bool { if a then b else true() }
 fun write[W](writer: W, b: Bool) {
   writer.write_str(if b then "true" else "false")
 }
@@ -166,19 +168,19 @@ fun parse_U64(str: Slice[U8]): U64 {
 | be compared. This allows you to use functions such as is_at_least or min.
 enum Ordering { less, equal, greater }
 fun is_less(ord: Ordering): Bool {
-  switch ord case less Bool.true case equal Bool.false case greater Bool.false
+  switch ord case less true() case equal false() case greater false()
 }
 fun is_equal(ord: Ordering): Bool {
-  switch ord case less Bool.false case equal Bool.true case greater Bool.false
+  switch ord case less false() case equal true() case greater false()
 }
 fun is_greater(ord: Ordering): Bool {
-  switch ord case less Bool.false case equal Bool.false case greater Bool.true
+  switch ord case less false() case equal false() case greater true()
 }
 fun is_less_or_equal(ord: Ordering): Bool {
-  switch ord case less Bool.true case equal Bool.true case greater Bool.false
+  switch ord case less true() case equal true() case greater false()
 }
 fun is_greater_or_equal(ord: Ordering): Bool {
-  switch ord case less Bool.false case equal Bool.true case greater Bool.true
+  switch ord case less false() case equal true() case greater true()
 }
 fun equals(a: Ordering, b: Ordering): Bool {
   switch a
@@ -218,10 +220,10 @@ fun unwrap[T](maybe: Maybe[T]): T { maybe orelse panic("called none.unwrap") }
 fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { inner orelse none[T]() }
 | TODO: remove when language feature exists
 fun is_some[T](maybe: Maybe[T]): Bool {
-  switch maybe case some Bool.true case none Bool.false
+  switch maybe case some true() case none false()
 }
 fun is_none[T](maybe: Maybe[T]): Bool {
-  switch maybe case some Bool.false case none Bool.true
+  switch maybe case some false() case none true()
 }
 fun write[W, T](writer: W, maybe: Maybe[T]) {
   switch maybe
@@ -234,7 +236,7 @@ fun write[W, T](writer: W, maybe: Maybe[T]) {
 }
 fun equals[T](a: Maybe[T], b: Maybe[T]): Bool {
   switch a
-  case some(aa) { switch b case some(bb) aa.equals(bb) case none Bool.false }
+  case some(aa) { switch b case some(bb) aa.equals(bb) case none false() }
   case none b.is_none()
 }
 fun hash[T](value: Maybe[T], hasher: &Hasher) {
@@ -269,8 +271,8 @@ fun write[W, O, E](writer: W, result: Result[O, E]) {
 }
 fun equals[O, E](a: Result[O, E], b: Result[O, E]): Bool {
   switch a
-  case ok(ao) { switch b case ok(bo) ao.equals(bo) case error Bool.false }
-  case error(ae) { switch b case error(be) ae.equals(be) case ok Bool.false }
+  case ok(ao) { switch b case ok(bo) ao.equals(bo) case error false() }
+  case error(ae) { switch b case error(be) ae.equals(be) case ok false() }
 }
 fun hash[O, E](result: Result[O, E], hasher: &Hasher) {
   switch result
@@ -380,16 +382,16 @@ fun compare_to[T](a: Slice[T], b: Slice[T]): Ordering {
 }
 fun equals[T](a: Slice[T], b: Slice[T]): Bool {
   | TODO: support for types that only have equals, not compare_to
-  if a.len.equals(b.len) then compare_to(a, b).is_equal() else Bool.false
+  if a.len.equals(b.len) then compare_to(a, b).is_equal() else false()
 }
 fun hash[T](slice: Slice[T], hasher: &Hasher) {
   for item in slice do item.hash(hasher)
 }
 fun write[W, T](writer: W, slice: Slice[T]) {
   writer.write_char('[)
-  var first = Bool.true
+  var first = true()
   for item in slice do {
-    if first then first = Bool.false else writer.write_str(", ")
+    if first then first = false() else writer.write_str(", ")
     writer.write(item)
   }
   writer.write_char('])
@@ -641,10 +643,10 @@ fun to_slices[T](deque: Deque[T]): Tuple[Slice[T], Slice[T]] {
   )
 }
 fun equals[T](a: Deque[T], b: Deque[T]): Bool {
-  if a.len().notEquals(b.len()) then return Bool.false
+  if a.len().notEquals(b.len()) then return false()
   for i in 0.to(a.len()) do
-    if a.get(i).notEquals(b.get(i)) then return Bool.false
-  Bool.true
+    if a.get(i).notEquals(b.get(i)) then return false()
+  true()
 }
 
 | Map   
@@ -710,12 +712,12 @@ fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
 }
 fun write[W, K, V](writer: W, map: Map[K, V]) {
   writer.write_char('{)
-  var first = Bool.true
+  var first = true()
   for bucket in map.buckets do
     switch bucket
     case empty {}
     case filled(entry) {
-      if first then first = Bool.false else writer.write_str(", ")
+      if first then first = false() else writer.write_str(", ")
       writer.write(entry.key)
       writer.write_str(": ")
       writer.write(entry.value)
@@ -745,9 +747,9 @@ fun insert[T](set: &Set[T], value: T) { set.map.&.insert(value, {}) }
 fun contains[T](set: &Set[T], value: T): Bool { set.map.get(value).is_some() }
 fun write[W, T](writer: W, set: Set[T]) {
   writer.write_char('{)
-  var first = Bool.true
+  var first = true()
   for item in set do {
-    if first then first = Bool.false else writer.write_str(", ")
+    if first then first = false() else writer.write_str(", ")
     writer.write(item)
   }
   writer.write_char('})
@@ -775,19 +777,19 @@ fun split(slice: Slice[U8], separator: Slice[U8]): Slice[Slice[U8]] {
 fun lines(slice: Slice[U8]): Slice[Slice[U8]] { slice.split("
 ") }
 fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
-  if prefix.len.is_greater_than(slice.len) then return Bool.false
+  if prefix.len.is_greater_than(slice.len) then return false()
   for i in 0.to(prefix.len) do
-    if not(slice.get(i).equals(prefix.get(i))) then return Bool.false
-  Bool.true
+    if not(slice.get(i).equals(prefix.get(i))) then return false()
+  true()
 }
 fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
-  if suffix.len.is_greater_than(slice.len) then return Bool.false
+  if suffix.len.is_greater_than(slice.len) then return false()
   for i in 0.to(suffix.len) do
     if not(
       slice.get(slice.len.subtract(suffix.len).add(i)).equals(suffix.get(i))
     )
-    then return Bool.false
-  Bool.true
+    then return false()
+  true()
 }
 fun trim_prefix(slice: &Slice[U8], prefix: Slice[U8]) {
   if slice.starts_with(prefix)

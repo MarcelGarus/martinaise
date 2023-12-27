@@ -35,9 +35,9 @@ fun main(): Never {
         adjacent.&.push(Point { x = x.dec(), y })
         adjacent.&.push(Point { x = end, y })
 
-        var next_to_symbol = Bool.false
+        var next_to_symbol = false()
         for pos in adjacent do
-          if grid.get(pos.x, pos.y).is_symbol() then next_to_symbol = Bool.true
+          if grid.get(pos.x, pos.y).is_symbol() then next_to_symbol = true()
 
         if next_to_symbol then {
           print(num)

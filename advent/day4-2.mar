@@ -13,9 +13,9 @@ fun card_matches(card: Slice[U8]): U64 {
 
   var matches = 0
   for num in my_numbers do {
-    var wins = Bool.false
+    var wins = false()
     for winning in winning_numbers do
-      if num.equals(winning) then wins = Bool.true
+      if num.equals(winning) then wins = true()
     if wins then matches = matches.add(1)
   }
 
