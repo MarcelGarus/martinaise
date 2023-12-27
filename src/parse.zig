@@ -681,6 +681,20 @@ const Parser = struct {
 
         var then_variant: Str = "true";
         var then_binding: ?Str = null;
+
+        if (self.consume_keyword("is")) |_| {
+            self.consume_whitespace();
+            then_variant = self.parse_lower_name() orelse return error.ExpectedVariant;
+            self.consume_whitespace();
+            if (self.consume_prefix("(")) |_| {
+                self.consume_whitespace();
+                then_binding = self.parse_lower_name() orelse return error.ExpectedBinding;
+                self.consume_whitespace();
+                self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
+            }
+            self.consume_whitespace();
+        }
+
         self.consume_keyword("then") orelse return error.ExpectedThen;
         self.consume_whitespace();
 

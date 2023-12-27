@@ -15,12 +15,10 @@
 | TODO: validate all signatures before lowering
 | TODO: global constants
 | TODO: funs as values, function types, higher-order funs
-| TODO: if foo is some(blub) then ...
 | TODO: var bool = foo is some
 | TODO: enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
 | TODO: allow underscore for ignoring values
 | TODO: operators?
-| TODO: remove orelse?
 | TODO: slice literals? array literals?
 | TODO: struct destructuring? probably not
 
@@ -218,7 +216,6 @@ fun some[T](value: T): Maybe[T] { Maybe.some(value) }
 fun none[T](): Maybe[T] { Maybe[T].none }
 fun unwrap[T](maybe: Maybe[T]): T { maybe orelse panic("called none.unwrap") }
 fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { inner orelse none[T]() }
-| TODO: remove when language feature exists
 fun is_some[T](maybe: Maybe[T]): Bool {
   switch maybe case some true() case none false()
 }
@@ -411,7 +408,7 @@ fun open_file(filename: Slice[U8], mode: OpenFileMode): Maybe[File] {
     switch mode
     case read_only 0
     case write_only 1
-    case read_write 2,
+    case read_write 2
   )
   if fd.equals(0) then none[File]() else some(File { descriptor = fd })
 }
@@ -438,10 +435,10 @@ fun read_file(name: Slice[U8]): Slice[U8] {
   var file = open_file(name, OpenFileMode.read_only)
     orelse panic("unable to open file")
   var content = vec[U8]()
-  loop
-    switch file.read_byte()
-    case some(byte) content.&.push(byte)
-    case none break
+  loop {
+    var byte = file.read_byte() orelse break
+    content.&.push(byte)
+  }
   file.close()
   content.to_slice()
 }
@@ -671,9 +668,7 @@ fun insert[K, V](map: &Map[K, V], key: K, value: V) {
       size = 0,
     }
     for bucket in old_buckets do
-      switch bucket
-      case empty {}
-      case filled(entry) map.raw_insert(entry.key, entry.value)
+      if bucket is filled(entry) then map.raw_insert(entry.key, entry.value)
   }
   map.raw_insert(key, value)
 }
@@ -733,9 +728,8 @@ fun next[K, V](map: &MapIter[K, V]): Maybe[MapEntry[K, V]] {
     if map.index.is_at_least(map.buckets.len)
     then return none[MapEntry[K, V]]()
     map.index = map.index.add(1)
-    switch map.buckets.get(map.index.subtract(1))
-    case empty {}
-    case filled(entry) return some(entry)
+    if map.buckets.get(map.index.subtract(1)) is filled(entry)
+    then return some(entry)
   }
 }
 
@@ -762,9 +756,8 @@ fun next[T](set: &SetIter[T]): Maybe[T] {
   loop {
     if set.index.is_at_least(set.buckets.len) then return none[T]()
     set.index = set.index.add(1)
-    switch set.buckets.get(set.index.subtract(1))
-    case empty {}
-    case filled(entry) return some(entry.key)
+    if set.buckets.get(set.index.subtract(1)) is filled(entry)
+    then return some(entry.key)
   }
 }
 
