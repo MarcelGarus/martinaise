@@ -46,7 +46,6 @@ pub const Expr = union(enum) {
     member: Member, // foo.bar
     var_: Var, // var foo = ...
     assign: Assign, // foo = ...
-    if_: If, // if foo then ... else ...
     switch_: Switch, // switch foo case a ... case b(bar) ...
     orelse_: Orelse, // a orelse b
     loop: *const Expr, // loop ...
@@ -65,8 +64,7 @@ pub const EnumCreation = struct { ty: Ty, variant: Str, arg: ?*const Expr };
 pub const Member = struct { of: *const Expr, name: Str };
 pub const Var = struct { name: Str, value: *Expr };
 pub const Assign = struct { to: *Expr, value: *Expr };
-pub const If = struct { condition: *const Expr, then: *const Expr, else_: ?*const Expr };
-pub const Switch = struct { value: *const Expr, cases: []const Case };
+pub const Switch = struct { value: *const Expr, cases: []const Case, default: ?*const Expr };
 pub const Orelse = struct { primary: *const Expr, alternative: *const Expr };
 pub const Case = struct { variant: Str, binding: ?Str, then: *const Expr };
 pub const For = struct { iter_var: Str, iter: *const Expr, expr: *const Expr };
@@ -233,16 +231,6 @@ pub fn print_expr(writer: anytype, indent: usize, expr: Expr) error{
             try print_expr(writer, indent, assign.to.*);
             try writer.print(" = ", .{});
             try print_expr(writer, indent, assign.value.*);
-        },
-        .if_ => |if_| {
-            try writer.print("if ", .{});
-            try print_expr(writer, indent, if_.condition.*);
-            try writer.print(" then ", .{});
-            try print_expr(writer, indent, if_.then.*);
-            if (if_.else_) |e| {
-                try writer.print(" else ", .{});
-                try print_expr(writer, indent, e.*);
-            }
         },
         .switch_ => |switch_| {
             try writer.print("switch ", .{});

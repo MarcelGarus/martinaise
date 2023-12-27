@@ -833,69 +833,6 @@ const FunMonomorphizer = struct {
                     .value = arg_,
                 } }, enum_ty);
             },
-            .if_ => |if_| {
-                const result = try self.fun.put(.{ .uninitialized = {} }, "Something"); // Type will be replaced later
-                var result_ty: ?Str = null;
-
-                const condition = try self.compile_expr(if_.condition.*);
-                if (!string.eql(condition.ty, "Bool")) {
-                    try self.format_err("The if condition has to be a Bool, but it was {s}.\n", .{condition.ty});
-                    return error.CompileError;
-                }
-                const jump_if_true = try self.fun.put(.{ .uninitialized = {} }, "Nothing"); // Will be replaced with jump_if
-                const jump_if_false = try self.fun.put(.{ .uninitialized = {} }, "Never"); // Will be replaced with jump
-
-                // TODO: Create inner var env
-                const then_body = self.fun.next_index();
-                const then_result = try self.compile_expr(if_.then.*);
-                if (!string.eql(then_result.ty, "Never")) {
-                    result_ty = then_result.ty;
-                    _ = try self.fun.put(.{ .assign = .{
-                        .to = .{ .ty = result_ty.?, .kind = .{ .statement = result } },
-                        .value = then_result,
-                    } }, "Nothing");
-                }
-                const jump_after_then = try self.fun.put(.{ .uninitialized = {} }, "Never"); // Will be replaced with jump
-
-                if (if_.else_) |else_| {
-                    // TODO: Create inner var env
-                    const else_body = self.fun.next_index();
-                    const else_result = try self.compile_expr(else_.*);
-                    if (!string.eql(else_result.ty, "Never")) {
-                        if (result_ty) |expected_ty| {
-                            if (!string.eql(expected_ty, else_result.ty)) {
-                                try self.format_err("An if is inconsistenly typed:\n", .{});
-                                try self.format_err("- The then body returns {s}.\n", .{expected_ty});
-                                try self.format_err("- The else body returns {s}.\n", .{else_result.ty});
-                                return error.CompileError;
-                            }
-                        } else result_ty = else_result.ty;
-
-                        _ = try self.fun.put(.{ .assign = .{
-                            .to = .{ .ty = result_ty.?, .kind = .{ .statement = result } },
-                            .value = else_result,
-                        } }, "Nothing");
-                    }
-                    const jump_after_else = try self.fun.put(.{ .uninitialized = {} }, "Never"); // Will be replaced with jump
-                    const after_if = self.fun.next_index();
-
-                    // Fill in jumps
-                    self.fun.body.items[jump_if_true] = .{ .jump_if_variant = .{ .condition = condition, .variant = "true", .target = then_body } };
-                    self.fun.body.items[jump_if_false] = .{ .jump = .{ .target = else_body } };
-                    self.fun.body.items[jump_after_then] = .{ .jump = .{ .target = after_if } };
-                    self.fun.body.items[jump_after_else] = .{ .jump = .{ .target = after_if } };
-                } else {
-                    const after_if = self.fun.next_index();
-
-                    // Fill in jumps
-                    self.fun.body.items[jump_if_true] = .{ .jump_if_variant = .{ .condition = condition, .variant = "true", .target = then_body } };
-                    self.fun.body.items[jump_if_false] = .{ .jump = .{ .target = after_if } };
-                    self.fun.body.items[jump_after_then] = .{ .jump = .{ .target = after_if } };
-                }
-
-                self.fun.tys.items[result] = result_ty orelse "Never";
-                return .{ .kind = .{ .statement = result }, .ty = then_result.ty };
-            },
             .switch_ => |switch_| {
                 const result = try self.fun.put(.{ .uninitialized = {} }, "Something"); // Type will be replaced later
                 var result_ty: ?Str = null;
@@ -928,19 +865,33 @@ const FunMonomorphizer = struct {
                         try self.format_err("- {s}\n", .{variant.name});
                     return error.CompileError;
                 }
-                for (enum_def.variants) |variant|
-                    if (!handled.contains(variant.name)) {
-                        try self.format_err("You switched on {s}, but you don't handle the \"{s}\" variant.\n", .{ value.ty, variant.name });
-                        return error.CompileError;
-                    };
+                if (switch_.default == null)
+                    for (enum_def.variants) |variant|
+                        if (!handled.contains(variant.name)) {
+                            try self.format_err("You switched on {s}, but you don't handle the \"{s}\" variant.\n", .{ value.ty, variant.name });
+                            return error.CompileError;
+                        };
 
                 // Jump table
                 const jump_table_start = self.fun.next_index();
                 for (switch_.cases) |_|
                     _ = try self.fun.put(.{ .uninitialized = {} }, "Nothing"); // Will be replaced with jump_if_variant
+                var after_switch_jumps = ArrayList(mono.StatementIndex).init(self.alloc);
+
+                // Default case
+                if (switch_.default) |default| {
+                    const default_result = try self.compile_expr(default.*);
+                    if (!string.eql(default_result.ty, "Never")) {
+                        result_ty = default_result.ty;
+                        _ = try self.fun.put(.{ .assign = .{
+                            .to = .{ .ty = self.fun.tys.items[result], .kind = .{ .statement = result } },
+                            .value = default_result,
+                        } }, "Nothing");
+                    }
+                    try after_switch_jumps.append(try self.fun.put(.{ .uninitialized = {} }, "Never")); // will be replaced with jump to after switch
+                }
 
                 // Case bodies
-                var after_switch_jumps = ArrayList(mono.StatementIndex).init(self.alloc);
                 for (switch_.cases, 0..) |case, i| {
                     self.fun.body.items[jump_table_start + i] = .{ .jump_if_variant = .{
                         .condition = value,

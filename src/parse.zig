@@ -446,11 +446,12 @@ const Parser = struct {
         ExpectedIn,
         ExpectedIterationVariable,
         ExpectedIter,
+        ExpectedDefaultExpression,
     }!?ast.Expr {
         var expression: ast.Expr = expr: {
             if (try self.parse_var()) |var_| break :expr .{ .var_ = var_ };
             if (try self.parse_return()) |returned| break :expr .{ .return_ = returned };
-            if (try self.parse_if()) |if_| break :expr .{ .if_ = if_ };
+            if (try self.parse_if()) |switch_| break :expr .{ .switch_ = switch_ };
             if (try self.parse_switch()) |switch_| break :expr .{ .switch_ = switch_ };
             if (try self.parse_loop()) |loop| {
                 const heaped = try self.alloc.create(ast.Expr);
@@ -670,7 +671,7 @@ const Parser = struct {
         return heaped;
     }
 
-    fn parse_if(self: *Self) !?ast.If {
+    fn parse_if(self: *Self) !?ast.Switch {
         self.consume_keyword("if") orelse return null;
         self.consume_whitespace();
 
@@ -678,6 +679,8 @@ const Parser = struct {
         condition.* = try self.parse_expression() orelse return error.ExpectedCondition;
         self.consume_whitespace();
 
+        var then_variant: Str = "true";
+        var then_binding: ?Str = null;
         self.consume_keyword("then") orelse return error.ExpectedThen;
         self.consume_whitespace();
 
@@ -685,14 +688,20 @@ const Parser = struct {
         then.* = try self.parse_expression() orelse return error.ExpectedThenExpression;
         self.consume_whitespace();
 
-        var else_: ?*ast.Expr = null;
+        const else_ = try self.alloc.create(ast.Expr);
+        else_.* = .{ .body = &[_]ast.Expr{} };
         if (self.consume_keyword("else")) |_| {
             self.consume_whitespace();
-            else_ = try self.alloc.create(ast.Expr);
-            else_.?.* = try self.parse_expression() orelse return error.ExpectedElseExpression;
+            else_.* = try self.parse_expression() orelse return error.ExpectedElseExpression;
         }
 
-        return .{ .condition = condition, .then = then, .else_ = else_ };
+        var cases = ArrayList(ast.Case).init(self.alloc);
+        try cases.append(.{
+            .variant = then_variant,
+            .binding = then_binding,
+            .then = then,
+        });
+        return .{ .value = condition, .cases = cases.items, .default = else_ };
     }
 
     fn parse_switch(self: *Self) !?ast.Switch {
@@ -726,8 +735,15 @@ const Parser = struct {
 
             try cases.append(.{ .variant = variant, .binding = binding, .then = then });
         }
+        var default: ?*ast.Expr = null;
+        if (self.consume_keyword("default")) |_| {
+            self.consume_whitespace();
+            default = try self.alloc.create(ast.Expr);
+            default.?.* = try self.parse_expression() orelse return error.ExpectedDefaultExpression;
+            self.consume_whitespace();
+        }
 
-        return .{ .value = value, .cases = cases.items };
+        return .{ .value = value, .cases = cases.items, .default = default };
     }
 
     fn parse_loop(self: *Self) !?ast.Expr {

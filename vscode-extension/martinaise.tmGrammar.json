@@ -10,19 +10,25 @@
     },
     {
       "name": "keyword.control",
-      "match": "(case)\\s+([a-zA-Z_0-9]*)",
+      "match": "case\\s+([a-zA-Z_0-9]*)",
       "captures": {
         "1": {
-          "name": "keyword.control"
-        },
-        "2": {
           "name": "emphasis"
         }
       }
     },
     {
       "name": "keyword.control",
-      "match": "\\b(if|then|else|switch|case|orelse|loop|for|in|do|break|continue|return)\\b"
+      "match": "is\\s+([a-zA-Z_0-9]*)",
+      "captures": {
+        "1": {
+          "name": "emphasis"
+        }
+      }
+    },
+    {
+      "name": "keyword.control",
+      "match": "\\b(if|is|then|else|switch|case|default|orelse|loop|for|in|do|break|continue|return)\\b"
     },
     { "include": "#comments" },
     {

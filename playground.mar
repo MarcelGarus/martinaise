@@ -1,13 +1,17 @@
-struct Foo {}
+fun foo(): Result[U64, U64] { Result[U64, U64].ok(bar()?.inc()) }
+fun bar(): Result[U64, U64] { Result[U64, U64].error(1) }
 
 fun main(): Never {
-  printsln("Hello, world!")
   println(foo())
+
+  if foo() is ok(a) then println(a)
+
+  switch foo()
+  case ok(a) printsln("Hi")
+  default printsln("Nope")
+
   exit(0_U8)
 }
-
-fun foo(): Result[U64, U64] { bar()?.inc().ok[U64, U64]() }
-fun bar(): Result[U64, U64] { error[U64, U64](1) }
 
 |fun map[T, X](maybe: Maybe[T], mapper: T -> X): Maybe[X] {
 |  return match maybe {
