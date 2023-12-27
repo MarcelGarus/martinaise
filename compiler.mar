@@ -1,0 +1,1120 @@
+| The Martinaise Compiler  
+| This is the compiler for Martinaise, written in Martinaise.
+| TODO: This is far from finished.
+| 
+| Glossary  
+| arg  = argument
+| args = arguments
+| def  = definition
+| env  = environment
+| expr = expression
+| fun  = function
+| init = initialize
+| str  = string
+
+| Types  
+| Types such as Int or Slice[&U8] are fundamental to Martinaise. In the
+| compiler, they are represented as a tree. For example, the Slice[&U8] type is
+| represented like this:
+|
+| Type { name = "Slice", args = [
+|   Type { name = "&", args = [
+|     Type { name = "U8", args = [] }
+|   ] }
+| ] }
+|
+| This representation of types is used throughout the AST and Mono stage of the
+| compiler.
+struct Type { name: Slice[U8], args: Vec[Type] }
+fun named_type(name: Slice[U8]): Type { Type { name, args = vec[Type]() } }
+fun write[W](writer: W, type: Type) {
+  writer.write_str(type.name);
+  if type.name.equals("&")
+  then writer.write(type.args.get(0))
+  else writer.write_type_args(type.args)
+}
+fun write_type_args[W](writer: W, args: Vec[Type]) {
+  writer.write_char('[);
+  var first = true()
+  for arg in args do {
+    if first then first = false() else writer.write_str(", ")
+    writer.write(arg)
+  }
+  writer.write_char(']);
+}
+fun specialize(type: Type, type_env: Map[Slice[U8], Type]): Type {
+  | TODO: Make sure generic types don't have parameters.
+  type_env.get(type.name) orelse {
+    var args = vec[Ty]()
+    for arg in type.args do args.&.push(arg.specialize(type_env))
+    Type { name = type.name, args }
+  }
+}
+
+| Numbers  
+| Numbers such as U8 or I32 are special in Candy. These numbers and mathematical
+| functions for them are magically in scope. Because multiple stages of the
+| compiler work with numbers, here are some shared concepts.
+enum Signedness { signed, unsigned }
+struct IntConfig { signedness: Signedness, bits: U64 }
+fun to_char(s: Signedness): U8 { switch s case signed 'I case unsigned 'U }
+fun all_signednesses(): Vec[Signdness] {
+  vec(Signdness.signed, Signedness.unsigned)
+}
+fun all_bits(): Vec[U64] { vec(8, 16, 32, 64) }
+fun all_int_configs(): Vec[IntConfig] {
+  var configs = vec[IntConfig]()
+  for signedness in all_signednesses() do
+    for bits in all_bits() do
+      configs.&.push(IntConfig { signedness, bits })
+  configs
+}
+fun to_type(config: IntConfig) Type {
+  var name = vec[U8]()
+  name.&.write_char(config.signedness.to_char())
+  name.&.write(config.bits)
+  named_type(name.to_slice())
+}
+
+| The Abstract Syntax Tree  
+| The compiler input is parsed into an abstract syntax tree. This tree is a
+| representation of the program that roughly corresponds to the structure of the
+| source code.
+struct AstProgram { defs: Vec[AstDef] }
+enum AstDef {
+  struct_: AstStruct,
+  enum_: AstEnum,
+  fun_: AstFun,
+}
+struct AstStruct {
+  name: Slice[U8],
+  type_args: Vec[Slice[U8]],
+  fields: Vec[AstStructField],
+}
+struct AstStructField { name: Slice[U8], type: Type }
+struct AstEnum {
+  name: Slice[U8],
+  type_args: Vec[Slice[U8]],
+  variants: Vec[AstEnumVariant],
+}
+struct AstEnumVariant { name: Slice[U8], type: Type }
+struct AstFun {
+  name: Slice[U8],
+  type_args: Vec[Slice[U8]],
+  args: Vec[AstFunArg],
+  returns: Type,
+  is_builtin: Bool,
+  body: Vec[AstExpr],
+}
+struct AstFunArg { name: Slice[U8], type: Type }
+enum AstExpr {
+  int: AstInt, | 0_U64
+  string: Slice[U8], | "foo"
+  name: Slice[U8], | foo
+  type_arged: AstTypeArged, | ...[T] | TODO: remove
+  call: AstCall, | ...(arg)
+  init_struct: AstInitStruct, | Foo { a = ... }
+  init_enum: AstInitEnum, | Maybe.some(5)
+  member: AstMember, | foo.bar
+  var_: AstVar, | var foo = ...
+  assign: AstAssign, | foo = ...
+  switch_: AstSwitch, | switch foo case a ... case b(bar) ...
+  loop_: &AstExpr, | loop ...
+  for_: AstFor, | for a in b do ... | TODO: remove?
+  return_: &AstExpr, | return ...
+  body: Vec[AstExpr], | { ... }
+}
+struct AstInt { value: U64, signedness: Signedness, bits: U64 }
+struct AstTypeArged { arged: &AstExpr, ty_args: Vec[Type] }
+struct AstCall { callee: &AstExpr, args: Vec[AstExpr] }
+struct AstInitStruct { ty: Ty, fields: Vec[AstInitStructField] }
+struct AstInitStructField { name: Slice[U8], value: Expr }
+struct AstInitEnum { ty: Ty, variant: Slice[U8], arg: &AstExpr }
+struct AstMember { of: &AstExpr, name: Slice[U8] }
+struct AstVar { name: Slice[U8], value: &AstExpr }
+struct AstAssign { to: &AstExpr, value: &AstExpr }
+struct AstSwitch { value: &AstExpr, cases: Vec[AstCase], default_: Maybe[&AstExpr] }
+struct AstCase { variant: Slice[U8], binding: Maybe[Slice[U8]], then_: &AstExpr }
+struct AstOrelse { primary: &AstExpr, alternative: &AstExpr }
+struct AstFor { iter_var: Slice[U8], iter: &AstExpr, expr: &AstExpr }
+
+fun write[W](writer: W, program: AstProgram) {
+  for def in program.defs do { writer.write(def) writer.write_char(newline()) }
+}
+fun write[W](writer: W, def: AstDef) {
+  switch def
+  case struct_(s) writer.write(s)
+  case enum_(e) writer.write(e)
+  case fun_(f) writer.write(f)
+}
+fun write_signature[W](writer: W, def: Def) {
+  switch def
+  case struct_(s) {
+    writer.write_str("struct ")
+    writer.write_str(s.name)
+    writer.write_type_args(s.type_args)
+  }
+  case enum_(e) {
+    writer.write_str("enum ")
+    writer.write_str(e.name)
+    writer.write_type_args(e.type_args)
+  }
+  case fun_(f) {
+    writer.write_str(f.name)
+    writer.write_type_args(f.type_args)
+    writer.write_char('()
+    var first = true()
+    for arg in f.args do {
+      if first then first = false() else writer.write_str(", ")
+      writer.write(arg.type)
+    }
+    writer.write_char('))
+  }
+}
+fun write[W](writer: W, s: AstStruct) {
+  writer.write_str("struct ")
+  writer.write_str(s.name)
+  writer.write_type_args(s.type_args)
+  if s.fields.is_empty() then writer.write_str(" {}") else {
+    writer.write_str(" {")
+    writer.write_char(newline())
+    for field in s.fields do {
+      writer.write_str("  ")
+      writer.write_str(field.name)
+      writer.write_str(": ")
+      writer.write(field.type)
+      writer.write_char(',)
+      writer.write_char(newline())
+    }
+    writer.write_char('})
+  }
+}
+fun write[W](writer: W, e: AstEnum) {
+  writer.write_str("enum ")
+  writer.write_str(e.name)
+  writer.write_type_args(e.type_args)
+  if e.variants.is_empty() then writer.write_str(" {}") else {
+    writer.write_str(" {")
+    writer.write_char(newline())
+    for variant in e.variants do {
+      writer.write_str("  ")
+      writer.write_str(variant.name)
+      writer.write_str(": ")
+      writer.write(variant.type)
+      writer.write_char(',)
+      writer.write_char(newline())
+    }
+    writer.write_char('})
+  }
+}
+fun write[W](writer: W, f: AstFun) {
+  writer.write_str("fun ")
+  writer.write_str(f.name)
+  writer.write_type_args(f.type_args)
+  writer.write_char('()
+  var first = true()
+  for arg in f.args do {
+    if first then first = false() else writer.write_str(", ")
+    writer.write_str(arg.name)
+    writer.write_str(": ")
+    writer.write_str(arg.type)
+  }
+  writer.write_char("): ")
+  writer.write(f.returns)
+  if f.is_builtin
+  then writer.write_str("{ ... }")
+  else writer.write_body(0, f.body)
+}
+fun write_indent[W](writer: W, indent: U64) {
+  for i in 0.to(indent) do writer.write_char(' )
+}
+fun write_body[W](writer: W, indent: U64, body: Vec[AstExpr]) {
+  writer.write_char('{)
+  for expr in body do {
+    writer.write_indent(indent.inc())
+    writer.write(indent.inc(), expr)
+    writer.write_char(newline())
+  }
+  writer.write_indent(indent)
+  writer.write_char('})
+}
+fun write[W](writer: W, indent: U64, expr: AstExpr) {
+  switch expr
+  case int(i) {
+    writer.write(i.value)
+    writer.write_char('_)
+    writer.write_char(i.signedness.to_char())
+    writer.write(i.bits)
+  }
+  case string(s) {
+    writer.write_char('")
+    writer.write_str(s)
+    writer.write_char('")
+  }
+  case name(n) writer.write_str(n)
+  case type_arged(t) {
+    writer.write(indent, t.arged.*)
+    writer.write_type_args(t.type_args)
+  }
+  case call(c) {
+    writer.write(indent, c.callee.*)
+    writer.write_char('()
+    var first = true()
+    for arg in c.args do {
+      if first then first = false() else writer.write_str(", ")
+      writer.write(indent, arg)
+    }
+    writer.write_char('))
+  }
+  case init_struct(s) {
+    writer.write(s.type)
+    writer.write_str(" {")
+    writer.write_char(newline())
+    for field in s.fields do {
+      writer.write_indent(indent.inc())
+      writer.write(field.name)
+      writer.write_str(" = ")
+      writer.write(indent.inc(), field.value)
+      writer.write_char(',)
+      writer.write_char(newline())
+    }
+    writer.write_indent(indent)
+    writer.write_str("}")
+  }
+  case init_enum(e) {
+    writer.write(s.type)
+    writer.write_str(".")
+    writer.write_str(e.variant)
+    writer.write_str("(")
+    writer.write(indent, e.arg)
+    writer.write_str(")")
+  }
+  case member(m) {
+    writer.write(indent, m.of.*)
+    writer.write_char('.)
+    writer.write_str(m.name)
+  }
+  case var_(v) {
+    writer.write_str("var ")
+    writer.write_str(v.name)
+    writer.write_str(" = ")
+    writer.write(indent, v.value.*)
+  }
+  case assign(a) {
+    writer.write(indent, a.to.*)
+    writer.write_str(" = ")
+    writer.write(indent, a.value.*)
+  }
+  case switch_(s) {
+    writer.write_str("switch ")
+    writer.write(indent, s.value.*)
+    writer.write_str(" {")
+    writer.write_char(newline())
+    for c in s.cases do {
+      writer.write_indent(indent)
+      writer.write_str("case ")
+      writer.write_str(c.variant.*)
+      if c.binding is some(b) then {
+        writer.write_char('()
+        writer.write(indent, b)
+        writer.write_char('))
+      }
+      writer.write_str(" ")
+      writer.write(indent.inc(), c.then_.*)
+      writer.write_char(newline())
+    }
+    if c.default_ is some(d) then {
+      writer.write_indent(indent)
+      writer.write_str("default ")
+      writer.write(indent, d.*)
+      writer.write_char(newline())
+    }
+    writer.write_indent(indent)
+    writer.write_str("}")
+  }
+  case orelse_(o) {
+    writer.write(indent, o.primary.*)
+    writer.write_str(" orelse ")
+    writer.write(indent, o.alternative.*)
+  }
+  case loop_(l) {
+    writer.write_str("loop ")
+    writer.write(indent, l.body.*)
+  }
+  case for_(f) {
+    writer.write_str("for ")
+    writer.write(indent, f.iter_var)
+    writer.write_str(" in ")
+    writer.write(indent, f.iter.*)
+    writer.write_str(" do ")
+    writer.write(indent, f.body.*)
+  }
+  case return_(r) {
+    writer.write_str("return ")
+    writer.write(indent, r.*)
+  }
+  case body(b) writer.write_body(indent, b)
+}
+
+| Parsing  
+| Unlike the parser in Candy (github.com/candy-lang/candy), the Martinaise
+| parser favors simplicity over robustness. The first time it encounters an
+| error, it simply gives up. This also means that for invalid code, you'll only
+| get the first syntax error reported.
+| 
+| The parser is structured as a recursive descent parser: Lots of little
+| functions call each other, each parsing a specific syntax, and all operate
+| with a common cursor. Almost all parser functions return
+| Result[Maybe[...], Str], where the return value has this meaning:
+|
+| - ok(none): The parser function doesn't match what comes next in the input.
+|   The cursor remains unchanged.
+| - ok(some(...)): The parsing was successful. The result is in the return
+|   value.
+| - error(...): The input is invalid. The entire parser should give up. The
+|   cursor is at the position where the error in the input is.
+|
+| For example, here are possible results of the parse_number function:
+|
+| input         | "abc"    | "42 foo"     | "42foo"
+| cursor before |  ^       |  ^           |  ^
+| cursor after  |  ^       |    ^         |    ^
+| result        | ok(none) | ok(some(42)) | error("Expected another digit.")
+|
+| - In the first case, the parser didn't match because the input doesn't start
+|   with a digit.
+| - In the second case, the parser does match, and it successfully parses the
+|   number, moving the cursor after the number.
+| - In the third case, the input starts with a digit – unmistakably a number!
+|   However, because it has a lowercase letter in it, it's invalid and results
+|   in an error. This is an invalid program.
+|
+| Whitespace is automatically consumed by the fundamental parsers. This is done
+| because Martinaise generally doesn't care about whitespace and it makes the
+| code of the higher-level parsers (structs, enums, etc.) much more concise.
+
+struct Parser { code: Slice[U8], cursor: U64 }
+
+fun current(parser: Parser): U8 { parser.code.get(parser.cursor) }
+fun rest(parser: Parser): Slice[U8] { parser.code.subslice(parser.cursor) }
+fun advance(parser: &Parser) { parser.advance_by(1) }
+fun advance_by(parser: &Parser, n: U64) { parser.cursor = parser.cursor.add(n) }
+| TODO: move into stdlib
+fun is_whitespace(char: U8): Bool {
+  char.equals(' ).or(char.equals(tab())).or(char.equals(newline()))
+}
+
+fun consume_whitespace(parser: &Parser) {
+  loop {
+    if parser.cursor.is_at_least(parser.code.len) then break
+    var char = parser.current()
+    if char.is_whitespace() then {
+      parser.cursor = parser.cursor.inc()
+      continue
+    }
+    if char.equals('|') then {
+      loop {
+        if parser.cursor.is_at_least(parser.code.len) then break
+        if parser.current().equals(newline()) then break
+        parser.cursor = parser.cursor.inc()
+      }
+      continue
+    }
+    break | not a whitespace nor comment
+  }
+}
+
+fun consume_prefix(parser: &Parser, prefix: Slice[U8]): Maybe[Nothing] {
+  parser.consume_whitespace()
+  if not(parser.rest().starts_with(prefix)) then return none[Nothing]()
+  parser.advance_by(prefix.len)
+  some({})
+}
+
+| Also makes sure there's a whitespace following, so consume_keyword("fun")
+| doesn't match the code "funny".
+fun consume_keyword(parser: &Parser, keyword: Slice[U8]): Maybe[Nothing] {
+  parser.consume_whitespace()
+  if not(parser.rest().starts_with(keyword)) then return none[Nothing]()
+  if parser.rest().len.is_greater_than(keyword.len) then {
+    var char_after = if parser.rest().get(keyword.len)
+    if not(char_after.is_whitespace().or(char_after.equals('|))) then
+      return none[Nothing]()
+  }
+  parser.advance_by(keyword.len)
+  some({})
+}
+
+fun parse_name(parser: &Parser): Maybe[Slice[U8]] {
+  var start = parser.cursor
+  loop {
+    var char = parser.current()
+    if 'A.until('Z).contains(char).or('a.until('z).contains(char))
+    then { parser.advance() continue }
+    if '0.until('9).contains(char) then
+      if parser.cursor.equals(start)
+      then break
+      else { parser.advance() continue }
+    break
+  }
+  if parser.cursor.equals(start) then return none[Slice[U8]]()
+  some(parser.code.subslice(start, parser.cursor))
+}
+
+fun parser_lower_name(parser: &Parser): Maybe[Slice[U8]] {
+  parser.consume_whitespace()
+  if not('a.until('z).contains(parser.current())) then return none[Slice[U8]]()
+  some(parser.parse_name())
+}
+
+fun parser_upper_name(parser: &Parser): Maybe[Slice[U8]] {
+  parser.consume_whitespace()
+  if not('A.until('Z).contains(parser.current())) then return none[Slice[U8]]()
+  some(parser.parse_name())
+}
+
+| Convenience methods for the three possible results of parsers returning a
+| Result[Maybe[T]].
+| alias ParseResult[T] = Result[Maybe[T], Slice[U8]]
+fun bad_input[T](error: Slice[U8]): Result[Maybe[T], Slice[U8]] {
+  error[Maybe[T], Slice[U8]](error)
+}
+fun no_match[T](): Result[Maybe[T], Slice[U8]] {
+  ok[Maybe[T], Slice[U8]](none[T]())
+}
+fun parsed[T](val: T): Result[Maybe[T], Slice[U8]] {
+  ok[Maybe[T], Slice[U8]](some(val))
+}
+
+fun parse_type(parser: &Parser): Result[Maybe[Type], Slice[U8]] {
+  if parser.consume_prefix("&") is some then {
+    var arg = parser.parse_type_args()?
+      orelse return bad_input[Type]("After &, there must come a type.")
+    return parsed(Type { name = "&", args = vec(arg) })
+  }
+
+  var name = parser.parse_upper_name() orelse return no_match[Type]()
+  var args = parser.parse_type_args()? orelse vec[Type]()
+  parsed(Type { name, args })
+}
+
+fun parse_type_args(parser: &Parser): Result[Maybe[Vec[Type]], Slice[U8]] {
+  var args = vec[Ty]()
+  parser.consume_prefix("[") orelse return no_match[Vec[Type]]()
+  loop {
+    var arg = parser.parse_type()? orelse break
+    args.push(arg)
+    parser.consume_prefix(",") orelse break
+  }
+  parser.consume_prefix("]") orelse return bad_input[Vec[Type]](
+    "Expected a closing bracket to end the type arguments.")
+  parsed(args)
+}
+
+fun parse_type_params(parser: &Parser): Result[Maybe[Vec[Type]], Slice[U8]] {
+  var args = vec[Ty]()
+  parser.consume_prefix("[") orelse return no_match[Vec[Type]]()
+  loop {
+    var arg = parser.parse_upper_name() orelse break
+    args.push(arg)
+    parser.consume_prefix(",") orelse break
+  }
+  parser.consume_prefix("]") orelse return bad_input[Vec[Type]](
+    "Expected a closing bracket to end the type arguments.")
+  parsed(args)
+}
+
+fun parse_digits(parser: &Parser): Result[Maybe[U64], Slice[U8]] {
+  var start = parser.cursor
+  var num = 0
+  loop {
+    var char = parser.current()
+    if '0.until('9).contains(char) then {
+      num = num.multiply(10).add(char).subtract('0) | TODO: put in stdlib
+      parser.advance()
+    }
+    else if char.equals('_) then parser.advance()
+    else break
+  }
+  if parser.cursor.equals(start) then return no_match[U64]()
+  if parser.code.get(parser.cursor.dec()).equals('_)
+  then parser.cursor = parser.cursor.dec()
+  parsed(num)
+}
+
+fun parse_int(parser: &Parser): Result[Maybe[AstInt], Slice[U8]] {
+  var value = parser.parse_digits()? orelse return no_match[AstInt]()
+  parser.consume_prefix("_")
+    orelse return parsed(
+      AstInt { value, signedness = Signedness.unsigned, bits = 64 })
+  var signedness =
+    if parser.consume_prefix("I") is some then Signdness.signed
+    else if parser.consume_prefix("U") is some then Signdness.unsigned
+    else return bad_input[AstInt]("Expected a signedness (U or I).")
+  var bits = parser.parse_digits()?
+    orelse return bad_input[AstInt]("Expected bit length of the integer.")
+  | TODO: check that number fits in range
+  parsed(AstInt { value, signedness, bits })
+}
+
+| TODO: explanation
+fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  | if parser.parse_var()? is some(v) then return parsed(AstExpr.var_(v))
+
+  if parser.parse_var()? is some(v) then return parsed(AstExpr.var_(v))
+  if parser.parse_return()? is some(r) then return parsed(AstExpr.return_(r))
+  if parser.parse_if()? is some(i) then return parsed(AstExpr.if_(i))
+  if parser.parse_switch()? is some(s) then return parsed(AstExpr.switch_(s))
+  if parser.parse_loop()? is some(l) then return parsed(AstExpr.loop_(l))
+  if parser.parse_for()? is some(f) then return parsed(AstExpr.for_(f))
+  if parser.parse_int()? is some(i) then return parsed(AstExpr.int(i))
+  if parser.parse_char()? is some(c) then return parsed(AstExpr.char(c))
+  if parser.parse_str()? is some(s) then return parsed(AstExpr.str(s))
+  if parser.parse_lower_name()? is some(n) then return parsed(AstExpr.name(n))
+  if parser.parse_body()? is some(b) then return parsed(AstExpr.body(b))
+  if parser.parse_struct_or_enum_creation()? is some(s) then return parsed(s)
+}
+
+fun parse_expr(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  var expr = parser.parse_expr_without_suffix()?
+    orelse return no_match[AstExpr]()
+  loop {
+    if parser.parse_expr_suffix_member(expr)? is some(m) then { expr = m continue }
+    if parser.parse_expr_suffix_call(expr)? is some(c) then { expr = AstExpr.call(c) continue }
+    if parser.parse_expr_suffix_type_arged(expr)? is some(t) then { expr = AstExpr.type_arged(t) continue }
+    if parser.parse_expr_suffix_assign(expr)? is some(a) then { expr = AstExpr.assign(a) continue }
+    if parser.parse_expr_suffix_orelse(expr)? is some(o) then { expr = AstExpr.orelse_(o) continue }
+    break | nothing more got parsed
+  }
+  expr
+}
+
+
+
+fun parse_struct(parser: &Parser): Result[Maybe[AstStruct], Slice[U8]] {
+  parser.consume_keyword("struct") orelse return no_match[AstStruct]()
+  var name = parser.parse_upper_name()
+    orelse return bad_input[AstStruct]("Expected an uppercase name.")
+  var type_params = parser.parse_type_params()? orelse vec[Slice[U8]]()
+  parser.consume_prefix("{")
+    orelse return bad_input[AstStruct]("Expected an opening brace.")
+  var fields = vec[AstStructField]()
+  loop {
+    var field_name = parser.parse_lower_name() orelse break
+    parser.consume_prefix(":")
+      orelse return bad_input[AstStruct]("Expected a colon.")
+    var field_type = parser.parse_type()?
+      orelse return bad_input[AstStruct]("Expected the type of the field.")
+    fields.push(AstStructField { name = field_name, type = field_type })
+    parser.consume_prefix(",") orelse break
+  }
+  parser.consume_prefix("}")
+    orelse return bad_input[AstStruct](
+      "Expected a closing brace to end the struct.")
+  AstStruct { name, type_params, fields }
+}
+
+fun parse_enum(parser: &Parser): Result[Maybe[AstEnum], Slice[U8]] {
+  parser.consume_keyword("enum") orelse return no_match[AstEnum]()
+  var name = parser.parse_upper_name()
+    orelse return bad_input[AstEnum]("Expected an uppercase name.")
+  var type_params = parser.parse_type_params()? orelse vec[Slice[U8]]()
+  parser.consume_prefix("{")
+    orelse return bad_input[AstEnum]("Expected an opening brace.")
+  var variants = vec[AstEnumVariant]()
+  loop {
+    var variant_name = parser.parse_lower_name() orelse break
+    var variant_type = named_type("Nothing")
+    if parser.consume_prefix(":") is some
+    then variant_type = parser.parse_type()?
+      orelse return bad_input[AstEnum]("Expected the type of the variant.")
+    variants.push(AstEnumVariant { name = variant_name, type = variant_type })
+    parser.consume_prefix(",") orelse break
+  }
+  parser.consume_prefix("}")
+    orelse return bad_input[AstEnum](
+      "Expected a closing brace to end the enum.")
+  AstEnum { name, type_params, variants }
+}
+
+fn parse_defs(self: *Self) !ArrayList(ast.Def) {
+    var defs = ArrayList(ast.Def).init(self.alloc);
+    while (true) {
+        self.consume_whitespace();
+
+        if (try self.parse_struct()) |s| {
+            try defs.append(.{ .struct_ = s });
+            continue;
+        }
+        if (try self.parse_enum()) |e| {
+            try defs.append(.{ .enum_ = e });
+            continue;
+        }
+        if (try self.parse_fun()) |fun| {
+            try defs.append(.{ .fun = fun });
+            continue;
+        }
+
+        break; // Nothing more got parsed.
+    }
+    self.consume_whitespace();
+    if (self.code.len > 0) return error.ExpectedDefinition;
+    return defs;
+}
+
+fun parse(code: Slice[U8], stdlib_size: U64): Result[AstProgram, Slice[U8]] {
+  var parser = Parser { code }
+
+  switch parser.parse_defs()
+  case ok()
+}
+pub fn parse(alloc: std.mem.Allocator, code: Str, stdlib_size: usize) !Result(ast.Program) {
+    var parser = Parser{ .code = code, .alloc = alloc };
+    var defs = parser.parse_defs() catch |err| {
+        if (err == error.OutOfMemory) return err;
+
+        var out_buf = String.init(alloc);
+        const out = out_buf.writer();
+
+        const error_offset = code.len - parser.code.len;
+
+        var lines = ArrayList(Str).init(alloc);
+        var current_line = String.init(alloc);
+        var stdlib_lines: ?usize = null;
+        var error_offset_in_line: ?usize = null;
+        get_lines: for (code, 0..) |c, i| {
+            if (i == stdlib_size) stdlib_lines = lines.items.len;
+            if (i == error_offset) {
+                error_offset_in_line = current_line.items.len;
+                for (code[error_offset..]) |c_| switch (c_) {
+                    '\n' => {
+                        try lines.append(current_line.items);
+                        break :get_lines;
+                    },
+                    else => try current_line.append(c_),
+                };
+            }
+            switch (c) {
+                '\n' => {
+                    try lines.append(current_line.items);
+                    current_line = String.init(alloc);
+                },
+                else => |a| try current_line.append(a),
+            }
+        }
+
+        const num_lines_to_display = @min(lines.items.len, 4);
+        const start_line = lines.items.len - num_lines_to_display + 1;
+        for (lines.items[start_line..], start_line..) |line, line_number| {
+            var number = line_number + 1;
+            if (stdlib_lines) |stdlines| if (line_number > stdlines) {
+                number -= stdlines + 1;
+            };
+            try format(out, "{d:4} | {s}\n", .{ number, line });
+        }
+
+        try format(out, "       ", .{});
+        for (0..error_offset_in_line.?) |_|
+            try format(out, " ", .{});
+        try format(out, "^\n", .{});
+        try format(out, " ", .{});
+        for (0..error_offset_in_line.?) |_|
+            try format(out, " ", .{});
+        try format(out, "{}\n", .{err});
+
+        return .{ .err = out_buf.items };
+    };
+
+    // Add builtins.
+
+    { // struct &[T] { *: T }
+        var ty_args = ArrayList(Str).init(alloc);
+        try ty_args.append("T");
+        const t = Ty.named("T");
+        var fields = StringArrayHashMap(Ty).init(alloc);
+        try fields.put("*", t);
+        try defs.append(.{ .struct_ = .{ .name = "&", .ty_args = ty_args.items, .fields = fields } });
+    }
+
+    // Int stuff.
+    for (numbers.all_int_configs()) |config| {
+        const ty = try numbers.int_ty(alloc, config);
+        try defs.append(.{ .builtin_ty = ty.name });
+
+        var two_args = StringArrayHashMap(Ty).init(alloc);
+        try two_args.put("a", ty);
+        try two_args.put("b", ty);
+
+        add_builtin_fun(&defs, "add", null, two_args, ty);
+        add_builtin_fun(&defs, "subtract", null, two_args, ty);
+        add_builtin_fun(&defs, "multiply", null, two_args, ty);
+        add_builtin_fun(&defs, "divide", null, two_args, ty);
+        add_builtin_fun(&defs, "modulo", null, two_args, ty);
+        add_builtin_fun(&defs, "compare_to", null, two_args, Ty.named("Ordering"));
+        // add_builtin_fun(&defs, "shiftLeft", two_args, ty);
+        // add_builtin_fun(&defs, "shiftRight", two_args, ty);
+        // add_builtin_fun(&defs, "bitLength", two_args, ty);
+        // add_builtin_fun(&defs, "and", two_args, ty);
+        // add_builtin_fun(&defs, "or", two_args, ty);
+        // add_builtin_fun(&defs, "xor", two_args, ty);
+
+        // Conversion functions
+        for (numbers.all_int_configs()) |target_config| {
+            // if (config == target_config) {
+            if (config.signedness == target_config.signedness and config.bits == target_config.bits)
+                continue;
+
+            const target_ty = try numbers.int_ty(alloc, target_config);
+            var args = StringArrayHashMap(Ty).init(alloc);
+            try args.put("i", ty);
+            add_builtin_fun(
+                &defs,
+                try string.formata(alloc, "to_{s}", .{target_ty.name}),
+                null,
+                args,
+                target_ty,
+            );
+        }
+    }
+
+    return .{ .ok = defs.items };
+}
+pub fn add_builtin_fun(
+    defs: *ArrayList(ast.Def),
+    name: Str,
+    ty_args: ?[]const Str,
+    args: StringArrayHashMap(Ty),
+    returns: Ty,
+) void {
+    defs.append(.{ .fun = .{
+        .name = name,
+        .ty_args = ty_args orelse &[_]Str{},
+        .args = args,
+        .returns = returns,
+        .is_builtin = true,
+        .body = &[_]ast.Expr{},
+    } }) catch return;
+}
+
+const Parser = struct {
+    code: Str,
+    alloc: std.mem.Allocator,
+
+    const Self = @This();
+
+    fn parse_fun(self: *Self) !?ast.Fun {
+        self.consume_keyword("fun") orelse return null;
+        self.consume_whitespace();
+        const name = self.parse_lower_name() orelse return error.ExpectedNameOfFunction;
+        self.consume_whitespace();
+        const type_args = try self.parse_type_params() orelse &[_]Str{};
+        self.consume_whitespace();
+        var args = StringArrayHashMap(Ty).init(self.alloc);
+        self.consume_prefix("(") orelse return error.ExpectedOpeningParenthesis;
+        self.consume_whitespace();
+        while (true) {
+            const arg_name = self.parse_lower_name() orelse break;
+            self.consume_whitespace();
+            self.consume_prefix(":") orelse return error.ExpectedColon;
+            self.consume_whitespace();
+            const arg_type = try self.parse_type() orelse return error.ExpectedTypeOfArgument;
+            try args.put(arg_name, arg_type);
+            self.consume_prefix(",") orelse break;
+            self.consume_whitespace();
+        }
+        self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
+        self.consume_whitespace();
+
+        var return_type = Ty.named("Nothing");
+        if (self.consume_prefix(":")) |_| {
+            self.consume_whitespace();
+            return_type = try self.parse_type() orelse return error.ExpectedReturnType;
+        }
+        self.consume_whitespace();
+
+        var is_builtin = false;
+        const body = get_body: {
+            if (self.consume_prefix("{ ... }")) |_| {
+                is_builtin = true;
+                break :get_body &[_]ast.Expr{};
+            } else {
+                break :get_body try self.parse_body() orelse return error.ExpectedBody;
+            }
+        };
+
+        return .{
+            .name = name,
+            .ty_args = type_args,
+            .args = args,
+            .returns = return_type,
+            .is_builtin = is_builtin,
+            .body = body,
+        };
+    }
+
+    fn parse_body(self: *Self) !?ast.Body {
+        self.consume_prefix("{") orelse return null;
+
+        var statements = ArrayList(ast.Expr).init(self.alloc);
+        while (true) {
+            self.consume_whitespace();
+
+            if (try self.parse_expr()) |expr| {
+                try statements.append(expr);
+                continue;
+            }
+
+            break; // Nothing more got parsed.
+        }
+
+        self.consume_prefix("}") orelse return error.ExpectedStatementOrClosingBrace;
+        return statements.items;
+    }
+
+    fn parse_char(self: *Self) !?u8 {
+        self.consume_prefix("'") orelse return null;
+        if (self.code.len == 0) return error.ExpectedChar;
+        const c = self.code[0];
+        self.code = self.code[1..];
+        return c;
+    }
+
+    fn parse_string(self: *Self) !?Str {
+        self.consume_prefix("\"") orelse return null;
+        var i: usize = 0;
+        while (self.code[i] != '\"') i += 1;
+        const str = self.code[0..i];
+        self.code = self.code[i + 1 ..];
+        return str;
+    }
+
+    fn parse_ampersanded(self: *Self) !?ast.Expr {
+        self.consume_prefix("&") orelse return null;
+        return try self.parse_expr() orelse error.ExpectedExpression;
+    }
+
+    fn parse_expr_suffix_type_arged(self: *Self, current: ast.Expr) !?ast.TyArged {
+        const type_args = try self.parse_type_args() orelse return null;
+
+        const heaped = try self.alloc.create(ast.Expr);
+        heaped.* = current;
+
+        return .{ .arged = heaped, .ty_args = type_args };
+    }
+
+    fn parse_expr_suffix_assign(self: *Self, current: ast.Expr) !?ast.Assign {
+        self.consume_prefix("=") orelse return null;
+        self.consume_whitespace();
+        const value = try self.parse_expr() orelse return error.ExpectedExpression;
+
+        const heaped_to = try self.alloc.create(ast.Expr);
+        heaped_to.* = current;
+        const heaped_value = try self.alloc.create(ast.Expr);
+        heaped_value.* = value;
+
+        return .{ .to = heaped_to, .value = heaped_value };
+    }
+
+    fn parse_expr_suffix_call(self: *Self, current: ast.Expr) !?ast.Call {
+        self.consume_prefix("(") orelse return null;
+
+        const heaped = try self.alloc.create(ast.Expr);
+        heaped.* = current;
+
+        var args = ArrayList(ast.Expr).init(self.alloc);
+        self.consume_whitespace();
+        while (true) {
+            const arg = try self.parse_expr() orelse break;
+            self.consume_whitespace();
+            try args.append(arg);
+            self.consume_prefix(",") orelse break;
+            self.consume_whitespace();
+        }
+        self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
+
+        return .{ .callee = heaped, .args = args.items };
+    }
+
+    fn parse_expr_suffix_member_or_constructor(self: *Self, current: ast.Expr) !?ast.Expr {
+        self.consume_prefix(".") orelse return null;
+
+        const heaped = try self.alloc.create(ast.Expr);
+        heaped.* = current;
+
+        self.consume_whitespace();
+        if (self.consume_prefix("*")) |_| return .{ .member = .{ .of = heaped, .name = "*" } };
+        if (self.consume_prefix("&")) |_| return .{ .ampersanded = heaped };
+        if (self.parse_lower_name()) |name| return .{ .member = .{ .of = heaped, .name = name } };
+        return error.ExpectedMemberOrConstructor;
+    }
+
+    fn parse_expr_suffix_orelse(self: *Self, current: ast.Expr) !?ast.Orelse {
+        self.consume_keyword("orelse") orelse return null;
+        self.consume_whitespace();
+
+        const heaped = try self.alloc.create(ast.Expr);
+        heaped.* = current;
+
+        const alternative = try self.alloc.create(ast.Expr);
+        alternative.* = try self.parse_expr() orelse return error.ExpectedAlternativeExpression;
+
+        return .{ .primary = heaped, .alternative = alternative };
+    }
+
+    fn parse_var(self: *Self) !?ast.Var {
+        self.consume_keyword("var") orelse return null;
+        self.consume_whitespace();
+
+        const name = self.parse_lower_name() orelse return error.ExpectedNameOfVar;
+        self.consume_whitespace();
+
+        self.consume_prefix("=") orelse return error.ExpectedEquals;
+        self.consume_whitespace();
+
+        const value = try self.parse_expr() orelse return error.ExpectedValueOfVar;
+        const heaped = try self.alloc.create(ast.Expr);
+        heaped.* = value;
+
+        return .{ .name = name, .value = heaped };
+    }
+
+    fn parse_return(self: *Self) !?*const ast.Expr {
+        self.consume_keyword("return") orelse return null;
+        self.consume_whitespace();
+
+        const returned = try self.parse_expr() orelse return error.ExpectedExpression;
+        const heaped = try self.alloc.create(ast.Expr);
+        heaped.* = returned;
+
+        return heaped;
+    }
+
+    fn parse_if(self: *Self) !?ast.If {
+        self.consume_keyword("if") orelse return null;
+        self.consume_whitespace();
+
+        const condition = try self.alloc.create(ast.Expr);
+        condition.* = try self.parse_expr() orelse return error.ExpectedCondition;
+        self.consume_whitespace();
+
+        self.consume_keyword("then") orelse return error.ExpectedThen;
+        self.consume_whitespace();
+
+        const then = try self.alloc.create(ast.Expr);
+        then.* = try self.parse_expr() orelse return error.ExpectedThenExpression;
+        self.consume_whitespace();
+
+        var else_: ?*ast.Expr = null;
+        if (self.consume_keyword("else")) |_| {
+            self.consume_whitespace();
+            else_ = try self.alloc.create(ast.Expr);
+            else_.?.* = try self.parse_expr() orelse return error.ExpectedElseExpression;
+        }
+
+        return .{ .condition = condition, .then = then, .else_ = else_ };
+    }
+
+    fn parse_switch(self: *Self) !?ast.Switch {
+        self.consume_keyword("switch") orelse return null;
+        self.consume_whitespace();
+
+        const value = try self.alloc.create(ast.Expr);
+        value.* = try self.parse_expr() orelse return error.ExpectedExpression;
+        self.consume_whitespace();
+
+        var cases = ArrayList(ast.Case).init(self.alloc);
+        while (true) {
+            self.consume_keyword("case") orelse break;
+            self.consume_whitespace();
+
+            const variant = self.parse_lower_name() orelse return error.ExpectedVariant;
+            self.consume_whitespace();
+
+            var binding: ?Str = null;
+            if (self.consume_prefix("(")) |_| {
+                self.consume_whitespace();
+                binding = self.parse_lower_name() orelse return error.ExpectedBinding;
+                self.consume_whitespace();
+                self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
+                self.consume_whitespace();
+            }
+
+            const then = try self.alloc.create(ast.Expr);
+            then.* = try self.parse_expr() orelse return error.ExpectedCaseExpression;
+            self.consume_whitespace();
+
+            try cases.append(.{ .variant = variant, .binding = binding, .then = then });
+        }
+
+        return .{ .value = value, .cases = cases.items };
+    }
+
+    fn parse_loop(self: *Self) !?ast.Expr {
+        self.consume_keyword("loop") orelse return null;
+        self.consume_whitespace();
+        return try self.parse_expr() orelse return error.ExpectedLoopExpr;
+    }
+
+    fn parse_for(self: *Self) !?ast.For {
+        self.consume_keyword("for") orelse return null;
+        self.consume_whitespace();
+        const iter_var = self.parse_lower_name() orelse return error.ExpectedIterationVariable;
+        self.consume_whitespace();
+        self.consume_keyword("in") orelse return error.ExpectedIn;
+        self.consume_whitespace();
+        const iter = try self.alloc.create(ast.Expr);
+        iter.* = try self.parse_expr() orelse return error.ExpectedIter;
+        self.consume_whitespace();
+        self.consume_keyword("do") orelse return error.ExpectedDo;
+        self.consume_whitespace();
+        const expr = try self.alloc.create(ast.Expr);
+        expr.* = try self.parse_expr() orelse return error.ExpectedLoopExpr;
+        return .{ .iter_var = iter_var, .iter = iter, .expr = expr };
+    }
+
+    fn parse_struct_or_enum_creation(self: *Self) !?ast.Expr {
+        const ty = try self.parse_type() orelse return null;
+        self.consume_whitespace();
+
+        if (self.consume_prefix("{")) |_| {
+            self.consume_whitespace();
+
+            var fields = ArrayList(ast.StructCreationField).init(self.alloc);
+            while (true) {
+                const name = self.parse_lower_name() orelse break;
+                self.consume_whitespace();
+                const value = find_value: {
+                    if (self.consume_prefix("=")) |_| {
+                        self.consume_whitespace();
+                        break :find_value try self.parse_expr() orelse return error.ExpectedValueOfField;
+                    } else break :find_value ast.Expr{ .name = name };
+                };
+                try fields.append(.{ .name = name, .value = value });
+                self.consume_whitespace();
+                self.consume_prefix(",") orelse break;
+                self.consume_whitespace();
+            }
+            self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
+
+            return .{ .struct_creation = .{ .ty = ty, .fields = fields.items } };
+        } else {
+            self.consume_prefix(".") orelse return error.ExpectedStructOrEnumCreation;
+            self.consume_whitespace();
+            const variant = self.parse_lower_name() orelse return error.ExpectedVariant;
+            self.consume_whitespace();
+
+            var arg: ?*const ast.Expr = null;
+            if (self.consume_prefix("(")) |_| {
+                self.consume_whitespace();
+                const arg_ = try self.alloc.create(ast.Expr);
+                arg_.* = try self.parse_expr() orelse return error.ExpectedVariantArgument;
+                arg = arg_;
+                self.consume_whitespace();
+                self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
+            }
+
+            return .{ .enum_creation = .{ .ty = ty, .variant = variant, .arg = arg } };
+        }
+    }
+};
+

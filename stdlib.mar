@@ -457,7 +457,8 @@ fun println[T](value: T) { print(value) println() }
 fun println() { stdout().write_char(newline()) }
 fun prints(message: Slice[U8]) { stdout().write_str(message) }
 fun printsln(message: Slice[U8]) { prints(message) println() }
-fun newline(): U8 { 10_U8 } | TODO: refactor to variable when we have global variables
+fun newline(): U8 { 10_U8 } | TODO: refactor to var when we have global vars
+fun tab(): U8 { 9_U8 } | TODO: refactor to global var
 fun write_char[W](writer: W, char: U8) { writer.write_byte(char) }
 fun write_str[W](writer: W, str: Slice[U8]) {
   for char in str do writer.write_char(char)
@@ -558,6 +559,7 @@ fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0, vec.len) }
 fun equals[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice().equals(b.to_slice()) }
 fun iter[T](vec: Vec[T]): SliceIter[T] { vec.to_slice().iter() }
 fun write[W, T](writer: W, vec: Vec[T]) { writer.write(vec.to_slice()) }
+fun write_byte(writer: &Vec[U8], byte: U8) { writer.&.push(byte) }
 
 | Stack  
 | Something where you can push and pop items. Essentially just a Vec, but
