@@ -12,6 +12,25 @@
 | init = initialize
 | str  = string
 
+| Terminal utilities  
+
+fun clear_terminal() {
+  todo()
+  | var clear = std.ChildProcess.init(&[_]Str{"clear"}, alloc);
+  | clear.stdout = std.io.getStdOut();
+  | clear.stderr = std.io.getStdErr();
+  | _ = try clear.spawnAndWait();
+}
+
+fun print_on_same_line(message: Slice[U8]) {
+  | \x1b[1A\x1b[K
+  print_char(27)
+  prints("[1A")
+  print_char(27)
+  prints("[K")
+  printsln(message)
+}
+
 | Types  
 | Types such as Int or Slice[&U8] are fundamental to Martinaise. In the
 | compiler, they are represented as a tree. For example, the Slice[&U8] type is
@@ -109,7 +128,7 @@ struct AstFun {
 struct AstFunArg { name: Slice[U8], type: Type }
 enum AstExpr {
   int: AstInt, | 0_U64
-  string: Slice[U8], | "foo"
+  str: Slice[U8], | "foo"
   name: Slice[U8], | foo
   type_arged: AstTypeArged, | ...[T] | TODO: remove
   call: AstCall, | ...(arg)
@@ -120,23 +139,30 @@ enum AstExpr {
   assign: AstAssign, | foo = ...
   switch_: AstSwitch, | switch foo case a ... case b(bar) ...
   loop_: &AstExpr, | loop ...
-  for_: AstFor, | for a in b do ... | TODO: remove?
   return_: &AstExpr, | return ...
   body: Vec[AstExpr], | { ... }
 }
 struct AstInt { value: U64, signedness: Signedness, bits: U64 }
-struct AstTypeArged { arged: &AstExpr, ty_args: Vec[Type] }
+struct AstTypeArged { expr: &AstExpr, type_args: Vec[Type] }
 struct AstCall { callee: &AstExpr, args: Vec[AstExpr] }
-struct AstInitStruct { ty: Ty, fields: Vec[AstInitStructField] }
+struct AstInitStruct { type: Type, fields: Vec[AstInitStructField] }
 struct AstInitStructField { name: Slice[U8], value: Expr }
-struct AstInitEnum { ty: Ty, variant: Slice[U8], arg: &AstExpr }
+struct AstInitEnum { type: Type, variant: Slice[U8], arg: &AstExpr }
 struct AstMember { of: &AstExpr, name: Slice[U8] }
 struct AstVar { name: Slice[U8], value: &AstExpr }
 struct AstAssign { to: &AstExpr, value: &AstExpr }
 struct AstSwitch { value: &AstExpr, cases: Vec[AstCase], default_: Maybe[&AstExpr] }
 struct AstCase { variant: Slice[U8], binding: Maybe[Slice[U8]], then_: &AstExpr }
-struct AstOrelse { primary: &AstExpr, alternative: &AstExpr }
-struct AstFor { iter_var: Slice[U8], iter: &AstExpr, expr: &AstExpr }
+
+fun call(expr: AstExpr, args: Vec[AstExpr]): AstExpr {
+  AstExpr.call(AstCall { callee = expr.put_on_heap(), args })
+}
+fun member(expr: AstExpr, name: Slice[U8]): AstExpr {
+  AstExpr.member(AstMember { of = expr.put_on_heap(), name })
+}
+fun var_(name: Slice[U8], value: AstExpr): AstExpr {
+  AstExpr.var_(AstVar { name, value })
+}
 
 fun write[W](writer: W, program: AstProgram) {
   for def in program.defs do { writer.write(def) writer.write_char(newline()) }
@@ -246,7 +272,7 @@ fun write[W](writer: W, indent: U64, expr: AstExpr) {
     writer.write_char(i.signedness.to_char())
     writer.write(i.bits)
   }
-  case string(s) {
+  case str(s) {
     writer.write_char('")
     writer.write_str(s)
     writer.write_char('")
@@ -524,6 +550,38 @@ fun parse_type_params(parser: &Parser): Result[Maybe[Vec[Type]], Slice[U8]] {
   parsed(args)
 }
 
+| TODO: explanation
+fun parse_expr(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  var expr = parser.parse_expr_without_suffix()?
+    orelse return no_match[AstExpr]()
+  loop
+    switch parser.parse_expr_suffix(expr)? case some(e) expr = e case none break
+  expr
+}
+fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  | if parser.parse_var()? is some(v) then return parsed(AstExpr.var_(v))
+
+  if parser.parse_int()? is some(i) then return parsed(AstExpr.int(i))
+  if parser.parse_char()? is some(c) then return parsed(AstExpr.char(c))
+  if parser.parse_str()? is some(s) then return parsed(AstExpr.str(s))
+  if parser.parse_init()? is some(s) then return parsed(s)
+  if parser.parse_body()? is some(b) then return parsed(AstExpr.body(b))
+  if parser.parse_var()? is some(v) then return parsed(AstExpr.var_(v))
+  if parser.parse_if()? is some(i) then return parsed(AstExpr.if_(i))
+  if parser.parse_switch()? is some(s) then return parsed(AstExpr.switch_(s))
+  if parser.parse_loop()? is some(l) then return parsed(AstExpr.loop_(l))
+  if parser.parse_for()? is some(f) then return parsed(AstExpr.for_(f))
+  if parser.parse_return()? is some(r) then return parsed(AstExpr.return_(r))
+  if parser.parse_lower_name()? is some(n) then return parsed(AstExpr.name(n))
+}
+fun parse_expr_suffix(parser: &Parser, expr: Expr): Result[Maybe[AstExpr], Slice[U8]] {
+  if parser.parse_suffix_member(expr)? is some(m) then return parsed(m)
+  if parser.parse_suffix_call(expr)? is some(c) then return parsed(c)
+  if parser.parse_suffix_type_arged(expr)? is some(t) then return parsed(t)
+  if parser.parse_suffix_assign(expr)? is some(a) then return parsed(a)
+  if parser.parse_suffix_orelse(expr)? is some(o) then return parsed(o)
+}
+
 fun parse_digits(parser: &Parser): Result[Maybe[U64], Slice[U8]] {
   var start = parser.cursor
   var num = 0
@@ -542,54 +600,303 @@ fun parse_digits(parser: &Parser): Result[Maybe[U64], Slice[U8]] {
   parsed(num)
 }
 
-fun parse_int(parser: &Parser): Result[Maybe[AstInt], Slice[U8]] {
-  var value = parser.parse_digits()? orelse return no_match[AstInt]()
+fun parse_int(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  var value = parser.parse_digits()? orelse return no_match[AstExpr]()
   parser.consume_prefix("_")
-    orelse return parsed(
-      AstInt { value, signedness = Signedness.unsigned, bits = 64 })
+    orelse return parsed(AstExpr.int(
+      AstInt { value, signedness = Signedness.unsigned, bits = 64 }))
   var signedness =
     if parser.consume_prefix("I") is some then Signdness.signed
     else if parser.consume_prefix("U") is some then Signdness.unsigned
-    else return bad_input[AstInt]("Expected a signedness (U or I).")
+    else return bad_input[AstExpr]("Expected a signedness (U or I).")
   var bits = parser.parse_digits()?
-    orelse return bad_input[AstInt]("Expected bit length of the integer.")
+    orelse return bad_input[AstExpr]("Expected bit length of the integer.")
   | TODO: check that number fits in range
-  parsed(AstInt { value, signedness, bits })
+  parsed(AstExpr.int(AstInt { value, signedness, bits }))
 }
 
-| TODO: explanation
-fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
-  | if parser.parse_var()? is some(v) then return parsed(AstExpr.var_(v))
-
-  if parser.parse_var()? is some(v) then return parsed(AstExpr.var_(v))
-  if parser.parse_return()? is some(r) then return parsed(AstExpr.return_(r))
-  if parser.parse_if()? is some(i) then return parsed(AstExpr.if_(i))
-  if parser.parse_switch()? is some(s) then return parsed(AstExpr.switch_(s))
-  if parser.parse_loop()? is some(l) then return parsed(AstExpr.loop_(l))
-  if parser.parse_for()? is some(f) then return parsed(AstExpr.for_(f))
-  if parser.parse_int()? is some(i) then return parsed(AstExpr.int(i))
-  if parser.parse_char()? is some(c) then return parsed(AstExpr.char(c))
-  if parser.parse_str()? is some(s) then return parsed(AstExpr.str(s))
-  if parser.parse_lower_name()? is some(n) then return parsed(AstExpr.name(n))
-  if parser.parse_body()? is some(b) then return parsed(AstExpr.body(b))
-  if parser.parse_struct_or_enum_creation()? is some(s) then return parsed(s)
+fun parse_char(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  parser.consume_prefix('') orelse return no_match[AstExpr]()
+  var char = parser.current()
+  parser.advance()
+  parsed(AstExpr.int(
+    AstInt { char, signedness = Signedness.unsigned, bits = 8 }))
 }
 
-fun parse_expr(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
-  var expr = parser.parse_expr_without_suffix()?
-    orelse return no_match[AstExpr]()
-  loop {
-    if parser.parse_expr_suffix_member(expr)? is some(m) then { expr = m continue }
-    if parser.parse_expr_suffix_call(expr)? is some(c) then { expr = AstExpr.call(c) continue }
-    if parser.parse_expr_suffix_type_arged(expr)? is some(t) then { expr = AstExpr.type_arged(t) continue }
-    if parser.parse_expr_suffix_assign(expr)? is some(a) then { expr = AstExpr.assign(a) continue }
-    if parser.parse_expr_suffix_orelse(expr)? is some(o) then { expr = AstExpr.orelse_(o) continue }
-    break | nothing more got parsed
+fun parse_str(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  parser.consume_prefix('") orelse return no_match[AstExpr]()
+  var start = parser.cursor
+  loop if parser.current().equals('") then break else parser.advance()
+  parser.advance()
+  parsed(AstExpr.str(parser.code.subslice(start, parser.cursor.dec())))
+}
+
+fun parse_init(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  var type = parser.parse_type()? orelse return no_match[AstExpr]()
+  if parser.consume_prefix("{") is some then {
+    var fields = vec[AstInitStructField]()
+    loop {
+      var name = parser.parse_lower_name() orelse break
+      var value =
+        if parser.consume_prefix("=") is some
+        then parser.parse_expr()?
+          orelse return bad_input[AstExpr]("Expected the value of the field.")
+        else AstExpr.name(name)
+      fields.push(AstInitStructField { name, value })
+      parser.consume_prefix(",") orelse break
+    }
+    parser.consume_prefix("}")
+      orelse return bad_input[AstExpr]("Expected a closing brace.")
+    parsed(AstExpr.init_struct(AstInitStruct { type, fields }))
+  } else {
+    parser.consume_prefix(".")
+      orelse return bad_input[AstExpr](
+        "Expected struct or enum initialization.")
+    var variant = parser.parse_lower_name()
+      orelse return bad_input[AstExpr]("Expected the variant.")
+    
+    var arg = AstExpr.body(vec[AstExpr]())
+    if parser.consume_prefix("(") is some then {
+      arg = parser.parse_expr()
+        orelse return bad_input[AstExpr](
+          "Expected an argument for the variant.")
+      parser.consume_prefix(")")
+        orelse return bad_input[AstExpr]("Expected a closing parenthesis.")
+    }
+    parsed(AstExpr.init_enum(AstInitEnum { type, variant, arg }))
   }
-  expr
 }
 
+fun parse_body(parser: &Parser): Result[Maybe[Vec[AstExpr]], Slice[U8]] {
+  parser.consume_prefix("{") orelse return no_match[Vec[AstExpr]]()
+  var statements = vec[AstExpr]()
+  loop switch self.parse_expr()? case some(e) statements.push(e) case none break
+  parser.consume_prefix("}")
+    orelse return bad_input[Vec[AstExpr]](
+      "Expected the closing brace of the body.")
+  parsed(statements)
+}
 
+fun parse_var(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  parser.consume_keyword("var") orelse return no_match[AstExpr]()
+  var name = parser.parse_lower_name()
+    orelse return bad_input[AstExpr]("Expected the name of the variable.")
+  parser.consume_prefix("=")
+    orelse return bad_input[AstExpr]("Expected an equals sign.")
+  var value = parser.parse_expr()?
+    orelse return bad_input[AstExpr]("Expected the value of the variable.")
+  parsed(AstExpr.var_(AstVar { name, value = value.put_on_heap() }))
+}
+
+fun parse_if(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  parser.consume_keyword("if") orelse return no_match[AstExpr]()
+  var condition = parser.parse_expr()?
+    orelse return bad_input[AstExpr]("Expected the condition.")
+  var variant = "true"
+  var binding = none[Slice[U8]]()
+  if parser.consume_keyword("is") is some then {
+    variant = parser.parse_lower_name()
+      orelse return bad_input[AstExpr]("Expected a variant.")
+    if parser.consume_prefix("(") is some then {
+      binding = some(parser.parser_lower_name()
+        orelse return bad_input[AstExpr]("Expected the name of the binding."))
+      parser.consume_prefix(")")
+        orelse return bad_input[AstExpr]("Expected a closing parenthesis.")
+    }
+  }
+  parser.consume_keyword("then")
+    orelse return bad_input[AstExpr]("Expected then keyword.")
+  var then_ = parser.parse_expr()?
+    orelse return bad_input[AstExpr]("Expected a then expression.")
+  var else_ = AstExpr.body(vec[AstExpr]())
+  if parser.consume_keyword("else") is some
+  then else_ = parser.parse_expr()?
+    orelse return bad_input[AstExpr]("Expected an else expression.")
+  parsed(AstExpr.switch_(AstSwitch {
+    value = condition,
+    cases = vec(AstCase { variant, binding, then_ }),
+    default_ = else_,
+  }))
+}
+
+fun parse_switch(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  parser.consume_keyword("switch") orelse return no_match[AstExpr]()
+  var value = parser.parse_expr()?
+    orelse return bad_input[AstExpr](
+      "Expected the value that is switched over.")
+  var cases = vec[AstCase]()
+  loop {
+    parser.consume_keyword("case") orelse break
+    var variant = parser.parse_lower_name()
+      orelse return bad_input[AstExpr]("Expected a variant.")
+    var binding = none[Slice[U8]]()
+    if parser.consume_prefix("(") is some then {
+      binding = some(parser.parser_lower_name()
+        orelse return bad_input[AstExpr]("Expected the name of the binding."))
+      parser.consume_prefix(")")
+        orelse return bad_input[AstExpr]("Expected a closing parenthesis.")
+    }
+    var then_ = parser.parse_expr()?
+        orelse return bad_input[AstExpr]("Expected a case expression.")
+    cases.push(AstCase { variant, binding, then_ })
+  }
+  var default_ = none[&AstExpr]()
+  if parser.consume_keyword("default") is some
+  then default_ = parser.parse_expr()?
+    orelse return bad_input[AstExpr]("Expected a default expression.")
+  parsed(AstExpr.switch_(AstSwitch { value, cases, default_ }))
+}
+
+fun parse_loop(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  parser.consume_keyword("loop") orelse return no_match[AstExpr]()
+  var expr = parser.parse_expr()?
+    orelse return bad_input[AstExpr]("Expected loop expression.")
+  parsed(AstExpr.loop_(expr.put_on_heap()))
+}
+
+fun parse_for(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  parser.consume_keyword("for") orelse return no_match[AstExpr]()
+  var iter_var = parser.parse_lower_name()
+    orelse return bad_input[AstExpr](
+      "Expected the name of the iteration variable.")
+  parser.consume_keyword("in")
+    orelse return bad_input[AstExpr]("Expected in keyword.")
+  var iter = parser.parse_expr()?
+    orelse return bad_input[AstExpr]("Expected something to iterate over.")
+  parser.consume_keyword("do")
+    orelse return bad_input[AstExpr]("Expected do keyword.")
+  var expr = parser.parse_expr()?
+    orelse return bad_input[AstExpr]("Expected a loop expression.")
+  parsed(AstExpr.body(vec(
+    var_("$iter", iter.member("iter").call(vec[AstExpr]()).member("&")),
+    AstExpr.loop_(AstExpr.body(vec(
+      var_(iter_var, AstExpr.switch_(AstSwitch {
+        value = AstExpr.name("$iter").member("next").call(vec[AstExpr]())
+          .put_on_heap(),
+        cases: vec(
+          AstCase {
+            variant: "some",
+            binding: some("a"),
+            then_: AstExpr.name("a").put_on_heap()
+          },
+          AstCase {
+            variant: "none",
+            binding: none[Slice[U8]](),
+            then_: AstExpr.break_.put_on_heap(),
+          },
+        ),
+        default_: none[&AstExpr](),
+      }),
+      expr,
+    )))
+  )))
+}
+
+fun parse_return(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  parser.consume_keyword("return") orelse return no_match[AstExpr]()
+  var expr = parser.parse_expr()?
+    orelse return bad_input[AstExpr]("Expected returned expression.")
+  parsed(AstExpr.return_(expr.put_on_heap()))
+}
+
+fun parse_expr_suffix_member(parser: &Parser, current: AstExpr): Result[Maybe[AstExpr], Slice[U8]] {
+  parser.consume_prefix(".") orelse return no_match[AstExpr]()
+  if parser.consume_prefix("*") is some then return parsed(current.member("*"))
+  if parser.consume_prefix("&") is some then return parsed(current.member("&"))
+  if parser.parse_lower_name() is some(name)
+  then return parsed(current.member(name))
+  return bad_input[AstExpr]("Expected the name of a member.")
+}
+
+fun parse_expr_suffix_call(parser: &Parser, current: AstExpr): Result[Maybe[AstExpr], Slice[U8]] {
+  parser.consume_prefix("(") orelse return no_match[AstExpr]()
+  var args = vec[AstExpr]()
+  loop {
+    args.push(parser.parse_expr()? orelse break)
+    parser.consume_prefix(",") orelse break
+  }
+  parser.consume_prefix(")")
+    orelse return bad_input[AstExpr](
+      "Expected closing parenthesis of the call.")
+  parsed(current.call(args))
+}
+
+fun parse_expr_suffix_type_arged(parser: &Parser, current: AstExpr): Result[Maybe[AstExpr], Slice[U8]] {
+  var type_args = parser.parse_type_args()? orelse return no_match[AstExpr]()
+  parsed(AstExpr.type_arged(AstTypeArged {
+    expr = current.put_on_heap(),
+    type_args,
+  }))
+}
+
+fun parse_expr_suffix_assign(parser: &Parser, current: AstExpr): Result[Maybe[AstExpr], Slice[U8]] {
+  parser.consume_prefix("=") orelse return no_match[AstExpr]()
+  var value = parser.parse_expr()?
+    orelse return bad_input[AstExpr](
+      "Expected an expression on the right side of the assign.")
+  parsed(AstExpr.assign(AstAssign {
+    to = current.put_on_heap(),
+    value = value.put_on_heap(),
+  }))
+}
+
+fun parse_expr_suffix_orelse(parser: &Parser, current: AstExpr): Result[Maybe[AstExpr], Slice[U8]] {
+  parser.consume_keyword("orelse") orelse return no_match[AstExpr]()
+  var alternative = parser.parse_expr()?
+    orelse return bad_input[AstExpr](
+      "Expected alternative expression after orelse.")
+  parsed(AstExpr.switch_(AstSwitch {
+    value = current, | TODO: call some function
+    cases = vec(
+      AstCase {
+        variant = "some",
+        binding = some("a"),
+        then_: AstExpr.name("a").put_on_heap(),
+      },
+      AstCase {
+        variant = "none",
+        binding = none[Slice[U8]](),
+        then_: alternative.put_on_heap(),
+      },
+    ),
+    default_ = none[AstExpr](),
+  }))
+}
+
+fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Slice[U8]] {
+  parser.consume_keyword("fun") orelse return no_match[AstFun]()
+  var name = parser.parse_lower_name()
+    orelse return bad_input[AstFun]("Expected the name of the function.")
+  var type_args = parser.parse_type_params() orelse vec[Slice[U8]]()
+  var args = vec[AstFunArg]()
+  parser.consume_prefix("(")
+    orelse return bad_input[AstFun]("Expected an opening parenthesis.")
+  loop {
+    var name = parser.parse_lower_name() orelse break
+    parser.consume_prefix(":")
+      orelse return bad_input[AstFun]("Expected a colon.")
+    var type = parser.parse_type()?
+      orelse return bad_input[AstFun]("Expected the type of the argument.")
+    args.push(AstFunArg { name, type })
+    parser.consume_prefix(",") orelse break
+  }
+  parser.consume_prefix(")")
+    orelse return bad_input[AstFun]("Expected a closing parenthesis.")
+  var returns = named_type("Nothing")
+  if parser.consume_prefix(":") is some
+  then returns = parser.parse_type()?
+    orelse return bad_input[AstFun]("Expected the return type.")
+  var is_builtin = false()
+  var body =
+    switch parser.consume_prefix("{ ... }")
+    case some {
+      is_builtin = true()
+      vec[AstExpr]()
+    }
+    case none parser.parse_body()?
+      orelse return bad_input[AstFun]("Expected a function body.")
+  AstFun { name, type_args, args, returns, is_builtin, body }
+}
 
 fun parse_struct(parser: &Parser): Result[Maybe[AstStruct], Slice[U8]] {
   parser.consume_keyword("struct") orelse return no_match[AstStruct]()
@@ -611,7 +918,7 @@ fun parse_struct(parser: &Parser): Result[Maybe[AstStruct], Slice[U8]] {
   parser.consume_prefix("}")
     orelse return bad_input[AstStruct](
       "Expected a closing brace to end the struct.")
-  AstStruct { name, type_params, fields }
+  parsed((AstStruct { name, type_params, fields })
 }
 
 fun parse_enum(parser: &Parser): Result[Maybe[AstEnum], Slice[U8]] {
@@ -637,484 +944,180 @@ fun parse_enum(parser: &Parser): Result[Maybe[AstEnum], Slice[U8]] {
   AstEnum { name, type_params, variants }
 }
 
-fn parse_defs(self: *Self) !ArrayList(ast.Def) {
-    var defs = ArrayList(ast.Def).init(self.alloc);
-    while (true) {
-        self.consume_whitespace();
+fun parse_def(parser: &Parser): Result[Maybe[AstDef], Slice[U8]] {
+  if parser.parse_struct()? is some(s) then return AstDef.struct_(s)
+  if parser.parse_enum()? is some(e) then return AstDef.enum_(e)
+  if parser.parse_fun()? is some(f) then return AstDef.fun_(f)
+}
 
-        if (try self.parse_struct()) |s| {
-            try defs.append(.{ .struct_ = s });
-            continue;
-        }
-        if (try self.parse_enum()) |e| {
-            try defs.append(.{ .enum_ = e });
-            continue;
-        }
-        if (try self.parse_fun()) |fun| {
-            try defs.append(.{ .fun = fun });
-            continue;
-        }
-
-        break; // Nothing more got parsed.
-    }
-    self.consume_whitespace();
-    if (self.code.len > 0) return error.ExpectedDefinition;
-    return defs;
+fun parse_defs(parser: &Parser): Result[Maybe[Vec[AstDef]], Slice[U8]] {
+  var defs = vec[AstDef]()
+  loop switch parser.parse_def()? case some(d) defs.push(d) case none break
+  if parser.cursor.is_less_than(parser.code.len)
+  then return bad_input[Vec[AstDef]]("Expected a definition.")
+  defs
 }
 
 fun parse(code: Slice[U8], stdlib_size: U64): Result[AstProgram, Slice[U8]] {
   var parser = Parser { code }
-
+  | TODO: Replace switch with catch/orelse
   switch parser.parse_defs()
-  case ok()
-}
-pub fn parse(alloc: std.mem.Allocator, code: Str, stdlib_size: usize) !Result(ast.Program) {
-    var parser = Parser{ .code = code, .alloc = alloc };
-    var defs = parser.parse_defs() catch |err| {
-        if (err == error.OutOfMemory) return err;
+  case error(error)
+    if parser.cursor.is_at_most(stdlib_size)
+    then error[AstProgram, Slice[U8]](
+      format_error_with_context(parser.code, parser.cursor, error))
+    else error[AstProgram, Slice[U8]](format_error_with_context(
+      parser.code.subslice(stdlib_size),
+      parser.cursor.subtract(stdlib_size),
+      error
+    ))
+  case ok(defs) {
+    | Add builtins
+    | TODO: Explanation
 
-        var out_buf = String.init(alloc);
-        const out = out_buf.writer();
+    | struct &[T] { *: T }
+    defs.push(AstDef.struct_(AstStruct {
+      name = "&",
+      type_args = vec("T"),
+      fields = vec(AstStructField { name = "*", type = named_type("T") })
+    }))
 
-        const error_offset = code.len - parser.code.len;
+    | Int stuff
+    for config in all_int_configs() do {
+      var type = config.int_type()
+      defs.push(AstDef.builtin_type(type))
 
-        var lines = ArrayList(Str).init(alloc);
-        var current_line = String.init(alloc);
-        var stdlib_lines: ?usize = null;
-        var error_offset_in_line: ?usize = null;
-        get_lines: for (code, 0..) |c, i| {
-            if (i == stdlib_size) stdlib_lines = lines.items.len;
-            if (i == error_offset) {
-                error_offset_in_line = current_line.items.len;
-                for (code[error_offset..]) |c_| switch (c_) {
-                    '\n' => {
-                        try lines.append(current_line.items);
-                        break :get_lines;
-                    },
-                    else => try current_line.append(c_),
-                };
-            }
-            switch (c) {
-                '\n' => {
-                    try lines.append(current_line.items);
-                    current_line = String.init(alloc);
-                },
-                else => |a| try current_line.append(a),
-            }
-        }
+      var two_args = vec(
+        AstFunArg { name = "a", type },
+        AstFunArg { name = "b", type },
+      )
+      defs.push_builtin_fun("add", two_args, type)
+      defs.push_builtin_fun("subtract", two_args, type)
+      defs.push_builtin_fun("multiply", two_args, type)
+      defs.push_builtin_fun("divide", two_args, type)
+      defs.push_builtin_fun("modulo", two_args, type)
+      defs.push_builtin_fun("compare_to", two_args, named_type("Ordering"))
+      defs.push_builtin_fun("shiftLeft", two_args, type)
+      defs.push_builtin_fun("shiftRight", two_args, type)
+      defs.push_builtin_fun("bitLength", two_args, type)
+      defs.push_builtin_fun("and", two_args, type)
+      defs.push_builtin_fun("or", two_args, type)
+      defs.push_builtin_fun("xor", two_args, type)
 
-        const num_lines_to_display = @min(lines.items.len, 4);
-        const start_line = lines.items.len - num_lines_to_display + 1;
-        for (lines.items[start_line..], start_line..) |line, line_number| {
-            var number = line_number + 1;
-            if (stdlib_lines) |stdlines| if (line_number > stdlines) {
-                number -= stdlines + 1;
-            };
-            try format(out, "{d:4} | {s}\n", .{ number, line });
-        }
-
-        try format(out, "       ", .{});
-        for (0..error_offset_in_line.?) |_|
-            try format(out, " ", .{});
-        try format(out, "^\n", .{});
-        try format(out, " ", .{});
-        for (0..error_offset_in_line.?) |_|
-            try format(out, " ", .{});
-        try format(out, "{}\n", .{err});
-
-        return .{ .err = out_buf.items };
-    };
-
-    // Add builtins.
-
-    { // struct &[T] { *: T }
-        var ty_args = ArrayList(Str).init(alloc);
-        try ty_args.append("T");
-        const t = Ty.named("T");
-        var fields = StringArrayHashMap(Ty).init(alloc);
-        try fields.put("*", t);
-        try defs.append(.{ .struct_ = .{ .name = "&", .ty_args = ty_args.items, .fields = fields } });
+      | Conversion function
+      for target_config in all_int_configs() do {
+        if config.equals(target_config) then continue
+        var target_type = target_config.int_type()
+        var name = vec[U8]()
+        name.write("to_")
+        name.write(target_type)
+        defs.push_builtin_fun(name, vec(AstFunArg { name = "i", type }), target_type)
+      }
     }
 
-    // Int stuff.
-    for (numbers.all_int_configs()) |config| {
-        const ty = try numbers.int_ty(alloc, config);
-        try defs.append(.{ .builtin_ty = ty.name });
-
-        var two_args = StringArrayHashMap(Ty).init(alloc);
-        try two_args.put("a", ty);
-        try two_args.put("b", ty);
-
-        add_builtin_fun(&defs, "add", null, two_args, ty);
-        add_builtin_fun(&defs, "subtract", null, two_args, ty);
-        add_builtin_fun(&defs, "multiply", null, two_args, ty);
-        add_builtin_fun(&defs, "divide", null, two_args, ty);
-        add_builtin_fun(&defs, "modulo", null, two_args, ty);
-        add_builtin_fun(&defs, "compare_to", null, two_args, Ty.named("Ordering"));
-        // add_builtin_fun(&defs, "shiftLeft", two_args, ty);
-        // add_builtin_fun(&defs, "shiftRight", two_args, ty);
-        // add_builtin_fun(&defs, "bitLength", two_args, ty);
-        // add_builtin_fun(&defs, "and", two_args, ty);
-        // add_builtin_fun(&defs, "or", two_args, ty);
-        // add_builtin_fun(&defs, "xor", two_args, ty);
-
-        // Conversion functions
-        for (numbers.all_int_configs()) |target_config| {
-            // if (config == target_config) {
-            if (config.signedness == target_config.signedness and config.bits == target_config.bits)
-                continue;
-
-            const target_ty = try numbers.int_ty(alloc, target_config);
-            var args = StringArrayHashMap(Ty).init(alloc);
-            try args.put("i", ty);
-            add_builtin_fun(
-                &defs,
-                try string.formata(alloc, "to_{s}", .{target_ty.name}),
-                null,
-                args,
-                target_ty,
-            );
-        }
-    }
-
-    return .{ .ok = defs.items };
+    ok[AstProgram, Slice[U8]](defs)
+  }
 }
-pub fn add_builtin_fun(
-    defs: *ArrayList(ast.Def),
-    name: Str,
-    ty_args: ?[]const Str,
-    args: StringArrayHashMap(Ty),
-    returns: Ty,
-) void {
-    defs.append(.{ .fun = .{
-        .name = name,
-        .ty_args = ty_args orelse &[_]Str{},
-        .args = args,
-        .returns = returns,
-        .is_builtin = true,
-        .body = &[_]ast.Expr{},
-    } }) catch return;
+fun push_builtin_fun(defs: Vec[AstDef], name: Slice[U8], args: Vec[AstFunArg], returns: Type) {
+  defs.push(AstFun {
+    name,
+    type_args = vec[Slice[U8]](),
+    args,
+    returns,
+    is_builtin = true(),
+    body = vec[AstExpr](),
+  })
+}
+fun format_error_with_context(code: Slice[U8], offset: U64, error: Slice[U8]): Slice[U8] {
+  var lines = vec[Vec[U8]]()
+  var current_line = vec[U8]()
+  var offset_in_line = 0
+  for i in 0.to(code.len) do {
+    if i.equals(offset) then offset_in_line = current_line.len
+    if code.get(i).equals(newline())
+    then {
+      lines.append(current_line)
+      current_line = vec[U8]()
+      if i.is_at_least(offset) then break
+    }
+    else current_line.push(code.get(i))
+  }
+  | Now, lines contains all lines up to the line that contains the
+  | error. offset_in_line is the offset into the last complete line.
+  var num_lines_to_display = min(lines.len, 4)
+  var out = vec[U8]()
+  for line_number in lines.len.subtract(num_lines_to_display).to(lines.len) do {
+    out.write(line_number.inc())
+    out.write_str(" | ")
+    out.write_str(lines.get(line_number))
+    out.write_char(newline())
+  }
+  for i in 0.to(7 + offset_in_line) out.write_char(' )
+  out.write_char('^)
+  out.write_char(newline())
+  for i in 0.to(7 + offset_in_line) out.write_char(' )
+  out.write_str(error)
+  error.to_slice()
 }
 
-const Parser = struct {
-    code: Str,
-    alloc: std.mem.Allocator,
+| Command Line Interface  
+| The command line interface which you use to interact with the Martinaise
+| compiler.
 
-    const Self = @This();
+enum Command { ast, mono, compile, run, watch }
+fun parse_command(command: Slice[U8]): Command {
+  if command.equals("ast") then return Command.ast
+  if command.equals("mono") then return Command.mono
+  if command.equals("compile") then return Command.compile
+  if command.equals("run") then return Command.run
+  if command.equals("watch") then return Command.watch
+}
 
-    fn parse_fun(self: *Self) !?ast.Fun {
-        self.consume_keyword("fun") orelse return null;
-        self.consume_whitespace();
-        const name = self.parse_lower_name() orelse return error.ExpectedNameOfFunction;
-        self.consume_whitespace();
-        const type_args = try self.parse_type_params() orelse &[_]Str{};
-        self.consume_whitespace();
-        var args = StringArrayHashMap(Ty).init(self.alloc);
-        self.consume_prefix("(") orelse return error.ExpectedOpeningParenthesis;
-        self.consume_whitespace();
-        while (true) {
-            const arg_name = self.parse_lower_name() orelse break;
-            self.consume_whitespace();
-            self.consume_prefix(":") orelse return error.ExpectedColon;
-            self.consume_whitespace();
-            const arg_type = try self.parse_type() orelse return error.ExpectedTypeOfArgument;
-            try args.put(arg_name, arg_type);
-            self.consume_prefix(",") orelse break;
-            self.consume_whitespace();
-        }
-        self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
-        self.consume_whitespace();
+| Runs the pipeline that matches the command. Errors are handled internally
+| (stuff is printed to stdout). Returns whether it ran through successfully.
+fun run_pipeline(): Bool {
+  var stdlib_size = 0
+  var input = {
+    print_on_same_line({
+      var out = vec[U8]()
+      out.write_str("Reading ")
+      out.write_str(file_path)
+      out
+    })
 
-        var return_type = Ty.named("Nothing");
-        if (self.consume_prefix(":")) |_| {
-            self.consume_whitespace();
-            return_type = try self.parse_type() orelse return error.ExpectedReturnType;
-        }
-        self.consume_whitespace();
+    var stdlib = read_file("stdlib.mar")
+    var file = read_file(file_path)
+    stdlib_size = stdlib.len
 
-        var is_builtin = false;
-        const body = get_body: {
-            if (self.consume_prefix("{ ... }")) |_| {
-                is_builtin = true;
-                break :get_body &[_]ast.Expr{};
-            } else {
-                break :get_body try self.parse_body() orelse return error.ExpectedBody;
-            }
-        };
+    var input = vec[U8]()
+    input.write(stdlib)
+    input.write(newline())
+    input.write(file)
+    input.write(newline())
+  }
 
-        return .{
-            .name = name,
-            .ty_args = type_args,
-            .args = args,
-            .returns = return_type,
-            .is_builtin = is_builtin,
-            .body = body,
-        };
-    }
+  var ast = {
+    print_on_same_line({
+      var out = vec[U8]()
+      out.write_str("Parsing ")
+      out.write_str(file_path)
+      out
+    })
+    switch parse(input, stdlib_size)?
+    case ok(ast) ast
+    case err(err) { printsln(err) return false() }
+  }
+  if command is ast then { println(ast) return true() }
 
-    fn parse_body(self: *Self) !?ast.Body {
-        self.consume_prefix("{") orelse return null;
+  true()
+}
 
-        var statements = ArrayList(ast.Expr).init(self.alloc);
-        while (true) {
-            self.consume_whitespace();
+fun main() {
+  printsln("Welcome to Martinaise.")
 
-            if (try self.parse_expr()) |expr| {
-                try statements.append(expr);
-                continue;
-            }
+  | TODO: Add CLI parsing
+  var command = Command.ast
+  var file_path = "advent/day1.mar"
 
-            break; // Nothing more got parsed.
-        }
-
-        self.consume_prefix("}") orelse return error.ExpectedStatementOrClosingBrace;
-        return statements.items;
-    }
-
-    fn parse_char(self: *Self) !?u8 {
-        self.consume_prefix("'") orelse return null;
-        if (self.code.len == 0) return error.ExpectedChar;
-        const c = self.code[0];
-        self.code = self.code[1..];
-        return c;
-    }
-
-    fn parse_string(self: *Self) !?Str {
-        self.consume_prefix("\"") orelse return null;
-        var i: usize = 0;
-        while (self.code[i] != '\"') i += 1;
-        const str = self.code[0..i];
-        self.code = self.code[i + 1 ..];
-        return str;
-    }
-
-    fn parse_ampersanded(self: *Self) !?ast.Expr {
-        self.consume_prefix("&") orelse return null;
-        return try self.parse_expr() orelse error.ExpectedExpression;
-    }
-
-    fn parse_expr_suffix_type_arged(self: *Self, current: ast.Expr) !?ast.TyArged {
-        const type_args = try self.parse_type_args() orelse return null;
-
-        const heaped = try self.alloc.create(ast.Expr);
-        heaped.* = current;
-
-        return .{ .arged = heaped, .ty_args = type_args };
-    }
-
-    fn parse_expr_suffix_assign(self: *Self, current: ast.Expr) !?ast.Assign {
-        self.consume_prefix("=") orelse return null;
-        self.consume_whitespace();
-        const value = try self.parse_expr() orelse return error.ExpectedExpression;
-
-        const heaped_to = try self.alloc.create(ast.Expr);
-        heaped_to.* = current;
-        const heaped_value = try self.alloc.create(ast.Expr);
-        heaped_value.* = value;
-
-        return .{ .to = heaped_to, .value = heaped_value };
-    }
-
-    fn parse_expr_suffix_call(self: *Self, current: ast.Expr) !?ast.Call {
-        self.consume_prefix("(") orelse return null;
-
-        const heaped = try self.alloc.create(ast.Expr);
-        heaped.* = current;
-
-        var args = ArrayList(ast.Expr).init(self.alloc);
-        self.consume_whitespace();
-        while (true) {
-            const arg = try self.parse_expr() orelse break;
-            self.consume_whitespace();
-            try args.append(arg);
-            self.consume_prefix(",") orelse break;
-            self.consume_whitespace();
-        }
-        self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
-
-        return .{ .callee = heaped, .args = args.items };
-    }
-
-    fn parse_expr_suffix_member_or_constructor(self: *Self, current: ast.Expr) !?ast.Expr {
-        self.consume_prefix(".") orelse return null;
-
-        const heaped = try self.alloc.create(ast.Expr);
-        heaped.* = current;
-
-        self.consume_whitespace();
-        if (self.consume_prefix("*")) |_| return .{ .member = .{ .of = heaped, .name = "*" } };
-        if (self.consume_prefix("&")) |_| return .{ .ampersanded = heaped };
-        if (self.parse_lower_name()) |name| return .{ .member = .{ .of = heaped, .name = name } };
-        return error.ExpectedMemberOrConstructor;
-    }
-
-    fn parse_expr_suffix_orelse(self: *Self, current: ast.Expr) !?ast.Orelse {
-        self.consume_keyword("orelse") orelse return null;
-        self.consume_whitespace();
-
-        const heaped = try self.alloc.create(ast.Expr);
-        heaped.* = current;
-
-        const alternative = try self.alloc.create(ast.Expr);
-        alternative.* = try self.parse_expr() orelse return error.ExpectedAlternativeExpression;
-
-        return .{ .primary = heaped, .alternative = alternative };
-    }
-
-    fn parse_var(self: *Self) !?ast.Var {
-        self.consume_keyword("var") orelse return null;
-        self.consume_whitespace();
-
-        const name = self.parse_lower_name() orelse return error.ExpectedNameOfVar;
-        self.consume_whitespace();
-
-        self.consume_prefix("=") orelse return error.ExpectedEquals;
-        self.consume_whitespace();
-
-        const value = try self.parse_expr() orelse return error.ExpectedValueOfVar;
-        const heaped = try self.alloc.create(ast.Expr);
-        heaped.* = value;
-
-        return .{ .name = name, .value = heaped };
-    }
-
-    fn parse_return(self: *Self) !?*const ast.Expr {
-        self.consume_keyword("return") orelse return null;
-        self.consume_whitespace();
-
-        const returned = try self.parse_expr() orelse return error.ExpectedExpression;
-        const heaped = try self.alloc.create(ast.Expr);
-        heaped.* = returned;
-
-        return heaped;
-    }
-
-    fn parse_if(self: *Self) !?ast.If {
-        self.consume_keyword("if") orelse return null;
-        self.consume_whitespace();
-
-        const condition = try self.alloc.create(ast.Expr);
-        condition.* = try self.parse_expr() orelse return error.ExpectedCondition;
-        self.consume_whitespace();
-
-        self.consume_keyword("then") orelse return error.ExpectedThen;
-        self.consume_whitespace();
-
-        const then = try self.alloc.create(ast.Expr);
-        then.* = try self.parse_expr() orelse return error.ExpectedThenExpression;
-        self.consume_whitespace();
-
-        var else_: ?*ast.Expr = null;
-        if (self.consume_keyword("else")) |_| {
-            self.consume_whitespace();
-            else_ = try self.alloc.create(ast.Expr);
-            else_.?.* = try self.parse_expr() orelse return error.ExpectedElseExpression;
-        }
-
-        return .{ .condition = condition, .then = then, .else_ = else_ };
-    }
-
-    fn parse_switch(self: *Self) !?ast.Switch {
-        self.consume_keyword("switch") orelse return null;
-        self.consume_whitespace();
-
-        const value = try self.alloc.create(ast.Expr);
-        value.* = try self.parse_expr() orelse return error.ExpectedExpression;
-        self.consume_whitespace();
-
-        var cases = ArrayList(ast.Case).init(self.alloc);
-        while (true) {
-            self.consume_keyword("case") orelse break;
-            self.consume_whitespace();
-
-            const variant = self.parse_lower_name() orelse return error.ExpectedVariant;
-            self.consume_whitespace();
-
-            var binding: ?Str = null;
-            if (self.consume_prefix("(")) |_| {
-                self.consume_whitespace();
-                binding = self.parse_lower_name() orelse return error.ExpectedBinding;
-                self.consume_whitespace();
-                self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
-                self.consume_whitespace();
-            }
-
-            const then = try self.alloc.create(ast.Expr);
-            then.* = try self.parse_expr() orelse return error.ExpectedCaseExpression;
-            self.consume_whitespace();
-
-            try cases.append(.{ .variant = variant, .binding = binding, .then = then });
-        }
-
-        return .{ .value = value, .cases = cases.items };
-    }
-
-    fn parse_loop(self: *Self) !?ast.Expr {
-        self.consume_keyword("loop") orelse return null;
-        self.consume_whitespace();
-        return try self.parse_expr() orelse return error.ExpectedLoopExpr;
-    }
-
-    fn parse_for(self: *Self) !?ast.For {
-        self.consume_keyword("for") orelse return null;
-        self.consume_whitespace();
-        const iter_var = self.parse_lower_name() orelse return error.ExpectedIterationVariable;
-        self.consume_whitespace();
-        self.consume_keyword("in") orelse return error.ExpectedIn;
-        self.consume_whitespace();
-        const iter = try self.alloc.create(ast.Expr);
-        iter.* = try self.parse_expr() orelse return error.ExpectedIter;
-        self.consume_whitespace();
-        self.consume_keyword("do") orelse return error.ExpectedDo;
-        self.consume_whitespace();
-        const expr = try self.alloc.create(ast.Expr);
-        expr.* = try self.parse_expr() orelse return error.ExpectedLoopExpr;
-        return .{ .iter_var = iter_var, .iter = iter, .expr = expr };
-    }
-
-    fn parse_struct_or_enum_creation(self: *Self) !?ast.Expr {
-        const ty = try self.parse_type() orelse return null;
-        self.consume_whitespace();
-
-        if (self.consume_prefix("{")) |_| {
-            self.consume_whitespace();
-
-            var fields = ArrayList(ast.StructCreationField).init(self.alloc);
-            while (true) {
-                const name = self.parse_lower_name() orelse break;
-                self.consume_whitespace();
-                const value = find_value: {
-                    if (self.consume_prefix("=")) |_| {
-                        self.consume_whitespace();
-                        break :find_value try self.parse_expr() orelse return error.ExpectedValueOfField;
-                    } else break :find_value ast.Expr{ .name = name };
-                };
-                try fields.append(.{ .name = name, .value = value });
-                self.consume_whitespace();
-                self.consume_prefix(",") orelse break;
-                self.consume_whitespace();
-            }
-            self.consume_prefix("}") orelse return error.ExpectedClosingBrace;
-
-            return .{ .struct_creation = .{ .ty = ty, .fields = fields.items } };
-        } else {
-            self.consume_prefix(".") orelse return error.ExpectedStructOrEnumCreation;
-            self.consume_whitespace();
-            const variant = self.parse_lower_name() orelse return error.ExpectedVariant;
-            self.consume_whitespace();
-
-            var arg: ?*const ast.Expr = null;
-            if (self.consume_prefix("(")) |_| {
-                self.consume_whitespace();
-                const arg_ = try self.alloc.create(ast.Expr);
-                arg_.* = try self.parse_expr() orelse return error.ExpectedVariantArgument;
-                arg = arg_;
-                self.consume_whitespace();
-                self.consume_prefix(")") orelse return error.ExpectedClosingParenthesis;
-            }
-
-            return .{ .enum_creation = .{ .ty = ty, .variant = variant, .arg = arg } };
-        }
-    }
-};
-
+  exit(if run_pipeline(command, file_path) then 0 else 1)
+}
