@@ -676,7 +676,7 @@ const FunMonomorphizer = struct {
                 const value = try self.compile_expr(assign.value.*);
                 const to = try self.compile_expr(assign.to.*);
                 if (!value.ty.eql(to.ty)) {
-                    try self.format_err("Tried to assign {s} to a variable of {s}.\n", .{ value.ty, to.ty });
+                    try self.format_err("Tried to assign {s} to a variable of type {s}.\n", .{ value.ty, to.ty });
                     return error.CompileError;
                 }
                 return try self.fun.put_and_get_expr(.{ .assign = .{ .to = to, .value = value } }, Ty.named("Nothing"));
@@ -716,13 +716,17 @@ const FunMonomorphizer = struct {
                 var iter = fields.iterator();
                 while (iter.next()) |entry| {
                     const name = entry.key_ptr.*;
-                    const struct_field_ty = struct_.fields.get(name).?;
+                    const struct_field_ty = struct_.fields.get(name) orelse {
+                        try self.format_err("Tried to init field {s} of {s}, but it doesn't have that.\n", .{ name, struct_.name });
+                        return error.CompileError;
+                    };
                     const field_ty = entry.value_ptr.*.ty;
                     if (!try solver.unify(struct_field_ty, field_ty)) {
                         try self.format_err(
-                            "Tried to assign {s} to field {s} with type {s}",
+                            "Tried to assign {s} to field \"{s}\" of type {s}.\n",
                             .{ field_ty, name, struct_field_ty },
                         );
+                        return error.CompileError;
                     }
                 }
                 const ty_env = try solver.finish("When creating struct {s}:", .{sc.ty.name});
@@ -746,7 +750,7 @@ const FunMonomorphizer = struct {
                 const enum_ = switch (try self.monomorphizer.lookup_ty(ec.ty.name)) {
                     .enum_ => |s| s,
                     else => {
-                        try self.format_err("Tried to create an enum, but {s} is not an enum type.", .{ec.ty.name});
+                        try self.format_err("Tried to create an enum, but {s} is not an enum type.\n", .{ec.ty.name});
                         return error.CompileError;
                     },
                 };
@@ -758,7 +762,7 @@ const FunMonomorphizer = struct {
                     while (iter.next()) |variant|
                         if (string.eql(variant.key_ptr.*, ec.variant))
                             break :find_variant variant.value_ptr.*;
-                    try self.format_err("Unknown variant {s}{s}.\n", .{ ec.ty.name, ec.variant });
+                    try self.format_err("Unknown variant {s}.{s}.\n", .{ ec.ty.name, ec.variant });
                     return error.CompileError;
                 };
 
@@ -767,7 +771,7 @@ const FunMonomorphizer = struct {
                 if (ec.ty.args.len > 0) {
                     if (ec.ty.args.len != enum_.ty_args.len) {
                         try self.format_err(
-                            "Tried to create enum {s} with {} type arguments, but it needs {}.",
+                            "Tried to create enum {s} with {} type arguments, but it needs {}.\n",
                             .{ enum_.name, ec.ty.args.len, enum_.ty_args.len },
                         );
                         return error.CompileError;
@@ -782,6 +786,7 @@ const FunMonomorphizer = struct {
                         "Tried to create {s}.{s} with {s}, but it needs a {s}.\n",
                         .{ ec.ty.name, ec.variant, arg_.ty, variant_ty },
                     );
+                    return error.CompileError;
                 }
                 const ty_env = try solver.finish("When creating enum {s}:\n", .{ec.ty.name});
 
@@ -1075,6 +1080,9 @@ const FunMonomorphizer = struct {
                 // TODO: Ensure the error variants are equal.
                 // if (tried_ty.args[1] != return_ty.args[1]) return CompileError;
 
+                const ok_payload_ty = tried.ty.args[0];
+                const error_payload_ty = tried.ty.args[1];
+
                 const jump_if_ok = try self.fun.put(.{ .jump_if_variant = .{
                     .condition = tried,
                     .variant = "ok",
@@ -1085,8 +1093,8 @@ const FunMonomorphizer = struct {
                 error_payload.* = try self.fun.put_and_get_expr(.{ .get_enum_value = .{
                     .of = tried,
                     .variant = "error",
-                    .ty = error_payload.ty,
-                } }, error_payload.ty);
+                    .ty = error_payload_ty,
+                } }, error_payload_ty);
                 const error_to_return = try self.fun.put_and_get_expr(.{ .variant_creation = .{
                     .enum_ty = self.expected_return_ty,
                     .variant = "error",
@@ -1097,7 +1105,6 @@ const FunMonomorphizer = struct {
                 const after_error_handling = self.fun.next_index();
                 self.fun.body.items[jump_if_ok].jump_if_variant.target = after_error_handling;
 
-                const ok_payload_ty = tried.ty.args[0];
                 return try self.fun.put_and_get_expr(.{ .get_enum_value = .{
                     .of = tried,
                     .variant = "ok",

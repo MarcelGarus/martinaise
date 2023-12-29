@@ -559,6 +559,7 @@ fun pop[T](vec: &Vec[T]): T {
 }
 fun get[T](vec: Vec[T], index: U64): T { vec.data.get(index) }
 fun get_ref[T](vec: Vec[T], index: U64): &T { vec.data.get_ref(index) }
+fun is_empty[T](vec: Vec[T]): Bool { vec.len.equals(0) }
 fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0, vec.len) }
 fun equals[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice().equals(b.to_slice()) }
 fun iter[T](vec: Vec[T]): SliceIter[T] { vec.to_slice().iter() }
