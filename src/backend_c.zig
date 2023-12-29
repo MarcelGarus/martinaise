@@ -1,5 +1,6 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
+const HashMap = std.HashMap;
 const StringHashMap = std.StringHashMap;
 const format = std.fmt.format;
 const ast = @import("ast.zig");
@@ -9,6 +10,8 @@ const Str = string.Str;
 const formata = string.formata;
 const mono = @import("mono.zig");
 const numbers = @import("numbers.zig");
+const Ty = @import("ty.zig").Ty;
+const TyHashMap = @import("ty.zig").TyHashMap;
 
 pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
     var out_buffer = String.init(alloc);
@@ -24,7 +27,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
         \\
     , .{});
 
-    var builtin_tys = StringHashMap(Str).init(alloc);
+    var builtin_tys = TyHashMap(Str).init(alloc);
     var builtin_funs = StringHashMap(Str).init(alloc);
     { // Generate code for builtins
 
@@ -71,14 +74,15 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
         );
 
         for (numbers.all_int_configs()) |config| {
-            const ty = (try numbers.int_ty(alloc, config)).name;
+            const ty = try numbers.int_ty(alloc, config);
 
             // Type
             try builtin_tys.put(ty, try formata(alloc,
-                \\ struct {{
+                \\struct {s} {{
                 \\  {s}int{}_t value;
-                \\}}
+                \\}};
             , .{
+                try mangle_ty(alloc, ty),
                 switch (config.signedness) {
                     .signed => "",
                     .unsigned => "u",
@@ -171,56 +175,70 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
     { // Types
         try format(out, "/// Types\n", .{});
 
+        var sorted = ArrayList(Ty).init(alloc);
+        var reached = TyHashMap(void).init(alloc);
         var iter = the_mono.ty_defs.iterator();
         while (iter.next()) |def| {
-            const name = def.key_ptr.*;
-            const ty = def.value_ptr.*;
-            try format(out, "\n// {s}\n", .{name});
-            try format(out, "typedef ", .{});
-            switch (ty) {
-                .builtin_ty => if (builtin_tys.get(name)) |impl|
-                    try format(out, "{s}", .{impl})
+            try sort_tys(&sorted, &reached, def.key_ptr.*, the_mono.ty_defs);
+        }
+
+        for (sorted.items) |ty| {
+            try format(out, "typedef struct {s} {s};\n", .{
+                try mangle_ty(alloc, ty),
+                try mangle_ty(alloc, ty),
+            });
+        }
+
+        for (sorted.items) |ty| {
+            const def = the_mono.ty_defs.get(ty).?;
+            try format(out, "\n// {s}\n", .{ty});
+            switch (def) {
+                .builtin_ty => if (builtin_tys.get(ty)) |impl|
+                    try format(out, "{s}\n", .{impl})
                 else {
-                    std.debug.print("Type is {s}.\n", .{name});
+                    std.debug.print("Type is {s}.\n", .{ty});
                     @panic("Unknown builtin type");
                 },
                 .struct_ => |s| {
-                    try format(out, "struct {{\n", .{});
+                    try format(out, "struct {s} {{\n", .{
+                        try mangle_ty(alloc, ty),
+                    });
                     for (s.fields) |f|
                         if (string.eql(f.name, "*"))
                             try format(out, "  {s}* pointer;\n", .{
-                                try mangle(alloc, f.ty),
+                                try mangle_ty(alloc, f.ty),
                             })
                         else
                             try format(out, "  {s} {s};\n", .{
-                                try mangle(alloc, f.ty),
+                                try mangle_ty(alloc, f.ty),
                                 try mangle(alloc, f.name),
                             });
-                    try format(out, "}}", .{});
+                    try format(out, "}};\n", .{});
                 },
                 .enum_ => |e| {
-                    try format(out, "struct {{\n", .{});
+                    try format(out, "struct {s} {{\n", .{
+                        try mangle_ty(alloc, ty),
+                    });
                     if (e.variants.len > 0) {
                         try format(out, "  enum {{\n", .{});
                         for (e.variants) |variant|
                             try format(out, "    {s}_dot_{s},\n", .{
-                                try mangle(alloc, name),
+                                try mangle_ty(alloc, ty),
                                 try mangle(alloc, variant.name),
                             });
                         try format(out, "  }} variant;\n", .{});
                         try format(out, "  union {{\n", .{});
                         for (e.variants) |variant|
                             try format(out, "    {s} {s};\n", .{
-                                try mangle(alloc, variant.ty),
+                                try mangle_ty(alloc, variant.ty),
                                 try mangle(alloc, variant.name),
                             });
                         try format(out, "  }} as;\n", .{});
                     }
-                    try format(out, "}}", .{});
+                    try format(out, "}};\n", .{});
                 },
                 .fun => try format(out, "// TODO: compile fun types\n", .{}),
             }
-            try format(out, " {s};\n", .{try mangle(alloc, name)});
         }
     }
 
@@ -240,12 +258,12 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
             const fun = the_mono.funs.get(fun_name) orelse unreachable;
             try format(out, "/* {s} */ {s} {s}(", .{
                 fun_name,
-                try mangle(alloc, fun.return_ty),
+                try mangle_ty(alloc, fun.return_ty),
                 try mangle(alloc, fun_name),
             });
             for (fun.arg_tys, 0..) |arg_ty, i| {
                 if (i > 0) try format(out, ", ", .{});
-                try format(out, "{s} arg{}", .{ try mangle(alloc, arg_ty), i });
+                try format(out, "{s} arg{}", .{ try mangle_ty(alloc, arg_ty), i });
             }
             try format(out, ");\n", .{});
         }
@@ -257,12 +275,12 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
 
             try format(out, "\n// {s}\n", .{fun_name});
             try format(out, "{s} {s}(", .{
-                try mangle(alloc, fun.return_ty),
+                try mangle_ty(alloc, fun.return_ty),
                 try mangle(alloc, fun_name),
             });
             for (fun.arg_tys, 0..) |arg_ty, i| {
                 if (i > 0) try format(out, ", ", .{});
-                try format(out, "{s} arg{}", .{ try mangle(alloc, arg_ty), i });
+                try format(out, "{s} arg{}", .{ try mangle_ty(alloc, arg_ty), i });
             }
             try format(out, ") {{\n", .{});
 
@@ -282,15 +300,15 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                             \\  ref.pointer = ({s}*) arg0.value;
                             \\  return ref;
                         , .{
-                            try mangle(alloc, fun.return_ty),
-                            try mangle(alloc, fun.ty_args[0]),
+                            try mangle_ty(alloc, fun.return_ty),
+                            try mangle_ty(alloc, fun.ty_args[0]),
                         })
                     else if (string.starts_with(fun_name, "size_of_type"))
                         try format(out,
                             \\  mar_U64 size;
                             \\  size.value = (uint64_t) sizeof({s});
                             \\  return size;
-                        , .{try mangle(alloc, fun.ty_args[0])})
+                        , .{try mangle_ty(alloc, fun.ty_args[0])})
                     else {
                         std.debug.print("Fun is {s}.\n", .{fun_name});
                         @panic("Unknown builtin fun");
@@ -301,11 +319,11 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                 for (fun.body.items, fun.tys.items, 0..) |statement, ty, i| {
                     try format(out, "  statement_{}: ", .{i});
                     switch (statement) {
-                        .arg => try format(out, "{s} _{} = arg{};\n", .{ try mangle(alloc, ty), i, i }),
+                        .arg => try format(out, "{s} _{} = arg{};\n", .{ try mangle_ty(alloc, ty), i, i }),
                         .expression => |expr| try format_expr(alloc, out, expr),
-                        .uninitialized => try format(out, "{s} _{};\n", .{ try mangle(alloc, ty), i }),
+                        .uninitialized => try format(out, "{s} _{};\n", .{ try mangle_ty(alloc, ty), i }),
                         .int => |int| try format(out, "{s} _{}; _{}.value = {}{s};\n", .{
-                            try mangle(alloc, ty),
+                            try mangle_ty(alloc, ty),
                             i,
                             i,
                             int.value,
@@ -321,7 +339,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                             try format(
                                 out,
                                 "{s} _{} = {s}(",
-                                .{ try mangle(alloc, ty), i, try mangle(alloc, call.fun) },
+                                .{ try mangle_ty(alloc, ty), i, try mangle(alloc, call.fun) },
                             );
                             for (call.args, 0..) |arg, j| {
                                 if (j > 0) try format(out, ", ", .{});
@@ -331,10 +349,10 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                         },
                         .variant_creation => |vc| {
                             try format(out, "{s} _{}; _{}.variant = {s}_dot_{s}; _{}.as.{s} = ", .{
-                                try mangle(alloc, vc.enum_ty),
+                                try mangle_ty(alloc, vc.enum_ty),
                                 i,
                                 i,
-                                try mangle(alloc, vc.enum_ty),
+                                try mangle_ty(alloc, vc.enum_ty),
                                 try mangle(alloc, vc.variant),
                                 i,
                                 try mangle(alloc, vc.variant),
@@ -343,7 +361,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                             try format(out, ";\n", .{});
                         },
                         .struct_creation => |sc| {
-                            try format(out, "{s} _{};", .{ try mangle(alloc, sc.struct_ty), i });
+                            try format(out, "{s} _{};", .{ try mangle_ty(alloc, sc.struct_ty), i });
                             var iter = sc.fields.iterator();
                             while (iter.next()) |f| {
                                 try format(out, " _{}.{s} = ", .{ i, try mangle(alloc, f.key_ptr.*) });
@@ -363,21 +381,21 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                             try format(out, "if ((", .{});
                             try format_expr(alloc, out, jump.condition);
                             try format(out, ").variant == {s}_dot_{s}) goto statement_{}; mar_Never _{};\n", .{
-                                try mangle(alloc, jump.condition.ty),
+                                try mangle_ty(alloc, jump.condition.ty),
                                 try mangle(alloc, jump.variant),
                                 jump.target,
                                 i,
                             });
                         },
                         .get_enum_value => |gev| {
-                            try format(out, "{s} _{} = (", .{ try mangle(alloc, gev.ty), i });
+                            try format(out, "{s} _{} = (", .{ try mangle_ty(alloc, gev.ty), i });
                             try format_expr(alloc, out, gev.of);
                             try format(out, ").as.{s};\n", .{try mangle(alloc, gev.variant)});
                         },
                         .return_ => |expr| {
                             // If a Never is returned, the return is not reached anyway. If we emit
                             // it, C complains that Never doesn't match the function's return type.
-                            if (!string.eql(expr.ty, "Never")) {
+                            if (!expr.ty.eql(Ty.named("Never"))) {
                                 try format(out, "return ", .{});
                                 try format_expr(alloc, out, expr);
                                 try format(out, "; ", .{});
@@ -385,7 +403,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                             try format(out, "mar_Never _{};\n", .{i});
                         },
                         .ref => |expr| {
-                            try format(out, "{s} _{}; _{}.pointer = &(", .{ try mangle(alloc, ty), i, i });
+                            try format(out, "{s} _{}; _{}.pointer = &(", .{ try mangle_ty(alloc, ty), i, i });
                             try format_expr(alloc, out, expr);
                             try format(out, ");\n", .{});
                         },
@@ -393,7 +411,7 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                 }
                 try format(out, "  statement_{}: // end\n", .{fun.body.items.len});
                 const last_expr_index = fun.body.items.len - 1;
-                if (!string.eql(fun.tys.items[last_expr_index], "Never")) {
+                if (!fun.tys.items[last_expr_index].eql(Ty.named("Never"))) {
                     try format(out, "  return _{};\n", .{last_expr_index});
                 }
             }
@@ -408,6 +426,34 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
     }
 
     return out_buffer;
+}
+
+fn sort_tys(out: *ArrayList(Ty), reached: *TyHashMap(void), ty: Ty, defs: mono.TyDefs) !void {
+    if (reached.contains(ty)) return;
+    if (string.eql(ty.name, "&")) {
+        try out.append(ty);
+        try reached.put(ty, {});
+        return;
+    }
+    switch (defs.get(ty).?) {
+        .builtin_ty => {
+            try out.append(ty);
+            try reached.put(ty, {});
+        },
+        .struct_ => |s| {
+            for (s.fields) |field|
+                try sort_tys(out, reached, field.ty, defs);
+            try out.append(ty);
+            try reached.put(ty, {});
+        },
+        .enum_ => |e| {
+            for (e.variants) |variant|
+                try sort_tys(out, reached, variant.ty, defs);
+            try out.append(ty);
+            try reached.put(ty, {});
+        },
+        .fun => @panic("fun type used"),
+    }
 }
 
 fn format_expr(alloc: std.mem.Allocator, out: anytype, expr: mono.Expr) !void {
@@ -442,4 +488,9 @@ fn mangle(alloc: std.mem.Allocator, name: Str) !Str {
         else => try mangled.append(c),
     };
     return mangled.items;
+}
+fn mangle_ty(alloc: std.mem.Allocator, ty: Ty) !Str {
+    var formatted = ArrayList(u8).init(alloc);
+    try format(formatted.writer(), "{}", .{ty});
+    return mangle(alloc, formatted.items);
 }

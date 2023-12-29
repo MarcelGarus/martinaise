@@ -1,15 +1,20 @@
 const std = @import("std");
 const ArrayList = std.ArrayList; // TODO: Use slices everywhere instead
 const StringArrayHashMap = std.StringArrayHashMap;
+const ArrayHashMap = std.ArrayHashMap;
 const StringHashMap = std.StringHashMap;
 const Str = @import("string.zig").Str;
 const Ty = @import("ty.zig").Ty;
+const TyArrayHashMap = @import("ty.zig").TyArrayHashMap;
+const TyHashMap = @import("ty.zig").TyHashMap;
 const numbers = @import("numbers.zig");
 
 pub const Mono = struct {
-    ty_defs: StringArrayHashMap(TyDef),
+    ty_defs: TyDefs,
     funs: StringHashMap(Fun),
 };
+
+pub const TyDefs = TyArrayHashMap(TyDef);
 
 pub const TyDef = union(enum) {
     builtin_ty,
@@ -19,31 +24,31 @@ pub const TyDef = union(enum) {
 };
 
 pub const Struct = struct { fields: []const Field };
-pub const Field = struct { name: Str, ty: Str };
+pub const Field = struct { name: Str, ty: Ty };
 
 pub const Enum = struct { variants: []const Variant };
-pub const Variant = struct { name: Str, ty: Str };
+pub const Variant = struct { name: Str, ty: Ty };
 
 pub const Fun = struct {
-    ty_args: []const Str,
-    arg_tys: []const Str,
-    return_ty: Str,
+    ty_args: []Ty,
+    arg_tys: []Ty,
+    return_ty: Ty,
     is_builtin: bool,
     body: ArrayList(Statement),
-    tys: ArrayList(Str),
+    tys: ArrayList(Ty),
 
     const Self = @This();
 
     pub fn next_index(self: Self) StatementIndex {
         return self.body.items.len;
     }
-    pub fn put(self: *Self, statement: Statement, ty: Str) !StatementIndex {
+    pub fn put(self: *Self, statement: Statement, ty: Ty) !StatementIndex {
         const index = self.body.items.len;
         try self.body.append(statement);
         try self.tys.append(ty);
         return index;
     }
-    pub fn put_and_get_expr(self: *Self, statement: Statement, ty: Str) !Expr {
+    pub fn put_and_get_expr(self: *Self, statement: Statement, ty: Ty) !Expr {
         return .{ .kind = .{ .statement = try self.put(statement, ty) }, .ty = ty };
     }
 };
@@ -68,14 +73,14 @@ pub const Statement = union(enum) {
 pub const Assign = struct { to: Expr, value: Expr };
 pub const Int = struct { value: i128, signedness: numbers.Signedness, bits: numbers.Bits };
 pub const Call = struct { fun: Str, args: []const Expr };
-pub const VariantCreation = struct { enum_ty: Str, variant: Str, value: *const Expr };
-pub const StructCreation = struct { struct_ty: Str, fields: StringHashMap(Expr) };
+pub const VariantCreation = struct { enum_ty: Ty, variant: Str, value: *const Expr };
+pub const StructCreation = struct { struct_ty: Ty, fields: StringHashMap(Expr) };
 pub const Jump = struct { target: StatementIndex };
 pub const JumpIfVariant = struct { condition: Expr, variant: Str, target: StatementIndex };
-pub const GetEnumValue = struct { of: Expr, variant: Str, ty: Str };
+pub const GetEnumValue = struct { of: Expr, variant: Str, ty: Ty };
 
 pub const Expr = struct {
-    ty: Str,
+    ty: Ty,
     kind: ExprKind,
 };
 pub const ExprKind = union(enum) {

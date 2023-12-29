@@ -1,14 +1,20 @@
-fun foo(): Result[U64, U64] { Result[U64, U64].ok(bar()?.inc()) }
-fun bar(): Result[U64, U64] { Result[U64, U64].error(1) }
+struct Tree[T] { value: T, children: Vec[Tree[T]] }
+fun tree[T](value: T, children: Vec[Tree[T]]): Tree[T] { Tree[T] { value, children } }
+fun tree[T](value: T): Tree[T] { Tree[T] { value, children = vec[Tree[T]]() } }
+fun write[W, T](writer: W, tree: Tree[T]) {
+  writer.write_char(tree.value)
+  for child in tree.children do writer.write(child)
+}
 
 fun main(): Never {
-  println(foo())
-
-  if foo() is ok(a) then println(a)
-
-  switch foo()
-  case ok(a) printsln("Hi")
-  default printsln("Nope")
+  var tree = tree('H, vec(
+    tree('e, vec(
+      tree('l),
+      tree('l),
+    )),
+    tree('o),
+  ))
+  println(tree)
 
   exit(0_U8)
 }

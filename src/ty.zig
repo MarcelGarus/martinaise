@@ -1,6 +1,8 @@
 const std = @import("std");
 const Alloc = std.mem.Allocator;
 const ArrayList = std.ArrayList;
+const HashMap = std.HashMap;
+const ArrayHashMap = std.ArrayHashMap;
 const StringHashMap = std.StringHashMap;
 const string = @import("string.zig");
 const String = string.String;
@@ -56,4 +58,44 @@ pub const Ty = struct {
         for (self.args) |arg| try mapped_args.append(try arg.specialize(alloc, ty_env));
         return .{ .name = self.name, .args = mapped_args.items };
     }
+
+    pub fn hash(self: Self) u32 {
+        _ = self;
+
+        return 0;
+    }
+
+    pub fn eql(self: Self, other: Self) bool {
+        if (!string.eql(self.name, other.name)) return false;
+        if (self.args.len != other.args.len) return false;
+        for (self.args, other.args) |a, b| if (!a.eql(b)) return false;
+        return true;
+    }
 };
+
+pub fn TyArrayHashMap(comptime V: type) type {
+    return ArrayHashMap(Ty, V, struct {
+        pub fn hash(self: @This(), ty: Ty) u32 {
+            _ = self;
+            return ty.hash();
+        }
+        pub fn eql(self: @This(), a: Ty, b: Ty, b_index: usize) bool {
+            _ = b_index;
+
+            _ = self;
+            return a.eql(b);
+        }
+    }, false);
+}
+pub fn TyHashMap(comptime V: type) type {
+    return HashMap(Ty, V, struct {
+        pub fn hash(self: @This(), ty: Ty) u64 {
+            _ = self;
+            return ty.hash();
+        }
+        pub fn eql(self: @This(), a: Ty, b: Ty) bool {
+            _ = self;
+            return a.eql(b);
+        }
+    }, 60);
+}
