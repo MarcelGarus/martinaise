@@ -16,17 +16,17 @@
 
 fun clear_terminal() {
   todo()
-  | var clear = std.ChildProcess.init(&[_]Str{"clear"}, alloc);
-  | clear.stdout = std.io.getStdOut();
-  | clear.stderr = std.io.getStdErr();
-  | _ = try clear.spawnAndWait();
+  | var clear = std.ChildProcess.init(&[_]Str{"clear"}, alloc)
+  | clear.stdout = std.io.getStdOut()
+  | clear.stderr = std.io.getStdErr()
+  | _ = try clear.spawnAndWait()
 }
 
 fun print_on_same_line(message: Slice[U8]) {
   | \x1b[1A\x1b[K
-  print_char(27)
+  stdout().write_byte(27_U8)
   prints("[1A")
-  print_char(27)
+  stdout().write_byte(27_U8)
   prints("[K")
   printsln(message)
 }
@@ -47,19 +47,28 @@ fun print_on_same_line(message: Slice[U8]) {
 struct Type { name: Slice[U8], args: Vec[Type] }
 fun named_type(name: Slice[U8]): Type { Type { name, args = vec[Type]() } }
 fun write[W](writer: W, type: Type) {
-  writer.write_str(type.name);
+  writer.write_str(type.name)
   if type.name.equals("&")
   then writer.write(type.args.get(0))
   else writer.write_type_args(type.args)
 }
 fun write_type_args[W](writer: W, args: Vec[Type]) {
-  writer.write_char('[);
+  writer.write_char('[)
   var first = true()
   for arg in args do {
     if first then first = false() else writer.write_str(", ")
     writer.write(arg)
   }
-  writer.write_char(']);
+  writer.write_char('])
+}
+fun write_type_args[W](writer: W, args: Vec[Slice[U8]]) {
+  writer.write_char('[)
+  var first = true()
+  for arg in args do {
+    if first then first = false() else writer.write_str(", ")
+    writer.write_str(arg)
+  }
+  writer.write_char('])
 }
 fun specialize(type: Type, type_env: Map[Slice[U8], Type]): Type {
   | TODO: Make sure generic types don't have parameters.
@@ -77,8 +86,8 @@ fun specialize(type: Type, type_env: Map[Slice[U8], Type]): Type {
 enum Signedness { signed, unsigned }
 struct IntConfig { signedness: Signedness, bits: U64 }
 fun to_char(s: Signedness): U8 { switch s case signed 'I case unsigned 'U }
-fun all_signednesses(): Vec[Signdness] {
-  vec(Signdness.signed, Signedness.unsigned)
+fun all_signednesses(): Vec[Signedness] {
+  vec(Signedness.signed, Signedness.unsigned)
 }
 fun all_bits(): Vec[U64] { vec(8, 16, 32, 64) }
 fun all_int_configs(): Vec[IntConfig] {
@@ -88,7 +97,13 @@ fun all_int_configs(): Vec[IntConfig] {
       configs.&.push(IntConfig { signedness, bits })
   configs
 }
-fun to_type(config: IntConfig) Type {
+fun equals(a: Signedness, b: Signedness): Bool {
+  a.to_char().equals(b.to_char())
+}
+fun equals(a: IntConfig, b: IntConfig): Bool {
+  a.signedness.equals(b.signedness).and(a.bits.equals(b.bits))
+}
+fun to_type(config: IntConfig): Type {
   var name = vec[U8]()
   name.&.write_char(config.signedness.to_char())
   name.&.write(config.bits)
@@ -99,8 +114,9 @@ fun to_type(config: IntConfig) Type {
 | The compiler input is parsed into an abstract syntax tree. This tree is a
 | representation of the program that roughly corresponds to the structure of the
 | source code.
-struct AstProgram { defs: Vec[AstDef] }
+struct Ast { defs: Vec[AstDef] }
 enum AstDef {
+  builtin_type: Type, | not parsed from code
   struct_: AstStruct,
   enum_: AstEnum,
   fun_: AstFun,
@@ -132,13 +148,15 @@ enum AstExpr {
   name: Slice[U8], | foo
   type_arged: AstTypeArged, | ...[T] | TODO: remove
   call: AstCall, | ...(arg)
-  init_struct: AstInitStruct, | Foo { a = ... }
-  init_enum: AstInitEnum, | Maybe.some(5)
+  make_struct: AstInitStruct, | Foo { a = ... }
+  make_enum: AstInitEnum, | Maybe.some(5)
   member: AstMember, | foo.bar
   var_: AstVar, | var foo = ...
   assign: AstAssign, | foo = ...
   switch_: AstSwitch, | switch foo case a ... case b(bar) ...
   loop_: &AstExpr, | loop ...
+  break_,
+  continue_,
   return_: &AstExpr, | return ...
   body: Vec[AstExpr], | { ... }
 }
@@ -146,7 +164,7 @@ struct AstInt { value: U64, signedness: Signedness, bits: U64 }
 struct AstTypeArged { expr: &AstExpr, type_args: Vec[Type] }
 struct AstCall { callee: &AstExpr, args: Vec[AstExpr] }
 struct AstInitStruct { type: Type, fields: Vec[AstInitStructField] }
-struct AstInitStructField { name: Slice[U8], value: Expr }
+struct AstInitStructField { name: Slice[U8], value: AstExpr }
 struct AstInitEnum { type: Type, variant: Slice[U8], arg: &AstExpr }
 struct AstMember { of: &AstExpr, name: Slice[U8] }
 struct AstVar { name: Slice[U8], value: &AstExpr }
@@ -161,14 +179,18 @@ fun member(expr: AstExpr, name: Slice[U8]): AstExpr {
   AstExpr.member(AstMember { of = expr.put_on_heap(), name })
 }
 fun var_(name: Slice[U8], value: AstExpr): AstExpr {
-  AstExpr.var_(AstVar { name, value })
+  AstExpr.var_(AstVar { name, value = value.put_on_heap() })
 }
 
-fun write[W](writer: W, program: AstProgram) {
+fun write[W](writer: W, program: Ast) {
   for def in program.defs do { writer.write(def) writer.write_char(newline()) }
 }
 fun write[W](writer: W, def: AstDef) {
   switch def
+  case builtin_type(type) {
+    writer.write_str("builtin ")
+    writer.write(type)
+  }
   case struct_(s) writer.write(s)
   case enum_(e) writer.write(e)
   case fun_(f) writer.write(f)
@@ -243,9 +265,9 @@ fun write[W](writer: W, f: AstFun) {
     if first then first = false() else writer.write_str(", ")
     writer.write_str(arg.name)
     writer.write_str(": ")
-    writer.write_str(arg.type)
+    writer.write(arg.type)
   }
-  writer.write_char("): ")
+  writer.write_str("): ")
   writer.write(f.returns)
   if f.is_builtin
   then writer.write_str("{ ... }")
@@ -279,7 +301,7 @@ fun write[W](writer: W, indent: U64, expr: AstExpr) {
   }
   case name(n) writer.write_str(n)
   case type_arged(t) {
-    writer.write(indent, t.arged.*)
+    writer.write(indent, t.expr.*)
     writer.write_type_args(t.type_args)
   }
   case call(c) {
@@ -292,7 +314,7 @@ fun write[W](writer: W, indent: U64, expr: AstExpr) {
     }
     writer.write_char('))
   }
-  case init_struct(s) {
+  case make_struct(s) {
     writer.write(s.type)
     writer.write_str(" {")
     writer.write_char(newline())
@@ -307,79 +329,67 @@ fun write[W](writer: W, indent: U64, expr: AstExpr) {
     writer.write_indent(indent)
     writer.write_str("}")
   }
-  case init_enum(e) {
-    writer.write(s.type)
-    writer.write_str(".")
-    writer.write_str(e.variant)
-    writer.write_str("(")
-    writer.write(indent, e.arg)
-    writer.write_str(")")
-  }
-  case member(m) {
-    writer.write(indent, m.of.*)
-    writer.write_char('.)
-    writer.write_str(m.name)
-  }
-  case var_(v) {
-    writer.write_str("var ")
-    writer.write_str(v.name)
-    writer.write_str(" = ")
-    writer.write(indent, v.value.*)
-  }
-  case assign(a) {
-    writer.write(indent, a.to.*)
-    writer.write_str(" = ")
-    writer.write(indent, a.value.*)
-  }
-  case switch_(s) {
-    writer.write_str("switch ")
-    writer.write(indent, s.value.*)
-    writer.write_str(" {")
-    writer.write_char(newline())
-    for c in s.cases do {
-      writer.write_indent(indent)
-      writer.write_str("case ")
-      writer.write_str(c.variant.*)
-      if c.binding is some(b) then {
-        writer.write_char('()
-        writer.write(indent, b)
-        writer.write_char('))
-      }
-      writer.write_str(" ")
-      writer.write(indent.inc(), c.then_.*)
-      writer.write_char(newline())
-    }
-    if c.default_ is some(d) then {
-      writer.write_indent(indent)
-      writer.write_str("default ")
-      writer.write(indent, d.*)
-      writer.write_char(newline())
-    }
-    writer.write_indent(indent)
-    writer.write_str("}")
-  }
-  case orelse_(o) {
-    writer.write(indent, o.primary.*)
-    writer.write_str(" orelse ")
-    writer.write(indent, o.alternative.*)
-  }
-  case loop_(l) {
-    writer.write_str("loop ")
-    writer.write(indent, l.body.*)
-  }
-  case for_(f) {
-    writer.write_str("for ")
-    writer.write(indent, f.iter_var)
-    writer.write_str(" in ")
-    writer.write(indent, f.iter.*)
-    writer.write_str(" do ")
-    writer.write(indent, f.body.*)
-  }
-  case return_(r) {
-    writer.write_str("return ")
-    writer.write(indent, r.*)
-  }
-  case body(b) writer.write_body(indent, b)
+  | case make_enum(e) {
+  |   writer.write(s.type)
+  |   writer.write_str(".")
+  |   writer.write_str(e.variant)
+  |   writer.write_str("(")
+  |   writer.write(indent, e.arg)
+  |   writer.write_str(")")
+  | }
+  | case member(m) {
+  |   writer.write(indent, m.of.*)
+  |   writer.write_char('.)
+  |   writer.write_str(m.name)
+  | }
+  | case var_(v) {
+  |   writer.write_str("var ")
+  |   writer.write_str(v.name)
+  |   writer.write_str(" = ")
+  |   writer.write(indent, v.value.*)
+  | }
+  | case assign(a) {
+  |   writer.write(indent, a.to.*)
+  |   writer.write_str(" = ")
+  |   writer.write(indent, a.value.*)
+  | }
+  | case switch_(s) {
+  |   writer.write_str("switch ")
+  |   writer.write(indent, s.value.*)
+  |   writer.write_str(" {")
+  |   writer.write_char(newline())
+  |   for c in s.cases do {
+  |     writer.write_indent(indent)
+  |     writer.write_str("case ")
+  |     writer.write_str(c.variant.*)
+  |     if c.binding is some(b) then {
+  |       writer.write_char('()
+  |       writer.write(indent, b)
+  |       writer.write_char('))
+  |     }
+  |     writer.write_str(" ")
+  |     writer.write(indent.inc(), c.then_.*)
+  |     writer.write_char(newline())
+  |   }
+  |   if c.default_ is some(d) then {
+  |     writer.write_indent(indent)
+  |     writer.write_str("default ")
+  |     writer.write(indent, d.*)
+  |     writer.write_char(newline())
+  |   }
+  |   writer.write_indent(indent)
+  |   writer.write_str("}")
+  | }
+  | case loop_(l) {
+  |   writer.write_str("loop ")
+  |   writer.write(indent, l.body.*)
+  | }
+  | case return_(r) {
+  |   writer.write_str("return ")
+  |   writer.write(indent, r.*)
+  | }
+  | case body(b) writer.write_body(indent, b)
+  default todo()
 }
 
 | Parsing  
@@ -438,7 +448,7 @@ fun consume_whitespace(parser: &Parser) {
       parser.cursor = parser.cursor.inc()
       continue
     }
-    if char.equals('|') then {
+    if char.equals('|) then {
       loop {
         if parser.cursor.is_at_least(parser.code.len) then break
         if parser.current().equals(newline()) then break
@@ -463,7 +473,7 @@ fun consume_keyword(parser: &Parser, keyword: Slice[U8]): Maybe[Nothing] {
   parser.consume_whitespace()
   if not(parser.rest().starts_with(keyword)) then return none[Nothing]()
   if parser.rest().len.is_greater_than(keyword.len) then {
-    var char_after = if parser.rest().get(keyword.len)
+    var char_after = parser.rest().get(keyword.len)
     if not(char_after.is_whitespace().or(char_after.equals('|))) then
       return none[Nothing]()
   }
@@ -487,16 +497,16 @@ fun parse_name(parser: &Parser): Maybe[Slice[U8]] {
   some(parser.code.subslice(start, parser.cursor))
 }
 
-fun parser_lower_name(parser: &Parser): Maybe[Slice[U8]] {
+fun parse_lower_name(parser: &Parser): Maybe[Slice[U8]] {
   parser.consume_whitespace()
   if not('a.until('z).contains(parser.current())) then return none[Slice[U8]]()
-  some(parser.parse_name())
+  parser.parse_name()
 }
 
-fun parser_upper_name(parser: &Parser): Maybe[Slice[U8]] {
+fun parse_upper_name(parser: &Parser): Maybe[Slice[U8]] {
   parser.consume_whitespace()
   if not('A.until('Z).contains(parser.current())) then return none[Slice[U8]]()
-  some(parser.parse_name())
+  parser.parse_name()
 }
 
 | Convenience methods for the three possible results of parsers returning a
@@ -514,7 +524,7 @@ fun parsed[T](val: T): Result[Maybe[T], Slice[U8]] {
 
 fun parse_type(parser: &Parser): Result[Maybe[Type], Slice[U8]] {
   if parser.consume_prefix("&") is some then {
-    var arg = parser.parse_type_args()?
+    var arg = parser.parse_type()?
       orelse return bad_input[Type]("After &, there must come a type.")
     return parsed(Type { name = "&", args = vec(arg) })
   }
@@ -525,11 +535,11 @@ fun parse_type(parser: &Parser): Result[Maybe[Type], Slice[U8]] {
 }
 
 fun parse_type_args(parser: &Parser): Result[Maybe[Vec[Type]], Slice[U8]] {
-  var args = vec[Ty]()
+  var args = vec[Type]()
   parser.consume_prefix("[") orelse return no_match[Vec[Type]]()
   loop {
     var arg = parser.parse_type()? orelse break
-    args.push(arg)
+    args.&.push(arg)
     parser.consume_prefix(",") orelse break
   }
   parser.consume_prefix("]") orelse return bad_input[Vec[Type]](
@@ -537,15 +547,15 @@ fun parse_type_args(parser: &Parser): Result[Maybe[Vec[Type]], Slice[U8]] {
   parsed(args)
 }
 
-fun parse_type_params(parser: &Parser): Result[Maybe[Vec[Type]], Slice[U8]] {
-  var args = vec[Ty]()
-  parser.consume_prefix("[") orelse return no_match[Vec[Type]]()
+fun parse_type_params(parser: &Parser): Result[Maybe[Vec[Slice[U8]]], Slice[U8]] {
+  var args = vec[Slice[U8]]()
+  parser.consume_prefix("[") orelse return no_match[Vec[Slice[U8]]]()
   loop {
     var arg = parser.parse_upper_name() orelse break
-    args.push(arg)
+    args.&.push(arg)
     parser.consume_prefix(",") orelse break
   }
-  parser.consume_prefix("]") orelse return bad_input[Vec[Type]](
+  parser.consume_prefix("]") orelse return bad_input[Vec[Slice[U8]]](
     "Expected a closing bracket to end the type arguments.")
   parsed(args)
 }
@@ -556,30 +566,30 @@ fun parse_expr(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
     orelse return no_match[AstExpr]()
   loop
     switch parser.parse_expr_suffix(expr)? case some(e) expr = e case none break
-  expr
+  parsed(expr)
 }
 fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
-  | if parser.parse_var()? is some(v) then return parsed(AstExpr.var_(v))
-
-  if parser.parse_int()? is some(i) then return parsed(AstExpr.int(i))
-  if parser.parse_char()? is some(c) then return parsed(AstExpr.char(c))
-  if parser.parse_str()? is some(s) then return parsed(AstExpr.str(s))
-  if parser.parse_init()? is some(s) then return parsed(s)
+  if parser.parse_int()? is some(i) then return parsed(i)
+  if parser.parse_char()? is some(c) then return parsed(c)
+  if parser.parse_str()? is some(s) then return parsed(s)
+  if parser.parse_make()? is some(s) then return parsed(s)
   if parser.parse_body()? is some(b) then return parsed(AstExpr.body(b))
-  if parser.parse_var()? is some(v) then return parsed(AstExpr.var_(v))
-  if parser.parse_if()? is some(i) then return parsed(AstExpr.if_(i))
-  if parser.parse_switch()? is some(s) then return parsed(AstExpr.switch_(s))
-  if parser.parse_loop()? is some(l) then return parsed(AstExpr.loop_(l))
-  if parser.parse_for()? is some(f) then return parsed(AstExpr.for_(f))
-  if parser.parse_return()? is some(r) then return parsed(AstExpr.return_(r))
-  if parser.parse_lower_name()? is some(n) then return parsed(AstExpr.name(n))
+  if parser.parse_var()? is some(v) then return parsed(v)
+  if parser.parse_if()? is some(i) then return parsed(i)
+  if parser.parse_switch()? is some(s) then return parsed(s)
+  if parser.parse_loop()? is some(l) then return parsed(l)
+  if parser.parse_for()? is some(f) then return parsed(f)
+  if parser.parse_return()? is some(r) then return parsed(r)
+  if parser.parse_lower_name() is some(n) then return parsed(AstExpr.name(n))
+  no_match[AstExpr]()
 }
-fun parse_expr_suffix(parser: &Parser, expr: Expr): Result[Maybe[AstExpr], Slice[U8]] {
-  if parser.parse_suffix_member(expr)? is some(m) then return parsed(m)
-  if parser.parse_suffix_call(expr)? is some(c) then return parsed(c)
-  if parser.parse_suffix_type_arged(expr)? is some(t) then return parsed(t)
-  if parser.parse_suffix_assign(expr)? is some(a) then return parsed(a)
-  if parser.parse_suffix_orelse(expr)? is some(o) then return parsed(o)
+fun parse_expr_suffix(parser: &Parser, expr: AstExpr): Result[Maybe[AstExpr], Slice[U8]] {
+  if parser.parse_expr_suffix_member(expr)? is some(m) then return parsed(m)
+  if parser.parse_expr_suffix_call(expr)? is some(c) then return parsed(c)
+  if parser.parse_expr_suffix_type_arged(expr)? is some(t) then return parsed(t)
+  if parser.parse_expr_suffix_assign(expr)? is some(a) then return parsed(a)
+  if parser.parse_expr_suffix_orelse(expr)? is some(o) then return parsed(o)
+  no_match[AstExpr]()
 }
 
 fun parse_digits(parser: &Parser): Result[Maybe[U64], Slice[U8]] {
@@ -588,7 +598,7 @@ fun parse_digits(parser: &Parser): Result[Maybe[U64], Slice[U8]] {
   loop {
     var char = parser.current()
     if '0.until('9).contains(char) then {
-      num = num.multiply(10).add(char).subtract('0) | TODO: put in stdlib
+      num = num.multiply(10).add(char.subtract('0).to_U64()) | TODO: put in stdlib
       parser.advance()
     }
     else if char.equals('_) then parser.advance()
@@ -606,8 +616,8 @@ fun parse_int(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
     orelse return parsed(AstExpr.int(
       AstInt { value, signedness = Signedness.unsigned, bits = 64 }))
   var signedness =
-    if parser.consume_prefix("I") is some then Signdness.signed
-    else if parser.consume_prefix("U") is some then Signdness.unsigned
+    if parser.consume_prefix("I") is some then Signedness.signed
+    else if parser.consume_prefix("U") is some then Signedness.unsigned
     else return bad_input[AstExpr]("Expected a signedness (U or I).")
   var bits = parser.parse_digits()?
     orelse return bad_input[AstExpr]("Expected bit length of the integer.")
@@ -616,22 +626,26 @@ fun parse_int(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
 }
 
 fun parse_char(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
-  parser.consume_prefix('') orelse return no_match[AstExpr]()
+  parser.consume_prefix("'") orelse return no_match[AstExpr]()
   var char = parser.current()
   parser.advance()
-  parsed(AstExpr.int(
-    AstInt { char, signedness = Signedness.unsigned, bits = 8 }))
+  parsed(AstExpr.int(AstInt {
+    value = char.to_U64(),
+    signedness = Signedness.unsigned,
+    bits = 8,
+  }))
 }
 
 fun parse_str(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
-  parser.consume_prefix('") orelse return no_match[AstExpr]()
+  if parser.current().not_equals('") then return no_match[AstExpr]()
+  parser.advance()
   var start = parser.cursor
   loop if parser.current().equals('") then break else parser.advance()
   parser.advance()
   parsed(AstExpr.str(parser.code.subslice(start, parser.cursor.dec())))
 }
 
-fun parse_init(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+fun parse_make(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
   var type = parser.parse_type()? orelse return no_match[AstExpr]()
   if parser.consume_prefix("{") is some then {
     var fields = vec[AstInitStructField]()
@@ -642,35 +656,38 @@ fun parse_init(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
         then parser.parse_expr()?
           orelse return bad_input[AstExpr]("Expected the value of the field.")
         else AstExpr.name(name)
-      fields.push(AstInitStructField { name, value })
+      fields.&.push(AstInitStructField { name, value })
       parser.consume_prefix(",") orelse break
     }
     parser.consume_prefix("}")
       orelse return bad_input[AstExpr]("Expected a closing brace.")
-    parsed(AstExpr.init_struct(AstInitStruct { type, fields }))
+    parsed(AstExpr.make_struct(AstInitStruct { type, fields }))
   } else {
     parser.consume_prefix(".")
       orelse return bad_input[AstExpr](
-        "Expected struct or enum initialization.")
+        "Expected struct or enum creation.")
     var variant = parser.parse_lower_name()
       orelse return bad_input[AstExpr]("Expected the variant.")
     
     var arg = AstExpr.body(vec[AstExpr]())
     if parser.consume_prefix("(") is some then {
-      arg = parser.parse_expr()
+      arg = parser.parse_expr()?
         orelse return bad_input[AstExpr](
           "Expected an argument for the variant.")
       parser.consume_prefix(")")
         orelse return bad_input[AstExpr]("Expected a closing parenthesis.")
     }
-    parsed(AstExpr.init_enum(AstInitEnum { type, variant, arg }))
+    parsed(AstExpr.make_enum(
+      AstInitEnum { type, variant, arg = arg.put_on_heap() }))
   }
 }
 
 fun parse_body(parser: &Parser): Result[Maybe[Vec[AstExpr]], Slice[U8]] {
   parser.consume_prefix("{") orelse return no_match[Vec[AstExpr]]()
   var statements = vec[AstExpr]()
-  loop switch self.parse_expr()? case some(e) statements.push(e) case none break
+  loop switch parser.parse_expr()?
+  case some(e) statements.&.push(e)
+  case none break
   parser.consume_prefix("}")
     orelse return bad_input[Vec[AstExpr]](
       "Expected the closing brace of the body.")
@@ -698,7 +715,7 @@ fun parse_if(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
     variant = parser.parse_lower_name()
       orelse return bad_input[AstExpr]("Expected a variant.")
     if parser.consume_prefix("(") is some then {
-      binding = some(parser.parser_lower_name()
+      binding = some(parser.parse_lower_name()
         orelse return bad_input[AstExpr]("Expected the name of the binding."))
       parser.consume_prefix(")")
         orelse return bad_input[AstExpr]("Expected a closing parenthesis.")
@@ -713,9 +730,9 @@ fun parse_if(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
   then else_ = parser.parse_expr()?
     orelse return bad_input[AstExpr]("Expected an else expression.")
   parsed(AstExpr.switch_(AstSwitch {
-    value = condition,
-    cases = vec(AstCase { variant, binding, then_ }),
-    default_ = else_,
+    value = condition.put_on_heap(),
+    cases = vec(AstCase { variant, binding, then_ = then_.put_on_heap() }),
+    default_ = some(else_.put_on_heap()),
   }))
 }
 
@@ -731,20 +748,27 @@ fun parse_switch(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
       orelse return bad_input[AstExpr]("Expected a variant.")
     var binding = none[Slice[U8]]()
     if parser.consume_prefix("(") is some then {
-      binding = some(parser.parser_lower_name()
+      binding = some(parser.parse_lower_name()
         orelse return bad_input[AstExpr]("Expected the name of the binding."))
       parser.consume_prefix(")")
         orelse return bad_input[AstExpr]("Expected a closing parenthesis.")
     }
     var then_ = parser.parse_expr()?
         orelse return bad_input[AstExpr]("Expected a case expression.")
-    cases.push(AstCase { variant, binding, then_ })
+    cases.&.push(AstCase { variant, binding, then_ = then_.put_on_heap() })
   }
   var default_ = none[&AstExpr]()
   if parser.consume_keyword("default") is some
-  then default_ = parser.parse_expr()?
-    orelse return bad_input[AstExpr]("Expected a default expression.")
-  parsed(AstExpr.switch_(AstSwitch { value, cases, default_ }))
+  then {
+    var default__ = parser.parse_expr()?
+      orelse return bad_input[AstExpr]("Expected a default expression.")
+    default_ = some(default__.put_on_heap())
+  }
+  parsed(AstExpr.switch_(AstSwitch {
+    value = value.put_on_heap(),
+    cases,
+    default_
+  }))
 }
 
 fun parse_loop(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
@@ -773,22 +797,22 @@ fun parse_for(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
       var_(iter_var, AstExpr.switch_(AstSwitch {
         value = AstExpr.name("$iter").member("next").call(vec[AstExpr]())
           .put_on_heap(),
-        cases: vec(
+        cases = vec(
           AstCase {
-            variant: "some",
-            binding: some("a"),
-            then_: AstExpr.name("a").put_on_heap()
+            variant = "some",
+            binding = some("a"),
+            then_ = AstExpr.name("a").put_on_heap()
           },
           AstCase {
-            variant: "none",
-            binding: none[Slice[U8]](),
-            then_: AstExpr.break_.put_on_heap(),
+            variant = "none",
+            binding = none[Slice[U8]](),
+            then_ = AstExpr.break_.put_on_heap(),
           },
         ),
-        default_: none[&AstExpr](),
-      }),
+        default_ = none[&AstExpr](),
+      })),
       expr,
-    )))
+    )).put_on_heap())
   )))
 }
 
@@ -812,7 +836,7 @@ fun parse_expr_suffix_call(parser: &Parser, current: AstExpr): Result[Maybe[AstE
   parser.consume_prefix("(") orelse return no_match[AstExpr]()
   var args = vec[AstExpr]()
   loop {
-    args.push(parser.parse_expr()? orelse break)
+    args.&.push(parser.parse_expr()? orelse break)
     parser.consume_prefix(",") orelse break
   }
   parser.consume_prefix(")")
@@ -846,20 +870,20 @@ fun parse_expr_suffix_orelse(parser: &Parser, current: AstExpr): Result[Maybe[As
     orelse return bad_input[AstExpr](
       "Expected alternative expression after orelse.")
   parsed(AstExpr.switch_(AstSwitch {
-    value = current, | TODO: call some function
+    value = current.put_on_heap(), | TODO: call some function
     cases = vec(
       AstCase {
         variant = "some",
         binding = some("a"),
-        then_: AstExpr.name("a").put_on_heap(),
+        then_ = AstExpr.name("a").put_on_heap(),
       },
       AstCase {
         variant = "none",
         binding = none[Slice[U8]](),
-        then_: alternative.put_on_heap(),
+        then_ = alternative.put_on_heap(),
       },
     ),
-    default_ = none[AstExpr](),
+    default_ = none[&AstExpr](),
   }))
 }
 
@@ -867,7 +891,7 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Slice[U8]] {
   parser.consume_keyword("fun") orelse return no_match[AstFun]()
   var name = parser.parse_lower_name()
     orelse return bad_input[AstFun]("Expected the name of the function.")
-  var type_args = parser.parse_type_params() orelse vec[Slice[U8]]()
+  var type_args = parser.parse_type_params()? orelse vec[Slice[U8]]()
   var args = vec[AstFunArg]()
   parser.consume_prefix("(")
     orelse return bad_input[AstFun]("Expected an opening parenthesis.")
@@ -877,7 +901,7 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Slice[U8]] {
       orelse return bad_input[AstFun]("Expected a colon.")
     var type = parser.parse_type()?
       orelse return bad_input[AstFun]("Expected the type of the argument.")
-    args.push(AstFunArg { name, type })
+    args.&.push(AstFunArg { name, type })
     parser.consume_prefix(",") orelse break
   }
   parser.consume_prefix(")")
@@ -889,20 +913,17 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Slice[U8]] {
   var is_builtin = false()
   var body =
     switch parser.consume_prefix("{ ... }")
-    case some {
-      is_builtin = true()
-      vec[AstExpr]()
-    }
+    case some { is_builtin = true() vec[AstExpr]() }
     case none parser.parse_body()?
       orelse return bad_input[AstFun]("Expected a function body.")
-  AstFun { name, type_args, args, returns, is_builtin, body }
+  parsed(AstFun { name, type_args, args, returns, is_builtin, body })
 }
 
 fun parse_struct(parser: &Parser): Result[Maybe[AstStruct], Slice[U8]] {
   parser.consume_keyword("struct") orelse return no_match[AstStruct]()
   var name = parser.parse_upper_name()
     orelse return bad_input[AstStruct]("Expected an uppercase name.")
-  var type_params = parser.parse_type_params()? orelse vec[Slice[U8]]()
+  var type_args = parser.parse_type_params()? orelse vec[Slice[U8]]()
   parser.consume_prefix("{")
     orelse return bad_input[AstStruct]("Expected an opening brace.")
   var fields = vec[AstStructField]()
@@ -912,20 +933,20 @@ fun parse_struct(parser: &Parser): Result[Maybe[AstStruct], Slice[U8]] {
       orelse return bad_input[AstStruct]("Expected a colon.")
     var field_type = parser.parse_type()?
       orelse return bad_input[AstStruct]("Expected the type of the field.")
-    fields.push(AstStructField { name = field_name, type = field_type })
+    fields.&.push(AstStructField { name = field_name, type = field_type })
     parser.consume_prefix(",") orelse break
   }
   parser.consume_prefix("}")
     orelse return bad_input[AstStruct](
       "Expected a closing brace to end the struct.")
-  parsed((AstStruct { name, type_params, fields })
+  parsed(AstStruct { name, type_args, fields })
 }
 
 fun parse_enum(parser: &Parser): Result[Maybe[AstEnum], Slice[U8]] {
   parser.consume_keyword("enum") orelse return no_match[AstEnum]()
   var name = parser.parse_upper_name()
     orelse return bad_input[AstEnum]("Expected an uppercase name.")
-  var type_params = parser.parse_type_params()? orelse vec[Slice[U8]]()
+  var type_args = parser.parse_type_params()? orelse vec[Slice[U8]]()
   parser.consume_prefix("{")
     orelse return bad_input[AstEnum]("Expected an opening brace.")
   var variants = vec[AstEnumVariant]()
@@ -935,48 +956,50 @@ fun parse_enum(parser: &Parser): Result[Maybe[AstEnum], Slice[U8]] {
     if parser.consume_prefix(":") is some
     then variant_type = parser.parse_type()?
       orelse return bad_input[AstEnum]("Expected the type of the variant.")
-    variants.push(AstEnumVariant { name = variant_name, type = variant_type })
+    variants.&.push(AstEnumVariant { name = variant_name, type = variant_type })
     parser.consume_prefix(",") orelse break
   }
   parser.consume_prefix("}")
     orelse return bad_input[AstEnum](
       "Expected a closing brace to end the enum.")
-  AstEnum { name, type_params, variants }
+  parsed(AstEnum { name, type_args, variants })
 }
 
 fun parse_def(parser: &Parser): Result[Maybe[AstDef], Slice[U8]] {
-  if parser.parse_struct()? is some(s) then return AstDef.struct_(s)
-  if parser.parse_enum()? is some(e) then return AstDef.enum_(e)
-  if parser.parse_fun()? is some(f) then return AstDef.fun_(f)
+  if parser.parse_struct()? is some(s) then return parsed(AstDef.struct_(s))
+  if parser.parse_enum()? is some(e) then return parsed(AstDef.enum_(e))
+  if parser.parse_fun()? is some(f) then return parsed(AstDef.fun_(f))
+  no_match[AstDef]()
 }
 
-fun parse_defs(parser: &Parser): Result[Maybe[Vec[AstDef]], Slice[U8]] {
+fun parse_defs(parser: &Parser): Result[Vec[AstDef], Slice[U8]] {
   var defs = vec[AstDef]()
-  loop switch parser.parse_def()? case some(d) defs.push(d) case none break
+  loop switch parser.parse_def()? case some(d) defs.&.push(d) case none break
   if parser.cursor.is_less_than(parser.code.len)
-  then return bad_input[Vec[AstDef]]("Expected a definition.")
-  defs
+  then return error[Vec[AstDef], Slice[U8]]("Expected a definition.")
+  ok[Vec[AstDef], Slice[U8]](defs)
 }
 
-fun parse(code: Slice[U8], stdlib_size: U64): Result[AstProgram, Slice[U8]] {
-  var parser = Parser { code }
+fun parse(code: Slice[U8], stdlib_size: U64): Result[Ast, Slice[U8]] {
+  var parser = Parser { code, cursor = 0 }
   | TODO: Replace switch with catch/orelse
-  switch parser.parse_defs()
-  case error(error)
+  switch parser.&.parse_defs()
+  case error(error) {
     if parser.cursor.is_at_most(stdlib_size)
-    then error[AstProgram, Slice[U8]](
+    then error[Ast, Slice[U8]](
       format_error_with_context(parser.code, parser.cursor, error))
-    else error[AstProgram, Slice[U8]](format_error_with_context(
+    else error[Ast, Slice[U8]](format_error_with_context(
       parser.code.subslice(stdlib_size),
       parser.cursor.subtract(stdlib_size),
       error
     ))
+  }
   case ok(defs) {
     | Add builtins
     | TODO: Explanation
 
     | struct &[T] { *: T }
-    defs.push(AstDef.struct_(AstStruct {
+    defs.&.push(AstDef.struct_(AstStruct {
       name = "&",
       type_args = vec("T"),
       fields = vec(AstStructField { name = "*", type = named_type("T") })
@@ -984,49 +1007,50 @@ fun parse(code: Slice[U8], stdlib_size: U64): Result[AstProgram, Slice[U8]] {
 
     | Int stuff
     for config in all_int_configs() do {
-      var type = config.int_type()
-      defs.push(AstDef.builtin_type(type))
+      var type = config.to_type()
+      defs.&.push(AstDef.builtin_type(type))
 
       var two_args = vec(
         AstFunArg { name = "a", type },
         AstFunArg { name = "b", type },
       )
-      defs.push_builtin_fun("add", two_args, type)
-      defs.push_builtin_fun("subtract", two_args, type)
-      defs.push_builtin_fun("multiply", two_args, type)
-      defs.push_builtin_fun("divide", two_args, type)
-      defs.push_builtin_fun("modulo", two_args, type)
-      defs.push_builtin_fun("compare_to", two_args, named_type("Ordering"))
-      defs.push_builtin_fun("shiftLeft", two_args, type)
-      defs.push_builtin_fun("shiftRight", two_args, type)
-      defs.push_builtin_fun("bitLength", two_args, type)
-      defs.push_builtin_fun("and", two_args, type)
-      defs.push_builtin_fun("or", two_args, type)
-      defs.push_builtin_fun("xor", two_args, type)
+      defs.&.push_builtin_fun("add", two_args, type)
+      defs.&.push_builtin_fun("subtract", two_args, type)
+      defs.&.push_builtin_fun("multiply", two_args, type)
+      defs.&.push_builtin_fun("divide", two_args, type)
+      defs.&.push_builtin_fun("modulo", two_args, type)
+      defs.&.push_builtin_fun("compare_to", two_args, named_type("Ordering"))
+      defs.&.push_builtin_fun("shiftLeft", two_args, type)
+      defs.&.push_builtin_fun("shiftRight", two_args, type)
+      defs.&.push_builtin_fun("bitLength", two_args, type)
+      defs.&.push_builtin_fun("and", two_args, type)
+      defs.&.push_builtin_fun("or", two_args, type)
+      defs.&.push_builtin_fun("xor", two_args, type)
 
       | Conversion function
       for target_config in all_int_configs() do {
-        if config.equals(target_config) then continue
-        var target_type = target_config.int_type()
-        var name = vec[U8]()
-        name.write("to_")
-        name.write(target_type)
-        defs.push_builtin_fun(name, vec(AstFunArg { name = "i", type }), target_type)
+        if config.not_equals(target_config) then {
+          var target_type = target_config.to_type()
+          var name = vec[U8]()
+          name.&.write("to_")
+          name.&.write(target_type)
+          defs.&.push_builtin_fun(name.to_slice(), vec(AstFunArg { name = "i", type }), target_type)
+        }
       }
     }
 
-    ok[AstProgram, Slice[U8]](defs)
+    ok[Ast, Slice[U8]](Ast { defs })
   }
 }
-fun push_builtin_fun(defs: Vec[AstDef], name: Slice[U8], args: Vec[AstFunArg], returns: Type) {
-  defs.push(AstFun {
+fun push_builtin_fun(defs: &Vec[AstDef], name: Slice[U8], args: Vec[AstFunArg], returns: Type) {
+  defs.push(AstDef.fun_(AstFun {
     name,
     type_args = vec[Slice[U8]](),
     args,
     returns,
     is_builtin = true(),
     body = vec[AstExpr](),
-  })
+  }))
 }
 fun format_error_with_context(code: Slice[U8], offset: U64, error: Slice[U8]): Slice[U8] {
   var lines = vec[Vec[U8]]()
@@ -1036,28 +1060,28 @@ fun format_error_with_context(code: Slice[U8], offset: U64, error: Slice[U8]): S
     if i.equals(offset) then offset_in_line = current_line.len
     if code.get(i).equals(newline())
     then {
-      lines.append(current_line)
+      lines.&.push(current_line)
       current_line = vec[U8]()
       if i.is_at_least(offset) then break
     }
-    else current_line.push(code.get(i))
+    else current_line.&.push(code.get(i))
   }
   | Now, lines contains all lines up to the line that contains the
   | error. offset_in_line is the offset into the last complete line.
   var num_lines_to_display = min(lines.len, 4)
   var out = vec[U8]()
   for line_number in lines.len.subtract(num_lines_to_display).to(lines.len) do {
-    out.write(line_number.inc())
-    out.write_str(" | ")
-    out.write_str(lines.get(line_number))
-    out.write_char(newline())
+    out.&.write(line_number.inc())
+    out.&.write_str(" | ")
+    out.&.write_str(lines.get(line_number).to_slice())
+    out.&.write_char(newline())
   }
-  for i in 0.to(7 + offset_in_line) out.write_char(' )
-  out.write_char('^)
-  out.write_char(newline())
-  for i in 0.to(7 + offset_in_line) out.write_char(' )
-  out.write_str(error)
-  error.to_slice()
+  for i in 0.to(7.add(offset_in_line)) do out.&.write_char(' )
+  out.&.write_char('^)
+  out.&.write_char(newline())
+  for i in 0.to(7.add(offset_in_line)) do out.&.write_char(' )
+  out.&.write_str(error)
+  out.to_slice()
 }
 
 | Command Line Interface  
@@ -1075,14 +1099,14 @@ fun parse_command(command: Slice[U8]): Command {
 
 | Runs the pipeline that matches the command. Errors are handled internally
 | (stuff is printed to stdout). Returns whether it ran through successfully.
-fun run_pipeline(): Bool {
+fun run_pipeline(command: Command, file_path: Slice[U8]): Bool {
   var stdlib_size = 0
   var input = {
     print_on_same_line({
       var out = vec[U8]()
-      out.write_str("Reading ")
-      out.write_str(file_path)
-      out
+      out.&.write_str("Reading ")
+      out.&.write_str(file_path)
+      out.to_slice()
     })
 
     var stdlib = read_file("stdlib.mar")
@@ -1090,22 +1114,23 @@ fun run_pipeline(): Bool {
     stdlib_size = stdlib.len
 
     var input = vec[U8]()
-    input.write(stdlib)
-    input.write(newline())
-    input.write(file)
-    input.write(newline())
+    input.&.write(stdlib)
+    input.&.write(newline())
+    input.&.write(file)
+    input.&.write(newline())
+    input.to_slice()
   }
 
   var ast = {
     print_on_same_line({
       var out = vec[U8]()
-      out.write_str("Parsing ")
-      out.write_str(file_path)
-      out
+      out.&.write_str("Parsing ")
+      out.&.write_str(file_path)
+      out.to_slice()
     })
-    switch parse(input, stdlib_size)?
+    switch parse(input, stdlib_size)
     case ok(ast) ast
-    case err(err) { printsln(err) return false() }
+    case error(err) { printsln(err) return false() }
   }
   if command is ast then { println(ast) return true() }
 
@@ -1113,11 +1138,11 @@ fun run_pipeline(): Bool {
 }
 
 fun main() {
-  printsln("Welcome to Martinaise.")
+  printsln("Welcome to Martinaise in Martinaise.")
 
   | TODO: Add CLI parsing
   var command = Command.ast
   var file_path = "advent/day1.mar"
 
-  exit(if run_pipeline(command, file_path) then 0 else 1)
+  exit(if run_pipeline(command, file_path) then 0_U8 else 1_U8)
 }
