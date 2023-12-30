@@ -60,7 +60,7 @@ fun not_equals[T](a: T, b: T): Bool { not(a.equals(b)) }
 | TODO: refactor so there's only a hash fun
 fun hash[T](value: T): U64 {
   var h = Hasher { state = 5381 }
-  value.hash(&h)
+  value.hash(h.&)
   h.state
 }
 struct Hasher { state: U64 }
@@ -446,9 +446,7 @@ fun read_file(name: Slice[U8]): Slice[U8] {
 
 | Printing  
 | You should implement a write[Writer](Writer, T) function for types that can be
-| printed. Writers are anything that has these functions:
-| - write_byte(Writer, U8)
-| - write_bytes(Writer, Slice[U8])
+| printed. Writers are anything that has a write_byte(Writer, U8) function.
 | TODO: Use libc_write function more efficiently (not 1 byte per syscall)
 fun stdin(): File { File { descriptor = 0 } }
 fun stdout(): File { File { descriptor = 1 } }
@@ -708,7 +706,7 @@ fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
     case empty return none[&V]()
     case filled(entry)
       if entry.key.equals(key)
-      then return some(&entry.value)
+      then return some(entry.value.&)
       else i = i.add(1).modulo(map.buckets.len)
   }
 }
@@ -811,8 +809,8 @@ fun sort[T](slice: &Slice[T]) {
       swap(slice.get_ref(i.dec()), slice.get_ref(j))
     }
   swap(slice.get_ref(i), slice.get_ref(slice.len.dec()))
-  sort(&slice.subslice(0, i))
-  sort(&slice.subslice(min(i.inc(), slice.len.dec()), slice.len))
+  sort(slice.subslice(0, i).&)
+  sort(slice.subslice(min(i.inc(), slice.len.dec()), slice.len).&)
 }
 fun iter[T](slice: Slice[T]): SliceIter[T] { SliceIter[T] { slice, index = 0 } }
 struct SliceIter[T] { slice: Slice[T], index: U64 }

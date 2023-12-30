@@ -53,6 +53,7 @@ fun write[W](writer: W, type: Type) {
   else writer.write_type_args(type.args)
 }
 fun write_type_args[W](writer: W, args: Vec[Type]) {
+  if args.is_empty() then return {}
   writer.write_char('[)
   var first = true()
   for arg in args do {
@@ -62,6 +63,7 @@ fun write_type_args[W](writer: W, args: Vec[Type]) {
   writer.write_char('])
 }
 fun write_type_args[W](writer: W, args: Vec[Slice[U8]]) {
+  if args.is_empty() then return {}
   writer.write_char('[)
   var first = true()
   for arg in args do {
@@ -269,15 +271,21 @@ fun write[W](writer: W, f: AstFun) {
   }
   writer.write_str("): ")
   writer.write(f.returns)
+  writer.write_str(" ")
   if f.is_builtin
   then writer.write_str("{ ... }")
   else writer.write_body(0, f.body)
 }
 fun write_indent[W](writer: W, indent: U64) {
-  for i in 0.to(indent) do writer.write_char(' )
+  for i in 0.to(indent.multiply(2)) do writer.write_char(' )
 }
 fun write_body[W](writer: W, indent: U64, body: Vec[AstExpr]) {
+  if body.is_empty() then {
+    writer.write_str("{}")
+    return {}
+  }
   writer.write_char('{)
+  writer.write_char(newline())
   for expr in body do {
     writer.write_indent(indent.inc())
     writer.write(indent.inc(), expr)
@@ -288,39 +296,39 @@ fun write_body[W](writer: W, indent: U64, body: Vec[AstExpr]) {
 }
 fun write[W](writer: W, indent: U64, expr: AstExpr) {
   switch expr
-  case int(i) {
-    writer.write(i.value)
+  case int(int) {
+    writer.write(int.value)
     writer.write_char('_)
-    writer.write_char(i.signedness.to_char())
-    writer.write(i.bits)
+    writer.write_char(int.signedness.to_char())
+    writer.write(int.bits)
   }
-  case str(s) {
+  case str(str) {
     writer.write_char('")
-    writer.write_str(s)
+    writer.write_str(str)
     writer.write_char('")
   }
-  case name(n) writer.write_str(n)
-  case type_arged(t) {
-    writer.write(indent, t.expr.*)
-    writer.write_type_args(t.type_args)
+  case name(name) writer.write_str(name)
+  case type_arged(type_arged) {
+    writer.write(indent, type_arged.expr.*)
+    writer.write_type_args(type_arged.type_args)
   }
-  case call(c) {
-    writer.write(indent, c.callee.*)
+  case call(call) {
+    writer.write(indent, call.callee.*)
     writer.write_char('()
     var first = true()
-    for arg in c.args do {
+    for arg in call.args do {
       if first then first = false() else writer.write_str(", ")
       writer.write(indent, arg)
     }
     writer.write_char('))
   }
-  case make_struct(s) {
-    writer.write(s.type)
+  case make_struct(struct_) {
+    writer.write(struct_.type)
     writer.write_str(" {")
     writer.write_char(newline())
-    for field in s.fields do {
+    for field in struct_.fields do {
       writer.write_indent(indent.inc())
-      writer.write(field.name)
+      writer.write_str(field.name)
       writer.write_str(" = ")
       writer.write(indent.inc(), field.value)
       writer.write_char(',)
@@ -329,67 +337,64 @@ fun write[W](writer: W, indent: U64, expr: AstExpr) {
     writer.write_indent(indent)
     writer.write_str("}")
   }
-  | case make_enum(e) {
-  |   writer.write(s.type)
-  |   writer.write_str(".")
-  |   writer.write_str(e.variant)
-  |   writer.write_str("(")
-  |   writer.write(indent, e.arg)
-  |   writer.write_str(")")
-  | }
-  | case member(m) {
-  |   writer.write(indent, m.of.*)
-  |   writer.write_char('.)
-  |   writer.write_str(m.name)
-  | }
-  | case var_(v) {
-  |   writer.write_str("var ")
-  |   writer.write_str(v.name)
-  |   writer.write_str(" = ")
-  |   writer.write(indent, v.value.*)
-  | }
-  | case assign(a) {
-  |   writer.write(indent, a.to.*)
-  |   writer.write_str(" = ")
-  |   writer.write(indent, a.value.*)
-  | }
-  | case switch_(s) {
-  |   writer.write_str("switch ")
-  |   writer.write(indent, s.value.*)
-  |   writer.write_str(" {")
-  |   writer.write_char(newline())
-  |   for c in s.cases do {
-  |     writer.write_indent(indent)
-  |     writer.write_str("case ")
-  |     writer.write_str(c.variant.*)
-  |     if c.binding is some(b) then {
-  |       writer.write_char('()
-  |       writer.write(indent, b)
-  |       writer.write_char('))
-  |     }
-  |     writer.write_str(" ")
-  |     writer.write(indent.inc(), c.then_.*)
-  |     writer.write_char(newline())
-  |   }
-  |   if c.default_ is some(d) then {
-  |     writer.write_indent(indent)
-  |     writer.write_str("default ")
-  |     writer.write(indent, d.*)
-  |     writer.write_char(newline())
-  |   }
-  |   writer.write_indent(indent)
-  |   writer.write_str("}")
-  | }
-  | case loop_(l) {
-  |   writer.write_str("loop ")
-  |   writer.write(indent, l.body.*)
-  | }
-  | case return_(r) {
-  |   writer.write_str("return ")
-  |   writer.write(indent, r.*)
-  | }
-  | case body(b) writer.write_body(indent, b)
-  default todo()
+  case make_enum(enum_) {
+    writer.write(enum_.type)
+    writer.write_str(".")
+    writer.write_str(enum_.variant)
+    writer.write_str("(")
+    writer.write(indent, enum_.arg.*)
+    writer.write_str(")")
+  }
+  case member(member) {
+    writer.write(indent, member.of.*)
+    writer.write_char('.)
+    writer.write_str(member.name)
+  }
+  case var_(var_) {
+    writer.write_str("var ")
+    writer.write_str(var_.name)
+    writer.write_str(" = ")
+    writer.write(indent, var_.value.*)
+  }
+  case assign(assign) {
+    writer.write(indent, assign.to.*)
+    writer.write_str(" = ")
+    writer.write(indent, assign.value.*)
+  }
+  case switch_(switch_) {
+    writer.write_str("switch ")
+    writer.write(indent, switch_.value.*)
+    for case_ in switch_.cases do {
+      writer.write_char(newline())
+      writer.write_indent(indent)
+      writer.write_str("case ")
+      writer.write_str(case_.variant)
+      if case_.binding is some(binding) then {
+        writer.write_char('()
+        writer.write_str(binding)
+        writer.write_char('))
+      }
+      writer.write_str(" ")
+      writer.write(indent, case_.then_.*)
+    }
+    if switch_.default_ is some(default_) then {
+      writer.write_char(newline())
+      writer.write_indent(indent)
+      writer.write_str("default ")
+      writer.write(indent, default_.*)
+    }
+  }
+  case loop_(expr) {
+    writer.write_str("loop ")
+    writer.write(indent, expr.*)
+  }
+  case break_ writer.write_str("break")
+  case continue_ writer.write_str("continue")
+  case return_(return_) {
+    writer.write_str("return ")
+    writer.write(indent, return_.*)
+  }
+  case body(body) writer.write_body(indent, body)
 }
 
 | Parsing  
@@ -485,7 +490,7 @@ fun parse_name(parser: &Parser): Maybe[Slice[U8]] {
   var start = parser.cursor
   loop {
     var char = parser.current()
-    if 'A.until('Z).contains(char).or('a.until('z).contains(char))
+    if 'A.until('Z).contains(char).or('a.until('z).contains(char)).or(char.equals('_))
     then { parser.advance() continue }
     if '0.until('9).contains(char) then
       if parser.cursor.equals(start)
@@ -593,6 +598,7 @@ fun parse_expr_suffix(parser: &Parser, expr: AstExpr): Result[Maybe[AstExpr], Sl
 }
 
 fun parse_digits(parser: &Parser): Result[Maybe[U64], Slice[U8]] {
+  parser.consume_whitespace()
   var start = parser.cursor
   var num = 0
   loop {
@@ -889,7 +895,7 @@ fun parse_expr_suffix_orelse(parser: &Parser, current: AstExpr): Result[Maybe[As
 
 fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Slice[U8]] {
   parser.consume_keyword("fun") orelse return no_match[AstFun]()
-  var name = parser.parse_lower_name()
+  var fun_name = parser.parse_lower_name()
     orelse return bad_input[AstFun]("Expected the name of the function.")
   var type_args = parser.parse_type_params()? orelse vec[Slice[U8]]()
   var args = vec[AstFunArg]()
@@ -916,7 +922,7 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Slice[U8]] {
     case some { is_builtin = true() vec[AstExpr]() }
     case none parser.parse_body()?
       orelse return bad_input[AstFun]("Expected a function body.")
-  parsed(AstFun { name, type_args, args, returns, is_builtin, body })
+  parsed(AstFun { name = fun_name, type_args, args, returns, is_builtin, body })
 }
 
 fun parse_struct(parser: &Parser): Result[Maybe[AstStruct], Slice[U8]] {
@@ -943,7 +949,9 @@ fun parse_struct(parser: &Parser): Result[Maybe[AstStruct], Slice[U8]] {
 }
 
 fun parse_enum(parser: &Parser): Result[Maybe[AstEnum], Slice[U8]] {
-  parser.consume_keyword("enum") orelse return no_match[AstEnum]()
+  parser.consume_keyword("enum") orelse {
+    return no_match[AstEnum]()
+  }
   var name = parser.parse_upper_name()
     orelse return bad_input[AstEnum]("Expected an uppercase name.")
   var type_args = parser.parse_type_params()? orelse vec[Slice[U8]]()
@@ -1032,7 +1040,7 @@ fun parse(code: Slice[U8], stdlib_size: U64): Result[Ast, Slice[U8]] {
         if config.not_equals(target_config) then {
           var target_type = target_config.to_type()
           var name = vec[U8]()
-          name.&.write("to_")
+          name.&.write_str("to_")
           name.&.write(target_type)
           defs.&.push_builtin_fun(name.to_slice(), vec(AstFunArg { name = "i", type }), target_type)
         }
@@ -1071,7 +1079,7 @@ fun format_error_with_context(code: Slice[U8], offset: U64, error: Slice[U8]): S
   var num_lines_to_display = min(lines.len, 4)
   var out = vec[U8]()
   for line_number in lines.len.subtract(num_lines_to_display).to(lines.len) do {
-    out.&.write(line_number.inc())
+    out.&.write_line_number(line_number.inc())
     out.&.write_str(" | ")
     out.&.write_str(lines.get(line_number).to_slice())
     out.&.write_char(newline())
@@ -1082,6 +1090,12 @@ fun format_error_with_context(code: Slice[U8], offset: U64, error: Slice[U8]): S
   for i in 0.to(7.add(offset_in_line)) do out.&.write_char(' )
   out.&.write_str(error)
   out.to_slice()
+}
+fun write_line_number[W](writer: W, n: U64) {
+  if n.is_at_least(1000) then writer.write(n)
+  else if n.is_at_least(100) then { writer.write_str(" ") writer.write(n) }
+  else if n.is_at_least(10) then { writer.write_str("  ") writer.write(n) }
+  else { writer.write_str("   ") writer.write(n) }
 }
 
 | Command Line Interface  
@@ -1114,10 +1128,10 @@ fun run_pipeline(command: Command, file_path: Slice[U8]): Bool {
     stdlib_size = stdlib.len
 
     var input = vec[U8]()
-    input.&.write(stdlib)
-    input.&.write(newline())
-    input.&.write(file)
-    input.&.write(newline())
+    input.&.write_str(stdlib)
+    input.&.write_char(newline())
+    input.&.write_str(file)
+    input.&.write_char(newline())
     input.to_slice()
   }
 
