@@ -45,7 +45,7 @@ fun print_on_same_line(message: Slice[U8]) {
 | This representation of types is used throughout the AST and Mono stage of the
 | compiler.
 struct Type { name: Slice[U8], args: Vec[Type] }
-fun named_type(name: Slice[U8]): Type { Type { name, args = vec[Type]() } }
+fun type(name: Slice[U8]): Type { Type { name, args = vec[Type]() } }
 fun write[W](writer: W, type: Type) {
   writer.write_str(type.name)
   if type.name.equals("&")
@@ -71,14 +71,6 @@ fun write_type_args[W](writer: W, args: Vec[Slice[U8]]) {
     writer.write_str(arg)
   }
   writer.write_char('])
-}
-fun specialize(type: Type, type_env: Map[Slice[U8], Type]): Type {
-  | TODO: Make sure generic types don't have parameters.
-  type_env.get(type.name) orelse {
-    var args = vec[Ty]()
-    for arg in type.args do args.&.push(arg.specialize(type_env))
-    Type { name = type.name, args }
-  }
 }
 
 | Numbers  
@@ -109,7 +101,7 @@ fun to_type(config: IntConfig): Type {
   var name = vec[U8]()
   name.&.write_char(config.signedness.to_char())
   name.&.write(config.bits)
-  named_type(name.to_slice())
+  type(name.to_slice())
 }
 
 | The Abstract Syntax Tree  
@@ -912,7 +904,7 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Slice[U8]] {
   }
   parser.consume_prefix(")")
     orelse return bad_input[AstFun]("Expected a closing parenthesis.")
-  var returns = named_type("Nothing")
+  var returns = type("Nothing")
   if parser.consume_prefix(":") is some
   then returns = parser.parse_type()?
     orelse return bad_input[AstFun]("Expected the return type.")
@@ -960,7 +952,7 @@ fun parse_enum(parser: &Parser): Result[Maybe[AstEnum], Slice[U8]] {
   var variants = vec[AstEnumVariant]()
   loop {
     var variant_name = parser.parse_lower_name() orelse break
-    var variant_type = named_type("Nothing")
+    var variant_type = type("Nothing")
     if parser.consume_prefix(":") is some
     then variant_type = parser.parse_type()?
       orelse return bad_input[AstEnum]("Expected the type of the variant.")
@@ -1010,7 +1002,7 @@ fun parse(code: Slice[U8], stdlib_size: U64): Result[Ast, Slice[U8]] {
     defs.&.push(AstDef.struct_(AstStruct {
       name = "&",
       type_args = vec("T"),
-      fields = vec(AstStructField { name = "*", type = named_type("T") })
+      fields = vec(AstStructField { name = "*", type = type("T") })
     }))
 
     | Int stuff
@@ -1027,7 +1019,7 @@ fun parse(code: Slice[U8], stdlib_size: U64): Result[Ast, Slice[U8]] {
       defs.&.push_builtin_fun("multiply", two_args, type)
       defs.&.push_builtin_fun("divide", two_args, type)
       defs.&.push_builtin_fun("modulo", two_args, type)
-      defs.&.push_builtin_fun("compare_to", two_args, named_type("Ordering"))
+      defs.&.push_builtin_fun("compare_to", two_args, type("Ordering"))
       defs.&.push_builtin_fun("shiftLeft", two_args, type)
       defs.&.push_builtin_fun("shiftRight", two_args, type)
       defs.&.push_builtin_fun("bitLength", two_args, type)
@@ -1096,6 +1088,218 @@ fun write_line_number[W](writer: W, n: U64) {
   else if n.is_at_least(100) then { writer.write_str(" ") writer.write(n) }
   else if n.is_at_least(10) then { writer.write_str("  ") writer.write(n) }
   else { writer.write_str("   ") writer.write(n) }
+}
+
+| Mono  
+| Generic code such as a function foo[T]() doesn't have any generic
+| representation in the final output. Instead, for every place where foo is
+| called (every "callsite"), a new version of foo gets compiled. This process
+| (called "monomorphization") enables useful programming patterns. For example,
+| just by writing a compare_to function for a type, you can automatically use
+| all other comparison functions. Generally speaking, monomorphized code also
+| tends to be faster than general code.
+|
+| The Mono is the next stage in the compiler. Here, functions and types are
+| monomorphized (aka they are not generic anymore). Only the functions and types
+| that are reachable from the main function appear here – everything else is
+| ignored. While the AST may contain invalid code (like 3 = 1), the Mono is
+| guaranteed to be correct – during the monomorphization, variable scoping, name
+| lookups, and type checking take place.
+
+struct Mono { type_defs: Map[Type, MonoTypeDef], funs: Map[Slice[U8], MonoFun] }
+enum MonoTypeDef {
+  builtin_type,
+  struct_: MonoStruct,
+  enum_: MonoEnum,
+}
+struct MonoStruct { fields: Vec[MonoStructField] }
+struct MonoStructField { name: Slice[U8], type: Type }
+struct MonoEnum { variants: Vec[MonoEnumVariant] }
+struct MonoEnumVariant { name: Slice[U8], type: Type }
+struct MonoFun {
+  type_args: Vec[Type],
+  arg_types: Vec[Type],
+  return_type: Type,
+  is_builtin: Bool,
+  body: Vec[MonoStatement],
+}
+
+enum MonoStatement {
+  arg,
+  expr: MonoExpr,
+  uninitialized,
+  assign: MonoAssign,
+  int: MonoInt,
+  string: MonoStr,
+  make_struct: MonoMakeStruct,
+  make_enum: MonoMakeEnum,
+  call: MonoCall,
+  jump: MonoJump,
+  jump_if_variant: MonoJumpIfVariant,
+  get_enum_value: MonoGetEnumValue,
+  return_: MonoExpr,
+  ref: MonoExpr,
+}
+struct MonoAssign { to: MonoExpr, value: MonoExpr }
+struct MonoInt { value: U64, signedness: Signedness, bits: U64 }
+struct MonoMakeEnum { type: Type, variant: Slice[U8], value: MonoExpr }
+struct MonoMakeStruct { type: Type, fields: Map[Slice[U8], Expr] }
+struct MonoCall { fun_: Slice[U8], args: Vec[MonoExpr] }
+struct MonoJump { target: U64 }
+struct MonoJumpIfVariant { condition: Expr, variant: Slice[U8], target: U64 }
+struct MonoGetEnumValue { of: MonoExpr, variant: Slice[U8], type: Type }
+
+struct MonoExpr { type: Type, kind: MonoExprKind }
+enum MonoExprKind { statement: U64, member: MonoMember }
+struct MonoMember { of: &MonoExpr, name: Slice[U8] }
+
+fun write[W](writer: W, mono: Mono) {
+  writer.write_str("Types:")
+  writer.write_char(newline())
+  | TODO: add keys and value iters to stdlib
+  for entry in mono.type_defs do {
+    writer.write_str("- ")
+    writer.write_str(entry.key)
+    writer.write_char(newline())
+  }
+
+  writer.write_str("Funs:")
+  writer.write_char(newline())
+  for entry in mono.funs do {
+    writer.write(entry.key, entry.value)
+    writer.write_char(newline())
+  }
+}
+fun write[W](writer: W, name: Slice[U8], fun_: MonoFun) {
+  writer.write_str(name)
+  writer.write_char(newline())
+  if fun_.is_builtin then { writer.write_str("  <builtin>") return {} }
+  
+  var first = true()
+  var i = 0
+  for statement in fun_.body do {
+    if first then first = false() else writer.write_char(newline())
+    writer.write_str("  _")
+    writer.write(i)
+    writer.write_str(" = ")
+    writer.write(statement)
+    i = i.inc()
+  }
+}
+fun write[W](writer: W, statement: MonoStatement) {
+  switch statement
+  case arg writer.write_str("arg")
+  case expr(expr) writer.write(expr)
+  case uninitialized writer.write_str("uninitialized")
+  case int(int) {
+    writer.write(int.value)
+    writer.write_char(int.signedness.to_char())
+    writer.write(int.bits)
+  }
+  case str(str) {
+    writer.write_char('")
+    writer.write_str(str)
+    writer.write_char('")
+  }
+  case call(call) {
+    writer.write_str(call.fun_)
+    writer.write_str(" called with (")
+    var first = true()
+    for arg in call.args do {
+      if first then first = false() else writer.write_str(", ")
+      writer.write(arg)
+    }
+    writer.write_str(")")
+  }
+  case make_struct(make_struct) {
+    writer.write_str(make_struct.type)
+    writer.write_str(" {")
+    for field in make_struct.fields do {
+      writer.write_str(" ")
+      writer.write_str(field.name)
+      writer.write_str(" = ")
+      writer.write(field.value)
+      writer.write_str(",")
+    }
+    writer.write_str(" }")
+  }
+  case make_enum(make_enum) {
+    writer.write_str(make_enum.type)
+    writer.write_str(".")
+    writer.write_str(make_enum.variant)
+    writer.write_str("(")
+    writer.write(make_enum.arg)
+    writer.write_str(")")
+  }
+  case assign(assign) {
+    writer.write(assign.to)
+    writer.write_str(" set to ")
+    writer.write(assign.value)
+  }
+  case jump(jump) {
+    writer.write_str("jump to _")
+    writer.write(jump.target)
+  }
+  case jump_if_variant(jump) {
+    writer.write_str("if _")
+    writer.write(jump.condition)
+    writer.write_str(" is ")
+    writer.write(jump.variant)
+    writer.write_str(", jump to _")
+    writer.write(jump.target)
+  }
+  case get_enum_value(get_enum_value) {
+    writer.write_str("get ")
+    writer.write_str(get_enum_value.variant)
+    writer.write_str(" value of ")
+    writer.write(get_enum_value.of)
+  }
+  case return_(returned) {
+    writer.write_str("return ")
+    writer.write(returned)
+  }
+  case ref(expr) {
+    writer.write(expr)
+    writer.write_str(".&")
+  }
+}
+fun write[W](writer: W, expr: MonoExpr) {
+  switch expr.kind
+  case statement(statement) {
+    writer.write_str("_")
+    writer.write(statement)
+  }
+  case member(member) {
+    writer.write(member.of)
+    writer.write_str(".")
+    writer.write(member.name)
+  }
+}
+
+| Monomorphization  
+
+| pub const Fun = struct {
+|     pub fn next_index(self: Self) StatementIndex {
+|         return self.body.items.len;
+|     }
+|     pub fn put(self: *Self, statement: Statement, ty: Ty) !StatementIndex {
+|         const index = self.body.items.len;
+|         try self.body.append(statement);
+|         try self.tys.append(ty);
+|         return index;
+|     }
+|     pub fn put_and_get_expr(self: *Self, statement: Statement, ty: Ty) !Expr {
+|         return .{ .kind = .{ .statement = try self.put(statement, ty) }, .ty = ty };
+|     }
+| };
+
+fun specialize(type: Type, type_env: Map[Slice[U8], Type]): Type {
+  | TODO: Make sure generic types don't have parameters.
+  type_env.get(type.name) orelse {
+    var args = vec[Ty]()
+    for arg in type.args do args.&.push(arg.specialize(type_env))
+    Type { name = type.name, args }
+  }
 }
 
 | Command Line Interface  
