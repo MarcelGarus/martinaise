@@ -1276,6 +1276,94 @@ fun write[W](writer: W, expr: MonoExpr) {
   }
 }
 
+| Type Solving  
+| When compiling generic code, the free type variables need to be bound to
+| concrete types. For example, to compile a function foo[A](), we need to know
+| what A is. For each specific A that foo is used with, a new version gets
+| compiled. Type parameters such as A can also be inferred:
+|
+| fun foo[A](a: Foo[A], b: A) { ... }
+| fun foo[A](a: A, b: A) { ... }
+|
+| foo(Foo[U64], U64)
+|
+| When compiling the call, the Martinaise compiler figures out to use the first
+| function with A = U64. It uses the TypeSolver for that. Here's how to use it:
+|
+| 1. Create a TypeSolver, passing all type variables that need to be bound.
+|    In the example above, that would be A.
+| 2. Repeatedly call unify with the generic type and the concrete types of the
+|    usage site.
+|    - For calls, unify all arguments.
+|    - For struct creations, unify all fields.
+|    - For enum creations, unify the argument.
+|    In the example above, we call unify(Foo[A], Foo[U64]) and unify(A, U64).
+| 3. Call finish. This ensures that no type variables are unbound and it returns
+|    a type environment (a Map[Str, Type]) that maps the generic type parameters
+|    to concrete types. It can be used to specialize the generic code to the
+|    usage site.
+|    In the example above, the resulting type environment would be {A: U64}.
+struct TypeSolver {
+  vars: Set[Slice[U8]],
+  env: Map[Slice[U8], Type],
+}
+fun create_type_solver[Iter](vars_: Iter): TypeSolver {
+  | TODO: make sure each type var only exists once
+  var vars = set[Slice[U8]]()
+  for var_ in vars_ do vars.insert(var_)
+  TypeSolver { vars, env = map[Slice[U8], Type]() }
+}
+| Calling this function adds the constraint that `concrete` needs to be
+| assignable to `generic`. Returns whether that works.
+fun unify(solver: &TypeSolver, generic: Type, concrete: Type): Result[Bool, Slice[U8]] {
+  | Under type env {A: Int}, is Str assignable to A? Depends on whether Str is
+  | assignable to Int.
+  if solver.env.get(generic.name) is some(mapped) then {
+    if generic.args.is_empty().not()
+    then return error[Bool, Slice[U8]]("Generics can't have type arguments.")
+    if solver.vars.contains(mapped.name) then unreachable()
+    return solver.unify(mapped, concrete)
+  }
+
+  if solver.vars.contains(generic.name) then {
+    solver.env.insert(generic.name, concrete)
+    return true()
+  }
+
+  if generic.name.not_equals(concrete.name) then return false()
+  if generic.args.len.not_equals(concrete.args.len) then return false()
+  for i in 0.to(generic.args.len) do
+    if not(solver.unify(generic.args.get(i), concrete.args.get(i)))
+    then return false()
+
+  return true()
+}
+fun finish(solver: &TypeSolver) Result[Map[Slice[U8], Type], Slice[U8]] {
+  for var_ in solver.vars do
+    if not(solver.env.contains(var_))
+      return error[Map[Slice[U8], Type], Slice[U8]]({
+        var out = vec[U8]()
+        if solver.env.len.is_greater_than(0) then {
+          out.&.write_str("These type variables are bound:")
+          out.&.write_char(newline())
+          for entry in solver.env do {
+            out.&.write_str("- ")
+            out.&.write_str(entry.key)
+            out.&.write_str(" = ")
+            out.&.write_str(entry.value)
+            out.&.write_char(newline())
+          }
+        }
+        out.&.write_str("The type variable ")
+        out.&.write_str(var_)
+        out.&.write_str(" is unbound.")
+        out.&.write_char(newline())
+        out.to_slice()
+      })
+
+  solver.env
+}
+
 | Monomorphization  
 
 | pub const Fun = struct {
