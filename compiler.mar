@@ -199,9 +199,9 @@ fun write[W](writer: W, program: Ast) {
 }
 fun write[W](writer: W, def: AstDef) {
   switch def
-  case builtin_type(type) {
+  case builtin_type(name) {
     writer.write_str("builtin ")
-    writer.write(type)
+    writer.write_str(name)
   }
   case struct_(s) writer.write(s)
   case enum_(e) writer.write(e)
@@ -209,7 +209,10 @@ fun write[W](writer: W, def: AstDef) {
 }
 fun write_signature[W](writer: W, def: AstDef) {
   switch def
-  case builtin_type(name) writer.write_str(name)
+  case builtin_type(name) {
+    writer.write_str("builtin ")
+    writer.write_str(name)
+  }
   case struct_(s) {
     writer.write_str("struct ")
     writer.write_str(s.name)
@@ -399,8 +402,12 @@ fun write[W](writer: W, indent: U64, expr: AstExpr) {
     writer.write_str("loop ")
     writer.write(indent, expr.*)
   }
-  case break_ writer.write_str("break")
-  case continue_ writer.write_str("continue")
+  case break_(break_) {
+    writer.write_str("<break>(")
+    writer.write(indent, break_.*)
+    writer.write_str(")")
+  }
+  case continue_ writer.write_str("<continue>")
   case return_(return_) {
     writer.write_str("return ")
     writer.write(indent, return_.*)
@@ -487,15 +494,18 @@ fun consume_prefix(parser: &Parser, prefix: Slice[U8]): Maybe[Nothing] {
   some({})
 }
 
-| Also makes sure there's a whitespace following, so consume_keyword("fun")
+| Also makes sure there's a non-letter following, so consume_keyword("fun")
 | doesn't match the code "funny".
 fun consume_keyword(parser: &Parser, keyword: Slice[U8]): Maybe[Nothing] {
   parser.consume_whitespace()
   if not(parser.rest().starts_with(keyword)) then return none[Nothing]()
   if parser.rest().len.is_greater_than(keyword.len) then {
     var char_after = parser.rest().get(keyword.len)
-    if not(char_after.is_whitespace().or(char_after.equals('|))) then
-      return none[Nothing]()
+    var goes_on = char_after.equals('_)
+      .or('A.until('Z).contains(char_after))
+      .or('a.until('z).contains(char_after))
+      .or('0.until('9).contains(char_after))
+    if goes_on then return none[Nothing]()
   }
   parser.advance_by(keyword.len)
   some({})
@@ -599,6 +609,8 @@ fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]
   if parser.parse_switch()? is some(s) then return parsed(s)
   if parser.parse_loop()? is some(l) then return parsed(l)
   if parser.parse_for()? is some(f) then return parsed(f)
+  if parser.parse_break()? is some(b) then return parsed(b)
+  if parser.parse_continue()? is some(c) then return parsed(c)
   if parser.parse_return()? is some(r) then return parsed(r)
   if parser.parse_lower_name() is some(n) then return parsed(AstExpr.name(n))
   no_match[AstExpr]()
@@ -840,6 +852,28 @@ fun parse_for(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
       expr,
     )).put_on_heap())
   )))
+}
+
+fun parse_break(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  parser.consume_keyword("break") orelse return no_match[AstExpr]()
+  var expr = if parser.consume_prefix("(") is some
+    then {
+      var e = parser.parse_expr()?
+        orelse return bad_input[AstExpr]("Expected break expression.")
+      parser.consume_prefix(")")
+        orelse return bad_input[AstExpr]("Expected closing parenthesis.")
+      e
+    }
+    else AstExpr.make_struct(AstMakeStruct {
+      type = type("Nothing"),
+      fields = vec[AstMakeStructField](),
+    })
+  parsed(AstExpr.break_(expr.put_on_heap()))
+}
+
+fun parse_continue(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
+  parser.consume_keyword("continue") orelse return no_match[AstExpr]()
+  parsed(AstExpr.continue_)
 }
 
 fun parse_return(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
@@ -1229,6 +1263,7 @@ fun write[W](writer: W, statement: MonoStatement) {
   case uninitialized writer.write_str("uninitialized")
   case int(int) {
     writer.write(int.value)
+    writer.write_char('_)
     writer.write_char(int.signedness.to_char())
     writer.write(int.bits)
   }
@@ -1277,10 +1312,10 @@ fun write[W](writer: W, statement: MonoStatement) {
     writer.write(jump.target)
   }
   case jump_if_variant(jump) {
-    writer.write_str("if _")
+    writer.write_str("if ")
     writer.write(jump.condition)
     writer.write_str(" is ")
-    writer.write(jump.variant)
+    writer.write_str(jump.variant)
     writer.write_str(", jump to _")
     writer.write(jump.target)
   }
@@ -1308,7 +1343,7 @@ fun write[W](writer: W, expr: MonoExpr) {
   case member(member) {
     writer.write(member.of.*)
     writer.write_str(".")
-    writer.write(member.name)
+    writer.write_str(member.name)
   }
 }
 
@@ -1499,7 +1534,7 @@ fun monomorphize(ast: Ast): Result[Mono, Slice[U8]] {
     })
 
   var return_type = mono.funs.get(main_signature).unwrap().return_type
-  if return_type.equals(type("Never"))
+  if not(return_type.is_never())
   then return error[Mono, Slice[U8]]({
     var out = vec[U8]()
     out.&.write_str("The main function should return Never, but it returns ")
@@ -1559,6 +1594,8 @@ fun lookup_fun(
   for def in ast.defs do
     if def is fun_(fun_) then
       if fun_.name.equals(name) then name_matches.&.push(fun_)
+  print(name_matches.len)
+  printsln(" name matches")
 
   var full_matches = vec[LookupFunSolution]()
   for fun_ in name_matches do {
@@ -1568,7 +1605,7 @@ fun lookup_fun(
       for i in 0.to(type_args_.len) do
         solver.&.unify(type(fun_.type_args.get(i)), type_args_.get(i))?.assert()
     }
-    if arg_types.len.not_equals(fun_.args.len) then {}
+    if arg_types.len.not_equals(fun_.args.len) then continue
     var matches = true()
     for i in 0.to(arg_types.len) do
       if not(solver.&.unify(fun_.args.get(i).type, arg_types.get(i))?)
@@ -1759,6 +1796,10 @@ fun monomorphize(
   var signature = {
     var out = vec[U8]()
     out.&.write_str(fun_.name)
+    var type_args = vec[Type]()
+    for arg in fun_.type_args do
+      type_args.&.push(type(arg).monomorphize(type_env, ast, mono)?)
+    out.&.write_type_args(type_args)
     out.&.write_char('()
     for i in 0.to(fun_.args.len) do {
       if i.is_greater_than(0) then out.&.write_str(", ")
@@ -1799,7 +1840,7 @@ fun monomorphize(
     context = context,
     ast,
     mono,
-    fun_ = mono_fun,
+    fun_ = mono_fun.&,
     type_env,
     vars,
     expected_return_type = return_type,
@@ -1829,7 +1870,7 @@ struct CompileFun {
   context: &Context,
   ast: Ast,
   mono: &Mono,
-  fun_: MonoFun,
+  fun_: &MonoFun,
   type_env: Map[Slice[U8], Type], | maps fun type args to concrete types
   vars: Map[Slice[U8], VarInfo],
   expected_return_type: Type,     | return type from function signature
@@ -1906,6 +1947,7 @@ fun compile_nothing_instance(self: &CompileFun): MonoExpr {
 fun compile(self: &CompileFun, body: Vec[AstExpr]): Result[MonoExpr, Slice[U8]] {
   var last = none[MonoExpr]()
   for expr in body do last = some(self.compile(expr)?)
+  printsln("body compiled")
   ok[MonoExpr, Slice[U8]](last orelse self.compile_nothing_instance())
 }
 
@@ -2018,9 +2060,8 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         for i in 0.to(struct_.type_args.len) do
           if not(solver.&.unify(
             type(struct_.type_args.get(i)),
-            make_struct.type.args.get(i).monomorphize(
-              self.type_env,
-              self.ast, self.mono)?
+            make_struct.type.args.get(i)
+              .monomorphize(self.type_env, self.ast, self.mono)?
           )?)
           then unreachable()
       }
@@ -2097,6 +2138,8 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
           out.to_slice()
         })
       }
+      printsln("variant type is ")
+      println(variant_type)
 
       var solver = create_type_solver(enum_.type_args)
       | TODO: Maybe[].some(3) should not be treated like Maybe.some(3)
@@ -2113,13 +2156,20 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
           out.&.write_str(".")
           out.to_slice()
         })
-        for i in 0.to(enum_.type_args.len) do
+        printsln("Unifying type args")
+        for i in 0.to(enum_.type_args.len) do {
+          print(type(enum_.type_args.get(i)))
+          prints(" and ")
+          print(make_enum.type.args.get(i)
+              .monomorphize(self.type_env, self.ast, self.mono)?)
+          println()
           if not(solver.&.unify(
             type(enum_.type_args.get(i)),
             make_enum.type.args.get(i)
-              .monomorphize(type_env, self.ast, self.mono)?
+              .monomorphize(self.type_env, self.ast, self.mono)?
           )?)
           then unreachable()
+        }
       }
       if not(solver.&.unify(variant_type, arg.type)?)
       then return error[MonoExpr, Slice[U8]]({
@@ -2154,6 +2204,16 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
     }
     case member(member) {
       var of = self.compile(member.of.*)?
+      | expr.& references the member
+      if member.name.equals("&")
+      then {
+        var ref_type = type("&", vec(of.type))
+          .monomorphize(self.type_env, self.ast, self.mono)?
+        return ok[MonoExpr,Slice[U8]](self.put_and_get_expr(
+          MonoStatement.ref(of),
+          ref_type,
+        ))
+      }
       | When accessing a member on a reference, we automatically dereference the
       | receiver as often as necessary. For example, you can access point.x if
       | point is a &&&Point.
@@ -2404,6 +2464,10 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
             if then_.type.not_equals(expected) then
               return error[MonoExpr, Slice[U8]]({
                 var out = vec[U8]()
+                out.&.write_str("When lowering this:")
+                out.&.write_char(newline())
+                out.&.write(0, AstExpr.switch_(switch_))
+                out.&.write_char(newline())
                 out.&.write_str("Previous switch cases return ")
                 out.&.write(expected)
                 out.&.write_str(", but the case for ")
@@ -2434,7 +2498,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       var final_type = type orelse type("Never")
       MonoExpr { kind = MonoExprKind.statement(result), type = final_type }
     }
-    case loop_(loop_) {
+    case loop_(expr) {
       | TODO: graphic of how this is lowered
       var result = self.put(MonoStatement.uninitialized)
       self.break_scopes.&.push(BreakScope {
@@ -2448,7 +2512,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
 
       | TODO: Create inner vars
       var loop_start = self.next_index()
-      self.compile(expr)?
+      self.compile(expr.*)?
       self.put(MonoStatement.jump(MonoJump { target = loop_start }))
 
       var after_loop = self.next_index()
@@ -2459,7 +2523,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
             MonoStatement.jump(MonoJump { target = after_loop }),
           )
       }
-      var type = scope.type orelse type("Nothing")
+      var type = scope.type orelse type("Never")
       var scope = self.continue_scopes.&.pop() {
         for continue_ in scope.continues do
           self.update(
@@ -2571,6 +2635,8 @@ fun compile_call(
   self: &CompileFun, name: Slice[U8],
   callee: Maybe[MonoExpr], type_args: Maybe[Vec[Type]], args: Vec[MonoExpr]
 ): Result[MonoExpr, Slice[U8]] {
+  prints("compiling call with type args ")
+  println(type_args)
   | Martinaise supports auto-dereferencing: If you call value.foo() on a value
   | of type &T, we first look for functions matching foo(&T). If none match, we
   | try dereferencing the value and look for functions matching foo(T). If we
@@ -2615,6 +2681,8 @@ fun compile_call_without_auto_deref(
     solution.type_env,
     self.context, self.ast, self.mono
   )?
+  printsln("fun monomorphized ")
+  println(fun_)
 
   ok[MonoExpr, Slice[U8]](self.put_and_get_expr(
     MonoStatement.call(MonoCall { fun_, args }),
