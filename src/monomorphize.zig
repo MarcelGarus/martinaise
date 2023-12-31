@@ -141,7 +141,7 @@ const Monomorphizer = struct {
         name: Str,
         ty_args: ?[]const Ty,
         args: ?[]const Ty,
-    ) error{ Todo, OutOfMemory, CompileError }!LookupFunSolution {
+    ) error{ Todo, OutOfMemory, CompileError, WrongNumberOfGenerics }!LookupFunSolution {
         var name_matches = ArrayList(ast.Fun).init(self.alloc);
         for (self.program) |def| {
             const def_name = switch (def) {
@@ -249,6 +249,9 @@ const Monomorphizer = struct {
             .builtin_ty => |_| try self.ty_defs.put(ty, .builtin_ty),
             .struct_ => |s| {
                 var ty_env = TyEnv.init(self.alloc);
+                if (ty.args.len != s.ty_args.len) {
+                    return error.WrongNumberOfGenerics;
+                }
                 for (s.ty_args, ty.args) |from, to| {
                     try ty_env.put(from, to);
                 }
@@ -264,6 +267,9 @@ const Monomorphizer = struct {
             },
             .enum_ => |e| {
                 var ty_env = TyEnv.init(self.alloc);
+                if (ty.args.len != e.ty_args.len) {
+                    return error.WrongNumberOfGenerics;
+                }
                 for (e.ty_args, ty.args) |from, to| {
                     try ty_env.put(from, to);
                 }
@@ -546,7 +552,7 @@ const FunMonomorphizer = struct {
         self.return_ty = returned;
     }
 
-    fn compile_expr(self: *Self, expression: ast.Expr) error{ Todo, OutOfMemory, CompileError }!mono.Expr {
+    fn compile_expr(self: *Self, expression: ast.Expr) error{ Todo, OutOfMemory, CompileError, WrongNumberOfGenerics }!mono.Expr {
         // TODO: special-case these in the parser instead
         if (try self.compile_break(expression)) |expr| return expr;
         if (try self.compile_continue(expression)) |expr| return expr;
@@ -1005,6 +1011,9 @@ const FunMonomorphizer = struct {
                     .result_ty = null,
                     .breaks = ArrayList(mono.StatementIndex).init(self.alloc),
                 });
+                try self.continuable_scopes.append(.{
+                    .continues = ArrayList(mono.StatementIndex).init(self.alloc),
+                });
 
                 const iterable = try self.compile_expr(for_.iter.*);
                 const owned_iter = try self.compile_call("iter", iterable, null, &[_]mono.Expr{});
@@ -1044,9 +1053,15 @@ const FunMonomorphizer = struct {
                     .variant = "none",
                     .target = after_loop,
                 } };
-                const scope = self.breakable_scopes.pop();
-                for (scope.breaks.items) |b|
-                    self.fun.body.items[b] = .{ .jump = .{ .target = after_loop } };
+                {
+                    const scope = self.breakable_scopes.pop();
+                    for (scope.breaks.items) |b|
+                        self.fun.body.items[b] = .{ .jump = .{ .target = after_loop } };
+                }
+                {
+                    const scope = self.continuable_scopes.pop();
+                    for (scope.continues.items) |b| self.fun.body.items[b] = .{ .jump = .{ .target = loop_start } };
+                }
                 return self.compile_nothing_instance();
             },
             .return_ => |returned| {

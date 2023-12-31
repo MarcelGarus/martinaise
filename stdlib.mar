@@ -1,7 +1,7 @@
 | Welcome to Martinaise!  
 | Martinaise is a language that's designed for solving simple puzzles such as
 | advent of code. Making a language that is widely-used is _not_ the goal.
-| Instead, this is a small, recreational project.
+| Instead, this is a fun, recreational project.
 |
 | The language is quite small, so it doesn't have many built-in types and
 | functions. Apart from integers as well as mathematical functions for them, it
@@ -10,14 +10,18 @@
 | Bool. The compiler relies on some of these definitions, so be careful when
 | deleting code in this file because that may crash the compiler.
 
-| Language todos
+| Language todos  
 | TODO: type aliases
 | TODO: validate all signatures before lowering
 | TODO: global constants
 | TODO: custom orelse
+| TODO: break and continue with targets
+| TODO: str type, char type
+| TODO: string interpolation?
 | TODO: funs as values, function types, higher-order funs
 | TODO: var bool = foo is some
 | TODO: enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
+| TODO: infer return types
 | TODO: allow underscore for ignoring values
 | TODO: operators?
 | TODO: slice literals? array literals?
@@ -33,8 +37,8 @@ fun equals(a: Nothing, b: Nothing): Bool { true() }
 fun ignore[T](value: T) {}
 
 | Never and Panics  
-| Some expressions always abort control flow, for example `return 3`. These
-| evaluate to the Never type.
+| A type with zero instances. Some expressions always abort control flow, for
+| example `return 3`. These evaluate to the Never type.
 enum Never {}
 fun halt(): Never { loop {} }
 fun libc_exit(status: U8): Nothing { ... }
@@ -47,6 +51,7 @@ fun panic(message: Slice[U8]): Never {
 fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
 fun todo(): Never { panic("todo") }
+fun assert(condition: Bool) { if not(condition) then panic("assert failed") }
 
 | Equality  
 | You should implement an equals(T, T): Bool function for types that can be
@@ -552,7 +557,7 @@ fun push_all[T](vec: &Vec[T], items: Slice[T]) {
 }
 fun pop[T](vec: &Vec[T]): T {
   if vec.len.equals(0) then panic("called pop on empty Vec")
-  vec.len.&.dec_mut()
+  vec.len = vec.len.dec()
   vec.data.get(vec.len)
 }
 fun get[T](vec: Vec[T], index: U64): T { vec.data.get(index) }
@@ -568,11 +573,18 @@ fun write_byte(writer: &Vec[U8], byte: U8) { writer.&.push(byte) }
 | Something where you can push and pop items. Essentially just a Vec, but
 | sometimes this type expresses the intent more clearly.
 struct Stack[T] { vec: Vec[T] }
-fun push[T](stack: &Stack[T], item: T) { stack.vec.push(item) }
-fun pop[T](stack: &Stack[T]) { stack.vec.pop() }
-fun peek[T](stack: &Stack[T]): T { stack.peek(0) }
-fun peek[T](stack: &Stack[T], n: U64): T {
+fun stack[T](): Stack[T] { Stack { vec = vec[T]() } }
+fun len[T](stack: Stack[T]): U64 { stack.vec.len }
+fun is_empty[T](stack: Stack[T]): Bool { stack.vec.is_empty() }
+fun push[T](stack: &Stack[T], item: T) { stack.vec.&.push(item) }
+fun pop[T](stack: &Stack[T]): T { stack.vec.&.pop() }
+fun top[T](stack: Stack[T]): T { stack.top(0) }
+fun top[T](stack: Stack[T], n: U64): T {
   stack.vec.get(stack.vec.len.subtract(1).subtract(n))
+}
+fun top_ref[T](stack: Stack[T]): &T { stack.top_ref(0) }
+fun top_ref[T](stack: Stack[T], n: U64): &T {
+  stack.vec.get_ref(stack.vec.len.subtract(1).subtract(n))
 }
 fun equals[T](a: Stack[T], b: Stack[T]): Bool { a.vec.equals(b.vec) }
 fun write[W, T](writer: W, stack: Stack[T]) { writer.write(stack.vec) }
@@ -661,7 +673,7 @@ fun map[K, V](): Map[K, V] {
   Map { buckets = filled_slice(8, MapBucket[K, V].empty), size = 0 }
 }
 fun is_empty[K, V](map: Map[K, V]): Bool { map.size.equals(0) }
-fun insert[K, V](map: &Map[K, V], key: K, value: V) {
+fun put[K, V](map: &Map[K, V], key: K, value: V) {
   var fill_percentage = 100.multiply(map.size).divide(map.buckets.len)
   if fill_percentage.is_at_least(60) then {
     var old_buckets = map.buckets
@@ -742,8 +754,8 @@ fun next[K, V](map: &MapIter[K, V]): Maybe[MapEntry[K, V]] {
 struct Set[T] { map: Map[T, Nothing] }
 fun set[T](): Set[T] { Set[T] { map = map[T, Nothing]() } }
 fun is_empty[T](set: Set[T]): Bool { set.map.size.equals(0) }
-fun insert[T](set: &Set[T], value: T) { set.map.&.insert(value, {}) }
-fun contains[T](set: &Set[T], value: T): Bool { set.map.get(value).is_some() }
+fun put[T](set: &Set[T], value: T) { set.map.&.put(value, {}) }
+fun contains[T](set: Set[T], value: T): Bool { set.map.get(value).is_some() }
 fun write[W, T](writer: W, set: Set[T]) {
   writer.write_char('{)
   var first = true()

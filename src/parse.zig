@@ -355,6 +355,7 @@ const Parser = struct {
             self.consume_whitespace();
             const arg_type = try self.parse_type() orelse return error.ExpectedTypeOfArgument;
             try args.put(arg_name, arg_type);
+            self.consume_whitespace();
             self.consume_prefix(",") orelse break;
             self.consume_whitespace();
         }
