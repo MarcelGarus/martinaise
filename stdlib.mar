@@ -643,6 +643,39 @@ fun vec[T](a: T, b: T, c: T, d: T, e: T): Vec[T] {
   v.&.push(e)
   v
 }
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T): Vec[T] {
+  var v = vec[T]()
+  v.&.push(a)
+  v.&.push(b)
+  v.&.push(c)
+  v.&.push(d)
+  v.&.push(e)
+  v.&.push(f)
+  v
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T): Vec[T] {
+  var v = vec[T]()
+  v.&.push(a)
+  v.&.push(b)
+  v.&.push(c)
+  v.&.push(d)
+  v.&.push(e)
+  v.&.push(f)
+  v.&.push(g)
+  v
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T): Vec[T] {
+  var v = vec[T]()
+  v.&.push(a)
+  v.&.push(b)
+  v.&.push(c)
+  v.&.push(d)
+  v.&.push(e)
+  v.&.push(f)
+  v.&.push(g)
+  v.&.push(h)
+  v
+}
 fun push[T](vec: &Vec[T], item: T) {
   if vec.data.len.equals(0) then vec.data = uninitialized_slice[T](8)
   if vec.data.len.equals(vec.len) then {
@@ -857,6 +890,11 @@ fun set[T](): Set[T] { Set[T] { map = map[T, Nothing]() } }
 fun is_empty[T](set: Set[T]): Bool { set.map.size.equals(0) }
 fun put[T](set: &Set[T], value: T) { set.map.&.put(value, {}) }
 fun contains[T](set: Set[T], value: T): Bool { set.map.get(value).is_some() }
+fun to_set[T](vec: Vec[T]): Set[T] {
+  var set = set[T]()
+  for item in vec do set.&.put(item)
+  set
+}
 fun write[W, T](writer: W, set: Set[T]) {
   writer.write_char('{)
   var first = true()
