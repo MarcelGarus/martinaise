@@ -2892,7 +2892,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       var code = vec[U8]().&
       code.write_str("struct ")
       code.write_str(type.mangle())
-      code.write_str(" {")
+      code.write_str(" { ")
       code.write_str(switch config.signedness case signed "" case unsigned "u")
       code.write_str("int")
       code.write(config.bits)
@@ -2906,6 +2906,9 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       tuple("multiply", "*"),
       tuple("divide", "/"),
       tuple("modulo", "%"),
+      tuple("and", "&"),
+      tuple("or", "|"),
+      tuple("xor", "^"),
     )
     do {
       var name = vec[U8]().&
@@ -2921,9 +2924,11 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       code.write_str("  ")
       code.write_str(type.mangle())
       code.write_str(" i;")
+      code.write_char(newline())
       code.write_str("  i.value = arg0.value ")
       code.write_str(operation.b)
       code.write_str(" arg1.value;")
+      code.write_char(newline())
       code.write_str("  return i;")
       builtin_funs.&.put(name.to_slice(), code.to_slice())
     }
@@ -2937,11 +2942,13 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       name.write_str(")")
       var code = vec[U8]().&
       code.write_str("  mar_Ordering ordering;")
-      code.write_str("  ordering.variant = (arg0.value == arg1.value) ?")
-      code.write_str("    mar_Ordering_dot_mar_equal : (arg0.value > arg1.value) ?")
-      code.write_str("      mar_Ordering_dot_mar_greater : mar_Ordering_dot_mar_less;")
-      code.write_str("  mar_Nothing nothing;")
-      code.write_str("  ordering.as.mar_equal = nothing;")
+      code.write_char(newline())
+      code.write_str("  if (arg0.value == arg1.value) ordering.variant = mar_Ordering_dot_equal;")
+      code.write_char(newline())
+      code.write_str("  if (arg0.value < arg1.value) ordering.variant = mar_Ordering_dot_less;")
+      code.write_char(newline())
+      code.write_str("  if (arg0.value > arg1.value) ordering.variant = mar_Ordering_dot_greater;")
+      code.write_char(newline())
       code.write_str("  return ordering;")
       builtin_funs.&.put(name.to_slice(), code.to_slice())
     }
@@ -2998,10 +3005,11 @@ fun compile_to_c(mono: Mono): Slice[U8] {
         out.write_str("struct ")
         out.write_str(type.mangle())
         out.write_str(" {")
+        out.write_char(newline())
         for field in struct_.fields do
           if field.name.equals("*") then {
             out.write_str("  ")
-            out.write(field.type.mangle())
+            out.write_str(field.type.mangle())
             out.write_str("* pointer;")
             out.write_char(newline())
           } else {
@@ -3027,7 +3035,9 @@ fun compile_to_c(mono: Mono): Slice[U8] {
             out.write_str("    ")
             out.write_str(type.mangle())
             out.write_str("_dot_")
-            out.write_str(variant.name.mangle())
+            out.write_str(variant.name)
+            out.write_str(",")
+            out.write_char(newline())
           }
           out.write_str("  } variant;")
           out.write_char(newline())
@@ -3073,6 +3083,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       out.write_str(fun_name.mangle())
       out.write_str("(")
       for i in 0.to(fun_.arg_types.len) do {
+        if i.is_greater_than(0) then out.write_str(", ")
         out.write_str(fun_.arg_types.get(i).mangle())
         out.write_str(" arg")
         out.write(i)
@@ -3080,6 +3091,14 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       out.write_str(");")
       out.write_char(newline())
     }
+
+    out.write_char(newline())
+    out.write_str(type("Nothing").mangle())
+    out.write_str(" _nothing;")
+    out.write_str(type("Never").mangle())
+    out.write_str(" _never;")
+    out.write_char(newline())
+    out.write_char(newline())
 
     | Definitions
     out.write_str("/// Function definitions")
@@ -3095,6 +3114,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       out.write_str(signature.mangle())
       out.write_str("(")
       for i in 0.to(fun_.arg_types.len) do {
+        if i.is_greater_than(0) then out.write_str(", ")
         out.write_str(fun_.arg_types.get(i).mangle())
         out.write_str(" arg")
         out.write(i)
@@ -3108,7 +3128,9 @@ fun compile_to_c(mono: Mono): Slice[U8] {
         else if signature.starts_with("to_address")
         then {
           out.write_str("  mar_U64 address;")
+          out.write_char(newline())
           out.write_str("  address.value = (uint64_t) arg0.pointer;")
+          out.write_char(newline())
           out.write_str("  return address;")
         }
         else if signature.starts_with("to_reference")
@@ -3116,14 +3138,17 @@ fun compile_to_c(mono: Mono): Slice[U8] {
           out.write_str("  ")
           out.write_str(fun_.return_type.mangle())
           out.write_str(" ref;")
+          out.write_char(newline())
           out.write_str("  ref.pointer = (")
           out.write_str(fun_.type_args.get(0).mangle())
           out.write_str("*) arg0.value;")
+          out.write_char(newline())
           out.write_str("  return ref;")
         }
         else if signature.starts_with("size_of_type")
         then {
           out.write_str("  mar_U64 size;")
+          out.write_char(newline())
           out.write_str("  size.value = (uint64_t) sizeof(")
           out.write_str(fun_.type_args.get(0).mangle())
           out.write_str(");")
@@ -3135,6 +3160,8 @@ fun compile_to_c(mono: Mono): Slice[U8] {
           error.write_str(signature)
           panic(error.to_slice())
         }
+        out.write_char(newline())
+        out.write_str("}")
         continue
       }
 
@@ -3172,14 +3199,14 @@ fun compile_to_c(mono: Mono): Slice[U8] {
           out.write_char('")
           for char in str do {
             out.write_str("\x")
-            out.write(char)
+            out.write_with_radix(16, char.to_U64())
           }
           out.write_char('")
           out.write_str("; _")
           out.write(i)
           out.write_str(".")
           out.write_str("len".mangle())
-          out.write_str("mar_len.value = ")
+          out.write_str(".value = ")
           out.write(str.len)
           out.write_str(";")
         }
@@ -3246,7 +3273,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
           out.write_expr_as_c(jump.condition)
           out.write_str(".variant == ")
           out.write_str(jump.condition.type.mangle())
-          out.write_str(".")
+          out.write_str("_dot_")
           out.write_str(jump.variant)
           out.write_str(") goto ")
           out.write(jump.target)
@@ -3278,7 +3305,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
           out.write_str("  ")
           out.write(ref.to)
           out.write_str(".pointer = &")
-          out.write_expr_as_c(expr)
+          out.write_expr_as_c(ref.of)
           out.write_str(";")
           out.write_char(newline())
         }
@@ -3374,7 +3401,12 @@ fun run_pipeline(command: Command, file_path: Slice[U8]): Bool {
     })
     mono.compile_to_c()
   }
-  if command is c then { printsln(c) return true() }
+  if command is c then { printsln("=====") printsln(c) return true() }
+
+  write_file("output2.c", c)
+  if command is compile then {
+    return true()
+  }
 
   true()
 }
@@ -3384,7 +3416,7 @@ fun main() {
   printsln("Let's go!")
 
   | TODO: Add CLI parsing
-  var command = Command.c
+  var command = Command.compile
   var file_path = "advent/day1.mar"
 
   var was_successful = run_pipeline(command, file_path)
