@@ -45,10 +45,10 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
             \\  return nothing;
         );
 
-        // libc_open(filename: U64, modes: U64): U64
-        try builtin_funs.put("libc_open(U64, U64)",
+        // libc_open(filename: U64, flags: U64, mode: U64): U64
+        try builtin_funs.put("libc_open(U64, U64, U64)",
             \\  mar_U64 fd;
-            \\  fd.value = (uint64_t) open((char*) arg0.value, arg1.value);
+            \\  fd.value = (uint64_t) open((char*) arg0.value, arg1.value, arg2.value);
             \\  return fd;
         );
 

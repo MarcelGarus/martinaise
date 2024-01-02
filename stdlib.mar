@@ -401,24 +401,107 @@ fun write[W, T](writer: W, slice: Slice[T]) {
 }
 
 | Files, Input & Output  
-| In C, you usually work with FILE* pointers, which you get from fopen, etc.
-| These contain file descriptors (small integers that are handles to objects in
-| the operating system kernel). Here, we construct something similar: A File is
-| a wrapper around a file descriptor.
+| In C, a common way to work with files is with fopen, fclose, and similar
+| functions, which work with FILE* pointers. The FILE struct internally contains
+| a file descriptor, a small integer that's a handle to the file object in the
+| operating system kernel.
+| Martinaise doesn't use the FILE functions and instead works with file
+| descriptors using some libc functions (open, read, write, close). To make the
+| API type-safe, Martinaise has it's own wrapper around a file descriptor, the
+| File type.
+| 
+| For future-me reading through the code here, some general notes on files:
+| 
+| The open function takes a filename, flags, and a mode. There are several kinds
+| of flags:
+| - File access mode flags
+|   - RDONLY: Open for read only.
+|   - WRONLY: Open for write only.
+|   - RDWR: Open for both reading and writing.
+| - Open-time flags
+|   - CREAT: The file will be created if it doesn't already exist. Uses the mode
+|     for specifying file permissions.
+|   - TRUNC: Truncates the file to zero length after opening.
+|   - ...
+| - I/O operating modes
+|   - APPEND: Every write on that file descriptor will append to the end of the
+|     file, regardless of the current file position.
+|   - FSYNC: Each write call will make sure data is reliably stored on disk
+|     before returning.
+|   - ...
+| The mode is only used when creating a file. It uses the same format for file
+| permissions as chmod (0o666 means read and write access for everyone).
+|
+| Files can also be opened in an asynchronous mode where you can poll the
+| operating system for reads and writes. But then you have to maintain an event
+| loop yourself and everything gets much more complicated. Here, I only use the
+| blocking version.
+|
+| The flag constants are taken from the Zig implementation. The open-time flags
+| and I/O operating modes flags are specific to x86.
+|
+| https://www.gnu.org/software/libc/manual/html_node/Opening-and-Closing-Files.html
+fun libc_open(filename: U64, flags: U64, mode: U64): U64 { ... }
+fun libc_read(file: U64, buf: U64, len: U64): U64 { ... }
+fun libc_write(file: U64, buf: U64, len: U64): U64 { ... }
+fun libc_close(file: U64): U8 { ... }
+
+fun libc_open_flag_rdonly(): U64 { 0 } | 0o0
+fun libc_open_flag_wronly(): U64 { 1 } | 0o1
+fun libc_open_flag_rdwr(): U64 { 2 } | 0o2
+fun libc_open_flag_create(): U64 { 64 } | 0o100
+fun libc_open_flag_trunc(): U64 { 512 } | 0o1000
+fun libc_open_flag_append(): U64 { 1024 } | 0o2000
+
 struct File { descriptor: U64 }
-fun libc_open(filename: U64, modes: U64): U64 { ... }
-enum OpenFileMode { read_only, write_only, read_write }
-fun open_file(filename: Slice[U8], mode: OpenFileMode): Maybe[File] {
+enum OpenFileFlag { read, write, create, truncate, append }
+fun hash(flag: OpenFileFlag, hasher: &Hasher) {
+  hasher.contribute(
+    switch flag
+    case read 0
+    case write 1
+    case create 2
+    case truncate 3
+    case append 4
+  )
+}
+fun equals(a: OpenFileFlag, b: OpenFileFlag): Bool {
+  switch a
+  case read if b is read then true() else false()
+  case write if b is write then true() else false()
+  case create if b is create then true() else false()
+  case truncate if b is truncate then true() else false()
+  case append if b is append then true() else false()
+}
+fun open_file(
+  filename: Slice[U8], flags: Set[OpenFileFlag], mode: U64
+): Maybe[File] {
+  var os_flags = 0
+  os_flags = os_flags.or(
+    if flags.contains(OpenFileFlag.read) then
+      if flags.contains(OpenFileFlag.write)
+      then libc_open_flag_rdwr()
+      else libc_open_flag_rdonly()
+    else
+      if flags.contains(OpenFileFlag.write)
+      then libc_open_flag_wronly()
+      else panic("must read or write")
+  )
+  if flags.contains(OpenFileFlag.create)
+  then os_flags = os_flags.or(libc_open_flag_create())
+  if flags.contains(OpenFileFlag.truncate)
+  then os_flags = os_flags.or(libc_open_flag_trunc())
+  if flags.contains(OpenFileFlag.append)
+  then os_flags = os_flags.or(libc_open_flag_append())
+
   var fd = libc_open(
     filename.make_null_terminated().data.to_address(),
-    switch mode
-    case read_only 0
-    case write_only 1
-    case read_write 2
+    os_flags,
+    mode,
   )
   if fd.equals(0) then none[File]() else some(File { descriptor = fd })
 }
-fun libc_read(file: U64, buf: U64, len: U64): U64 { ... }
+
 fun read(file: File, buffer: Slice[U8]): U64 {
   libc_read(file.descriptor, buffer.data.to_address(), buffer.len)
 }
@@ -428,17 +511,16 @@ fun read_byte(file: File): Maybe[U8] {
   then none[U8]()
   else some(c)
 }
-fun libc_write(file: U64, buf: U64, len: U64): U64 { ... }
 fun write_bytes(file: File, buffer: Slice[U8]): U64 {
   libc_write(file.descriptor, buffer.data.to_address(), buffer.len)
 }
 fun write_byte(file: File, byte: U8) {
   libc_write(file.descriptor, byte.&.to_address(), 1).ignore()
 }
-fun libc_close(file: U64): U8 { ... }
 fun close(file: File) { libc_close(file.descriptor).ignore() }
+
 fun read_file(name: Slice[U8]): Slice[U8] {
-  var file = open_file(name, OpenFileMode.read_only)
+  var file = open_file(name, vec(OpenFileFlag.read).to_set(), 0)
     orelse panic("unable to open file")
   var content = vec[U8]()
   loop {
@@ -447,6 +529,16 @@ fun read_file(name: Slice[U8]): Slice[U8] {
   }
   file.close()
   content.to_slice()
+}
+fun write_file(name: Slice[U8], content: Slice[U8]) {
+  var file = open_file(
+    name,
+    vec(OpenFileFlag.write, OpenFileFlag.create, OpenFileFlag.truncate)
+      .to_set(),
+    438 | 0b666: read and write access for everyone
+  ) orelse panic("unable to open file")
+  for byte in content do file.write_byte(byte)
+  file.close()
 }
 
 | Printing  
