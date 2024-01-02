@@ -140,6 +140,36 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
                 , .{ty}),
             );
 
+            // and(Int, Int): Int
+            try builtin_funs.put(
+                try formata(alloc, "and({s}, {s})", .{ ty, ty }),
+                try formata(alloc,
+                    \\  mar_{s} i;
+                    \\  i.value = arg0.value & arg1.value;
+                    \\  return i;
+                , .{ty}),
+            );
+
+            // or(Int, Int): Int
+            try builtin_funs.put(
+                try formata(alloc, "or({s}, {s})", .{ ty, ty }),
+                try formata(alloc,
+                    \\  mar_{s} i;
+                    \\  i.value = arg0.value | arg1.value;
+                    \\  return i;
+                , .{ty}),
+            );
+
+            // xor(Int, Int): Int
+            try builtin_funs.put(
+                try formata(alloc, "xor({s}, {s})", .{ ty, ty }),
+                try formata(alloc,
+                    \\  mar_{s} i;
+                    \\  i.value = arg0.value ^ arg1.value;
+                    \\  return i;
+                , .{ty}),
+            );
+
             // compare_to(Int, Int): Ordering
             try builtin_funs.put(
                 try formata(alloc, "compare_to({s}, {s})", .{ ty, ty }),

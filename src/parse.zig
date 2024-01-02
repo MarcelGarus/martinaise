@@ -93,13 +93,13 @@ pub fn parse(alloc: std.mem.Allocator, code: Str, stdlib_size: usize) !Result(as
         add_builtin_fun(&defs, "multiply", null, two_args, ty);
         add_builtin_fun(&defs, "divide", null, two_args, ty);
         add_builtin_fun(&defs, "modulo", null, two_args, ty);
+        add_builtin_fun(&defs, "and", null, two_args, ty);
+        add_builtin_fun(&defs, "or", null, two_args, ty);
+        add_builtin_fun(&defs, "xor", null, two_args, ty);
         add_builtin_fun(&defs, "compare_to", null, two_args, Ty.named("Ordering"));
-        // add_builtin_fun(&defs, "shiftLeft", two_args, ty);
-        // add_builtin_fun(&defs, "shiftRight", two_args, ty);
-        // add_builtin_fun(&defs, "bitLength", two_args, ty);
-        // add_builtin_fun(&defs, "and", two_args, ty);
-        // add_builtin_fun(&defs, "or", two_args, ty);
-        // add_builtin_fun(&defs, "xor", two_args, ty);
+        // add_builtin_fun(&defs, "shiftLeft", null, two_args, ty);
+        // add_builtin_fun(&defs, "shiftRight", null, two_args, ty);
+        // add_builtin_fun(&defs, "bitLength", null, two_args, ty);
 
         // Conversion functions
         for (numbers.all_int_configs()) |target_config| {
