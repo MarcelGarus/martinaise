@@ -1191,36 +1191,44 @@ struct MonoFun {
   arg_types: Vec[Type],
   return_type: Type,
   is_builtin: Bool,
+  slots: Vec[MonoSlot],
   body: Vec[MonoStatement],
 }
 
-enum MonoStatement {
-  arg,
-  expr: MonoExpr,
+struct MonoSlot {
+  type: Type,
+  initial_value: MonoSlotValue,
+}
+enum MonoSlotValue {
   uninitialized,
-  assign: MonoAssign,
-  int: MonoInt,
+  arg: U64,
+  int: U64,
   str: Slice[U8],
-  make_struct: MonoMakeStruct,
-  make_enum: MonoMakeEnum,
+}
+struct MonoSlotRef { index: U64 }
+
+enum MonoStatement {
+  label: MonoLabel,
+  assign: MonoAssign,
+  set_enum: MonoSetEnum,
   call: MonoCall,
   jump: MonoJump,
   jump_if_variant: MonoJumpIfVariant,
   get_enum_value: MonoGetEnumValue,
   return_: MonoExpr,
-  ref: MonoExpr,
+  ref: MonoRef,
 }
+struct MonoLabel { id: U64 }
 struct MonoAssign { to: MonoExpr, value: MonoExpr }
-struct MonoInt { value: U64, signedness: Signedness, bits: U64 }
-struct MonoMakeEnum { type: Type, variant: Slice[U8], value: MonoExpr }
-struct MonoMakeStruct { type: Type, fields: Map[Slice[U8], MonoExpr] }
-struct MonoCall { fun_: Slice[U8], args: Vec[MonoExpr] }
-struct MonoJump { target: U64 }
-struct MonoJumpIfVariant { condition: MonoExpr, variant: Slice[U8], target: U64 }
-struct MonoGetEnumValue { of: MonoExpr, variant: Slice[U8], type: Type }
+struct MonoSetEnum { slot: MonoSlotRef, variant: Slice[U8], value: MonoExpr }
+struct MonoCall { to: MonoSlotRef, fun_: Slice[U8], args: Vec[MonoExpr] }
+struct MonoJump { target: MonoLabel }
+struct MonoJumpIfVariant { condition: MonoExpr, variant: Slice[U8], target: MonoLabel }
+struct MonoGetEnumValue { to: MonoSlotRef, of: MonoExpr, variant: Slice[U8] }
+struct MonoRef { to: MonoSlotRef, of: MonoExpr }
 
 struct MonoExpr { type: Type, kind: MonoExprKind }
-enum MonoExprKind { statement: U64, member: MonoMember }
+enum MonoExprKind { slot: MonoSlotRef, member: MonoMember, nothing, never }
 struct MonoMember { of: &MonoExpr, name: Slice[U8] }
 
 fun write[W](writer: W, mono: Mono) {
@@ -1244,35 +1252,57 @@ fun write[W](writer: W, name: Slice[U8], fun_: MonoFun) {
   writer.write_str(name)
   writer.write_char(newline())
   if fun_.is_builtin then { writer.write_str("  <builtin>") return {} }
-  
-  var first = true()
+
   var i = 0
-  for statement in fun_.body do {
-    if first then first = false() else writer.write_char(newline())
+  for slot in fun_.slots do {
+    if i.is_greater_than(0) then writer.write_char(newline())
     writer.write_str("  _")
     writer.write(i)
+    writer.write_str(": ")
+    writer.write(slot.type)
     writer.write_str(" = ")
-    writer.write(statement)
+    switch slot.initial_value
+    case uninitialized writer.write_str("uninitialized")
+    case arg(j) {
+      writer.write_str("arg_")
+      writer.write(j)
+    }
+    case int(int) writer.write(int)
+    case str(str) {
+      writer.write_char('")
+      writer.write_str(str)
+      writer.write_char('")
+    }
     i = i.inc()
+  }
+  for statement in fun_.body do {
+    writer.write_char(newline())
+    writer.write_str("  ")
+    writer.write(statement)
   }
 }
 fun write[W](writer: W, statement: MonoStatement) {
   switch statement
-  case arg writer.write_str("arg")
-  case expr(expr) writer.write(expr)
-  case uninitialized writer.write_str("uninitialized")
-  case int(int) {
-    writer.write(int.value)
-    writer.write_char('_)
-    writer.write_char(int.signedness.to_char())
-    writer.write(int.bits)
+  case label(label) {
+    writer.write(label)
+    writer.write_str(":")
   }
-  case str(str) {
-    writer.write_char('")
-    writer.write_str(str)
-    writer.write_char('")
+  case assign(assign) {
+    writer.write(assign.to)
+    writer.write_str(" = ")
+    writer.write(assign.value)
+  }
+  case set_enum(set_enum) {
+    writer.write(set_enum.slot)
+    writer.write_str(" = ")
+    writer.write_str(set_enum.variant)
+    writer.write_str("(")
+    writer.write(set_enum.value)
+    writer.write_str(")")
   }
   case call(call) {
+    writer.write(call.to)
+    writer.write_str(" = ")
     writer.write_str(call.fun_)
     writer.write_str(" called with (")
     var first = true()
@@ -1282,33 +1312,8 @@ fun write[W](writer: W, statement: MonoStatement) {
     }
     writer.write_str(")")
   }
-  case make_struct(make_struct) {
-    writer.write(make_struct.type)
-    writer.write_str(" {")
-    for field in make_struct.fields do {
-      writer.write_str(" ")
-      writer.write_str(field.key)
-      writer.write_str(" = ")
-      writer.write(field.value)
-      writer.write_str(",")
-    }
-    writer.write_str(" }")
-  }
-  case make_enum(make_enum) {
-    writer.write(make_enum.type)
-    writer.write_str(".")
-    writer.write_str(make_enum.variant)
-    writer.write_str("(")
-    writer.write(make_enum.value)
-    writer.write_str(")")
-  }
-  case assign(assign) {
-    writer.write(assign.to)
-    writer.write_str(" set to ")
-    writer.write(assign.value)
-  }
   case jump(jump) {
-    writer.write_str("jump to _")
+    writer.write_str("jump to ")
     writer.write(jump.target)
   }
   case jump_if_variant(jump) {
@@ -1316,10 +1321,12 @@ fun write[W](writer: W, statement: MonoStatement) {
     writer.write(jump.condition)
     writer.write_str(" is ")
     writer.write_str(jump.variant)
-    writer.write_str(", jump to _")
+    writer.write_str(", jump to ")
     writer.write(jump.target)
   }
   case get_enum_value(get_enum_value) {
+    writer.write(get_enum_value.to)
+    writer.write_str(" = ")
     writer.write_str("get ")
     writer.write_str(get_enum_value.variant)
     writer.write_str(" value of ")
@@ -1330,21 +1337,30 @@ fun write[W](writer: W, statement: MonoStatement) {
     writer.write(returned)
   }
   case ref(expr) {
-    writer.write(expr)
+    writer.write(expr.to)
+    writer.write_str(" = ")
+    writer.write(expr.of)
     writer.write_str(".&")
   }
 }
+fun write[W](writer: W, label: MonoLabel) {
+  writer.write_str("label_")
+  writer.write(label.id)
+}
+fun write[W](writer: W, slot: MonoSlotRef) {
+  writer.write_str("_")
+  writer.write(slot.index)
+}
 fun write[W](writer: W, expr: MonoExpr) {
   switch expr.kind
-  case statement(statement) {
-    writer.write_str("_")
-    writer.write(statement)
-  }
+  case slot(slot) writer.write(slot)
   case member(member) {
     writer.write(member.of.*)
     writer.write_str(".")
     writer.write_str(member.name)
   }
+  case nothing writer.write_str("_nothing")
+  case never writer.write_str("_never")
 }
 
 | Type Solving  
@@ -1821,15 +1837,17 @@ fun monomorphize(
     arg_types,
     return_type = return_type,
     is_builtin = fun_.is_builtin,
+    slots = vec[MonoSlot](),
     body = vec[MonoStatement](),
   }
-  var vars = map[Slice[U8], VarInfo]() {
+  var vars = map[Slice[U8], MonoSlotRef]() {
     for i in 0.to(fun_.args.len) do {
-      mono_fun.body.&.push(MonoStatement.arg)
-      vars.&.put(fun_.args.get(i).name, VarInfo {
-        statement = i,
+      var slot = MonoSlotRef { index = mono_fun.slots.len }
+      mono_fun.slots.&.push(MonoSlot {
         type = arg_types.get(i),
+        initial_value = MonoSlotValue.arg(i)
       })
+      vars.&.put(fun_.args.get(i).name, slot)
     }
   }
 
@@ -1872,7 +1890,8 @@ struct CompileFun {
   mono: &Mono,
   fun_: &MonoFun,
   type_env: Map[Slice[U8], Type], | maps fun type args to concrete types
-  vars: Map[Slice[U8], VarInfo],
+  next_label: U64,
+  vars: Map[Slice[U8], MonoSlotRef],
   expected_return_type: Type,     | return type from function signature
   return_type: Maybe[Type],       | return type deduced from body
   | When lowering loops, breaks and continues don't know where to jump yet.
@@ -1881,24 +1900,58 @@ struct CompileFun {
   break_scopes: Stack[BreakScope],
   continue_scopes: Stack[ContinueScope],
 }
-struct VarInfo { statement: U64, type: Type }
 struct BreakScope {
-  var_: U64,
+  result: MonoSlotRef,
   type: Maybe[Type],
   breaks: Vec[U64],
 }
 struct ContinueScope { continues: Vec[U64] }
 
-fun next_index(self: CompileFun): U64 { self.fun_.body.len }
+fun add_slot(
+  self: &CompileFun, type: Type, initial_value: MonoSlotValue
+): MonoSlotRef {
+  printsln("adding slot")
+  var ref = MonoSlotRef { index = self.fun_.slots.len }
+  printsln("adding slot fr")
+  prints("got ")
+  print(self.fun_.slots.len)
+  printsln(" slots before")
+  self.fun_.slots.&.push(MonoSlot { type, initial_value })
+  prints("Created slot of type ")
+  println(type)
+  ref
+}
+fun add_slot(self: &CompileFun, type: Type): MonoSlotRef {
+  self.add_slot(type, MonoSlotValue.uninitialized)
+}
+fun update_slot_type(self: &CompileFun, slot: MonoSlotRef, type: Type) {
+  self.fun_.slots.get_ref(slot.index).type = type
+}
+fun slot_expr(self: CompileFun, slot: MonoSlotRef): MonoExpr {
+  MonoExpr {
+    kind = MonoExprKind.slot(slot),
+    type = self.fun_.slots.get(slot.index).type,
+  }
+}
+fun nothing_expr(): MonoExpr {
+  MonoExpr { kind = MonoExprKind.nothing, type = type("Nothing") }
+}
+fun never_expr(): MonoExpr {
+  MonoExpr { kind = MonoExprKind.never, type = type("Never") }
+}
 fun put(self: &CompileFun, statement: MonoStatement): U64 {
-  var index = self.next_index()
+  var index = self.fun_.body.len
   self.fun_.body.&.push(statement)
   index
 }
-fun put_and_get_expr(
-  self: &CompileFun, statement: MonoStatement, type: Type
-): MonoExpr {
-  MonoExpr { type, kind = MonoExprKind.statement(self.put(statement)) }
+fun put_label(self: &CompileFun): MonoLabel {
+  var label = MonoLabel { id = self.next_label }
+  self.next_label = self.next_label.inc()
+  self.put(MonoStatement.label(label))
+  label
+}
+fun put_placeholder(self: &CompileFun): U64 {
+  self.put(MonoStatement.label(MonoLabel { id = 0 }))
 }
 fun update(self: &CompileFun, index: U64, statement: MonoStatement) {
   self.fun_.body.get_ref(index).* = statement
@@ -1937,18 +1990,11 @@ fun new_returned_type(self: &CompileFun, returned: Type): Result[Nothing, Slice[
   ok[Nothing, Slice[U8]]({})
 }
 
-fun compile_nothing_instance(self: &CompileFun): MonoExpr {
-  self.put_and_get_expr(MonoStatement.make_struct(MonoMakeStruct {
-    type = type("Nothing"),
-    fields = map[Slice[U8], MonoExpr](),
-  }), type("Nothing"))
-}
-
 fun compile(self: &CompileFun, body: Vec[AstExpr]): Result[MonoExpr, Slice[U8]] {
   var last = none[MonoExpr]()
   for expr in body do last = some(self.compile(expr)?)
   printsln("body compiled")
-  ok[MonoExpr, Slice[U8]](last orelse self.compile_nothing_instance())
+  ok[MonoExpr, Slice[U8]](last orelse nothing_expr())
 }
 
 fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
@@ -1957,35 +2003,30 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
   stdout().write_char(newline())
   ok[MonoExpr,Slice[U8]](
     switch expr
-    case int(int) self.put_and_get_expr(
-      | TODO: unify ints over compile stages
-      MonoStatement.int(MonoInt {
-        value = int.value, signedness = int.signedness, bits = int.bits
-      }),
+    | TODO: unify ints over compile stages
+    case int(int) self.slot_expr(self.add_slot(
       IntConfig { signedness = int.signedness, bits = int.bits }.to_type(),
-    )
+      MonoSlotValue.int(int.value),
+    ))
     case str(str) {
       var type = type("Slice", vec(type("U8")))
       type.monomorphize(map[Slice[U8], Type](), self.ast, self.mono)
-      self.put_and_get_expr(MonoStatement.str(str), type)
+      self.slot_expr(self.add_slot(type, MonoSlotValue.str(str)))
     }
-    case name(name) {
-      var info = self.vars.get(name) orelse return error[MonoExpr, Slice[U8]]({
-        var out = vec[U8]()
-        out.&.write_char('")
-        out.&.write_str(name)
-        out.&.write_char('")
-        out.&.write_str(" is not in scope.")
-        out.to_slice()
-      })
-      MonoExpr {
-        kind = MonoExprKind.statement(info.statement),
-        type = info.type,
-      }
-    }
-    | TODO: make this impossible
+    case name(name) self.slot_expr(
+      self.vars.get(name)
+        orelse return error[MonoExpr, Slice[U8]]({
+          var out = vec[U8]()
+          out.&.write_char('")
+          out.&.write_str(name)
+          out.&.write_char('")
+          out.&.write_str(" is not in scope.")
+          out.to_slice()
+        })
+    )
+    | TODO: catch this in the parser
     case type_arged(type_arged) return error[MonoExpr, Slice[U8]](
-      "There's a expression with type arguments which is not a call.")
+      "There's an expression with type arguments which is not a call.")
     case call(call) {
       var callee = call.callee.*
       | TODO: do this in the parser
@@ -2106,10 +2147,20 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         unspecialized_type.args.&.push(type(arg))
       var type = unspecialized_type.monomorphize(type_env, self.ast, self.mono)?
 
-      self.put_and_get_expr(
-        MonoStatement.make_struct(MonoMakeStruct { type, fields }),
-        type,
-      )
+      var slot = self.slot_expr(self.add_slot(type))
+      for field in fields do {
+        self.put(MonoStatement.assign(MonoAssign {
+          to = MonoExpr {
+            kind = MonoExprKind.member(MonoMember {
+              of = slot.put_on_heap(),
+              name = field.key,
+            }),
+            type = field.value.type,
+          },
+          value = field.value,
+        }))
+      }
+      slot
     }
     case make_enum(make_enum) {
       var enum_ =
@@ -2193,14 +2244,13 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         unspecialized_type.args.&.push(type(a))
       var type = unspecialized_type.monomorphize(type_env, self.ast, self.mono)?
 
-      self.put_and_get_expr(
-        MonoStatement.make_enum(MonoMakeEnum {
-          type,
-          variant = make_enum.variant,
-          value = arg
-        }),
-        type
-      )
+      var slot = self.add_slot(type)
+      self.put(MonoStatement.set_enum(MonoSetEnum {
+        slot,
+        variant = make_enum.variant,
+        value = arg,
+      }))
+      self.slot_expr(slot)
     }
     case member(member) {
       var of = self.compile(member.of.*)?
@@ -2209,10 +2259,9 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       then {
         var ref_type = type("&", vec(of.type))
           .monomorphize(self.type_env, self.ast, self.mono)?
-        return ok[MonoExpr,Slice[U8]](self.put_and_get_expr(
-          MonoStatement.ref(of),
-          ref_type,
-        ))
+        var slot = self.add_slot(ref_type)
+        self.put(MonoStatement.ref(MonoRef { to = slot, of }))
+        return ok[MonoExpr,Slice[U8]](self.slot_expr(slot))
       }
       | When accessing a member on a reference, we automatically dereference the
       | receiver as often as necessary. For example, you can access point.x if
@@ -2275,19 +2324,15 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         type,
       }
     }
-    case var_(ast_var) {
-      var value = self.compile(ast_var.value.*)?
-      var var_ = self.put(MonoStatement.uninitialized)
-      var var_expr = MonoExpr {
-        kind = MonoExprKind.statement(var_),
-        type = value.type
-      }
-      self.put(MonoStatement.assign(MonoAssign { to = var_expr, value }))
-      self.vars.&.put(
-        ast_var.name,
-        VarInfo { statement = var_, type = value.type }
-      )
-      var_expr
+    case var_(var_) {
+      var value = self.compile(var_.value.*)?
+      var slot = self.add_slot(value.type)
+      self.put(MonoStatement.assign(MonoAssign {
+        to = self.slot_expr(slot),
+        value,
+      }))
+      self.vars.&.put(var_.name, slot)
+      nothing_expr()
     }
     case assign(assign) {
       var to = self.compile(assign.to.*)?
@@ -2302,13 +2347,11 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         out.&.write_str(".")
         out.to_slice()
       })
-      self.put_and_get_expr(
-        MonoStatement.assign(MonoAssign { to, value }),
-        type("Nothing"),
-      )
+      self.put(MonoStatement.assign(MonoAssign { to, value }))
+      nothing_expr()
     }
     case switch_(switch_) {
-      var result = self.put(MonoStatement.uninitialized)
+      var result = self.add_slot(type(""))
       var type = none[Type]()
 
       var value = self.compile(switch_.value.*)?
@@ -2392,6 +2435,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       | case Bar(bar) bar
       | default baz
       |
+      | TODO: update
       |  _0 = value
       |  _1 = uninitialized (will be the result of the switch)
       |  _2 = jump_if_variant _0 Foo _7 ───┐
@@ -2406,38 +2450,27 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       | _11 = _1 = _10                          │
       | _12 = jump _13 ────────────────────────>┤
       | _13 = ... <─────────────────────────────┘
-      var jump_table_start = self.next_index()
+      var jump_table_jumps = map[Slice[U8], U64]()
       for case_ in switch_.cases do
-          self.put(MonoStatement.uninitialized)
+        jump_table_jumps.&.put(case_.variant, self.put_placeholder())
+      var default_jump =
+        switch switch_.default_
+        case some some(self.put_placeholder())
+        case none none[U64]()
       | contains indices of statements which will be replaced with unconditional
       | jumps to after the switch
       var after_switch_jumps = vec[U64]()
 
-      | Default case
-      if switch_.default_ is some(default_) then {
-        var default_result = self.compile(default_.*)?
-        if not(default_result.type.is_never()) then {
-            type = some(default_result.type)
-            self.put(MonoStatement.assign(MonoAssign {
-                to = MonoExpr {
-                  kind = MonoExprKind.statement(result),
-                  type = default_result.type,
-                },
-                value = default_result,
-            })).ignore()
-        }
-        after_switch_jumps.&.push(self.put(MonoStatement.uninitialized))
-      }
-
       | Case bodies
       for i in 0.to(switch_.cases.len) do {
         var case_ = switch_.cases.get(i)
+        var label = self.put_label()
         self.update(
-          jump_table_start.add(i),
+          jump_table_jumps.get(case_.variant).unwrap(),
           MonoStatement.jump_if_variant(MonoJumpIfVariant {
             condition = value,
             variant = case_.variant,
-            target = self.next_index(),
+            target = label,
           })
         )
         var variant_type = {
@@ -2447,14 +2480,15 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
               variant_type = some(variant.type)
           variant_type.unwrap()
         }
-        var unpacked = self.put(MonoStatement.get_enum_value(MonoGetEnumValue {
+        var unpacked = self.add_slot(variant_type)
+        self.put(MonoStatement.get_enum_value(MonoGetEnumValue {
+          to = unpacked,
           of = value,
           variant = case_.variant,
-          type = variant_type,
         }))
         | TODO: create inner vars
         if case_.binding is some(binding) then
-          self.vars.&.put(binding, VarInfo { statement = unpacked, type = variant_type })
+          self.vars.&.put(binding, unpacked)
 
         var then_ = self.compile(case_.then_.*)?
         if not(then_.type.is_never()) then {
@@ -2480,30 +2514,44 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
                 out.to_slice()
               })
           self.put(MonoStatement.assign(MonoAssign {
-            to = MonoExpr {
-              kind = MonoExprKind.statement(result),
-              type = type.unwrap(),
-            },
+            to = self.slot_expr(result),
             value = then_,
           })).ignore()
         }
-        after_switch_jumps.&.push(self.put(MonoStatement.uninitialized))
+        after_switch_jumps.&.push(self.put_placeholder())
       }
 
-      var after_switch = self.next_index()
+      | Default case
+      if switch_.default_ is some(default_) then {
+        var label = self.put_label()
+        self.update(default_jump.unwrap(), MonoStatement.jump(MonoJump {
+          target = label
+        }))
+        var default_result = self.compile(default_.*)?
+        if not(default_result.type.is_never()) then {
+            type = some(default_result.type)
+            self.put(MonoStatement.assign(MonoAssign {
+                to = self.slot_expr(result),
+                value = default_result,
+            })).ignore()
+        }
+        after_switch_jumps.&.push(self.put_placeholder())
+      }
+
+      var after_switch = self.put_label()
       for jump in after_switch_jumps do
         self.update(jump,
           MonoStatement.jump(MonoJump { target = after_switch }))
 
-      var final_type = type orelse type("Never")
-      MonoExpr { kind = MonoExprKind.statement(result), type = final_type }
+      self.update_slot_type(result, type orelse type("Never"))
+      self.slot_expr(result)
     }
     case loop_(expr) {
       | TODO: graphic of how this is lowered
-      var result = self.put(MonoStatement.uninitialized)
+      var result = self.add_slot(type(""))
       self.break_scopes.&.push(BreakScope {
         | TODO: turn this into an expr
-        var_ = result,
+        result,
         type = none[Type](),
         breaks = vec[U64](),
       })
@@ -2511,11 +2559,11 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       self.continue_scopes.&.push(ContinueScope { continues = vec[U64]() })
 
       | TODO: Create inner vars
-      var loop_start = self.next_index()
+      var loop_start = self.put_label()
       self.compile(expr.*)?
       self.put(MonoStatement.jump(MonoJump { target = loop_start }))
 
-      var after_loop = self.next_index()
+      var after_loop = self.put_label()
       var scope = self.break_scopes.&.pop() {
         for break_ in scope.breaks do
           self.update(
@@ -2523,7 +2571,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
             MonoStatement.jump(MonoJump { target = after_loop }),
           )
       }
-      var type = scope.type orelse type("Never")
+      self.update_slot_type(result, scope.type orelse type("Never"))
       var scope = self.continue_scopes.&.pop() {
         for continue_ in scope.continues do
           self.update(
@@ -2531,7 +2579,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
             MonoStatement.jump(MonoJump { target = loop_start }),
           )
       }
-      MonoExpr { kind = MonoExprKind.statement(result), type }
+      self.slot_expr(result)
     }
     case break_(arg) {
       if self.break_scopes.is_empty() then return error[MonoExpr, Slice[U8]](
@@ -2553,29 +2601,28 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
           })
       scope.type = some(arg.type)
       self.put(MonoStatement.assign(MonoAssign {
-        to = MonoExpr { kind = MonoExprKind.statement(result), type = arg.type },
+        | TODO: This is not correct. The type of the slot is only updated after
+        | the loop body is fully lowered. The created slot expr still has the
+        | wrong type.
+        to = self.slot_expr(scope.result),
         value = arg,
       }))
 
-      var jump = self.put(MonoStatement.uninitialized)
-      scope.breaks.&.push(jump)
-      | TODO: don't reference jump, just return a never
-      MonoExpr { kind = MonoExprKind.statement(jump), type = type("Never") }
+      scope.breaks.&.push(self.put_placeholder())
+      never_expr()
     }
     case continue_ {
       if self.continue_scopes.is_empty() then return error[MonoExpr, Slice[U8]](
         "There's a continue outside out a loop.")
       var scope = self.continue_scopes.top_ref()
-
-      var jump = self.put(MonoStatement.uninitialized)
-      scope.continues.&.push(jump)
-      | TODO: don't reference jump, just return a never
-      MonoExpr { kind = MonoExprKind.statement(jump), type = type("Never") }
+      scope.continues.&.push(var jump = self.put_placeholder())
+      never_expr()
     }
     case return_(arg) {
       var arg = self.compile(arg.*)?
       self.new_returned_type(arg.type)?
-      self.put_and_get_expr(MonoStatement.return_(arg), type("Never"))
+      self.put(MonoStatement.return_(arg))
+      never_expr()
     }
     case try(expr) {
       var expr = self.compile(expr.*)?
@@ -2601,31 +2648,35 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       var ok_type = expr.type.args.get(0)
       var error_type = expr.type.args.get(1)
 
-      var jump_if_ok = self.put(MonoStatement.uninitialized)
-      var error_payload = self.put_and_get_expr(MonoStatement.get_enum_value(MonoGetEnumValue {
+      var jump_if_ok = self.put_placeholder()
+      var error_payload = self.add_slot(error_type)
+      self.put(MonoStatement.get_enum_value(MonoGetEnumValue {
+        to = error_payload,
         of = expr,
         variant = "error",
-        type = error_type,
-      }), error_type)
-      var error_to_return = self.put_and_get_expr(MonoStatement.make_enum(MonoMakeEnum {
-        type = return_type,
+      }))
+      var error_to_return = self.add_slot(return_type)
+      self.put(MonoStatement.set_enum(MonoSetEnum {
+        slot = error_to_return,
         variant = "error",
-        value = error_payload,
-      }), error_type)
-      self.put(MonoStatement.return_(error_to_return))
+        value = self.slot_expr(error_payload),
+      }))
+      self.put(MonoStatement.return_(self.slot_expr(error_to_return)))
 
-      var after_error_handling = self.next_index()
+      var after_error_handling = self.put_label()
       self.update(jump_if_ok, MonoStatement.jump_if_variant(MonoJumpIfVariant {
         condition = expr,
         variant = "ok",
         target = after_error_handling,
       }))
 
-      self.put_and_get_expr(MonoStatement.get_enum_value(MonoGetEnumValue {
+      var ok_payload = self.add_slot(ok_type)
+      self.put(MonoStatement.get_enum_value(MonoGetEnumValue {
+        to = ok_payload,
         of = expr,
         variant = "ok",
-        type = ok_type,
-      }), ok_type)
+      }))
+      self.slot_expr(ok_payload)
     }
     case body(body) self.compile(body)?
   )
@@ -2684,10 +2735,9 @@ fun compile_call_without_auto_deref(
   printsln("fun monomorphized ")
   println(fun_)
 
-  ok[MonoExpr, Slice[U8]](self.put_and_get_expr(
-    MonoStatement.call(MonoCall { fun_, args }),
-    self.mono.funs.get(fun_).unwrap().return_type,
-  ))
+  var result = self.add_slot(self.mono.funs.get(fun_).unwrap().return_type)
+  self.put(MonoStatement.call(MonoCall { to = result, fun_, args }))
+  ok[MonoExpr, Slice[U8]](self.slot_expr(result))
 }
 
 | C Backend  
