@@ -2690,6 +2690,608 @@ fun compile_call_without_auto_deref(
   ))
 }
 
+| C Backend  
+| Martinaise lowers the code to (unreadable) C code.
+| TODO: why C?
+| TODO: what standard?
+
+fun mangle(name: Slice[U8]): Slice[U8] {
+    var mangled = vec[U8]().&
+    mangled.write_str("mar_")
+    for c in name do {
+      if c.equals('_) then { mangled.write_str("") continue }
+      if c.equals('_) then { mangled.write_str("__") continue }
+      if c.equals('[) then { mangled.write_str("_of_") continue }
+      if c.equals(']) then { mangled.write_str("_end_") continue }
+      if c.equals('() then { mangled.write_str("_withargs_") continue }
+      if c.equals(')) then { mangled.write_str("_end_") continue }
+      if c.equals(',) then { mangled.write_str("_and_") continue }
+      if c.equals('&) then { mangled.write_str("_amp_") continue }
+      if c.equals('*) then { mangled.write_str("_star_") continue }
+      if c.equals(' ) then continue
+      mangled.write_char(c)
+    }
+    mangled.to_slice()
+}
+
+fun mangle(type: Type): Slice[U8] {
+  | TODO: add to_string to stdlib
+  var formatted = vec[U8]()
+  formatted.&.write(type)
+  formatted.to_slice().mangle()
+}
+
+fun sort_types_for_c(types: Map[Type, MonoTypeDef]): Vec[Type] {
+  var sorted = vec[Type]()
+  var reached = set[Type]()
+  for def in types do
+    def.key.sort_types_for_c(defs, sorted.&, reached.&)
+  sorted
+}
+fun sort_types_for_c(
+  type: Type, defs: Map[Type, MonoTypeDef],
+  out: &Vec[Type], reached: &Set[Type]
+) {
+  if reached.contains(type) then return {}
+  if type.name.equals("&") then {
+    out.push(type)
+    reached.put(type)
+    return {}
+  }
+  switch defs.get(type).unwrap()
+  case builtin_type {
+    out.push(type)
+    reached.put(type)
+  }
+  case struct_(struct_) {
+    for field in struct_.fields do
+      field.type.sort_types_for_c(defs, out, reached)
+    out.push(type)
+    reached.put(type)
+  }
+  case enum_(enum_) {
+    for variant in enum_.variants do
+      variant.type.sort_types_for_c(defs, out, reached)
+    out.push(type)
+    reached.put(type)
+  }
+}
+
+fun write_expr_as_c[W](writer: W, expr: MonoExpr) {
+  switch expr
+  case statement(index) {
+    out.write_str("_")
+    out.write(index)
+  }
+  case member(member) {
+    if member.name.equals("*") then {
+      out.write_str("(*(")
+      out.write_expr_as_c(member.of.*)
+      out.write_str(".pointer))")
+    } else {
+      out.write_expr_as_c(member.of.*)
+      out.write_str(".")
+      out.write_str(member.name.mangle())
+    }
+  }
+}
+
+fun compile_to_c(mono: Mono): Slice[U8] {
+  var out = vec[U8]().&
+
+  out.write_str("// This file is a compiler target.")
+  out.write_char(newline())
+  out.write_str("#include <unistd.h>")
+  out.write_char(newline())
+  out.write_str("#include <stdint.h>")
+  out.write_char(newline())
+  out.write_str("#include <stdlib.h>")
+  out.write_char(newline())
+  out.write_str("#include <fcntl.h>")
+  out.write_char(newline())
+  out.write_char(newline())
+
+  var builtin_types = map[Type, Slice[U8]]()
+  var builtin_funs = map[Slice[U8], Slice[U8]]()
+  { | libc_malloc(size: U64): U64
+    var code = vec[U8]().&
+    code.write_str("  mar_U64 address;")
+    code.write_str("  address.value = (uint64_t) malloc(arg0.value);")
+    code.write_str("  return address;")
+    builtin_funs.put("libc_malloc(U64)", code.to_slice())
+  }
+  { | libc_exit(status: U8): Never
+    var code = vec[U8]().&
+    code.write_str("  exit(arg0.value);")
+    code.write_str("  mar_Nothing nothing;")
+    code.write_str("  return nothing;")
+    builtin_funs.put("libc_exit(U64)", code.to_slice())
+  }
+  { | libc_open(filename: U64, modes: U64): U64
+    var code = vec[U8]().&
+    code.write_str("  mar_U64 fd;")
+    code.write_str("  fd.value = (uint64_t) open((char*) arg0.value, arg1.value);")
+    code.write_str("  return fd;")
+    builtin_funs.put("libc_open(U64, U64)", code.to_slice())
+  }
+  { | libc_read(file: U64, buf: U64, len: U64): U8
+    var code = vec[U8]().&
+    code.write_str("  mar_U64 result;")
+    code.write_str("  result.value = read(arg0.value, (void*) arg1.value, arg2.value);")
+    code.write_str("  return result;")
+    builtin_funs.put("libc_read(U64, U64, U64)", code.to_slice())
+  }
+  { | libc_write(file: U64, buf: U64, len: U64): U8
+    var code = vec[U8]().&
+    code.write_str("  mar_U64 result;")
+    code.write_str("  result.value = write(arg0.value, (void*) arg1.value, arg2.value);")
+    code.write_str("  return result;")
+    builtin_funs.put("libc_write(U64, U64, U64)", code.to_slice())
+  }
+  { | libc_close(file: U64): U8
+    var code = vec[U8]()
+    code.write_str("  mar_U8 result;")
+    code.write_str("  result.value = close(arg0.value);")
+    code.write_str("  return result;")
+    builtin_funs.put("libc_close(U64)", code.to_slice())
+  }
+  for config in all_int_configs() do {
+    var type = config.to_type()
+
+    { | Type
+      var code = vec[U8]()
+      code.write_str("struct ")
+      code.write_str(type.mangle())
+      code.write_str(" {")
+      code.write_str(switch config.signedness case signed "" case unsigned "u")
+      code.write_str("int")
+      code.write(config.bits)
+      code.write_str("_t value; };")
+      builtin_types.put(type, code.to_slice())
+    }
+
+    for operation in vec(
+      tuple("add", "+"),
+      tuple("subtract", "-"),
+      tuple("multiply", "*"),
+      tuple("divide", "/"),
+      tuple("modulo", "%"),
+    )
+    do {
+      var name = vec[U8]()
+      name.write_str(operation.a)
+      name.write_str("(")
+      name.write_str(type.mangle())
+      name.write_str(", ")
+      name.write_str(type.mangle())
+      name.write_str(")")
+      var code = vec[U8]()
+      code.write_str("  ")
+      code.write_str(type.mangle())
+      code.write_str(" i;")
+      code.write_str("  i.value = arg0.value ")
+      code.write_str(operation.b)
+      code.write_str(" arg1.value;")
+      code.write_str("  return i;")
+      builtin_funs.put(name.to_string(), code.to_slice())
+    }
+
+    { | compare_to(Int, Int): Ordering
+      var name = vec[U8]()
+      name.write_str("compare_to(")
+      name.write_str(type.mangle())
+      name.write_str(", ")
+      name.write_str(type.mangle())
+      name.write_str(")")
+      var code = vec[U8]()
+      code.write_str("  mar_Ordering ordering;")
+      code.write_str("  ordering.variant = (arg0.value == arg1.value) ?")
+      code.write_str("    mar_Ordering_dot_mar_equal : (arg0.value > arg1.value) ?")
+      code.write_str("      mar_Ordering_dot_mar_greater : mar_Ordering_dot_mar_less;")
+      code.write_str("  mar_Nothing nothing;")
+      code.write_str("  ordering.as.mar_equal = nothing;")
+      code.write_str("  return ordering;")
+      builtin_funs.put(name.to_string(), code.to_slice())
+    }
+
+    | Conversion functions
+    for target_config in all_int_configs() do {
+      if config.equals(target_config) then continue
+      var target_type = target_config.to_type()
+
+      var name = vec[U8]()
+      name.write_str("to_")
+      name.write_str(target_type.mangle())
+      name.write_str("(")
+      name.write_str(type.mangle())
+      name.write_str(")")
+      var code = vec[U8]()
+      code.write_str("  ")
+      code.write_str(target_type.mangle())
+      code.write_str("  i;")
+      code.write_str("  i.value = arg0.value;")
+      code.write_str("  return i;")
+      builtin_funs.put(name.to_string(), code.to_slice())
+    }
+  }
+
+  { | Types
+    out.write_str("/// Types")
+    out.write_char(newline())
+
+    var sorted = sort_types_for_c(mono.type_defs)
+
+    for type in sorted do {
+      out.write_str("typedef struct ")
+      out.write_str(type.mangle())
+      out.write_str(" ")
+      out.write_str(type.mangle())
+      out.write_str(";")
+      out.write_char(newline())
+    }
+
+    for type in sorted do {
+      var def = mono.type_defs.get(type).unwrap()
+      out.write_char(newline())
+      out.write_str("// ")
+      out.write(type)
+      out.write_char(newline())
+      switch def
+      case builtin_type {
+        out.write_str(
+          builtin_types.get(type) orelse panic("Unknown builtin type"))
+        out.write_char(newline())
+      }
+      case struct_(struct_) {
+        out.write_str("struct ")
+        out.write_str(type.mangle())
+        out.write_str(" {")
+        for field in struct_.fields do
+          if field.name.equals("*") then {
+            out.write_str("  ")
+            out.write(field.type.mangle())
+            out.write_str("* pointer;")
+            out.write_char(newline())
+          } else {
+            out.write_str("  ")
+            out.write_str(field.type.mangle())
+            out.write_str(" ")
+            out.write_str(field.name.mangle())
+            out.write_str(";")
+            out.write_char(newline())
+          }
+        out.write_str("};")
+      }
+      case enum_(enum_) {
+        out.write_str("struct ")
+        out.write_str(type.mangle())
+        out.write_str(" {")
+        out.write_char(newline())
+        | TODO: define is_not_empty in stdlib
+        if not(enum_.variants.is_empty()) then {
+          out.write_str("  enum {")
+          out.write_char(newline())
+          for variant in enum_.variants do {
+            out.write_str("    ")
+            out.write_str(type.mangle())
+            out.write_str("_dot_")
+            out.write_str(variant.name.mangle())
+          }
+          out.write_str("  } variant;")
+          out.write_char(newline())
+          out.write_str("  union {")
+          out.write_char(newline())
+          for variant in enum_.variants do {
+            out.write_str("    ")
+            out.write_str(variant.type.mangle())
+            out.write_str(" ")
+            out.write_str(variant.name.mangle())
+            out.write_str(";")
+            out.write_char(newline())
+          }
+          out.write_str("  } as;")
+          out.write_char(newline())
+        }
+        out.write_str("};")
+        out.write_char(newline())
+      }
+    }
+  }
+
+  { | Functions
+    var ordered_funs = vec[Slice[U8]]() {
+      for fun_ in mono.funs do ordered_funs.push(fun_.key)
+      ordered_funs.sort()
+    }
+    var funs_to_index = map[Slice[U8], U64]() {
+      for i in 0.to(ordered_funs.len) do
+        funs_to_index.put(ordered_funs.get(i), i)
+    }
+
+    | Declarations
+    out.write_str("/// Function declarations")
+    out.write_char(newline())
+    for fun_name in ordered_funs do {
+      var fun_ = mono.funs.get(fun_name).unwrap()
+      out.write_str("/* ")
+      out.write_str(fun_name)
+      out.write_str(" */ ")
+      out.write_str(fun_.return_type.mangle())
+      out.write_str(" ")
+      out.write_str(fun_name.mangle())
+      out.write_str("(")
+      for i in 0.to(fun_.arg_types.len) do {
+        out.write_str(fun_.arg_types.get(i))
+        out.write_str(" arg")
+        out.write(i)
+      }
+      out.write_str(");")
+      out.write_char(newline())
+    }
+
+    | Definitions
+    out.write_str("/// Function definitions")
+    out.write_char(newline())
+    for signature in ordered_funs do {
+      var fun_ = mono.funs.get(signature).unwrap()
+      out.write_char(newline())
+      out.write_str("// ")
+      out.write_str(signature)
+      out.write_char(newline())
+      out.write_str(fun_.return_type.mangle())
+      out.write_str(" ")
+      out.write_str(signature.mangle())
+      out.write_str("(")
+      for i in 0.to(fun_.arg_types.len) do {
+        out.write_str(fun_.arg_types.get(i))
+        out.write_str(" arg")
+        out.write(i)
+      }
+      out.write_str(") {")
+      out.write_char(newline())
+
+      if fun_.is_builtin then {
+        if builtin_funs.get(signature) is some(body)
+        then out.write_str(body)
+        else if signature.starts_with("to_address")
+        then {
+          out.write_str("  mar_U64 address;")
+          out.write_str("  address.value = (uint64_t) arg0.pointer;")
+          out.write_str("  return address;")
+        }
+        else if signature.starts_with("to_reference")
+        then {
+          out.write_str("  ")
+          out.write_str(fun_.return_type.mangle())
+          out.write_str(" ref;")
+          out.write_str("  ref.pointer = (")
+          out.write_str(fun_.type_args.get(0).mangle())
+          out.write_str("*) arg0.value;")
+          out.write_str("  return ref;")
+        }
+        else if signature.starts_with("size_of_type")
+        then {
+          out.write_str("  mar_U64 size;")
+          out.write_str("  size.value = (uint64_t) sizeof(")
+          out.write_str(fun_.type_args.get(0).mangle())
+          out.write_str(");")
+          out.write_str("  return size;")
+        }
+        else {
+          var error = &vec[U8]()
+          error.write_str("Unknown builtin fun ")
+          error.write_str(signature)
+          panic(error.to_slice())
+        }
+      } else for i in 0.to(fun_.body.len) do {
+        switch fun_.body.get(i)
+        case arg {
+          out.write_str(arg.type.mangle())
+          out.write_str(" _")
+          out.write(i)
+          out.write_str(" = arg")
+          out.write(i)
+          out.write_str(";")
+          out.write_char(newline())
+        }
+        case expr(expr) out.write_expr_as_c(expr)
+        case uninitialized(uninitialized) {
+          out.write_str(uninitialized.type.mangle())
+          out.write_str(" _")
+          out.write(i)
+          out.write_str(";")
+          out.write_char(newline())
+        }
+        case int(int) {
+          out.write_str(IntConfig {
+            signedness = int.signedness,
+            bits = int.bits
+          }.to_type().mangle())
+          out.write_str(" _")
+          out.write(i)
+          out.write_str("; _")
+          out.write(i)
+          out.write_str(".value = ")
+          out.write(int.value)
+          out.write_str(
+            switch int.signedness case signed "LL" case unsigned "ULL")
+          out.write_str(";")
+          out.write_char(newline())
+        }
+        case str(str) {
+          out.write_str(type("Slice", vec(type("U8"))).mangle())
+          out.write_str(" _")
+          out.write(i)
+          out.write_str("; _")
+          out.write(i)
+          out.write_str(".mar_data.pointer = (")
+          out.write_str(type("U8").mangle())
+          out.write_str("*) ")
+          out.write_char('")
+          for char in str do {
+            out.write_str("\x")
+            out.write(char)
+          }
+          out.write_char('")
+          out.write_str("; _")
+          out.write(i)
+          out.write_str(".mar_len.value = ")
+          out.write(str.len)
+          out.write_str(";")
+          out.write_char(newline())
+        }
+        case call(call) {
+          out.write_str(call.type.mangle())
+          out.write_str(" _")
+          out.write(i)
+          out.write_str(" = ")
+          out.write_str(call.fun_.mangle())
+          out.write_str("(")
+          var first = true()
+          for arg in call.args do {
+            if first then first = false() else out.write_str(", ")
+            out.write_expr_as_c(arg)
+          }
+          out.write_str(");")
+          out.write_char(newline())
+        }
+        case make_enum(make_enum) {
+          out.write_str(make_enum.type.mangle())
+          out.write_str(" _")
+          out.write(i)
+          out.write_str("; _")
+          out.write(i)
+          out.write_str(".variant = ")
+          out.write_str(make_enum.type.mangle())
+          out.write_str("_dot_")
+          out.write_str(make_enum.variant)
+          out.write_str("; _")
+          out.write(i)
+          out.write_str(".as.")
+          out.write_str(make_enum.variant.mangle())
+          out.write_str(" = ")
+          out.write_expr_as_c(make_enum.value)
+          out.write_expr(";")
+          out.write_char(newline())
+        }
+        case make_struct(make_struct) {
+          out.write_str(make_struct.type.mangle())
+          out.write_str(" _")
+          out.write(i)
+          out.write_str(";")
+          for field in make_struct.field do {
+            out.write_str(" _")
+            out.write(i)
+            out.write_str(".")
+            out.write_str(field.name)
+            out.write_str(" = ")
+            out.write_expr_as_c(field.value)
+            out.write_str(";")
+          }
+          out.write_char(newline())
+        }
+        case assign(assign) {
+          out.write_expr_as_c(assign.to)
+          out.write_str(" = ")
+          out.write_expr_as_c(assign.value)
+          out.write_str("; ")
+          out.write_str(type("Nothing").mangle())
+          out.write_str(" _")
+          out.write(i)
+          out.write_str(";")
+          out.write_char(newline())
+        }
+        case jump(jump) {
+          out.write_str("goto statement_")
+          out.write(jump.target)
+          out.write_str("; ")
+          out.write_str(type("Never").mangle())
+          out.write_str(" _")
+          out.write(i)
+          out.write_str(";")
+          out.write_char(newline())
+        }
+        case jump_if_variant(jump) {
+          out.write_str("if ((")
+          out.write_expr_as_c(jump.condition)
+          out.write_str(").variant == ")
+          out.write_str(jump.condition.type.mangle())
+          out.write_str(".")
+          out.write_str(jump.variant)
+          out.write_str(") goto statement_")
+          out.write(jump.target)
+          out.write_str("; ")
+          out.write_str(type("Never").mangle())
+          out.write_str(" _")
+          out.write(i)
+          out.write_str(";")
+          out.write_char(newline())
+        }
+        case get_enum_value(get_enum_value) {
+          out.write_str(get_enum_value.type.mangle())
+          out.write_str(" _")
+          out.write(i)
+          out.write_str(" = (")
+          out.write_expr_as_c(get_enum_value.of)
+          out.write_str(").as.")
+          out.write_str(get_enum_value.variant.mangle())
+          out.write_str(";")
+          out.write_char(newline())
+        }
+        case return_(expr) {
+          | If a Never is returned, the return is not reached anyway. If we emit
+          | it, C complains that Never doesn't match the function's return type.
+          if not(expr.type.is_never()) then {
+            out.write_str("return ")
+            out.write_expr_as_c(expr)
+            out.write_str("; ")
+          }
+          out.write_str(type("Never").mangle())
+          out.write_str(" _")
+          out.write(i)
+          out.write_str(";")
+          out.write_char(newline())
+        }
+        case ref(expr) {
+          out.write_str(expr.type.mangle())
+          out.write_str(" _")
+          out.write(i)
+          out.write_str("; _")
+          out.write(i)
+          out.write_str(".pointer = &(")
+          out.write_expr_as_c(expr)
+          out.write_str(");")
+          out.write_char(newline())
+        }
+        out.write_str("  statement_")
+        out.write(fun_.body.len)
+        out.write_str(": //end")
+        out.write_char(newline())
+        var last_expr_index = fun_.body.len.dec()
+        var type_ = 
+        if not(type_.is_never()) then {
+          out.write_str("  return _")
+          out.write(last_expr_index)
+          out.write_str(";")
+          out.write_char(newline())
+        }
+        out.write_str("}")
+        out.write_char(newline())
+      }
+    }
+    out.write_str("// actual main function")
+    out.write_char(newline())
+    out.write_str("int main() {")
+    out.write_char(newline())
+    out.write_str("  ")
+    out.write_str("main()".mangle())
+    out.write_str("();")
+    out.write_char(newline())
+    out.write_str("}")
+  }
+  out.to_slice()
+}
+
 | Command Line Interface  
 | The command line interface which you use to interact with the Martinaise
 | compiler.
@@ -2764,5 +3366,7 @@ fun main() {
   var command = Command.mono
   var file_path = "advent/day1.mar"
 
-  exit(if run_pipeline(command, file_path) then 0_U8 else 1_U8)
+  var was_successful = run_pipeline(command, file_path)
+
+  exit(if was_successful then 0_U8 else 1_U8)
 }
