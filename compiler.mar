@@ -1188,6 +1188,7 @@ struct MonoStructField { name: Slice[U8], type: Type }
 struct MonoEnum { variants: Vec[MonoEnumVariant] }
 struct MonoEnumVariant { name: Slice[U8], type: Type }
 struct MonoFun {
+  type_args: Vec[Type],
   arg_types: Vec[Type],
   return_type: Type,
   is_builtin: Bool,
@@ -1807,14 +1808,14 @@ fun monomorphize(
     for arg in fun_.args do
       arg_types.&.push(arg.type.monomorphize(type_env, ast, mono)?)
   }
+  var type_args = vec[Type]()
+  for arg in fun_.type_args do
+    type_args.&.push(type(arg).monomorphize(type_env, ast, mono)?)
   printsln("arg types ")
   println(arg_types)
   var signature = {
     var out = vec[U8]()
     out.&.write_str(fun_.name)
-    var type_args = vec[Type]()
-    for arg in fun_.type_args do
-      type_args.&.push(type(arg).monomorphize(type_env, ast, mono)?)
     out.&.write_type_args(type_args)
     out.&.write_char('()
     for i in 0.to(fun_.args.len) do {
@@ -1834,6 +1835,7 @@ fun monomorphize(
   var return_type = fun_.returns.monomorphize(type_env, ast, mono)?
 
   var mono_fun = MonoFun {
+    type_args,
     arg_types,
     return_type = return_type,
     is_builtin = fun_.is_builtin,
@@ -2775,7 +2777,7 @@ fun sort_types_for_c(types: Map[Type, MonoTypeDef]): Vec[Type] {
   var sorted = vec[Type]()
   var reached = set[Type]()
   for def in types do
-    def.key.sort_types_for_c(defs, sorted.&, reached.&)
+    def.key.sort_types_for_c(types, sorted.&, reached.&)
   sorted
 }
 fun sort_types_for_c(
@@ -2808,22 +2810,20 @@ fun sort_types_for_c(
 }
 
 fun write_expr_as_c[W](writer: W, expr: MonoExpr) {
-  switch expr
-  case statement(index) {
-    out.write_str("_")
-    out.write(index)
-  }
-  case member(member) {
+  switch expr.kind
+  case nothing writer.write_str("_nothing")
+  case never writer.write_str("_never")
+  case slot(slot) writer.write(slot)
+  case member(member)
     if member.name.equals("*") then {
-      out.write_str("(*(")
-      out.write_expr_as_c(member.of.*)
-      out.write_str(".pointer))")
+      writer.write_str("(*")
+      writer.write_expr_as_c(member.of.*)
+      writer.write_str(".pointer)")
     } else {
-      out.write_expr_as_c(member.of.*)
-      out.write_str(".")
-      out.write_str(member.name.mangle())
+      writer.write_expr_as_c(member.of.*)
+      writer.write_str(".")
+      writer.write_str(member.name.mangle())
     }
-  }
 }
 
 fun compile_to_c(mono: Mono): Slice[U8] {
@@ -2848,48 +2848,48 @@ fun compile_to_c(mono: Mono): Slice[U8] {
     code.write_str("  mar_U64 address;")
     code.write_str("  address.value = (uint64_t) malloc(arg0.value);")
     code.write_str("  return address;")
-    builtin_funs.put("libc_malloc(U64)", code.to_slice())
+    builtin_funs.&.put("libc_malloc(U64)", code.to_slice())
   }
   { | libc_exit(status: U8): Never
     var code = vec[U8]().&
     code.write_str("  exit(arg0.value);")
     code.write_str("  mar_Nothing nothing;")
     code.write_str("  return nothing;")
-    builtin_funs.put("libc_exit(U64)", code.to_slice())
+    builtin_funs.&.put("libc_exit(U8)", code.to_slice())
   }
   { | libc_open(filename: U64, modes: U64): U64
     var code = vec[U8]().&
     code.write_str("  mar_U64 fd;")
     code.write_str("  fd.value = (uint64_t) open((char*) arg0.value, arg1.value);")
     code.write_str("  return fd;")
-    builtin_funs.put("libc_open(U64, U64)", code.to_slice())
+    builtin_funs.&.put("libc_open(U64, U64)", code.to_slice())
   }
   { | libc_read(file: U64, buf: U64, len: U64): U8
     var code = vec[U8]().&
     code.write_str("  mar_U64 result;")
     code.write_str("  result.value = read(arg0.value, (void*) arg1.value, arg2.value);")
     code.write_str("  return result;")
-    builtin_funs.put("libc_read(U64, U64, U64)", code.to_slice())
+    builtin_funs.&.put("libc_read(U64, U64, U64)", code.to_slice())
   }
   { | libc_write(file: U64, buf: U64, len: U64): U8
     var code = vec[U8]().&
     code.write_str("  mar_U64 result;")
     code.write_str("  result.value = write(arg0.value, (void*) arg1.value, arg2.value);")
     code.write_str("  return result;")
-    builtin_funs.put("libc_write(U64, U64, U64)", code.to_slice())
+    builtin_funs.&.put("libc_write(U64, U64, U64)", code.to_slice())
   }
   { | libc_close(file: U64): U8
-    var code = vec[U8]()
+    var code = vec[U8]().&
     code.write_str("  mar_U8 result;")
     code.write_str("  result.value = close(arg0.value);")
     code.write_str("  return result;")
-    builtin_funs.put("libc_close(U64)", code.to_slice())
+    builtin_funs.&.put("libc_close(U64)", code.to_slice())
   }
   for config in all_int_configs() do {
     var type = config.to_type()
 
     { | Type
-      var code = vec[U8]()
+      var code = vec[U8]().&
       code.write_str("struct ")
       code.write_str(type.mangle())
       code.write_str(" {")
@@ -2897,7 +2897,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       code.write_str("int")
       code.write(config.bits)
       code.write_str("_t value; };")
-      builtin_types.put(type, code.to_slice())
+      builtin_types.&.put(type, code.to_slice())
     }
 
     for operation in vec(
@@ -2908,14 +2908,16 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       tuple("modulo", "%"),
     )
     do {
-      var name = vec[U8]()
+      var name = vec[U8]().&
       name.write_str(operation.a)
       name.write_str("(")
-      name.write_str(type.mangle())
+      name.write(type)
       name.write_str(", ")
-      name.write_str(type.mangle())
+      name.write(type)
       name.write_str(")")
-      var code = vec[U8]()
+      prints("Adding builtin fun ")
+      printsln(name.to_slice())
+      var code = vec[U8]().&
       code.write_str("  ")
       code.write_str(type.mangle())
       code.write_str(" i;")
@@ -2923,17 +2925,17 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       code.write_str(operation.b)
       code.write_str(" arg1.value;")
       code.write_str("  return i;")
-      builtin_funs.put(name.to_string(), code.to_slice())
+      builtin_funs.&.put(name.to_slice(), code.to_slice())
     }
 
     { | compare_to(Int, Int): Ordering
-      var name = vec[U8]()
+      var name = vec[U8]().&
       name.write_str("compare_to(")
-      name.write_str(type.mangle())
+      name.write(type)
       name.write_str(", ")
-      name.write_str(type.mangle())
+      name.write(type)
       name.write_str(")")
-      var code = vec[U8]()
+      var code = vec[U8]().&
       code.write_str("  mar_Ordering ordering;")
       code.write_str("  ordering.variant = (arg0.value == arg1.value) ?")
       code.write_str("    mar_Ordering_dot_mar_equal : (arg0.value > arg1.value) ?")
@@ -2941,7 +2943,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       code.write_str("  mar_Nothing nothing;")
       code.write_str("  ordering.as.mar_equal = nothing;")
       code.write_str("  return ordering;")
-      builtin_funs.put(name.to_string(), code.to_slice())
+      builtin_funs.&.put(name.to_slice(), code.to_slice())
     }
 
     | Conversion functions
@@ -2949,19 +2951,19 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       if config.equals(target_config) then continue
       var target_type = target_config.to_type()
 
-      var name = vec[U8]()
+      var name = vec[U8]().&
       name.write_str("to_")
-      name.write_str(target_type.mangle())
+      name.write(target_type)
       name.write_str("(")
-      name.write_str(type.mangle())
+      name.write(type)
       name.write_str(")")
-      var code = vec[U8]()
+      var code = vec[U8]().&
       code.write_str("  ")
       code.write_str(target_type.mangle())
       code.write_str("  i;")
       code.write_str("  i.value = arg0.value;")
       code.write_str("  return i;")
-      builtin_funs.put(name.to_string(), code.to_slice())
+      builtin_funs.&.put(name.to_slice(), code.to_slice())
     }
   }
 
@@ -3050,12 +3052,12 @@ fun compile_to_c(mono: Mono): Slice[U8] {
 
   { | Functions
     var ordered_funs = vec[Slice[U8]]() {
-      for fun_ in mono.funs do ordered_funs.push(fun_.key)
-      ordered_funs.sort()
+      for fun_ in mono.funs do ordered_funs.&.push(fun_.key)
+      ordered_funs.to_slice().&.sort()
     }
     var funs_to_index = map[Slice[U8], U64]() {
       for i in 0.to(ordered_funs.len) do
-        funs_to_index.put(ordered_funs.get(i), i)
+        funs_to_index.&.put(ordered_funs.get(i), i)
     }
 
     | Declarations
@@ -3071,7 +3073,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       out.write_str(fun_name.mangle())
       out.write_str("(")
       for i in 0.to(fun_.arg_types.len) do {
-        out.write_str(fun_.arg_types.get(i))
+        out.write_str(fun_.arg_types.get(i).mangle())
         out.write_str(" arg")
         out.write(i)
       }
@@ -3093,7 +3095,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       out.write_str(signature.mangle())
       out.write_str("(")
       for i in 0.to(fun_.arg_types.len) do {
-        out.write_str(fun_.arg_types.get(i))
+        out.write_str(fun_.arg_types.get(i).mangle())
         out.write_str(" arg")
         out.write(i)
       }
@@ -3133,48 +3135,38 @@ fun compile_to_c(mono: Mono): Slice[U8] {
           error.write_str(signature)
           panic(error.to_slice())
         }
-      } else for i in 0.to(fun_.body.len) do {
-        switch fun_.body.get(i)
-        case arg {
-          out.write_str(arg.type.mangle())
+        continue
+      }
+
+      for i in 0.to(fun_.slots.len) do {
+        var slot = fun_.slots.get(i)
+        out.write_str("  ")
+        out.write_str(slot.type.mangle())
+        out.write_str(" _")
+        out.write(i)
+        out.write_str(";")
+        switch slot.initial_value
+        case uninitialized {}
+        case arg(j) {
           out.write_str(" _")
           out.write(i)
           out.write_str(" = arg")
-          out.write(i)
+          out.write(j)
           out.write_str(";")
-          out.write_char(newline())
-        }
-        case expr(expr) out.write_expr_as_c(expr)
-        case uninitialized(uninitialized) {
-          out.write_str(uninitialized.type.mangle())
-          out.write_str(" _")
-          out.write(i)
-          out.write_str(";")
-          out.write_char(newline())
         }
         case int(int) {
-          out.write_str(IntConfig {
-            signedness = int.signedness,
-            bits = int.bits
-          }.to_type().mangle())
           out.write_str(" _")
-          out.write(i)
-          out.write_str("; _")
           out.write(i)
           out.write_str(".value = ")
-          out.write(int.value)
-          out.write_str(
-            switch int.signedness case signed "LL" case unsigned "ULL")
-          out.write_str(";")
-          out.write_char(newline())
+          out.write(int)
+          out.write_str("ULL;")
         }
         case str(str) {
-          out.write_str(type("Slice", vec(type("U8"))).mangle())
           out.write_str(" _")
           out.write(i)
-          out.write_str("; _")
-          out.write(i)
-          out.write_str(".mar_data.pointer = (")
+          out.write_str(".")
+          out.write_str("data".mangle())
+          out.write_str(".pointer = (")
           out.write_str(type("U8").mangle())
           out.write_str("*) ")
           out.write_char('")
@@ -3185,15 +3177,51 @@ fun compile_to_c(mono: Mono): Slice[U8] {
           out.write_char('")
           out.write_str("; _")
           out.write(i)
-          out.write_str(".mar_len.value = ")
+          out.write_str(".")
+          out.write_str("len".mangle())
+          out.write_str("mar_len.value = ")
           out.write(str.len)
+          out.write_str(";")
+        }
+        out.write_char(newline())
+      }
+      for statement in fun_.body do {
+        switch statement
+        case label(label) {
+          out.write_str("")
+          out.write(label)
+          out.write_str(":")
+          out.write_char(newline())
+        }
+        case assign(assign) {
+          out.write_str("  ")
+          out.write_expr_as_c(assign.to)
+          out.write_str(" = ")
+          out.write_expr_as_c(assign.value)
+          out.write_str(";")
+          out.write_char(newline())
+        }
+        case set_enum(set_enum) {
+          out.write_str("  ")
+          out.write(set_enum.slot)
+          out.write_str(".variant = ")
+          out.write_str(fun_.slots.get(set_enum.slot.index).type.mangle())
+          out.write_str("_dot_")
+          out.write_str(set_enum.variant)
+          out.write_str(";")
+          out.write_char(newline())
+          out.write_str("  ")
+          out.write(set_enum.slot)
+          out.write_str(".as.")
+          out.write_str(set_enum.variant.mangle())
+          out.write_str(" = ")
+          out.write_expr_as_c(set_enum.value)
           out.write_str(";")
           out.write_char(newline())
         }
         case call(call) {
-          out.write_str(call.type.mangle())
-          out.write_str(" _")
-          out.write(i)
+          out.write_str("  ")
+          out.write(call.to)
           out.write_str(" = ")
           out.write_str(call.fun_.mangle())
           out.write_str("(")
@@ -3205,85 +3233,32 @@ fun compile_to_c(mono: Mono): Slice[U8] {
           out.write_str(");")
           out.write_char(newline())
         }
-        case make_enum(make_enum) {
-          out.write_str(make_enum.type.mangle())
-          out.write_str(" _")
-          out.write(i)
-          out.write_str("; _")
-          out.write(i)
-          out.write_str(".variant = ")
-          out.write_str(make_enum.type.mangle())
-          out.write_str("_dot_")
-          out.write_str(make_enum.variant)
-          out.write_str("; _")
-          out.write(i)
-          out.write_str(".as.")
-          out.write_str(make_enum.variant.mangle())
-          out.write_str(" = ")
-          out.write_expr_as_c(make_enum.value)
-          out.write_expr(";")
-          out.write_char(newline())
-        }
-        case make_struct(make_struct) {
-          out.write_str(make_struct.type.mangle())
-          out.write_str(" _")
-          out.write(i)
-          out.write_str(";")
-          for field in make_struct.field do {
-            out.write_str(" _")
-            out.write(i)
-            out.write_str(".")
-            out.write_str(field.name)
-            out.write_str(" = ")
-            out.write_expr_as_c(field.value)
-            out.write_str(";")
-          }
-          out.write_char(newline())
-        }
-        case assign(assign) {
-          out.write_expr_as_c(assign.to)
-          out.write_str(" = ")
-          out.write_expr_as_c(assign.value)
-          out.write_str("; ")
-          out.write_str(type("Nothing").mangle())
-          out.write_str(" _")
-          out.write(i)
-          out.write_str(";")
-          out.write_char(newline())
-        }
         case jump(jump) {
-          out.write_str("goto statement_")
+          out.write_str("  ")
+          out.write_str("goto ")
           out.write(jump.target)
-          out.write_str("; ")
-          out.write_str(type("Never").mangle())
-          out.write_str(" _")
-          out.write(i)
           out.write_str(";")
           out.write_char(newline())
         }
         case jump_if_variant(jump) {
-          out.write_str("if ((")
+          out.write_str("  ")
+          out.write_str("if (")
           out.write_expr_as_c(jump.condition)
-          out.write_str(").variant == ")
+          out.write_str(".variant == ")
           out.write_str(jump.condition.type.mangle())
           out.write_str(".")
           out.write_str(jump.variant)
-          out.write_str(") goto statement_")
+          out.write_str(") goto ")
           out.write(jump.target)
-          out.write_str("; ")
-          out.write_str(type("Never").mangle())
-          out.write_str(" _")
-          out.write(i)
           out.write_str(";")
           out.write_char(newline())
         }
         case get_enum_value(get_enum_value) {
-          out.write_str(get_enum_value.type.mangle())
-          out.write_str(" _")
-          out.write(i)
-          out.write_str(" = (")
+          out.write_str("  ")
+          out.write(get_enum_value.to)
+          out.write_str(" = ")
           out.write_expr_as_c(get_enum_value.of)
-          out.write_str(").as.")
+          out.write_str(".as.")
           out.write_str(get_enum_value.variant.mangle())
           out.write_str(";")
           out.write_char(newline())
@@ -3292,42 +3267,25 @@ fun compile_to_c(mono: Mono): Slice[U8] {
           | If a Never is returned, the return is not reached anyway. If we emit
           | it, C complains that Never doesn't match the function's return type.
           if not(expr.type.is_never()) then {
+            out.write_str("  ")
             out.write_str("return ")
             out.write_expr_as_c(expr)
             out.write_str("; ")
+            out.write_char(newline())
           }
-          out.write_str(type("Never").mangle())
-          out.write_str(" _")
-          out.write(i)
-          out.write_str(";")
-          out.write_char(newline())
         }
-        case ref(expr) {
-          out.write_str(expr.type.mangle())
-          out.write_str(" _")
-          out.write(i)
-          out.write_str("; _")
-          out.write(i)
-          out.write_str(".pointer = &(")
+        case ref(ref) {
+          out.write_str("  ")
+          out.write(ref.to)
+          out.write_str(".pointer = &")
           out.write_expr_as_c(expr)
-          out.write_str(");")
-          out.write_char(newline())
-        }
-        out.write_str("  statement_")
-        out.write(fun_.body.len)
-        out.write_str(": //end")
-        out.write_char(newline())
-        var last_expr_index = fun_.body.len.dec()
-        var type_ = 
-        if not(type_.is_never()) then {
-          out.write_str("  return _")
-          out.write(last_expr_index)
           out.write_str(";")
           out.write_char(newline())
         }
-        out.write_str("}")
-        out.write_char(newline())
+        default {}
       }
+      out.write_str("}")
+      out.write_char(newline())
     }
     out.write_str("// actual main function")
     out.write_char(newline())
@@ -3346,10 +3304,11 @@ fun compile_to_c(mono: Mono): Slice[U8] {
 | The command line interface which you use to interact with the Martinaise
 | compiler.
 
-enum Command { ast, mono, compile, run, watch }
+enum Command { ast, mono, c, compile, run, watch }
 fun parse_command(command: Slice[U8]): Command {
   if command.equals("ast") then return Command.ast
   if command.equals("mono") then return Command.mono
+  if command.equals("c") then return Command.c
   if command.equals("compile") then return Command.compile
   if command.equals("run") then return Command.run
   if command.equals("watch") then return Command.watch
@@ -3405,6 +3364,18 @@ fun run_pipeline(command: Command, file_path: Slice[U8]): Bool {
   }
   if command is mono then { println(mono) return true() }
 
+  var c = {
+    print_on_same_line({
+      var out = vec[U8]().&
+      out.write_str("Compiling ")
+      out.write_str(file_path)
+      out.write_str(" to C")
+      out.to_slice()
+    })
+    mono.compile_to_c()
+  }
+  if command is c then { printsln(c) return true() }
+
   true()
 }
 
@@ -3413,7 +3384,7 @@ fun main() {
   printsln("Let's go!")
 
   | TODO: Add CLI parsing
-  var command = Command.mono
+  var command = Command.c
   var file_path = "advent/day1.mar"
 
   var was_successful = run_pipeline(command, file_path)
