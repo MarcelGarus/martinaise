@@ -11,12 +11,14 @@
 | deleting code in this file because that may crash the compiler.
 
 | Language todos  
+| TODO: int radixes
+| TODO: str type, char type
+| TODO: custom orelse
 | TODO: type aliases
 | TODO: validate all signatures before lowering
+| TODO: validate field in make struct
 | TODO: global constants
-| TODO: custom orelse
 | TODO: break and continue with targets
-| TODO: str type, char type
 | TODO: string interpolation?
 | TODO: funs as values, function types, higher-order funs
 | TODO: var bool = foo is some
