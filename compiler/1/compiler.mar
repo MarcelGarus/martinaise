@@ -2137,7 +2137,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         default return error[MonoExpr, Slice[U8]]({
           var out = vec[U8]().&
           out.write_str("Tried to create a struct, but ")
-          out.write(make_struct.type.name)
+          out.write_str(make_struct.type.name)
           out.write_str(" is not a struct type.")
           out.to_slice()
         })
@@ -2145,6 +2145,19 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         for field in make_struct.fields do
           fields.&.put(field.name, self.compile(field.value)?)
       }
+      for field in struct_.fields do
+        if not(fields.contains(field.name))
+        then return error[MonoExpr, Slice[U8]]({
+          var out = vec[U8]().&
+          out.write_str("You tried to create a ")
+          out.write_str(make_struct.type.name)
+          out.write_str(", but the ")
+          out.write_char('")
+          out.write_str(field.name)
+          out.write_char('")
+          out.write_str(" field is missing.")
+          out.to_slice()
+        })
 
       var solver = create_type_solver(struct_.type_args)
       | TODO: Foo[] { ... } should not be treated like Foo { ... }
