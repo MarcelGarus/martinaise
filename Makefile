@@ -1,5 +1,6 @@
-martinaise: martinaise_1
+martinaise: martinaise_1 bootstrapping/1/stdlib.mar
 	cp martinaise_1 martinaise
+	cp bootstrapping/1/stdlib.mar stdlib.mar
 
 martinaise_0: $(wildcard bootstrapping/0/src/*) bootstrapping/0/build.zig
 	@echo "# Martinaise 0"
