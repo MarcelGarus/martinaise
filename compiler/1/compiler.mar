@@ -722,9 +722,15 @@ fun parse_char(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
   parser.consume_prefix("'") orelse return no_match[AstExpr]()
   var char = parser.current()
   parser.advance()
-  parsed(AstExpr.int(Int {
-    value = char.to_U64(),
-    config = IntConfig { signedness = Signedness.unsigned, bits = 8 }
+  parsed(AstExpr.make_struct(AstMakeStruct {
+    type = type("Char"),
+    fields = vec(AstMakeStructField {
+      name = "byte",
+      value = AstExpr.int(Int {
+        value = char.to_U64(),
+        config = IntConfig { signedness = Signedness.unsigned, bits = 8 }
+      }),
+    })
   }))
 }
 
@@ -1494,6 +1500,7 @@ fun unify(solver: &TypeSolver, generic: Type, concrete: Type): Result[Bool, Slic
   ok[Bool, Slice[U8]](true())
 }
 fun finish(solver: TypeSolver): Result[Map[Slice[U8], Type], Slice[U8]] {
+  eprintsln("Finishing solver")
   for var_ in solver.vars do
     if not(solver.env.contains(var_)) then
       return error[Map[Slice[U8], Type], Slice[U8]]({
@@ -1691,7 +1698,24 @@ fun lookup_fun(
       if not(solver.&.unify(fun_.args.get(i).type, arg_types.get(i))?)
       then { matches = false() break }
     if not(matches) then continue
-    var type_env = solver.finish()?
+    var type_env = switch solver.finish()
+      case ok(env) env
+      case error(error) {
+        var out = vec[U8]().&
+        out.write_str("Found a function matching a call:")
+        out.write_char(newline())
+        out.write_str("   call: ")
+        out.write_call_signature(name, type_args, arg_types)
+        out.write_char(newline())
+        out.write_str("  match: ")
+        out.write_signature(AstDef.fun_(fun_))
+        out.write_char(newline())
+        out.write_char(newline())
+        out.write_str("However, resolving the call doesn't work:")
+        out.write_char(newline())
+        out.write_str(error)
+        return error[LookupFunSolution, Slice[U8]](out.to_slice())
+      }
     full_matches.&.push(LookupFunSolution { fun_, type_env })
   }
 
@@ -2039,9 +2063,8 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       MonoSlotValue.int(int.value),
     ))
     case str(str) {
-      var type = type("Slice", vec(type("U8")))
-      type.monomorphize(map[Slice[U8], Type](), self.ast, self.mono)
-      self.slot_expr(self.add_slot(type, MonoSlotValue.str(str)))
+      type("Str").monomorphize(map[Slice[U8], Type](), self.ast, self.mono)
+      self.slot_expr(self.add_slot(type("Str"), MonoSlotValue.str(str)))
     }
     case name(name) self.slot_expr(
       self.vars.get(name)
@@ -2162,6 +2185,8 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
           out.to_slice()
         })
       }
+      eprintsln("make struct")
+      eprintln()
       var type_env = solver.finish()?
 
       var unspecialized_type = make_struct.type
@@ -2252,6 +2277,8 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         out.write_str(".")
         out.to_slice()
       })
+      eprintsln("make enum")
+      eprintln()
       var type_env = solver.finish()?
 
       var unspecialized_type = make_enum.type
@@ -3222,6 +3249,8 @@ fun compile_to_c(mono: Mono): Slice[U8] {
           out.write_str(" _")
           out.write(i)
           out.write_str(".")
+          out.write_str("bytes".mangle())
+          out.write_str(".")
           out.write_str("data".mangle())
           out.write_str(".pointer = (")
           out.write_str(type("U8").mangle())
@@ -3234,6 +3263,8 @@ fun compile_to_c(mono: Mono): Slice[U8] {
           out.write_char('")
           out.write_str("; _")
           out.write(i)
+          out.write_str(".")
+          out.write_str("bytes".mangle())
           out.write_str(".")
           out.write_str("len".mangle())
           out.write_str(".value = ")
