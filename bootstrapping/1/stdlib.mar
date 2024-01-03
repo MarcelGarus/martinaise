@@ -555,6 +555,11 @@ fun println[T](value: T) { print(value) println() }
 fun println() { stdout().write_char(newline()) }
 fun prints(message: Slice[U8]) { stdout().write_str(message) }
 fun printsln(message: Slice[U8]) { prints(message) println() }
+fun eprint[T](value: T) { stderr().write(value) }
+fun eprintln[T](value: T) { eprint(value) eprintln() }
+fun eprintln() { stderr().write_char(newline()) }
+fun eprints(message: Slice[U8]) { stderr().write_str(message) }
+fun eprintsln(message: Slice[U8]) { eprints(message) eprintln() }
 fun newline(): U8 { 10_U8 } | TODO: refactor to var when we have global vars
 fun tab(): U8 { 9_U8 } | TODO: refactor to global var
 fun write_char[W](writer: W, char: U8) { writer.write_byte(char) }

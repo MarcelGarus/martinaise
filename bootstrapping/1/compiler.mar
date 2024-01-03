@@ -67,11 +67,11 @@ fun clear_terminal() {
 fun print_on_same_line(message: Slice[U8]) {
   | TODO: abstractions for control sequences in stdlib
   | \x1b[1A\x1b[K
-  | stdout().write_byte(27_U8)
-  | prints("[1A")
-  | stdout().write_byte(27_U8)
-  | prints("[K")
-  printsln(message)
+  stderr().write_byte(27_U8)
+  eprints("[1A")
+  stderr().write_byte(27_U8)
+  eprints("[K")
+  eprintsln(message)
 }
 
 | Types  
@@ -1576,7 +1576,6 @@ fun print_status(context: Context) {
     out.write_str("...")
   }
   print_on_same_line(out.to_slice())
-  stdout().write_char(newline())
 }
 
 fun monomorphize(ast: Ast): Result[Mono, Slice[U8]] {
@@ -3365,20 +3364,27 @@ fun parse_command(command: Slice[U8]): Maybe[Command] {
   none[Command]()
 }
 
-fun print_usage_info() {
-  printsln("Usage: martinaise <command> <file>")
-  printsln("")
-  printsln("Commands:")
-  printsln("  help     prints this help")
-  printsln("  ast      shows the abstract syntax tree")
-  printsln("  mono     shows the monomorphized code")
-  printsln("  c        compiles to C")
-  printsln("  compile  compiles to an executable")
-  printsln("  run      compiles and runs")
-  printsln("  watch    watches, compiles, and runs")
-  printsln("")
-  printsln("For the ast, mono, and c commands, you can specify an output file ")
-  printsln("using -O <output>.")
+fun print_usage_info(out: File) {
+  out.write_str("Usage: martinaise <command> <file>")
+  out.write_char(newline())
+  out.write_str("")
+  out.write_char(newline())
+  out.write_str("Commands:")
+  out.write_char(newline())
+  out.write_str("  help     prints this help")
+  out.write_char(newline())
+  out.write_str("  ast      shows the abstract syntax tree")
+  out.write_char(newline())
+  out.write_str("  mono     shows the monomorphized code")
+  out.write_char(newline())
+  out.write_str("  c        compiles to C")
+  out.write_char(newline())
+  out.write_str("  compile  compiles to an executable")
+  out.write_char(newline())
+  out.write_str("  run      compiles and runs")
+  out.write_char(newline())
+  out.write_str("  watch    watches, compiles, and runs")
+  out.write_char(newline())
 }
 
 | Runs the pipeline that matches the command. Errors are handled internally
@@ -3414,7 +3420,7 @@ fun run_pipeline(command: Command, file_path: Slice[U8]): Bool {
     })
     switch parse(input, stdlib_size)
     case ok(ast) ast
-    case error(err) { printsln(err) return false() }
+    case error(err) { eprintsln(err) return false() }
   }
   if command is ast then { println(ast) return true() }
 
@@ -3443,6 +3449,7 @@ fun run_pipeline(command: Command, file_path: Slice[U8]): Bool {
   }
   if command is c then { printsln(c) return true() }
 
+  todo()
   write_file("output.c", c)
   if command is compile then {
     return true()
@@ -3510,24 +3517,23 @@ fun run_pipeline(command: Command, file_path: Slice[U8]): Bool {
   true()
 }
 
-fun wrong_usage(): Never { print_usage_info() exit(1_U8) }
+fun wrong_usage(): Never { print_usage_info(stderr()) exit(1_U8) }
 
 fun main(args: Slice[Slice[U8]]) {
-  printsln("Welcome to Martinaise in Martinaise.")
-  printsln("Let's go!")
+  eprintsln("Welcome to Martinaise in Martinaise.")
 
   | Ways to use this program:
   | - martinaise help
-  | - martinaise ast <file> [-O <output>]
-  | - martinaise mono <file> [-O <output>]
-  | - martinaise c <file> [-O <output>]
-  | - martinaise compile <file> [-O <output>]
+  | - martinaise ast <file>
+  | - martinaise mono <file>
+  | - martinaise c <file>
+  | - martinaise compile <file>
   | - martinaise run <file> [-- <additonal args>]
   | Note the program name itself is also an additional argument at the front.
   if args.len.is_less_than(2) then wrong_usage()
   var command = parse_command(args.get(1)) orelse wrong_usage()
   if command is help then {
-    print_usage_info()
+    print_usage_info(stdout())
     exit(0_U8)
   }
   if args.len.is_less_than(3) then wrong_usage()
