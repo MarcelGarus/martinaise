@@ -1,27 +1,15 @@
-struct Tree[T] { value: T, children: Vec[Tree[T]] }
-fun tree[T](value: T, children: Vec[Tree[T]]): Tree[T] { Tree[T] { value, children } }
-fun tree[T](value: T): Tree[T] { Tree[T] { value, children = vec[Tree[T]]() } }
-fun write[W, T](writer: W, tree: Tree[T]) {
-  writer.write_char(tree.value)
-  for child in tree.children do writer.write(child)
+fun ok(): Result[U64, U64] { ok[U64, U64](1) }
+fun parse_type(): Result[U64, U64] { ok() }
+fun parse_type_args(): Result[U64, U64] {
+  parse_type()?
+  ok()
 }
-
 fun main(): Never {
-  var tree = tree('H, vec(
-    tree('e, vec(
-      tree('l),
-      tree('l),
-    )),
-    tree('o),
-  ))
-  println(tree)
+  false() orelse printsln("Hi")
+  some(3) orelse panic("bad")
+  println(none[U64]() orelse 2)
+  println(ok[U64, U64](0) orelse 2)
+  println(error[U64, U64](0) orelse 2)
 
   exit(0_U8)
 }
-
-|fun map[T, X](maybe: Maybe[T], mapper: T -> X): Maybe[X] {
-|  return match maybe {
-|    case Some t -> Some mapper(t),
-|    case None -> None,
-|  };
-|}

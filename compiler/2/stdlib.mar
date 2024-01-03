@@ -285,6 +285,33 @@ fun hash[O, E](hasher: &Hasher, result: Result[O, E]) {
   case error(e) { hasher.hash('e) hasher.hash(e) }
 }
 
+| Orelse  
+| Martinaise has an orelse keyword. For example, you can write the following
+| code:
+|
+| list.is_empty() orelse panic()
+| var foo = maybe_foo orelse fallback_foo
+| var int = result_of_int orelse(error) error.len
+|
+| Internally, the orelse keyword calls the to_orelse() function on the left
+| hand side. This should return an Orelse.
+enum Orelse[P, S] { primary: P, secondary: S }
+fun to_orelse(bool: Bool): Orelse[Nothing, Nothing] {
+  if bool
+  then Orelse[Nothing, Nothing].primary({})
+  else Orelse[Nothing, Nothing].secondary({})
+}
+fun to_orelse[T](maybe: Maybe[T]): Orelse[T, Nothing] {
+  if maybe is some(t)
+  then Orelse[T, Nothing].primary(t)
+  else Orelse[T, Nothing].secondary({})
+}
+fun to_orelse[O, E](result: Result[O, E]): Orelse[O, E] {
+  switch result
+  case ok(o) Orelse[O, E].primary(o)
+  case error(e) Orelse[O, E].secondary(e)
+}
+
 | Memory  
 | Martinaise supports references: &T is a reference to a T. You can get a
 | reference to a value using the expr.& syntax. You can follow a reference

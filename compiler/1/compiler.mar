@@ -988,20 +988,29 @@ fun parse_expr_suffix_assign(parser: &Parser, current: AstExpr): Result[Maybe[As
 
 fun parse_expr_suffix_orelse(parser: &Parser, current: AstExpr): Result[Maybe[AstExpr], Slice[U8]] {
   parser.consume_keyword("orelse") orelse return no_match[AstExpr]()
+  var binding = if parser.consume_prefix("(") is some
+    then {
+      var name = parser.parse_lower_name()
+        orelse return bad_input[AstExpr]("Expected orelse binding.")
+      parser.consume_prefix(")")
+        orelse return bad_input[AstExpr]("Expected closing parenthesis.")
+      some(name)
+    }
+    else none[Slice[U8]]()
   var alternative = parser.parse_expr()?
     orelse return bad_input[AstExpr](
       "Expected alternative expression after orelse.")
   parsed(AstExpr.switch_(AstSwitch {
-    value = current.put_on_heap(), | TODO: call some function
+    value = current.member("to_orelse").call().put_on_heap(),
     cases = vec(
       AstCase {
-        variant = "some",
-        binding = some("a"),
-        then_ = AstExpr.name("a").put_on_heap(),
+        variant = "primary",
+        binding = some("$primary"),
+        then_ = AstExpr.name("$primary").put_on_heap(),
       },
       AstCase {
-        variant = "none",
-        binding = none[Slice[U8]](),
+        variant = "secondary",
+        binding,
         then_ = alternative.put_on_heap(),
       },
     ),
@@ -2158,8 +2167,9 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       var unspecialized_type = make_struct.type
       if make_struct.type.args.is_empty().and(struct_.type_args.is_not_empty())
       then for arg in struct_.type_args do
-        unspecialized_type.args.&.push(type(arg))
-      var type = unspecialized_type.monomorphize(type_env, self.ast, self.mono)?
+        unspecialized_type.args.&.push(
+          type(arg).monomorphize(type_env, self.ast, self.mono)?)
+      var type = unspecialized_type.monomorphize(self.type_env, self.ast, self.mono)?
 
       var slot = self.slot_expr(self.add_slot(type))
       for field in fields do {
@@ -2247,8 +2257,9 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       var unspecialized_type = make_enum.type
       if make_enum.type.args.is_empty().and(enum_.type_args.is_not_empty())
       then for a in enum_.type_args do
-        unspecialized_type.args.&.push(type(a))
-      var type = unspecialized_type.monomorphize(type_env, self.ast, self.mono)?
+        unspecialized_type.args.&.push(
+          type(a).monomorphize(type_env, self.ast, self.mono)?)
+      var type = unspecialized_type.monomorphize(self.type_env, self.ast, self.mono)?
 
       var slot = self.add_slot(type)
       self.put(MonoStatement.set_enum(MonoSetEnum {

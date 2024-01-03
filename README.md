@@ -48,5 +48,5 @@ The standard library the compiler uses is always in the same folder as the compi
 For example, compiler 1 can be compiled using compiler 0.
 It uses the compiler 1 stdlib, but it's designed to compile the compiler 2 stdlib.
 
-- 0: First compiler written in Zig.
+- 0: The first compiler, written in Zig.
 - 1: A compiler written in Martinaise.
