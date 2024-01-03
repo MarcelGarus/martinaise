@@ -13,7 +13,6 @@
 | Language todos  
 | TODO: int radixes
 | TODO: str type, char type
-| TODO: custom orelse
 | TODO: type aliases
 | TODO: validate all signatures before lowering
 | TODO: validate field in make struct
@@ -40,7 +39,11 @@ fun ignore[T](value: T) {}
 
 | Never and Panics  
 | A type with zero instances. Some expressions always abort control flow, for
-| example `return 3`. These evaluate to the Never type.
+| example `return 3`. These evaluate to the Never type. Because Never is never
+| instanciated, it can be assigned to anything:
+|
+| foo.some_bool = return "Hi"
+| 2.add(break 9)
 enum Never {}
 fun halt(): Never { loop {} }
 fun libc_exit(status: U8): Nothing { ... }
@@ -97,6 +100,108 @@ fun write[W](writer: W, b: Bool) {
   writer.write_str(if b then "true" else "false")
 }
 fun hash(hasher: &Hasher, value: Bool) { hasher.hash(if value then 0 else 1) }
+
+| Maybe  
+| Represents optional values. Like Option in Rust, but with the cooler Haskell
+| name. Martinaise has an orelse keyword, which you can write after a Maybe[T]
+| to get the underlying T if it's a some, or execute the expression after the
+| orelse if it's a none:
+| - Maybe[U8].some(2_U8) orelse 3_U8 = 2_U8
+| - Maybe[U8].none orelse 3_U8 = 3_U8
+enum Maybe[T] { some: T, none }
+fun some[T](value: T): Maybe[T] { Maybe.some(value) }
+fun none[T](): Maybe[T] { Maybe[T].none }
+fun unwrap[T](maybe: Maybe[T]): T { maybe orelse panic("called none.unwrap") }
+fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { inner orelse none[T]() }
+fun is_some[T](maybe: Maybe[T]): Bool {
+  switch maybe case some true() case none false()
+}
+fun is_none[T](maybe: Maybe[T]): Bool {
+  switch maybe case some false() case none true()
+}
+fun write[W, T](writer: W, maybe: Maybe[T]) {
+  switch maybe
+  case some(val) {
+    writer.write_str("some(")
+    writer.write(val)
+    writer.write_char('))
+  }
+  case none writer.write_str("none")
+}
+fun equals[T](a: Maybe[T], b: Maybe[T]): Bool {
+  switch a
+  case some(aa) { switch b case some(bb) aa.equals(bb) case none false() }
+  case none b.is_none()
+}
+fun hash[T](hasher: &Hasher, value: Maybe[T]) {
+  switch value
+  case some(inner) {
+    hasher.hash('s)
+    hasher.hash(inner)
+  }
+  case none hasher.hash('n)
+}
+
+| Result  
+| The result of something that can either work or fail.
+enum Result[O, E] { ok: O, error: E }
+fun ok[O, E](o: O): Result[O, E] { Result[O, E].ok(o) }
+fun error[O, E](e: E): Result[O, E] { Result[O, E].error(e) }
+fun unwrap[O, E](result: Result[O, E]): O {
+  switch result case ok(o) o case error(e) panic("called error.unwrap")
+}
+fun write[W, O, E](writer: W, result: Result[O, E]) {
+  switch result
+  case ok(o) {
+    writer.write_str("ok(")
+    writer.write(o)
+    writer.write_char('))
+  }
+  case error(e) {
+    writer.write_str("error(")
+    writer.write(e)
+    writer.write_char('))
+  }
+}
+fun equals[O, E](a: Result[O, E], b: Result[O, E]): Bool {
+  switch a
+  case ok(ao) { switch b case ok(bo) ao.equals(bo) case error false() }
+  case error(ae) { switch b case error(be) ae.equals(be) case ok false() }
+}
+fun hash[O, E](hasher: &Hasher, result: Result[O, E]) {
+  switch result
+  case ok(o) { hasher.hash('o) hasher.hash(o) }
+  case error(e) { hasher.hash('e) hasher.hash(e) }
+}
+
+| Orelse  
+| Martinaise has an orelse keyword. For example, you can write the following
+| code:
+|
+| vec.is_empty() orelse panic("expected list to be empty")
+| var foo = maybe_foo orelse fallback_foo
+| var int = result_of_int orelse(error) error.len
+|
+| Internally, the orelse keyword calls the to_orelse() function on the left
+| hand side. This should return an Orelse[P, S]. If it's a primary P, the
+| alternative expression is never evaluated and the P is returned. If it's a
+| secondary S, orelse expression is evaluated.
+enum Orelse[P, S] { primary: P, secondary: S }
+fun to_orelse(bool: Bool): Orelse[Nothing, Nothing] {
+  if bool
+  then Orelse[Nothing, Nothing].primary({})
+  else Orelse[Nothing, Nothing].secondary({})
+}
+fun to_orelse[T](maybe: Maybe[T]): Orelse[T, Nothing] {
+  if maybe is some(t)
+  then Orelse[T, Nothing].primary(t)
+  else Orelse[T, Nothing].secondary({})
+}
+fun to_orelse[O, E](result: Result[O, E]): Orelse[O, E] {
+  switch result
+  case ok(o) Orelse[O, E].primary(o)
+  case error(e) Orelse[O, E].secondary(e)
+}
 
 | Int  
 | Integers are built into the language. There are several types with different
@@ -211,106 +316,6 @@ fun is_at_least[T](a: T, b: T): Bool { a.compare_to(b).is_greater_or_equal() }
 fun is_at_most[T](a: T, b: T): Bool { a.compare_to(b).is_less_or_equal() }
 fun min[T](a: T, b: T): T { if a.is_less_than(b) then a else b }
 fun max[T](a: T, b: T): T { if a.is_greater_than(b) then a else b }
-
-| Maybe  
-| Represents optional values. Like Option in Rust, but with the cooler Haskell
-| name. Martinaise has an orelse keyword, which you can write after a Maybe[T]
-| to get the underlying T if it's a some, or execute the expression after the
-| orelse if it's a none:
-| - Maybe[U8].some(2_U8) orelse 3_U8 = 2_U8
-| - Maybe[U8].none orelse 3_U8 = 3_U8
-enum Maybe[T] { some: T, none }
-fun some[T](value: T): Maybe[T] { Maybe.some(value) }
-fun none[T](): Maybe[T] { Maybe[T].none }
-fun unwrap[T](maybe: Maybe[T]): T { maybe orelse panic("called none.unwrap") }
-fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { inner orelse none[T]() }
-fun is_some[T](maybe: Maybe[T]): Bool {
-  switch maybe case some true() case none false()
-}
-fun is_none[T](maybe: Maybe[T]): Bool {
-  switch maybe case some false() case none true()
-}
-fun write[W, T](writer: W, maybe: Maybe[T]) {
-  switch maybe
-  case some(val) {
-    writer.write_str("some(")
-    writer.write(val)
-    writer.write_char('))
-  }
-  case none writer.write_str("none")
-}
-fun equals[T](a: Maybe[T], b: Maybe[T]): Bool {
-  switch a
-  case some(aa) { switch b case some(bb) aa.equals(bb) case none false() }
-  case none b.is_none()
-}
-fun hash[T](hasher: &Hasher, value: Maybe[T]) {
-  switch value
-  case some(inner) {
-    hasher.hash('s)
-    hasher.hash(inner)
-  }
-  case none hasher.hash('n)
-}
-
-| Result  
-| The result of something that can either work or fail.
-enum Result[O, E] { ok: O, error: E }
-fun ok[O, E](o: O): Result[O, E] { Result[O, E].ok(o) }
-fun error[O, E](e: E): Result[O, E] { Result[O, E].error(e) }
-fun unwrap[O, E](result: Result[O, E]): O {
-  switch result case ok(o) o case error(e) panic("called error.unwrap")
-}
-fun write[W, O, E](writer: W, result: Result[O, E]) {
-  switch result
-  case ok(o) {
-    writer.write_str("ok(")
-    writer.write(o)
-    writer.write_char('))
-  }
-  case error(e) {
-    writer.write_str("error(")
-    writer.write(e)
-    writer.write_char('))
-  }
-}
-fun equals[O, E](a: Result[O, E], b: Result[O, E]): Bool {
-  switch a
-  case ok(ao) { switch b case ok(bo) ao.equals(bo) case error false() }
-  case error(ae) { switch b case error(be) ae.equals(be) case ok false() }
-}
-fun hash[O, E](hasher: &Hasher, result: Result[O, E]) {
-  switch result
-  case ok(o) { hasher.hash('o) hasher.hash(o) }
-  case error(e) { hasher.hash('e) hasher.hash(e) }
-}
-
-| Orelse  
-| Martinaise has an orelse keyword. For example, you can write the following
-| code:
-|
-| list.is_empty() orelse panic()
-| var foo = maybe_foo orelse fallback_foo
-| var int = result_of_int orelse(error) error.len
-|
-| Internally, the orelse keyword calls the to_orelse() function on the left
-| hand side. This should return an Orelse.
-enum Orelse[P, S] { primary: P, secondary: S }
-fun to_orelse(bool: Bool): Orelse[Nothing, Nothing] {
-  if bool
-  then Orelse[Nothing, Nothing].primary({})
-  else Orelse[Nothing, Nothing].secondary({})
-}
-fun to_orelse[T](maybe: Maybe[T]): Orelse[T, Nothing] {
-  if maybe is some(t)
-  then Orelse[T, Nothing].primary(t)
-  else Orelse[T, Nothing].secondary({})
-}
-fun to_orelse[O, E](result: Result[O, E]): Orelse[O, E] {
-  switch result
-  case ok(o) Orelse[O, E].primary(o)
-  case error(e) Orelse[O, E].secondary(e)
-}
 
 | Memory  
 | Martinaise supports references: &T is a reference to a T. You can get a
