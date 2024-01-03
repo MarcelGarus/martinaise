@@ -1,6 +1,5 @@
 zig-out
 zig-cache
-tmp
 
-output.c
-a.out
+/martinaise_*
+/martinaise

@@ -20,7 +20,7 @@ const is_linux = @import("builtin").os.tag == .linux;
 const Command = enum { ast, mono, compile, run, watch };
 
 pub fn main() !u8 {
-    std.debug.print("Welcome to the Martinaise.\n", .{});
+    std.debug.print("Welcome to Martinaise.\n", .{});
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const alloc = gpa.allocator();
