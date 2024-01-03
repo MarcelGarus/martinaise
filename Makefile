@@ -1,16 +1,16 @@
-martinaise: martinaise_1 bootstrapping/1/stdlib.mar
+martinaise: martinaise_1 compiler/1/stdlib.mar
 	cp martinaise_1 martinaise
-	cp bootstrapping/1/stdlib.mar stdlib.mar
+	cp compiler/1/stdlib.mar stdlib.mar
 
-martinaise_0: $(wildcard bootstrapping/0/src/*) bootstrapping/0/build.zig
+martinaise_0: $(wildcard compiler/0/src/*) compiler/0/build.zig
 	@echo "# Martinaise 0"
-	cd bootstrapping/0; \
+	cd compiler/0; \
 		zig build
-	cp bootstrapping/0/zig-out/bin/martinaise martinaise_0
+	cp compiler/0/zig-out/bin/martinaise martinaise_0
 
-martinaise_1: martinaise_0 $(wildcard bootstrapping/1/*)
+martinaise_1: martinaise_0 $(wildcard compiler/1/*)
 	@echo "# Martinaise 1"
-	cd bootstrapping/1; \
+	cd compiler/1; \
 		./../../martinaise_0 compile compiler.mar; \
 		cc output.c -o ../../martinaise_1; \
 		rm output.c
