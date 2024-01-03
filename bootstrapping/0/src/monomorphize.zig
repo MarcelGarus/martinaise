@@ -63,7 +63,48 @@ pub fn monomorphize(alloc: std.mem.Allocator, program: ast.Program) !Result(mono
         try monomorphizer.ty_defs.put(try numbers.int_ty(alloc, config), .builtin_ty);
     }
 
-    const main = (try monomorphizer.lookup_fun("main", &[_]Ty{}, &[_]Ty{})).fun;
+    const main = find_main: {
+        var args_u8 = ArrayList(Ty).init(alloc);
+        try args_u8.append(Ty.named("U8"));
+        const slice_u8 = .{ .name = "Slice", .args = args_u8.items };
+
+        var args_slice_u8 = ArrayList(Ty).init(alloc);
+        try args_slice_u8.append(slice_u8);
+        const slice_slice_u8 = Ty{ .name = "Slice", .args = args_slice_u8.items };
+        _ = try monomorphizer.compile_type(slice_slice_u8);
+
+        if (monomorphizer.lookup_fun("main", &[_]Ty{}, &[_]Ty{slice_slice_u8})) |main_with_args| {
+            break :find_main main_with_args.fun;
+        } else |err| {
+            if (err != error.CompileError) return err;
+
+            monomorphizer.err = String.init(alloc);
+            if (monomorphizer.lookup_fun("main", &[_]Ty{}, &[_]Ty{})) |_| {
+                var body = ArrayList(ast.Expr).init(alloc);
+                const main_name = try alloc.create(ast.Expr);
+                main_name.* = .{ .name = "main" };
+                try body.append(.{ .call = .{ .callee = main_name, .args = &[_]ast.Expr{} } });
+
+                var args = std.StringArrayHashMap(Ty).init(alloc);
+                try args.put("args", slice_slice_u8);
+                const fun = ast.Fun{
+                    .name = "main",
+                    .ty_args = &[_]Str{},
+                    .args = args,
+                    .returns = Ty.named("Nothing"),
+                    .is_builtin = false,
+                    .body = body.items,
+                };
+                break :find_main fun;
+            } else |_| {
+                return .{ .err = 
+                \\ Your program must have one of these functions:
+                \\ - main(Slice[Slice[U8]])
+                \\ - main()
+                };
+            }
+        }
+    };
 
     const main_signature = FunMonomorphizer.compile(&monomorphizer, main, TyEnv.init(alloc)) catch |error_| {
         if (error_ != error.CompileError) return error_;

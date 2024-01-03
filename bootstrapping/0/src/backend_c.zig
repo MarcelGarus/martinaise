@@ -449,10 +449,22 @@ pub fn compile_to_c(alloc: std.mem.Allocator, the_mono: mono.Mono) !String {
             try format(out, "}}\n", .{});
         }
 
-        try format(out, "\n// actual main function\n", .{});
-        try format(out, "int main() {{\n", .{});
-        try format(out, "  {s}();\n", .{try mangle(alloc, "main()")});
-        try format(out, "}}", .{});
+        try format(out,
+            \\// actual main function
+            \\int main(int argc, char** argv) {{
+            \\   mar_Slice_of_U8_end_ args_data[argc];
+            \\   for (int i = 0; i < argc; i++) {{
+            \\       args_data[i].mar_data.pointer = (mar_U8*) argv[i];
+            \\       int len = 0;
+            \\       while (argv[i][len] != '\0') len++;
+            \\       args_data[i].mar_len.value = len;
+            \\   }}
+            \\   mar_Slice_of_Slice_of_U8_end__end_ args;
+            \\   args.mar_data.pointer = args_data;
+            \\   args.mar_len.value = argc;
+            \\   mar_main_withargs_Slice_of_Slice_of_U8_end__end__end_(args);
+            \\ }}
+        , .{});
     }
 
     return out_buffer;
