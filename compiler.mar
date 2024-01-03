@@ -3408,14 +3408,32 @@ fun compile_to_c(mono: Mono): Slice[U8] {
 | The command line interface which you use to interact with the Martinaise
 | compiler.
 
-enum Command { ast, mono, c, compile, run, watch }
-fun parse_command(command: Slice[U8]): Command {
-  if command.equals("ast") then return Command.ast
-  if command.equals("mono") then return Command.mono
-  if command.equals("c") then return Command.c
-  if command.equals("compile") then return Command.compile
-  if command.equals("run") then return Command.run
-  if command.equals("watch") then return Command.watch
+enum Command { help, ast, mono, c, compile, run, watch }
+fun parse_command(command: Slice[U8]): Maybe[Command] {
+  if command.equals("help") then return some(Command.help)
+  if command.equals("ast") then return some(Command.ast)
+  if command.equals("mono") then return some(Command.mono)
+  if command.equals("c") then return some(Command.c)
+  if command.equals("compile") then return some(Command.compile)
+  if command.equals("run") then return some(Command.run)
+  if command.equals("watch") then return some(Command.watch)
+  none[Command]()
+}
+
+fun print_usage_info() {
+  printsln("Usage: martinaise <command> <file>")
+  printsln("")
+  printsln("Commands:")
+  printsln("  help     prints this help")
+  printsln("  ast      shows the abstract syntax tree")
+  printsln("  mono     shows the monomorphized code")
+  printsln("  c        compiles to C")
+  printsln("  compile  compiles to an executable")
+  printsln("  run      compiles and runs")
+  printsln("  watch    watches, compiles, and runs")
+  printsln("")
+  printsln("For the ast, mono, and c commands, you can specify an output file ")
+  printsln("using -O <output>.")
 }
 
 | Runs the pipeline that matches the command. Errors are handled internally
@@ -3480,22 +3498,101 @@ fun run_pipeline(command: Command, file_path: Slice[U8]): Bool {
   }
   if command is c then { printsln("=====") printsln(c) return true() }
 
-  write_file("output2.c", c)
+  write_file("output.c", c)
   if command is compile then {
     return true()
   }
 
+  | { // Compile to C
+  |       print_on_same_line("Compiling {s} to C\n", .{file_path});
+  |       const c_code = try compile_to_c(alloc, the_mono);
+  |       var output_file = try std.fs.cwd().createFile("output.c", .{});
+  |       defer output_file.close();
+  |       try std.fmt.format(output_file.writer(), "{s}\n", .{c_code.items});
+  |   }
+  |   if (command == .compile) {
+  |       std.debug.print("Compiled to output.c. Enjoy!\n", .{});
+  |       return true;
+  |   }
+
+  |   { // Compile C
+  |       print_on_same_line("Compiling C using GCC\n", .{});
+  |       var gcc = std.ChildProcess.init(&[_]Str{ "gcc", "output.c" }, alloc);
+  |       gcc.stdout = std.io.getStdOut();
+  |       gcc.stderr = std.io.getStdErr();
+  |       const worked = switch (try gcc.spawnAndWait()) {
+  |           .Exited => |code| code == 0,
+  |           else => false,
+  |       };
+  |       if (!worked) {
+  |           std.debug.print("Compiling C using GCC failed.\n", .{});
+  |           return false;
+  |       }
+  |   }
+
+  |   { // Run it
+  |       print_on_same_line("Running {s}\n", .{file_path});
+  |       var program = std.ChildProcess.init(&[_]Str{"./a.out"}, alloc);
+  |       program.stdout = std.io.getStdOut();
+  |       program.stderr = std.io.getStdErr();
+  |       const start = std.time.nanoTimestamp();
+  |       const wait_result = try program.spawnAndWait();
+  |       const end = std.time.nanoTimestamp();
+  |       const runtime: usize = @intCast(end - start);
+  |       std.debug.print("\n", .{});
+  |       switch (wait_result) {
+  |           .Exited => |code| {
+  |               std.debug.print("Program exited with {d} after {d} ms.\n", .{
+  |                   code,
+  |                   @divTrunc(runtime, 1000000),
+  |               });
+  |           },
+  |           .Signal => |signal| {
+  |               std.debug.print("Program was signalled {d}.\n", .{signal});
+  |               return error.ProgramSignaled;
+  |           },
+  |           .Stopped => |val| {
+  |               std.debug.print("Program stopped because of {d}.\n", .{val});
+  |               return error.Todo;
+  |           },
+  |           .Unknown => |val| {
+  |               std.debug.print("Waiting for program completed with unknown wait result {d}.\n", .{val});
+  |               return error.Todo;
+  |           },
+  |       }
+  |   }
+
   true()
 }
 
-fun main() {
+fun wrong_usage(): Never { print_usage_info() exit(1_U8) }
+
+fun main(args: Slice[Slice[U8]]) {
   printsln("Welcome to Martinaise in Martinaise.")
   printsln("Let's go!")
 
-  | TODO: Add CLI parsing
-  var command = Command.compile
-  var file_path = "advent/day1.mar"
+  | Ways to use this program:
+  | - martinaise help
+  | - martinaise ast <file> [-O <output>]
+  | - martinaise mono <file> [-O <output>]
+  | - martinaise c <file> [-O <output>]
+  | - martinaise compile <file> [-O <output>]
+  | - martinaise run <file> [-- <additonal args>]
+  | Note the program name itself is also an additional argument at the front.
+  if args.len.is_less_than(2) then wrong_usage()
+  var command = parse_command(args.get(1)) orelse wrong_usage()
+  if command is help then {
+    print_usage_info()
+    exit(0_U8)
+  }
+  if args.len.is_less_than(3) then wrong_usage()
+  var file_path = args.get(2)
 
+  | TODO: support -O <output>
+  | TODO: throw if additional args are given
+  | TODO: support -- and additional args for the run command
+
+  | TODO: support the watch command
   var was_successful = run_pipeline(command, file_path)
 
   exit(if was_successful then 0_U8 else 1_U8)
