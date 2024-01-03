@@ -50,5 +50,6 @@ It uses the compiler 1 stdlib, but it's designed to compile the compiler 2 stdli
 
 - 0: The first compiler, written in Zig.
 - 1: A compiler written in Martinaise.
-  - makes orelse customizable (not just work on Maybe)
-  - introduces Str, Char, OsStr
+  - makes `orelse` customizable (not just work on `Maybe`)
+  - introduces `Str`, `Char`, `OsStr`
+  - ints support radixes such as `8#666`

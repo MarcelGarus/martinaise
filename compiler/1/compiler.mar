@@ -682,18 +682,25 @@ fun parse_expr_suffix(parser: &Parser, expr: AstExpr): Result[Maybe[AstExpr], Sl
   no_match[AstExpr]()
 }
 
-fun parse_digits(parser: &Parser): Result[Maybe[U64], Slice[U8]] {
-  parser.consume_whitespace()
+fun parse_digits(parser: &Parser, radix: U64): Result[Maybe[U64], Slice[U8]] {
   var start = parser.cursor
   var num = 0
+  if radix.is_greater_than(10.add(26))
+  then return bad_input[U64]("The radix is too big.")
   loop {
     var char = parser.current()
-    if '0.until('9).contains(char) then {
-      num = num.multiply(10).add(char.subtract('0).to_U64()) | TODO: put in stdlib
+    if '0.to('0.add(min(radix, 10).to_U8())).contains(char) then {
+      num = num.multiply(radix).add(char.subtract('0).to_U64())
       parser.advance()
+      continue
     }
-    else if char.equals('_) then parser.advance()
-    else break
+    if radix.is_at_least(10) then
+      if 'a.to('a.add(min(radix.subtract(10), 26).to_U8())).contains(char) then {
+        num = num.multiply(radix).add(char.subtract('a).add(10_U8).to_U64())
+        parser.advance()
+        continue
+      }
+    if char.equals('_) then parser.advance() else break
   }
   if parser.cursor.equals(start) then return no_match[U64]()
   if parser.code.get(parser.cursor.dec()).equals('_)
@@ -702,7 +709,13 @@ fun parse_digits(parser: &Parser): Result[Maybe[U64], Slice[U8]] {
 }
 
 fun parse_int(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
-  var value = parser.parse_digits()? orelse return no_match[AstExpr]()
+  parser.consume_whitespace()
+  var value = parser.parse_digits(10)? orelse return no_match[AstExpr]()
+  if parser.consume_prefix("#") is some then {
+    var radix = value
+    value = parser.parse_digits(radix)? orelse return bad_input[AstExpr](
+      "Expected the value of the number after the radix pound.")
+  }
   parser.consume_prefix("_")
     orelse return parsed(AstExpr.int(Int {
       value,
@@ -712,7 +725,7 @@ fun parse_int(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
     if parser.consume_prefix("I") is some then Signedness.signed
     else if parser.consume_prefix("U") is some then Signedness.unsigned
     else return bad_input[AstExpr]("Expected a signedness (U or I).")
-  var bits = parser.parse_digits()?
+  var bits = parser.parse_digits(10)?
     orelse return bad_input[AstExpr]("Expected bit length of the integer.")
   | TODO: check that number fits in range
   parsed(AstExpr.int(Int { value, config = IntConfig { signedness, bits } }))
@@ -968,8 +981,12 @@ fun parse_expr_suffix_call(parser: &Parser, current: AstExpr): Result[Maybe[AstE
     parser.consume_prefix(",") orelse break
   }
   parser.consume_prefix(")")
-    orelse return bad_input[AstExpr](
+    orelse {
+      eprintsln("args = ")
+      for arg in args do stderr().write(0, arg)
+      return bad_input[AstExpr](
       "Expected closing parenthesis of the call.")
+    }
   parsed(current.call(type_args, args))
 }
 

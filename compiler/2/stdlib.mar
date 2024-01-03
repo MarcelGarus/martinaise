@@ -11,7 +11,6 @@
 | deleting code in this file because that may crash the compiler.
 
 | Language todos  
-| TODO: int radixes
 | TODO: type aliases
 | TODO: validate all signatures before lowering
 | TODO: validate field in make struct
@@ -711,16 +710,16 @@ fun libc_read(file: U64, buf: U64, len: U64): U64 { ... }
 fun libc_write(file: U64, buf: U64, len: U64): U64 { ... }
 fun libc_close(file: U64): U8 { ... }
 
-fun libc_open_flag_rdonly(): U64 { 0 } | 0o0
-fun libc_open_flag_wronly(): U64 { 1 } | 0o1
-fun libc_open_flag_rdwr(): U64 { 2 } | 0o2
-fun libc_open_flag_create(): U64 { 64 } | 0o100
-fun libc_open_flag_trunc(): U64 { 512 } | 0o1000
-fun libc_open_flag_append(): U64 { 1024 } | 0o2000
+fun libc_open_flag_rdonly(): U64 { 8#0000 }
+fun libc_open_flag_wronly(): U64 { 8#0001 }
+fun libc_open_flag_rdwr(): U64   { 8#0002 }
+fun libc_open_flag_create(): U64 { 8#0100 }
+fun libc_open_flag_trunc(): U64  { 8#1000 }
+fun libc_open_flag_append(): U64 { 8#2000 }
 
 struct File { descriptor: U64 }
-enum OpenFileFlag { read, write, create, truncate, append }
 
+enum OpenFileFlag { read, write, create, truncate, append }
 fun hash(hasher: &Hasher, flag: OpenFileFlag) {
   hasher.hash(
     switch flag
@@ -804,7 +803,7 @@ fun write_file(name: Str, content: Slice[U8]) {
     name,
     vec(OpenFileFlag.write, OpenFileFlag.create, OpenFileFlag.truncate)
       .to_set(),
-    438 | 0b666: read and write access for everyone
+    8#666 | read and write access for everyone
   ) orelse panic("unable to open file")
   for byte in content do file.write_byte(byte)
   file.close()

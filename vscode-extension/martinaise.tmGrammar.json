@@ -45,6 +45,10 @@
       "match": "\\b[0-9][0-9_]*(_(U8|U16|U32|U64|I8|I16|I32|I64))?\\b"
     },
     {
+      "name": "constant.numeric",
+      "match": "#[0-9a-fA-F]*(_(U8|U16|U32|U64|I8|I16|I32|I64))?\\b"
+    },
+    {
       "name": "entity.name.function",
       "match": "([a-z][a-zA-Z_0-9]*)(?=\\s*(\\(|\\[))"
     },
