@@ -214,7 +214,6 @@ enum AstExpr {
   int: Int,                   | 0_U32
   str: Slice[U8],             | "foo"
   name: Slice[U8],            | foo
-  type_arged: AstTypeArged,   | ...[T] | TODO: remove
   call: AstCall,              | ...(arg)
   make_struct: AstMakeStruct, | Foo { a = ... }
   make_enum: AstMakeEnum,     | Maybe.some(5)
@@ -230,7 +229,11 @@ enum AstExpr {
   body: Vec[AstExpr],         | { ... }
 }
 struct AstTypeArged { expr: &AstExpr, type_args: Vec[Type] }
-struct AstCall { callee: &AstExpr, args: Vec[AstExpr] }
+struct AstCall {
+  callee: &AstExpr,
+  type_args: Maybe[Vec[Type]],
+  args: Vec[AstExpr],
+}
 struct AstMakeStruct { type: Type, fields: Vec[AstMakeStructField] }
 struct AstMakeStructField { name: Slice[U8], value: AstExpr }
 struct AstMakeEnum { type: Type, variant: Slice[U8], arg: &AstExpr }
@@ -240,9 +243,15 @@ struct AstAssign { to: &AstExpr, value: &AstExpr }
 struct AstSwitch { value: &AstExpr, cases: Vec[AstCase], default_: Maybe[&AstExpr] }
 struct AstCase { variant: Slice[U8], binding: Maybe[Slice[U8]], then_: &AstExpr }
 
-fun call(expr: AstExpr, args: Vec[AstExpr]): AstExpr {
-  AstExpr.call(AstCall { callee = expr.put_on_heap(), args })
+fun call(
+  expr: AstExpr, type_args: Maybe[Vec[Type]], args: Vec[AstExpr]
+): AstExpr {
+  AstExpr.call(AstCall { callee = expr.put_on_heap(), type_args, args })
 }
+fun call(expr: AstExpr, args: Vec[AstExpr]): AstExpr {
+  expr.call(none[Vec[Type]](), args)
+}
+fun call(expr: AstExpr): AstExpr { expr.call(vec[AstExpr]()) }
 fun member(expr: AstExpr, name: Slice[U8]): AstExpr {
   AstExpr.member(AstMember { of = expr.put_on_heap(), name })
 }
@@ -370,12 +379,10 @@ fun write[W](writer: W, indent: U64, expr: AstExpr) {
     writer.write_char('")
   }
   case name(name) writer.write_str(name)
-  case type_arged(type_arged) {
-    writer.write(indent, type_arged.expr.*)
-    writer.write_type_args(type_arged.type_args)
-  }
   case call(call) {
     writer.write(indent, call.callee.*)
+    if call.type_args is some(type_args)
+    then writer.write_type_args(type_args)
     writer.write_char('()
     var first = true()
     for arg in call.args do {
@@ -668,8 +675,6 @@ fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]
 fun parse_expr_suffix(parser: &Parser, expr: AstExpr): Result[Maybe[AstExpr], Slice[U8]] {
   if parser.parse_expr_suffix_member(expr)? is some(m) then return parsed(m)
   if parser.parse_expr_suffix_call(expr)? is some(c) then return parsed(c)
-  | TODO: remove
-  if parser.parse_expr_suffix_type_arged(expr)? is some(t) then return parsed(t)
   if parser.parse_expr_suffix_assign(expr)? is some(a) then return parsed(a)
   if parser.parse_expr_suffix_orelse(expr)? is some(o) then return parsed(o)
   if parser.parse_expr_suffix_try(expr)? is some(t) then return parsed(t)
@@ -879,11 +884,10 @@ fun parse_for(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
   var expr = parser.parse_expr()?
     orelse return bad_input[AstExpr]("Expected a loop expression.")
   parsed(AstExpr.body(vec(
-    var_("$iter", iter.member("iter").call(vec[AstExpr]()).member("&")),
+    var_("$iter", iter.member("iter").call().member("&")),
     AstExpr.loop_(AstExpr.body(vec(
       var_(iter_var, AstExpr.switch_(AstSwitch {
-        value = AstExpr.name("$iter").member("next").call(vec[AstExpr]())
-          .put_on_heap(),
+        value = AstExpr.name("$iter").member("next").call().put_on_heap(),
         cases = vec(
           AstCase {
             variant = "some",
@@ -945,7 +949,12 @@ fun parse_expr_suffix_member(parser: &Parser, current: AstExpr): Result[Maybe[As
 }
 
 fun parse_expr_suffix_call(parser: &Parser, current: AstExpr): Result[Maybe[AstExpr], Slice[U8]] {
-  parser.consume_prefix("(") orelse return no_match[AstExpr]()
+  var type_args = parser.parse_type_args()?
+  parser.consume_prefix("(")
+    orelse return
+      if type_args is some
+      then bad_input[AstExpr]("Expected an opening parenthesis.")
+      else no_match[AstExpr]()
   var args = vec[AstExpr]()
   loop {
     args.&.push(parser.parse_expr()? orelse break)
@@ -954,7 +963,7 @@ fun parse_expr_suffix_call(parser: &Parser, current: AstExpr): Result[Maybe[AstE
   parser.consume_prefix(")")
     orelse return bad_input[AstExpr](
       "Expected closing parenthesis of the call.")
-  parsed(current.call(args))
+  parsed(current.call(type_args, args))
 }
 
 fun parse_expr_suffix_type_arged(parser: &Parser, current: AstExpr): Result[Maybe[AstExpr], Slice[U8]] {
@@ -2057,7 +2066,6 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
   stdout().write_char(newline())
   ok[MonoExpr,Slice[U8]](
     switch expr
-    | TODO: unify ints over compile stages
     case int(int) self.slot_expr(self.add_slot(
       int.config.to_type(),
       MonoSlotValue.int(int.value),
@@ -2078,48 +2086,41 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
           out.to_slice()
         })
     )
-    | TODO: catch this in the parser
-    case type_arged(type_arged) return error[MonoExpr, Slice[U8]](
-      "There's an expression with type arguments which is not a call.")
     case call(call) {
-      var callee = call.callee.*
-      | TODO: do this in the parser
-      var type_args =
-        switch callee
-        case type_arged(type_arged) {
-          callee = type_arged.expr.*
-          var type_args = vec[Type]()
-          for arg in type_arged.type_args do
-            type_args.&.push(
-              arg.monomorphize(self.type_env, self.ast, self.mono)?)
-          some(type_args)
-        }
-        default none[Vec[Type]]()
-      var compiled_callee = none[MonoExpr]()
+      var callee = none[MonoExpr]()
       var name =
-        switch callee
-        | Calls of the form `something.name()` cause `something` to be treated
-        | like an extra argument at the beginning.
-        case member(member) {
-          compiled_callee = some(self.compile(member.of.*)?)
-          member.name
-        } 
+        switch call.callee.*
+        | foo(a, b)
         case name(name) name
+        | a.foo(b)
+        case member(member) {
+          callee = some(self.compile(member.of.*)?)
+          member.name
+        }
         default return error[MonoExpr, Slice[U8]]({
           var out = vec[U8]().&
           out.write_str("You tried to call this expression:")
           out.write_char(newline())
           out.write_str("> ")
-          out.write(2, callee)
+          out.write(2, call.callee.*)
           out.write_char(newline())
           out.write_str("This expression can't be called.")
           out.to_slice()
         })
+      var type_args =
+        switch call.type_args
+        case some(type_args) {
+          var mono_type_args = vec[Type]()
+          for arg in type_args do
+            mono_type_args.&.push(
+              arg.monomorphize(self.type_env, self.ast, self.mono)?)
+          some(mono_type_args)
+        }
+        case none none[Vec[Type]]()
       var args = vec[MonoExpr]() {
         for arg in call.args do args.&.push(self.compile(arg)?)
       }
-
-      self.compile_call(name, compiled_callee, type_args, args)?
+      self.compile_call(name, callee, type_args, args)?
     }
     case make_struct(make_struct) {
       var struct_ =
@@ -2308,7 +2309,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
     }
     case member(member) {
       var of = self.compile(member.of.*)?
-      | expr.& references the member
+      | expr.& references the of
       if member.name.equals("&")
       then {
         var ref_type = type("&", vec(of.type))
@@ -2404,6 +2405,33 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       self.put(MonoStatement.assign(MonoAssign { to, value }))
       nothing_expr()
     }
+    | Switch  
+    | Switches are lowered to a jump table. Here's an example of a switch and
+    | how it will be compiled:
+    |
+    | switch value
+    | case foo foo
+    | case bar(bar) bar
+    | default baz
+    |
+    | _0: Result <- the result slot
+    | _1: Bar <- slot for bar binding
+    | ...
+    | jump_if_variant value foo label_0 ──┐
+    | jump_if_variant value bar label_1 ──┼─┐
+    | jump label_2  ──────────────────────┼─┼─┐
+    | label_0: <──────────────────────────┘ │ │
+    | _0 = foo                              │ │
+    | jump label_3 ─────────────────>┐      │ │
+    | label_1: <─────────────────────┼──────┘ │
+    | _1 = get_enum_value value bar  │        │
+    | _0 = bar                       │        │
+    | jump label_3 ─────────────────>┤        │
+    | label_2: <─────────────────────┼────────┘
+    | _0 = baz                       │
+    | jump label_3 ─────────────────>┤
+    | label_3: <─────────────────────┘
+    | ...
     case switch_(switch_) {
       var result = self.add_slot(type(""))
       var type = none[Type]()
@@ -2477,33 +2505,6 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
             out.to_slice()
           })
 
-      | Jump table  
-      | The jumps have to be patched in later because we don't know yet where we
-      | want to jump. At the end, there will be a jumpf_if_variant in the jump
-      | table for every case.
-      |
-      | Here's an example of a switch and how it will be compiled:
-      |
-      | switch value
-      | case Foo foo
-      | case Bar(bar) bar
-      | default baz
-      |
-      | TODO: update
-      |  _0 = value
-      |  _1 = uninitialized (will be the result of the switch)
-      |  _2 = jump_if_variant _0 Foo _7 ───┐
-      |  _3 = jump_if_variant _0 Bar _10 ──┼─┐
-      |  _4 = baz                          │ │
-      |  _5 = _1 = _4                      │ │
-      |  _6 = jump _13 ────────────────────┼─┼─>┐
-      |  _7 = foo <────────────────────────┘ │  │
-      |  _8 = _1 = _6                        │  │
-      |  _9 = jump _13 ──────────────────────┼─>┤
-      | _10 = get_enum_value _0 Bar <────────┘  │
-      | _11 = _1 = _10                          │
-      | _12 = jump _13 ────────────────────────>┤
-      | _13 = ... <─────────────────────────────┘
       var jump_table_jumps = map[Slice[U8], U64]()
       for case_ in switch_.cases do
         jump_table_jumps.&.put(case_.variant, self.put_placeholder())
@@ -2516,8 +2517,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       var after_switch_jumps = vec[U64]()
 
       | Case bodies
-      for i in 0.to(switch_.cases.len) do {
-        var case_ = switch_.cases.get(i)
+      for case_ in switch_.cases do {
         var label = self.put_label()
         self.update(
           jump_table_jumps.get(case_.variant).unwrap(),
@@ -2600,8 +2600,31 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       self.update_slot_type(result, type orelse type("Never"))
       self.slot_expr(result)
     }
+    | Loop  
+    | Loops are lowered to two labels – one before and one after the loop.
+    | Breaks, continues, and the loop itself each compile to a single jump to
+    | one of those labels. Here's an example of a loop and how it will be
+    | compiled:
+    |
+    | loop {
+    |   ...
+    |   continue
+    |   ...
+    |   break(5)
+    | }
+    |
+    | _0: Result <- the result slot
+    | ...
+    | label_0: <────────┐
+    | ...               │
+    | jump label_0 ────>┤
+    | ...               │
+    | jump label_1 ──┐  │
+    | ...            │  │
+    | jump label_0 ──┼─>┘
+    | label_1: <─────┘
+    | ...
     case loop_(expr) {
-      | TODO: graphic of how this is lowered
       var result = self.add_slot(type(""))
       self.break_scopes.&.push(BreakScope {
         | TODO: turn this into an expr
