@@ -61,25 +61,31 @@ fun assert(condition: Bool) { if not(condition) then panic("assert failed") }
 fun not_equals[T](a: T, b: T): Bool { not(a.equals(b)) }
 
 | Hashing  
-| You should implement a hash(T, Hasher) function for types that can be hashed.
+| You should implement a hash(Hasher, T) function for types that can be hashed.
 | In this function, they can contribute some uniqueness/entropy to the Hasher by
-| calling its contribute(U64) function. The Hasher uses the djb2 algorithm.
-| TODO: refactor so there's only a hash fun
+| calling other hash functions on it. In the end, all hash functions boil down
+| to hash(&Hasher, U64). The Hasher uses the djb2 algorithm.
 fun hash[T](value: T): U64 {
-  var h = Hasher { state = 5381 }
-  value.hash(h.&)
-  h.state
+  var hasher = Hasher { state = 5381 }
+  hasher.&.hash(value)
+  hasher.state
 }
 struct Hasher { state: U64 }
-fun contribute(hasher: &Hasher, val: U64) {
+fun hash(hasher: &Hasher, val: U64) {
   hasher.state = hasher.state.multiply(33).add(val)
 }
+
+| Emptiness  
+| Do you sometimes feel empty inside? Some collections in the stdlib do so as
+| well! In fact, they often have an is_empty function. For convencience, we also
+| define an is_not_empty function.
+fun is_not_empty[T](container: T): Bool { not(container.is_empty()) }
 
 | Bool  
 | The usual boolean values true and false. Martinaise's if expects a Bool as the
 | condition: if true() then 0_U8 else 1_U8
 enum Bool { true, false }
-fun true(): Bool { Bool.true }
+fun true(): Bool { Bool.true } | TODO: make these global vars once that works
 fun false(): Bool { Bool.false }
 fun equals(a: Bool, b: Bool): Bool { if a then b else not(b) }
 fun not(a: Bool): Bool { if a then false() else true() }
@@ -90,9 +96,7 @@ fun implies(a: Bool, b: Bool): Bool { if a then b else true() }
 fun write[W](writer: W, b: Bool) {
   writer.write_str(if b then "true" else "false")
 }
-fun hash(value: Bool, hasher: &Hasher) {
-  hasher.contribute(if value then 0 else 1)
-}
+fun hash(hasher: &Hasher, value: Bool) { hasher.hash(if value then 0 else 1) }
 
 | Int  
 | Integers are built into the language. There are several types with different
@@ -130,14 +134,13 @@ fun equals(a: I8, b: I8): Bool { a.compare_to(b).is_equal() }
 fun equals(a: I16, b: I16): Bool { a.compare_to(b).is_equal() }
 fun equals(a: I32, b: I32): Bool { a.compare_to(b).is_equal() }
 fun equals(a: I64, b: I64): Bool { a.compare_to(b).is_equal() }
-fun hash(value: U8, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
-fun hash(value: U16, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
-fun hash(value: U32, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
-fun hash(value: U64, hasher: &Hasher) { hasher.contribute(value) }
-fun hash(value: I8, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
-fun hash(value: I16, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
-fun hash(value: I32, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
-fun hash(value: I64, hasher: &Hasher) { hasher.contribute(value.to_U64()) }
+fun hash(hasher: &Hasher, value: U8) { hasher.hash(value.to_U64()) }
+fun hash(hasher: &Hasher, value: U16) { hasher.hash(value.to_U64()) }
+fun hash(hasher: &Hasher, value: U32) { hasher.hash(value.to_U64()) }
+fun hash(hasher: &Hasher, value: I8) { hasher.hash(value.to_U64()) }
+fun hash(hasher: &Hasher, value: I16) { hasher.hash(value.to_U64()) }
+fun hash(hasher: &Hasher, value: I32) { hasher.hash(value.to_U64()) }
+fun hash(hasher: &Hasher, value: I64) { hasher.hash(value.to_U64()) }
 fun write_with_radix[W](writer: W, radix: U64, int: U64) {
   var divisor = 1
   loop {
@@ -194,11 +197,8 @@ fun equals(a: Ordering, b: Ordering): Bool {
   case equal b.is_equal()
   case greater b.is_greater()
 }
-fun hash[Hasher](ord: Ordering, hasher: Hasher) {
-  switch ord
-  case less 'l.hash(hasher)
-  case equal 'e.hash(hasher)
-  case greater 'g.hash(hasher)
+fun hash(hasher: &Hasher, ord: Ordering) {
+  hasher.hash(switch ord case less 'l case equal 'e case greater 'g)
 }
 fun write[W](writer: W, ord: Ordering) {
   writer.write_str(
@@ -244,13 +244,13 @@ fun equals[T](a: Maybe[T], b: Maybe[T]): Bool {
   case some(aa) { switch b case some(bb) aa.equals(bb) case none false() }
   case none b.is_none()
 }
-fun hash[T](value: Maybe[T], hasher: &Hasher) {
+fun hash[T](hasher: &Hasher, value: Maybe[T]) {
   switch value
   case some(inner) {
-    's.hash(hasher)
-    inner.hash(hasher)
+    hasher.hash('s)
+    hasher.hash(inner)
   }
-  case none 'n.hash(hasher)
+  case none hasher.hash('n)
 }
 
 | Result  
@@ -279,10 +279,10 @@ fun equals[O, E](a: Result[O, E], b: Result[O, E]): Bool {
   case ok(ao) { switch b case ok(bo) ao.equals(bo) case error false() }
   case error(ae) { switch b case error(be) ae.equals(be) case ok false() }
 }
-fun hash[O, E](result: Result[O, E], hasher: &Hasher) {
+fun hash[O, E](hasher: &Hasher, result: Result[O, E]) {
   switch result
-  case ok(o) { 'o.hash(hasher) o.hash(hasher) }
-  case error(e) { 'e.hash(hasher) e.hash(hasher) }
+  case ok(o) { hasher.hash('o) hasher.hash(o) }
+  case error(e) { hasher.hash('e) hasher.hash(e) }
 }
 
 | Memory  
@@ -389,8 +389,8 @@ fun equals[T](a: Slice[T], b: Slice[T]): Bool {
   | TODO: support for types that only have equals, not compare_to
   if a.len.equals(b.len) then compare_to(a, b).is_equal() else false()
 }
-fun hash[T](slice: Slice[T], hasher: &Hasher) {
-  for item in slice do item.hash(hasher)
+fun hash[T](hasher: &Hasher, slice: Slice[T]) {
+  for item in slice do hasher.hash(item)
 }
 fun write[W, T](writer: W, slice: Slice[T]) {
   writer.write_char('[)
@@ -457,8 +457,8 @@ fun libc_open_flag_append(): U64 { 1024 } | 0o2000
 
 struct File { descriptor: U64 }
 enum OpenFileFlag { read, write, create, truncate, append }
-fun hash(flag: OpenFileFlag, hasher: &Hasher) {
-  hasher.contribute(
+fun hash(hasher: &Hasher, flag: OpenFileFlag) {
+  hasher.hash(
     switch flag
     case read 0
     case write 1

@@ -10,6 +10,10 @@
     },
     {
       "name": "keyword.control",
+      "match": "\\b(if|then|else|switch|default|orelse|loop|for|in|do|break|continue|return)\\b"
+    },
+    {
+      "name": "keyword.control",
       "match": "case\\s+([a-zA-Z_0-9]*)",
       "captures": {
         "1": {
@@ -25,10 +29,6 @@
           "name": "emphasis"
         }
       }
-    },
-    {
-      "name": "keyword.control",
-      "match": "\\b(if|is|then|else|switch|case|default|orelse|loop|for|in|do|break|continue|return)\\b"
     },
     { "include": "#comments" },
     {

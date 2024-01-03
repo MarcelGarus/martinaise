@@ -1,19 +1,58 @@
 | The Martinaise Compiler  
 | This is the compiler for Martinaise, written in Martinaise.
-| TODO: This is far from finished.
+|
+| This file is pretty long, but I tried to write the code in an order so that it
+| can be read from top to bottom. Comment sections introduce new concepts as you
+| read along.
+|
+| I really recommend reading this with syntax highlighting enabled.
+| If you use VS Code: There's a vscode_extension folder in this project. You can
+|   open only that folder (File > Open Folder) and then in the debug panel
+|   (default: ctrl + shift + D), you can run the extension. This will open a new
+|   VS Code window. If you manage to create a .vsix extension, feel welcome to
+|   give it to me to add to the repo – my local npm setup seems to not like the
+|   commands given in the official guide.
+| If you don't use VS Code: There's a tree text mate grammar in the
+|   vscode_extension folder. Good luck!
+|
+| TODO: what you should know when reading this
+|
+| Bootstrapping  
+| TODO: write this when Martinaise is bootstrapped
+|
+| Rough overview  
+| Like many compilers, the Martinaise compiler works in stages:
 | 
+| ┌──────┐ parsing ┌─────┐ monomorphization ┌──────┐ lowering ┌───┐ gcc ┌─────┐
+| │ Code │ ──────> │ AST │ ───────────────> │ Mono | ───────> │ C │ ──> │ Exe |
+| └──────┘         └─────┘                  └──────┘          └───┘     └─────┘
+|
+| - Code: It starts with source code, read as a string.
+| - AST (Abstract Syntax Tree): The source code is parsed into a tree that
+|   roughly corresponds to the code.
+| - Mono (Monomorphized Tree): When functions get used, for each combination of
+|   type arguments, a new version of the function is compiled. In the Mono
+|   stage, all functions only take concrete types – there is no generic code
+|   anymore.
+| - C: Just plain C code.
+| - Exe: The executable produced by GCC. Of course, you can also let your C
+|   compiler do other stuff such as compiling everything into a WebAssembly
+|   module so it can be deployed to a website.
+|
 | Glossary  
+| I'm not generally a fan of abbreviations, but for concepts that pop up
+| everywhere in the compiler, reading long names gets tedious. Here's a list of
+| abbreviations that are used throughout the code:
+|
 | arg  = argument
-| args = arguments
 | def  = definition
 | env  = environment
 | expr = expression
 | fun  = function
-| init = initialize
 | str  = string
 | var  = variable
 |
-| function signature
+| Plural forms have an s at the end (as in args or defs).
 
 | Terminal utilities  
 
@@ -36,22 +75,21 @@ fun print_on_same_line(message: Slice[U8]) {
 }
 
 | Types  
-| Types such as Int or Slice[&U8] are fundamental to Martinaise. In the
-| compiler, they are represented as a tree. For example, the Slice[&U8] type is
-| represented like this:
+| Types such as Int or Slice[&U8] are represented as a tree. For example, the
+| Slice[&U8] type is represented like this:
 |
 | Type { name = "Slice", args = [
 |   Type { name = "&", args = [
 |     Type { name = "U8", args = [] }
 |   ] }
 | ] }
-|
-| This representation of types is used throughout the AST and Mono stage of the
-| compiler.
+
 struct Type { name: Slice[U8], args: Vec[Type] }
+
 fun type(name: Slice[U8]): Type { type(name, vec[Type]()) }
 fun type(name: Slice[U8], args: Vec[Type]): Type { Type { name, args } }
 fun is_never(type: Type): Bool { type.equals(type("Never")) }
+
 fun write[W](writer: W, type: Type) {
   writer.write_str(type.name)
   if type.name.equals("&")
@@ -68,6 +106,7 @@ fun write_type_args[W](writer: W, args: Vec[Type]) {
   }
   writer.write_char('])
 }
+| TODO: merge with the fun above once there's a string type
 fun write_type_args[W](writer: W, args: Vec[Slice[U8]]) {
   if args.is_empty() then return {}
   writer.write_char('[)
@@ -78,6 +117,7 @@ fun write_type_args[W](writer: W, args: Vec[Slice[U8]]) {
   }
   writer.write_char('])
 }
+
 fun equals(a: Type, b: Type): Bool {
   if a.name.not_equals(b.name) then return false()
   if a.args.len.not_equals(b.args.len) then return false()
@@ -85,18 +125,22 @@ fun equals(a: Type, b: Type): Bool {
     if a.args.get(i).not_equals(b.args.get(i)) then return false()
   true()
 }
-fun hash(type: Type, hasher: &Hasher) {
-  type.name.hash(hasher)
-  for arg in type.args do arg.hash(hasher)
+
+fun hash(hasher: &Hasher, type: Type) {
+  hasher.hash(type.name)
+  for arg in type.args do hasher.hash(arg)
 }
 
 | Numbers  
-| Numbers such as U8 or I32 are special in Candy. These numbers and mathematical
-| functions for them are magically in scope. Because multiple stages of the
-| compiler work with numbers, here are some shared concepts.
+| Number types such such as U8 or I32 are special in Candy. These numbers and
+| mathematical functions for them are magically in scope. Here are some basic
+| concepts needed for representing numbers.
+
 enum Signedness { signed, unsigned }
 struct IntConfig { signedness: Signedness, bits: U64 }
-fun to_char(s: Signedness): U8 { switch s case signed 'I case unsigned 'U }
+| Int literals can't be negative in Martinaise.
+struct Int { value: U64, config: IntConfig }
+
 fun all_signednesses(): Vec[Signedness] {
   vec(Signedness.signed, Signedness.unsigned)
 }
@@ -108,17 +152,30 @@ fun all_int_configs(): Vec[IntConfig] {
       configs.&.push(IntConfig { signedness, bits })
   configs
 }
+
+fun to_char(s: Signedness): U8 { switch s case signed 'I case unsigned 'U }
+fun to_type(config: IntConfig): Type {
+  var name = vec[U8]()
+  name.&.write_char(config.signedness.to_char())
+  name.&.write(config.bits)
+  type(name.to_slice())
+}
+
 fun equals(a: Signedness, b: Signedness): Bool {
   a.to_char().equals(b.to_char())
 }
 fun equals(a: IntConfig, b: IntConfig): Bool {
   a.signedness.equals(b.signedness).and(a.bits.equals(b.bits))
 }
-fun to_type(config: IntConfig): Type {
-  var name = vec[U8]()
-  name.&.write_char(config.signedness.to_char())
-  name.&.write(config.bits)
-  type(name.to_slice())
+fun equals(a: Int, b: Int): Bool {
+  a.config.equals(b.config).and(a.value.equals(b.value))
+}
+
+fun write[W](writer: W, int: Int) {
+  writer.write(int.value)
+  writer.write_char('_)
+  writer.write_char(int.config.signedness.to_char())
+  writer.write(int.config.bits)
 }
 
 | The Abstract Syntax Tree  
@@ -154,7 +211,7 @@ struct AstFun {
 }
 struct AstFunArg { name: Slice[U8], type: Type }
 enum AstExpr {
-  int: AstInt,                | 0_U64
+  int: Int,                   | 0_U32
   str: Slice[U8],             | "foo"
   name: Slice[U8],            | foo
   type_arged: AstTypeArged,   | ...[T] | TODO: remove
@@ -172,7 +229,6 @@ enum AstExpr {
   try: &AstExpr,              | ...?
   body: Vec[AstExpr],         | { ... }
 }
-struct AstInt { value: U64, signedness: Signedness, bits: U64 }
 struct AstTypeArged { expr: &AstExpr, type_args: Vec[Type] }
 struct AstCall { callee: &AstExpr, args: Vec[AstExpr] }
 struct AstMakeStruct { type: Type, fields: Vec[AstMakeStructField] }
@@ -294,10 +350,7 @@ fun write_indent[W](writer: W, indent: U64) {
   for i in 0.to(indent.multiply(2)) do writer.write_char(' )
 }
 fun write_body[W](writer: W, indent: U64, body: Vec[AstExpr]) {
-  if body.is_empty() then {
-    writer.write_str("{}")
-    return {}
-  }
+  if body.is_empty() then { writer.write_str("{}") return {} }
   writer.write_char('{)
   writer.write_char(newline())
   for expr in body do {
@@ -310,12 +363,7 @@ fun write_body[W](writer: W, indent: U64, body: Vec[AstExpr]) {
 }
 fun write[W](writer: W, indent: U64, expr: AstExpr) {
   switch expr
-  case int(int) {
-    writer.write(int.value)
-    writer.write_char('_)
-    writer.write_char(int.signedness.to_char())
-    writer.write(int.bits)
-  }
+  case int(int) writer.write(int)
   case str(str) {
     writer.write_char('")
     writer.write_str(str)
@@ -339,16 +387,18 @@ fun write[W](writer: W, indent: U64, expr: AstExpr) {
   case make_struct(struct_) {
     writer.write(struct_.type)
     writer.write_str(" {")
-    writer.write_char(newline())
-    for field in struct_.fields do {
-      writer.write_indent(indent.inc())
-      writer.write_str(field.name)
-      writer.write_str(" = ")
-      writer.write(indent.inc(), field.value)
-      writer.write_char(',)
+    if struct_.fields.is_not_empty() then {
       writer.write_char(newline())
+      for field in struct_.fields do {
+        writer.write_indent(indent.inc())
+        writer.write_str(field.name)
+        writer.write_str(" = ")
+        writer.write(indent.inc(), field.value)
+        writer.write_char(',)
+        writer.write_char(newline())
+      }
+      writer.write_indent(indent)
     }
-    writer.write_indent(indent)
     writer.write_str("}")
   }
   case make_enum(enum_) {
@@ -648,8 +698,10 @@ fun parse_digits(parser: &Parser): Result[Maybe[U64], Slice[U8]] {
 fun parse_int(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
   var value = parser.parse_digits()? orelse return no_match[AstExpr]()
   parser.consume_prefix("_")
-    orelse return parsed(AstExpr.int(
-      AstInt { value, signedness = Signedness.unsigned, bits = 64 }))
+    orelse return parsed(AstExpr.int(Int {
+      value,
+      config = IntConfig { signedness = Signedness.unsigned, bits = 64 },
+    }))
   var signedness =
     if parser.consume_prefix("I") is some then Signedness.signed
     else if parser.consume_prefix("U") is some then Signedness.unsigned
@@ -657,17 +709,16 @@ fun parse_int(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
   var bits = parser.parse_digits()?
     orelse return bad_input[AstExpr]("Expected bit length of the integer.")
   | TODO: check that number fits in range
-  parsed(AstExpr.int(AstInt { value, signedness, bits }))
+  parsed(AstExpr.int(Int { value, config = IntConfig { signedness, bits } }))
 }
 
 fun parse_char(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
   parser.consume_prefix("'") orelse return no_match[AstExpr]()
   var char = parser.current()
   parser.advance()
-  parsed(AstExpr.int(AstInt {
+  parsed(AstExpr.int(Int {
     value = char.to_U64(),
-    signedness = Signedness.unsigned,
-    bits = 8,
+    config = IntConfig { signedness = Signedness.unsigned, bits = 8 }
   }))
 }
 
@@ -713,7 +764,8 @@ fun parse_make(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
         orelse return bad_input[AstExpr]("Expected a closing parenthesis.")
     }
     parsed(AstExpr.make_enum(
-      AstMakeEnum { type, variant, arg = arg.put_on_heap() }))
+      AstMakeEnum { type, variant, arg = arg.put_on_heap() }
+    ))
   }
 }
 
@@ -1196,16 +1248,8 @@ struct MonoFun {
   body: Vec[MonoStatement],
 }
 
-struct MonoSlot {
-  type: Type,
-  initial_value: MonoSlotValue,
-}
-enum MonoSlotValue {
-  uninitialized,
-  arg: U64,
-  int: U64,
-  str: Slice[U8],
-}
+struct MonoSlot { type: Type, initial_value: MonoSlotValue }
+enum MonoSlotValue { uninitialized, arg: U64, int: U64, str: Slice[U8] }
 struct MonoSlotRef { index: U64 }
 
 enum MonoStatement {
@@ -1224,7 +1268,11 @@ struct MonoAssign { to: MonoExpr, value: MonoExpr }
 struct MonoSetEnum { slot: MonoSlotRef, variant: Slice[U8], value: MonoExpr }
 struct MonoCall { to: MonoSlotRef, fun_: Slice[U8], args: Vec[MonoExpr] }
 struct MonoJump { target: MonoLabel }
-struct MonoJumpIfVariant { condition: MonoExpr, variant: Slice[U8], target: MonoLabel }
+struct MonoJumpIfVariant {
+  condition: MonoExpr,
+  variant: Slice[U8],
+  target: MonoLabel
+}
 struct MonoGetEnumValue { to: MonoSlotRef, of: MonoExpr, variant: Slice[U8] }
 struct MonoRef { to: MonoSlotRef, of: MonoExpr }
 
@@ -1407,7 +1455,7 @@ fun unify(solver: &TypeSolver, generic: Type, concrete: Type): Result[Bool, Slic
   | Under type env {A: Int}, is Str assignable to A? Depends on whether Str is
   | assignable to Int.
   if solver.env.get(generic.name) is some(mapped) then {
-    if generic.args.is_empty().not()
+    if generic.args.is_not_empty()
     then return error[Bool, Slice[U8]]("Generics can't have type arguments.")
     if solver.vars.contains(mapped.name) then unreachable()
     return solver.unify(mapped, concrete)
@@ -1476,39 +1524,43 @@ fun finish(solver: TypeSolver): Result[Map[Slice[U8], Type], Slice[U8]] {
 |   - wrap_in_foo[Foo[U8]]()
 |     - Foo[Foo[U8]]
 |
-| # Recursive functions
-|
+| Recursive functions  
 | We want to allow recursive functions without the compiler itself getting
 | into an infinitely recursing state. That's why even before a function is
 | compiled, a mock-version of it is added to the function map. When this
 | function is encountered recursively, only its signature is needed to figure
 | out how to use it.
 
-| TODO: explain type env: Maps type parameter names to fully monomorphized types
-
 | When monomorphizing fails, we want to have backtraces – a path from the main
-| function over all monomorphized function to the failing location.
-struct Context { items: Vec[Slice[U8]] }
-fun push(context: &Context, item: Slice[U8]) {
-  context.items.&.push(item)
+| function over all monomorphized function to the failing location. The Context
+| tracks what the compiler is currently doing – it's basically a stack of
+| function signatures. Every time a signature is pushed or popped, it also
+| prints a one-line message to the console, something like this:
+| 
+| Compiling main > println > print > write > write_with_radix > digit_to_char...
+struct Context { signatures: Vec[Slice[U8]] }
+fun push(context: &Context, signature: Slice[U8]) {
+  context.signatures.&.push(signature)
   context.print_status()
 }
 fun pop(context: &Context) {
-  context.items.&.pop()
+  context.signatures.&.pop()
   context.print_status()
 }
 fun print_status(context: Context) {
   var out = vec[U8]()
   out.&.write_str("Compiling ")
   var first = true()
-  for item in context.items do {
+  for signature in context.signatures do {
     if first then first = false() else out.&.write_str(" > ")
+    | Because we want many signatures to fit on one line, only write the
+    | function name up to the first opening parenthesis or bracket.
     var j = 0
     loop
-      if item.get(j).equals('().or(item.get(j).equals('[))
+      if signature.get(j).equals('().or(signature.get(j).equals('[))
       then break
       else j = j.inc()
-    out.&.write_str(item.subslice(0, j))
+    out.&.write_str(signature.subslice(0, j))
   }
   if out.len.is_greater_than(80) then {
     out.len = 77
@@ -1519,7 +1571,7 @@ fun print_status(context: Context) {
 }
 
 fun monomorphize(ast: Ast): Result[Mono, Slice[U8]] {
-  var context = Context { items = vec[Slice[U8]]() }
+  var context = Context { signatures = vec[Slice[U8]]() }
   printsln("created context")
   stdout().write_address(context.&.to_address())
   stdout().write_char(newline())
@@ -1540,9 +1592,9 @@ fun monomorphize(ast: Ast): Result[Mono, Slice[U8]] {
       var out = vec[U8]()
       out.&.write_str("Error when compiling")
       out.&.write_char(newline())
-      for item in context.items do {
+      for signature in context.signatures do {
         out.&.write_str(" - ")
-        out.&.write_str(item)
+        out.&.write_str(signature)
         out.&.write_char(newline())
       }
       out.&.write_char(newline())
@@ -1677,7 +1729,7 @@ fun lookup_fun(
         padded_signature.&.push(' )
       }
       out.&.write_str(padded_signature.to_slice())
-      if not(match.type_env.is_empty()) then {
+      if match.type_env.is_not_empty() then {
         out.&.write_str(" with ")
         for entry in match.type_env do {
           out.&.write_str(entry.key)
@@ -2007,7 +2059,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
     switch expr
     | TODO: unify ints over compile stages
     case int(int) self.slot_expr(self.add_slot(
-      IntConfig { signedness = int.signedness, bits = int.bits }.to_type(),
+      int.config.to_type(),
       MonoSlotValue.int(int.value),
     ))
     case str(str) {
@@ -2087,7 +2139,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
 
       var solver = create_type_solver(struct_.type_args)
       | TODO: Foo[] { ... } should not be treated like Foo { ... }
-      if not(make_struct.type.args.is_empty()) then {
+      if make_struct.type.args.is_not_empty() then {
         if make_struct.type.args.len.not_equals(struct_.type_args.len)
         then return error[MonoExpr, Slice[U8]]({
           var out = vec[U8]()
@@ -2118,7 +2170,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
 
         if type_in_struct is none then return error[MonoExpr, Slice[U8]]({
           var out = vec[U8]()
-          out.&.write_str("Tried to init field ")
+          out.&.write_str("Tried to initialize field ")
           out.&.write_str(name)
           out.&.write_str(" of ")
           out.&.write_str(struct_.name)
@@ -2144,7 +2196,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       var type_env = solver.finish()?
 
       var unspecialized_type = make_struct.type
-      if make_struct.type.args.is_empty().and(not(struct_.type_args.is_empty()))
+      if make_struct.type.args.is_empty().and(struct_.type_args.is_not_empty())
       then for arg in struct_.type_args do
         unspecialized_type.args.&.push(type(arg))
       var type = unspecialized_type.monomorphize(type_env, self.ast, self.mono)?
@@ -2196,7 +2248,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
 
       var solver = create_type_solver(enum_.type_args)
       | TODO: Maybe[].some(3) should not be treated like Maybe.some(3)
-      if not(make_enum.type.args.is_empty()) then {
+      if make_enum.type.args.is_not_empty() then {
         if make_enum.type.args.len.not_equals(enum_.type_args.len)
         then return error[MonoExpr, Slice[U8]]({
           var out = vec[U8]()
@@ -2241,7 +2293,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       var type_env = solver.finish()?
 
       var unspecialized_type = make_enum.type
-      if make_enum.type.args.is_empty().and(not(enum_.type_args.is_empty()))
+      if make_enum.type.args.is_empty().and(enum_.type_args.is_not_empty())
       then for a in enum_.type_args do
         unspecialized_type.args.&.push(type(a))
       var type = unspecialized_type.monomorphize(type_env, self.ast, self.mono)?
@@ -2857,12 +2909,12 @@ fun compile_to_c(mono: Mono): Slice[U8] {
     code.write_str("  return nothing;")
     builtin_funs.&.put("libc_exit(U8)", code.to_slice())
   }
-  { | libc_open(filename: U64, modes: U64): U64
+  { | libc_open(filename: U64, flags: U64, mode: U64): U64
     var code = vec[U8]().&
     code.write_str("  mar_U64 fd;")
-    code.write_str("  fd.value = (uint64_t) open((char*) arg0.value, arg1.value);")
+    code.write_str("  fd.value = (uint64_t) open((char*) arg0.value, arg1.value, arg2.value);")
     code.write_str("  return fd;")
-    builtin_funs.&.put("libc_open(U64, U64)", code.to_slice())
+    builtin_funs.&.put("libc_open(U64, U64, U64)", code.to_slice())
   }
   { | libc_read(file: U64, buf: U64, len: U64): U8
     var code = vec[U8]().&
@@ -3027,8 +3079,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
         out.write_str(type.mangle())
         out.write_str(" {")
         out.write_char(newline())
-        | TODO: define is_not_empty in stdlib
-        if not(enum_.variants.is_empty()) then {
+        if enum_.variants.is_not_empty() then {
           out.write_str("  enum {")
           out.write_char(newline())
           for variant in enum_.variants do {
@@ -3326,6 +3377,9 @@ fun compile_to_c(mono: Mono): Slice[U8] {
   }
   out.to_slice()
 }
+
+| File Watching  
+| TODO: implement
 
 | Command Line Interface  
 | The command line interface which you use to interact with the Martinaise
