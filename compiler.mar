@@ -1188,18 +1188,18 @@ fun format_error_with_context(code: Slice[U8], offset: U64, error: Slice[U8]): S
   | Now, lines contains all lines up to the line that contains the
   | error. offset_in_line is the offset into the last complete line.
   var num_lines_to_display = min(lines.len, 4)
-  var out = vec[U8]()
+  var out = vec[U8]().&
   for line_number in lines.len.subtract(num_lines_to_display).to(lines.len) do {
-    out.&.write_line_number(line_number.inc())
-    out.&.write_str(" | ")
-    out.&.write_str(lines.get(line_number).to_slice())
-    out.&.write_char(newline())
+    out.write_line_number(line_number.inc())
+    out.write_str(" | ")
+    out.write_str(lines.get(line_number).to_slice())
+    out.write_char(newline())
   }
-  for i in 0.to(7.add(offset_in_line)) do out.&.write_char(' )
-  out.&.write_char('^)
-  out.&.write_char(newline())
-  for i in 0.to(7.add(offset_in_line)) do out.&.write_char(' )
-  out.&.write_str(error)
+  for i in 0.to(7.add(offset_in_line)) do out.write_char(' )
+  out.write_char('^)
+  out.write_char(newline())
+  for i in 0.to(7.add(offset_in_line)) do out.write_char(' )
+  out.write_str(error)
   out.to_slice()
 }
 fun write_line_number[W](writer: W, n: U64) {
@@ -1478,22 +1478,22 @@ fun finish(solver: TypeSolver): Result[Map[Slice[U8], Type], Slice[U8]] {
   for var_ in solver.vars do
     if not(solver.env.contains(var_)) then
       return error[Map[Slice[U8], Type], Slice[U8]]({
-        var out = vec[U8]()
+        var out = vec[U8]().&
         if solver.env.size.is_greater_than(0) then {
-          out.&.write_str("These type variables are bound:")
-          out.&.write_char(newline())
+          out.write_str("These type variables are bound:")
+          out.write_char(newline())
           for entry in solver.env do {
-            out.&.write_str("- ")
-            out.&.write_str(entry.key)
-            out.&.write_str(" = ")
-            out.&.write(entry.value)
-            out.&.write_char(newline())
+            out.write_str("- ")
+            out.write_str(entry.key)
+            out.write_str(" = ")
+            out.write(entry.value)
+            out.write_char(newline())
           }
         }
-        out.&.write_str("The type variable ")
-        out.&.write_str(var_)
-        out.&.write_str(" is unbound.")
-        out.&.write_char(newline())
+        out.write_str("The type variable ")
+        out.write_str(var_)
+        out.write_str(" is unbound.")
+        out.write_char(newline())
         out.to_slice()
       })
 
@@ -1548,11 +1548,11 @@ fun pop(context: &Context) {
   context.print_status()
 }
 fun print_status(context: Context) {
-  var out = vec[U8]()
-  out.&.write_str("Compiling ")
+  var out = vec[U8]().&
+  out.write_str("Compiling ")
   var first = true()
   for signature in context.signatures do {
-    if first then first = false() else out.&.write_str(" > ")
+    if first then first = false() else out.write_str(" > ")
     | Because we want many signatures to fit on one line, only write the
     | function name up to the first opening parenthesis or bracket.
     var j = 0
@@ -1560,11 +1560,11 @@ fun print_status(context: Context) {
       if signature.get(j).equals('().or(signature.get(j).equals('[))
       then break
       else j = j.inc()
-    out.&.write_str(signature.subslice(0, j))
+    out.write_str(signature.subslice(0, j))
   }
   if out.len.is_greater_than(80) then {
     out.len = 77
-    out.&.write_str("...")
+    out.write_str("...")
   }
   print_on_same_line(out.to_slice())
   stdout().write_char(newline())
@@ -1589,27 +1589,27 @@ fun monomorphize(ast: Ast): Result[Mono, Slice[U8]] {
     switch main.monomorphize(map[Slice[U8], Type](), context.&, ast, mono.&)
     case ok(signature) signature
     case error(error) return error[Mono, Slice[U8]]({
-      var out = vec[U8]()
-      out.&.write_str("Error when compiling")
-      out.&.write_char(newline())
+      var out = vec[U8]().&
+      out.write_str("Error when compiling")
+      out.write_char(newline())
       for signature in context.signatures do {
-        out.&.write_str(" - ")
-        out.&.write_str(signature)
-        out.&.write_char(newline())
+        out.write_str(" - ")
+        out.write_str(signature)
+        out.write_char(newline())
       }
-      out.&.write_char(newline())
-      out.&.write_str(error)
+      out.write_char(newline())
+      out.write_str(error)
       out.to_slice()
     })
 
   var return_type = mono.funs.get(main_signature).unwrap().return_type
   if not(return_type.is_never())
   then return error[Mono, Slice[U8]]({
-    var out = vec[U8]()
-    out.&.write_str("The main function should return Never, but it returns ")
-    out.&.write(return_type)
-    out.&.write_str(". You can call exit(U8) if you want the program to stop.")
-    out.&.write_char(newline())
+    var out = vec[U8]().&
+    out.write_str("The main function should return Never, but it returns ")
+    out.write(return_type)
+    out.write_str(". You can call exit(U8) if you want the program to stop.")
+    out.write_char(newline())
     out.to_slice()
   })
 
@@ -1631,21 +1631,21 @@ fun lookup_type(ast: Ast, name: Slice[U8]): Result[AstDef, Slice[U8]] {
     if name.equals(def.name()) then matches.&.push(def)
 
   if matches.is_empty() then return error[AstDef, Slice[U8]]({
-    var out = vec[U8]()
-    out.&.write_str("There is no type named ")
-    out.&.write_char('")
-    out.&.write_str(name)
-    out.&.write_char('")
-    out.&.write_str(".")
+    var out = vec[U8]().&
+    out.write_str("There is no type named ")
+    out.write_char('")
+    out.write_str(name)
+    out.write_char('")
+    out.write_str(".")
     out.to_slice()
   })
   if matches.len.is_greater_than(1) then return error[AstDef, Slice[U8]]({
-    var out = vec[U8]()
-    out.&.write_str("There are multiple types named ")
-    out.&.write_char('")
-    out.&.write_str(name)
-    out.&.write_char('")
-    out.&.write_str(".")
+    var out = vec[U8]().&
+    out.write_str("There are multiple types named ")
+    out.write_char('")
+    out.write_str(name)
+    out.write_char('")
+    out.write_str(".")
     out.to_slice()
   })
   ok[AstDef, Slice[U8]](matches.get(0))
@@ -1685,56 +1685,56 @@ fun lookup_fun(
   }
 
   if full_matches.is_empty() then return error[LookupFunSolution, Slice[U8]]({
-    var out = vec[U8]()
-    out.&.write_str("This call doesn't work:")
-    out.&.write_char(newline())
-    out.&.write_str("> ")
-    out.&.write_call_signature(name, type_args, arg_types)
-    out.&.write_char(newline())
-    out.&.write_char(newline())
+    var out = vec[U8]().&
+    out.write_str("This call doesn't work:")
+    out.write_char(newline())
+    out.write_str("> ")
+    out.write_call_signature(name, type_args, arg_types)
+    out.write_char(newline())
+    out.write_char(newline())
     if name_matches.is_empty()
     then {
-      out.&.write_str("There are no definitions named ")
-      out.&.write_char('")
-      out.&.write_str(name)
-      out.&.write_char('")
-      out.&.write_str(".")
+      out.write_str("There are no definitions named ")
+      out.write_char('")
+      out.write_str(name)
+      out.write_char('")
+      out.write_str(".")
     }
     else {
-      out.&.write_str("These definitions have the same name, but arguments don't match:")
+      out.write_str("These definitions have the same name, but arguments don't match:")
       for match in name_matches do {
-        out.&.write_char(newline())
-        out.&.write_str("- ")
-        out.&.write_signature(AstDef.fun_(match))
+        out.write_char(newline())
+        out.write_str("- ")
+        out.write_signature(AstDef.fun_(match))
       }
     }
     out.to_slice()
   })
   if full_matches.len.is_greater_than(1) then return error[LookupFunSolution, Slice[U8]]({
-    var out = vec[U8]()
-    out.&.write_str("This call doesn't work:")
-    out.&.write_char(newline())
-    out.&.write_str("> ")
-    out.&.write_call_signature(name, type_args, arg_types)
-    out.&.write_char(newline())
-    out.&.write_char(newline())
-    out.&.write_str("Multiple definitions match:")
+    var out = vec[U8]().&
+    out.write_str("This call doesn't work:")
+    out.write_char(newline())
+    out.write_str("> ")
+    out.write_call_signature(name, type_args, arg_types)
+    out.write_char(newline())
+    out.write_char(newline())
+    out.write_str("Multiple definitions match:")
     for match in full_matches do {
-      out.&.write_char(newline())
-      out.&.write_str("- ")
+      out.write_char(newline())
+      out.write_str("- ")
       var padded_signature = vec[U8]()
       padded_signature.&.write_signature(AstDef.fun_(match.fun_))
       loop {
         if padded_signature.len.is_at_least(30) then break
         padded_signature.&.push(' )
       }
-      out.&.write_str(padded_signature.to_slice())
+      out.write_str(padded_signature.to_slice())
       if match.type_env.is_not_empty() then {
-        out.&.write_str(" with ")
+        out.write_str(" with ")
         for entry in match.type_env do {
-          out.&.write_str(entry.key)
-          out.&.write_str(" = ")
-          out.&.write(entry.value)
+          out.write_str(entry.key)
+          out.write_str(" = ")
+          out.write(entry.value)
         }
       }
     }
@@ -1788,14 +1788,14 @@ fun monomorphize(
     var inner_type_env = map[Slice[U8], Type]()
     if type.args.len.not_equals(struct_.type_args.len)
     then return error[Type, Slice[U8]]({
-      var out = vec[U8]()
-      out.&.write_str("You tried to use a ")
-      out.&.write(type)
-      out.&.write_str(", but ")
-      out.&.write_str(struct_.name)
-      out.&.write_str(" takes ")
-      out.&.write(struct_.type_args.len)
-      out.&.write_str(" type arguments.")
+      var out = vec[U8]().&
+      out.write_str("You tried to use a ")
+      out.write(type)
+      out.write_str(", but ")
+      out.write_str(struct_.name)
+      out.write_str(" takes ")
+      out.write(struct_.type_args.len)
+      out.write_str(" type arguments.")
       out.to_slice()
     })
     for i in 0.to(type.args.len) do
@@ -1821,14 +1821,14 @@ fun monomorphize(
     var inner_type_env = map[Slice[U8], Type]()
     if type.args.len.not_equals(enum_.type_args.len)
     then return error[Type, Slice[U8]]({
-      var out = vec[U8]()
-      out.&.write_str("You tried to use a ")
-      out.&.write(type)
-      out.&.write_str(", but ")
-      out.&.write_str(enum_.name)
-      out.&.write_str(" takes ")
-      out.&.write(enum_.type_args.len)
-      out.&.write_str(" type arguments.")
+      var out = vec[U8]().&
+      out.write_str("You tried to use a ")
+      out.write(type)
+      out.write_str(", but ")
+      out.write_str(enum_.name)
+      out.write_str(" takes ")
+      out.write(enum_.type_args.len)
+      out.write_str(" type arguments.")
       out.to_slice()
     })
     for i in 0.to(type.args.len) do
@@ -1866,15 +1866,15 @@ fun monomorphize(
   printsln("arg types ")
   println(arg_types)
   var signature = {
-    var out = vec[U8]()
-    out.&.write_str(fun_.name)
-    out.&.write_type_args(type_args)
-    out.&.write_char('()
+    var out = vec[U8]().&
+    out.write_str(fun_.name)
+    out.write_type_args(type_args)
+    out.write_char('()
     for i in 0.to(fun_.args.len) do {
-      if i.is_greater_than(0) then out.&.write_str(", ")
-      out.&.write(arg_types.get(i))
+      if i.is_greater_than(0) then out.write_str(", ")
+      out.write(arg_types.get(i))
     }
-    out.&.write_char('))
+    out.write_char('))
     out.to_slice()
   }
   printsln(signature)
@@ -2017,26 +2017,26 @@ fun new_returned_type(self: &CompileFun, returned: Type): Result[Nothing, Slice[
   | TODO: Allow placeholders in types
   if not(returned.equals(self.expected_return_type))
   then return error[Nothing, Slice[U8]]({
-    var out = vec[U8]()
-    out.&.write_str("This function should return ")
-    out.&.write(self.expected_return_type)
-    out.&.write_str(", but it returns ")
-    out.&.write(returned)
-    out.&.write_str(".")
+    var out = vec[U8]().&
+    out.write_str("This function should return ")
+    out.write(self.expected_return_type)
+    out.write_str(", but it returns ")
+    out.write(returned)
+    out.write_str(".")
     out.to_slice()
   })
 
   if self.return_type is some(expected_type)
   then if not(returned.equals(expected_type))
     then return error[Nothing, Slice[U8]]({
-      var out = vec[U8]()
-      out.&.write_str("This function returns multiple different types.")
-      out.&.write_char(newline())
-      out.&.write_str("previous > ")
-      out.&.write(expected_type)
-      out.&.write_char(newline())
-      out.&.write_str("current  > ")
-      out.&.write(returned)
+      var out = vec[U8]().&
+      out.write_str("This function returns multiple different types.")
+      out.write_char(newline())
+      out.write_str("previous > ")
+      out.write(expected_type)
+      out.write_char(newline())
+      out.write_str("current  > ")
+      out.write(returned)
       out.to_slice()
     })
 
@@ -2070,11 +2070,11 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
     case name(name) self.slot_expr(
       self.vars.get(name)
         orelse return error[MonoExpr, Slice[U8]]({
-          var out = vec[U8]()
-          out.&.write_char('")
-          out.&.write_str(name)
-          out.&.write_char('")
-          out.&.write_str(" is not in scope.")
+          var out = vec[U8]().&
+          out.write_char('")
+          out.write_str(name)
+          out.write_char('")
+          out.write_str(" is not in scope.")
           out.to_slice()
         })
     )
@@ -2106,13 +2106,13 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         } 
         case name(name) name
         default return error[MonoExpr, Slice[U8]]({
-          var out = vec[U8]()
-          out.&.write_str("You tried to call this expression:")
-          out.&.write_char(newline())
-          out.&.write_str("> ")
-          out.&.write(2, callee)
-          out.&.write_char(newline())
-          out.&.write_str("This expression can't be called.")
+          var out = vec[U8]().&
+          out.write_str("You tried to call this expression:")
+          out.write_char(newline())
+          out.write_str("> ")
+          out.write(2, callee)
+          out.write_char(newline())
+          out.write_str("This expression can't be called.")
           out.to_slice()
         })
       var args = vec[MonoExpr]() {
@@ -2126,10 +2126,10 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         switch self.ast.lookup_type(make_struct.type.name)?
         case struct_(s) s
         default return error[MonoExpr, Slice[U8]]({
-          var out = vec[U8]()
-          out.&.write_str("Tried to create a struct, but ")
-          out.&.write(make_struct.type.name)
-          out.&.write_str(" is not a struct type.")
+          var out = vec[U8]().&
+          out.write_str("Tried to create a struct, but ")
+          out.write(make_struct.type.name)
+          out.write_str(" is not a struct type.")
           out.to_slice()
         })
       var fields = map[Slice[U8], MonoExpr]() {
@@ -2142,14 +2142,14 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       if make_struct.type.args.is_not_empty() then {
         if make_struct.type.args.len.not_equals(struct_.type_args.len)
         then return error[MonoExpr, Slice[U8]]({
-          var out = vec[U8]()
-          out.&.write_str("Tried to create struct ")
-          out.&.write(struct_.name)
-          out.&.write_str(" with ")
-          out.&.write(make_struct.type.args.len)
-          out.&.write_str(" type arguments, but it needs ")
-          out.&.write(struct_.type_args.len)
-          out.&.write_str(".")
+          var out = vec[U8]().&
+          out.write_str("Tried to create struct ")
+          out.write(struct_.name)
+          out.write_str(" with ")
+          out.write(make_struct.type.args.len)
+          out.write_str(" type arguments, but it needs ")
+          out.write(struct_.type_args.len)
+          out.write_str(".")
           out.to_slice()
         })
         for i in 0.to(struct_.type_args.len) do
@@ -2169,27 +2169,27 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
             type_in_struct = some(f.type)
 
         if type_in_struct is none then return error[MonoExpr, Slice[U8]]({
-          var out = vec[U8]()
-          out.&.write_str("Tried to initialize field ")
-          out.&.write_str(name)
-          out.&.write_str(" of ")
-          out.&.write_str(struct_.name)
-          out.&.write_str(", but it doesn't have that.")
+          var out = vec[U8]().&
+          out.write_str("Tried to initialize field ")
+          out.write_str(name)
+          out.write_str(" of ")
+          out.write_str(struct_.name)
+          out.write_str(", but it doesn't have that.")
           out.to_slice()
         })
         var type_in_struct = type_in_struct.unwrap()
         if not(solver.&.unify(type_in_struct, value.type)?)
         then return error[MonoExpr, Slice[U8]]({
-          var out = vec[U8]()
-          out.&.write_str("Tried to assign ")
-          out.&.write(value.type)
-          out.&.write_str(" to field ")
-          out.&.write_char('")
-          out.&.write_str(name)
-          out.&.write_char('")
-          out.&.write_str(" of type ")
-          out.&.write(type_in_struct)
-          out.&.write_str(".")
+          var out = vec[U8]().&
+          out.write_str("Tried to assign ")
+          out.write(value.type)
+          out.write_str(" to field ")
+          out.write_char('")
+          out.write_str(name)
+          out.write_char('")
+          out.write_str(" of type ")
+          out.write(type_in_struct)
+          out.write_str(".")
           out.to_slice()
         })
       }
@@ -2221,10 +2221,10 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         switch self.ast.lookup_type(make_enum.type.name)?
         case enum_(e) e
         default return error[MonoExpr, Slice[U8]]({
-          var out = vec[U8]()
-          out.&.write_str("Tried to create an enum, but ")
-          out.&.write(make_struct.type.name)
-          out.&.write_str(" is not an enum type.")
+          var out = vec[U8]().&
+          out.write_str("Tried to create an enum, but ")
+          out.write(make_struct.type.name)
+          out.write_str(" is not an enum type.")
           out.to_slice()
         })
       var arg = self.compile(make_enum.arg.*)?
@@ -2234,12 +2234,12 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
           if variant.name.equals(make_enum.variant)
           then type = some(variant.type)
         type orelse return error[MonoExpr, Slice[U8]]({
-          var out = vec[U8]()
-          out.&.write_str("Unknown variant ")
-          out.&.write(make_enum.type.name)
-          out.&.write_str(".")
-          out.&.write(make_enum.variant)
-          out.&.write_str(".")
+          var out = vec[U8]().&
+          out.write_str("Unknown variant ")
+          out.write(make_enum.type.name)
+          out.write_str(".")
+          out.write(make_enum.variant)
+          out.write_str(".")
           out.to_slice()
         })
       }
@@ -2251,14 +2251,14 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       if make_enum.type.args.is_not_empty() then {
         if make_enum.type.args.len.not_equals(enum_.type_args.len)
         then return error[MonoExpr, Slice[U8]]({
-          var out = vec[U8]()
-          out.&.write_str("Tried to create enum ")
-          out.&.write(enum_.name)
-          out.&.write_str(" with ")
-          out.&.write(make_enum.type.args.len)
-          out.&.write_str(" type arguments, but it needs ")
-          out.&.write(enum_.type_args.len)
-          out.&.write_str(".")
+          var out = vec[U8]().&
+          out.write_str("Tried to create enum ")
+          out.write(enum_.name)
+          out.write_str(" with ")
+          out.write(make_enum.type.args.len)
+          out.write_str(" type arguments, but it needs ")
+          out.write(enum_.type_args.len)
+          out.write_str(".")
           out.to_slice()
         })
         printsln("Unifying type args")
@@ -2278,16 +2278,16 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       }
       if not(solver.&.unify(variant_type, arg.type)?)
       then return error[MonoExpr, Slice[U8]]({
-        var out = vec[U8]()
-        out.&.write_str("Tried to create ")
-        out.&.write_str(make_enum.type.name)
-        out.&.write_str(".")
-        out.&.write_str(make_enum.variant)
-        out.&.write_str(" with ")
-        out.&.write(arg.type)
-        out.&.write_str(", but it needs a ")
-        out.&.write(variant_type)
-        out.&.write_str(".")
+        var out = vec[U8]().&
+        out.write_str("Tried to create ")
+        out.write_str(make_enum.type.name)
+        out.write_str(".")
+        out.write_str(make_enum.variant)
+        out.write_str(" with ")
+        out.write(arg.type)
+        out.write_str(", but it needs a ")
+        out.write(variant_type)
+        out.write_str(".")
         out.to_slice()
       })
       var type_env = solver.finish()?
@@ -2334,12 +2334,12 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         switch self.mono.type_defs.get(of.type).unwrap()
         case struct_(s) s
         default return error[MonoExpr, Slice[U8]]({
-          var out = vec[U8]()
-          out.&.write_str("You tried to access a field on ")
-          out.&.write(of.type)
-          out.&.write_str(", but it's not a struct.")
-          out.&.write_char(newline())
-          out.&.write_str(
+          var out = vec[U8]().&
+          out.write_str("You tried to access a field on ")
+          out.write(of.type)
+          out.write_str(", but it's not a struct.")
+          out.write_char(newline())
+          out.write_str(
             switch self.mono.type_defs.get(of.type).unwrap()
             case builtin_type "builtin"
             case struct_ "struct"
@@ -2352,19 +2352,19 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         for field in struct_.fields do
           if field.name.equals(member.name) then field_type = some(field.type)
         field_type orelse return error[MonoExpr, Slice[U8]]({
-          var out = vec[U8]()
-          out.&.write_char('")
-          out.&.write_str(member.name)
-          out.&.write_char('")
-          out.&.write_str(" is not a field on ")
-          out.&.write(of.type)
-          out.&.write_str(".")
-          out.&.write_char(newline())
-          out.&.write_str("It only contains these fields:")
+          var out = vec[U8]().&
+          out.write_char('")
+          out.write_str(member.name)
+          out.write_char('")
+          out.write_str(" is not a field on ")
+          out.write(of.type)
+          out.write_str(".")
+          out.write_char(newline())
+          out.write_str("It only contains these fields:")
           for field in struct_.fields do {
-            out.&.write_char(newline())
-            out.&.write_str("- ")
-            out.&.write_str(field.name)
+            out.write_char(newline())
+            out.write_str("- ")
+            out.write_str(field.name)
           }
           out.to_slice()
         })
@@ -2393,12 +2393,12 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       var value = self.compile(assign.value.*)?
       if not(value.type.equals(to.type))
       then return error[MonoExpr, Slice[U8]]({
-        var out = vec[U8]()
-        out.&.write_str("Tried to assign ")
-        out.&.write(value.type)
-        out.&.write_str(" to a variable of type ")
-        out.&.write(to.type)
-        out.&.write_str(".")
+        var out = vec[U8]().&
+        out.write_str("Tried to assign ")
+        out.write(value.type)
+        out.write_str(" to a variable of type ")
+        out.write(to.type)
+        out.write_str(".")
         out.to_slice()
       })
       self.put(MonoStatement.assign(MonoAssign { to, value }))
@@ -2413,10 +2413,10 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         switch self.mono.type_defs.get(value.type).unwrap()
         case enum_(e) e
         default return error[MonoExpr, Slice[U8]]({
-          var out = vec[U8]()
-          out.&.write_str("You tried to switch on ")
-          out.&.write(value.type)
-          out.&.write_str(", but you can only switch on enums.")
+          var out = vec[U8]().&
+          out.write_str("You tried to switch on ")
+          out.write(value.type)
+          out.write_str(", but you can only switch on enums.")
           out.to_slice()
         })
 
@@ -2426,14 +2426,14 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       for case_ in switch_.cases do {
         if handled.contains(case_.variant)
         then return error[MonoExpr, Slice[U8]]({
-          var out = vec[U8]()
-          out.&.write_str("When switching on ")
-          out.&.write(value.type)
-          out.&.write_str(", you handle the ")
-          out.&.write_char('")
-          out.&.write_str(case_.variant)
-          out.&.write_char('")
-          out.&.write_str(" variant multiple times.")
+          var out = vec[U8]().&
+          out.write_str("When switching on ")
+          out.write(value.type)
+          out.write_str(", you handle the ")
+          out.write_char('")
+          out.write_str(case_.variant)
+          out.write_char('")
+          out.write_str(" variant multiple times.")
           out.to_slice()
         })
         | TODO: when supporting continue with label, use that
@@ -2445,20 +2445,20 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
           }
         if handled_this_case then continue
         return error[MonoExpr, Slice[U8]]({
-          var out = vec[U8]()
-          out.&.write_str("You switched on ")
-          out.&.write(value.type)
-          out.&.write_str(", which doesn't have a ")
-          out.&.write_char('")
-          out.&.write_str(case_.variant)
-          out.&.write_char('")
-          out.&.write_str(" variant.")
-          out.&.write_char(newline())
-          out.&.write_str("It only has these variants:")
+          var out = vec[U8]().&
+          out.write_str("You switched on ")
+          out.write(value.type)
+          out.write_str(", which doesn't have a ")
+          out.write_char('")
+          out.write_str(case_.variant)
+          out.write_char('")
+          out.write_str(" variant.")
+          out.write_char(newline())
+          out.write_str("It only has these variants:")
           for variant in enum_.variants do {
-            out.&.write_char(newline())
-            out.&.write_str("- ")
-            out.&.write_str(variant.name)
+            out.write_char(newline())
+            out.write_str("- ")
+            out.write_str(variant.name)
           }
           out.to_slice()
         })
@@ -2467,13 +2467,13 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         for variant in enum_.variants do
           if not(handled.contains(variant.name))
           then return error[MonoExpr, Slice[U8]]({
-            out.&.write_str("You switched on ")
-            out.&.write(value.type)
-            out.&.write_str(", but you don't handle the ")
-            out.&.write_char('")
-            out.&.write_str(variant.name)
-            out.&.write_char('")
-            out.&.write_str(" variant.")
+            out.write_str("You switched on ")
+            out.write(value.type)
+            out.write_str(", but you don't handle the ")
+            out.write_char('")
+            out.write_str(variant.name)
+            out.write_char('")
+            out.write_str(" variant.")
             out.to_slice()
           })
 
@@ -2551,20 +2551,20 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
           case some(expected)
             if then_.type.not_equals(expected) then
               return error[MonoExpr, Slice[U8]]({
-                var out = vec[U8]()
-                out.&.write_str("When lowering this:")
-                out.&.write_char(newline())
-                out.&.write(0, AstExpr.switch_(switch_))
-                out.&.write_char(newline())
-                out.&.write_str("Previous switch cases return ")
-                out.&.write(expected)
-                out.&.write_str(", but the case for ")
-                out.&.write_char('")
-                out.&.write_str(case_.variant)
-                out.&.write_char('")
-                out.&.write_str(" returns ")
-                out.&.write(then_.type)
-                out.&.write_str(".")
+                var out = vec[U8]().&
+                out.write_str("When lowering this:")
+                out.write_char(newline())
+                out.write(0, AstExpr.switch_(switch_))
+                out.write_char(newline())
+                out.write_str("Previous switch cases return ")
+                out.write(expected)
+                out.write_str(", but the case for ")
+                out.write_char('")
+                out.write_str(case_.variant)
+                out.write_char('")
+                out.write_str(" returns ")
+                out.write(then_.type)
+                out.write_str(".")
                 out.to_slice()
               })
           self.put(MonoStatement.assign(MonoAssign {
@@ -2645,12 +2645,12 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       if scope.type is some(expected) then
         if arg.type.not_equals(expected) then
           return error[MonoExpr, Slice[U8]]({
-            var out = vec[U8]()
-            out.&.write_str("A previous break returned ")
-            out.&.write(expected)
-            out.&.write_str(", but this break returns ")
-            out.&.write(arg.type)
-            out.&.write_str(".")
+            var out = vec[U8]().&
+            out.write_str("A previous break returned ")
+            out.write(expected)
+            out.write_str(", but this break returns ")
+            out.write(arg.type)
+            out.write_str(".")
             out.to_slice()
           })
       scope.type = some(arg.type)
@@ -2689,13 +2689,13 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         "The try operator ? can only be used in functions that return Result.")
       if expr.type.args.get(1).not_equals(return_type.args.get(1)) then
         return error[MonoExpr, Slice[U8]]({
-          var out = vec[U8]()
-          out.&.write_str("You used ? on a Result where the error type doesn't match the error type of the function.")
-          out.&.write_char(newline())
-          out.&.write_str("   error of value > ")
-          out.&.write(expr.type.args.get(1))
-          out.&.write_str("error of function > ")
-          out.&.write(return_type.args.get(1))
+          var out = vec[U8]().&
+          out.write_str("You used ? on a Result where the error type doesn't match the error type of the function.")
+          out.write_char(newline())
+          out.write_str("   error of value > ")
+          out.write(expr.type.args.get(1))
+          out.write_str("error of function > ")
+          out.write(return_type.args.get(1))
           out.to_slice()
         })
 
@@ -3401,9 +3401,9 @@ fun run_pipeline(command: Command, file_path: Slice[U8]): Bool {
   var stdlib_size = 0
   var input = {
     print_on_same_line({
-      var out = vec[U8]()
-      out.&.write_str("Reading ")
-      out.&.write_str(file_path)
+      var out = vec[U8]().&
+      out.write_str("Reading ")
+      out.write_str(file_path)
       out.to_slice()
     })
 
@@ -3421,9 +3421,9 @@ fun run_pipeline(command: Command, file_path: Slice[U8]): Bool {
 
   var ast = {
     print_on_same_line({
-      var out = vec[U8]()
-      out.&.write_str("Parsing ")
-      out.&.write_str(file_path)
+      var out = vec[U8]().&
+      out.write_str("Parsing ")
+      out.write_str(file_path)
       out.to_slice()
     })
     switch parse(input, stdlib_size)
@@ -3434,9 +3434,9 @@ fun run_pipeline(command: Command, file_path: Slice[U8]): Bool {
 
   var mono = {
     print_on_same_line({
-      var out = vec[U8]()
-      out.&.write_str("Compiling ")
-      out.&.write_str(file_path)
+      var out = vec[U8]().&
+      out.write_str("Compiling ")
+      out.write_str(file_path)
       out.to_slice()
     })
     switch monomorphize(ast)
