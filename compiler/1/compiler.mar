@@ -64,13 +64,14 @@ fun clear_terminal() {
   | _ = try clear.spawnAndWait()
 }
 
+fun write_ansi_escape_sequence[W](writer: W, sequence: Slice[U8]) {
+  writer.write_byte(27_U8)
+  writer.write_str(sequence)
+}
 fun print_on_same_line(message: Slice[U8]) {
-  | TODO: abstractions for control sequences in stdlib
-  | \x1b[1A\x1b[K
-  stderr().write_byte(27_U8)
-  eprints("[1A")
-  stderr().write_byte(27_U8)
-  eprints("[K")
+  | Moves the cursor one line up and to the beginning
+  stderr().write_ansi_escape_sequence("[1A")
+  stderr().write_ansi_escape_sequence("[K")
   eprintsln(message)
 }
 
@@ -2182,7 +2183,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         default return error[MonoExpr, Slice[U8]]({
           var out = vec[U8]().&
           out.write_str("Tried to create an enum, but ")
-          out.write(make_struct.type.name)
+          out.write_str(make_enum.type.name)
           out.write_str(" is not an enum type.")
           out.to_slice()
         })
@@ -2195,9 +2196,9 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         type orelse return error[MonoExpr, Slice[U8]]({
           var out = vec[U8]().&
           out.write_str("Unknown variant ")
-          out.write(make_enum.type.name)
+          out.write_str(make_enum.type.name)
           out.write_str(".")
-          out.write(make_enum.variant)
+          out.write_str(make_enum.variant)
           out.write_str(".")
           out.to_slice()
         })
@@ -2210,7 +2211,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         then return error[MonoExpr, Slice[U8]]({
           var out = vec[U8]().&
           out.write_str("Tried to create enum ")
-          out.write(enum_.name)
+          out.write_str(enum_.name)
           out.write_str(" with ")
           out.write(make_enum.type.args.len)
           out.write_str(" type arguments, but it needs ")

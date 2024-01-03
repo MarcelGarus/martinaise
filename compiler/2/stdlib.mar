@@ -1,0 +1,1031 @@
+| Welcome to Martinaise!  
+| Martinaise is a language that's designed for solving simple puzzles such as
+| advent of code. Making a language that is widely-used is _not_ the goal.
+| Instead, this is a fun, recreational project.
+|
+| The language is quite small, so it doesn't have many built-in types and
+| functions. Apart from integers as well as mathematical functions for them, it
+| only provides very slim wrappers around some libc functions.
+| Everything else is defined in Martinaise code, even very basic things like
+| Bool. The compiler relies on some of these definitions, so be careful when
+| deleting code in this file because that may crash the compiler.
+
+| Language todos  
+| TODO: int radixes
+| TODO: str type, char type
+| TODO: custom orelse
+| TODO: type aliases
+| TODO: validate all signatures before lowering
+| TODO: validate field in make struct
+| TODO: global constants
+| TODO: break and continue with targets
+| TODO: string interpolation?
+| TODO: funs as values, function types, higher-order funs
+| TODO: var bool = foo is some
+| TODO: enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
+| TODO: infer return types
+| TODO: allow underscore for ignoring values
+| TODO: operators?
+| TODO: slice literals? array literals?
+| TODO: struct destructuring? probably not
+
+| Nothing (aka Unit or Void)  
+| A type with only one instance. Functions without an explicit return type
+| return Nothing. Bodies with no expressions inside return Nothing. This is the
+| single Nothing instance: {}
+struct Nothing {}
+fun write[W](writer: W, nothing: Nothing) { writer.write_str("nothing") }
+fun equals(a: Nothing, b: Nothing): Bool { true() }
+fun ignore[T](value: T) {}
+
+| Never and Panics  
+| A type with zero instances. Some expressions always abort control flow, for
+| example `return 3`. These evaluate to the Never type.
+enum Never {}
+fun halt(): Never { loop {} }
+fun libc_exit(status: U8): Nothing { ... }
+fun exit(status: U8): Never { libc_exit(status) halt() }
+fun panic(message: Slice[U8]): Never {
+  stderr().write_str(message)
+  stderr().write_char(newline())
+  exit(1_U8)
+}
+fun panic(): Never { panic("panicked") }
+fun unreachable(): Never { panic("unreachable") }
+fun todo(): Never { panic("todo") }
+fun assert(condition: Bool) { if not(condition) then panic("assert failed") }
+
+| Equality  
+| You should implement an equals(T, T): Bool function for types that can be
+| compared for equality.
+fun not_equals[T](a: T, b: T): Bool { not(a.equals(b)) }
+
+| Hashing  
+| You should implement a hash(Hasher, T) function for types that can be hashed.
+| In this function, they can contribute some uniqueness/entropy to the Hasher by
+| calling other hash functions on it. In the end, all hash functions boil down
+| to hash(&Hasher, U64). The Hasher uses the djb2 algorithm.
+fun hash[T](value: T): U64 {
+  var hasher = Hasher { state = 5381 }
+  hasher.&.hash(value)
+  hasher.state
+}
+struct Hasher { state: U64 }
+fun hash(hasher: &Hasher, val: U64) {
+  hasher.state = hasher.state.multiply(33).add(val)
+}
+
+| Emptiness  
+| Do you sometimes feel empty inside? Some collections in the stdlib do so as
+| well! In fact, they often have an is_empty function. For convencience, we also
+| define an is_not_empty function.
+fun is_not_empty[T](container: T): Bool { not(container.is_empty()) }
+
+| Bool  
+| The usual boolean values true and false. Martinaise's if expects a Bool as the
+| condition: if true() then 0_U8 else 1_U8
+enum Bool { true, false }
+fun true(): Bool { Bool.true } | TODO: make these global vars once that works
+fun false(): Bool { Bool.false }
+fun equals(a: Bool, b: Bool): Bool { if a then b else not(b) }
+fun not(a: Bool): Bool { if a then false() else true() }
+fun and(a: Bool, b: Bool): Bool { if a then b else a }
+fun or(a: Bool, b: Bool): Bool { if a then true() else b }
+fun xor(a: Bool, b: Bool): Bool { if a then not(b) else b }
+fun implies(a: Bool, b: Bool): Bool { if a then b else true() }
+fun write[W](writer: W, b: Bool) {
+  writer.write_str(if b then "true" else "false")
+}
+fun hash(hasher: &Hasher, value: Bool) { hasher.hash(if value then 0 else 1) }
+
+| Int  
+| Integers are built into the language. There are several types with different
+| signedness and bit amount available as {U, I} x {8, 16, 32, 64}. For example,
+| U64 is an unsigned integer of 64 bits.
+| All integers also support the following mathematical operations:
+| - add(Int, Int): Int
+| - subtract(Int, Int): Int
+| - multiply(Int, Int): Int
+| - divide(Int, Int): Int
+| - modulo(Int, Int): Int
+| - compare_to(Int, Int): Ordering
+| - to_<OtherInt>(Int): OtherInt, e.g. to_U8() for non-U8 ints
+fun inc(a: U8): U8 { a.add(1_U8) }
+fun inc(a: U16): U16 { a.add(1_U16) }
+fun inc(a: U32): U32 { a.add(1_U32) }
+fun inc(a: U64): U64 { a.add(1_U64) }
+fun inc(a: I8): I8 { a.add(1_I8) }
+fun inc(a: I16): I16 { a.add(1_I16) }
+fun inc(a: I32): I32 { a.add(1_I32) }
+fun inc(a: I64): I64 { a.add(1_I64) }
+fun dec(a: U8): U8 { a.subtract(1_U8) }
+fun dec(a: U16): U16 { a.subtract(1_U16) }
+fun dec(a: U32): U32 { a.subtract(1_U32) }
+fun dec(a: U64): U64 { a.subtract(1_U64) }
+fun dec(a: I8): I8 { a.subtract(1_I8) }
+fun dec(a: I16): I16 { a.subtract(1_I16) }
+fun dec(a: I32): I32 { a.subtract(1_I32) }
+fun dec(a: I64): I64 { a.subtract(1_I64) }
+fun equals(a: U8, b: U8): Bool { a.compare_to(b).is_equal() }
+fun equals(a: U16, b: U16): Bool { a.compare_to(b).is_equal() }
+fun equals(a: U32, b: U32): Bool { a.compare_to(b).is_equal() }
+fun equals(a: U64, b: U64): Bool { a.compare_to(b).is_equal() }
+fun equals(a: I8, b: I8): Bool { a.compare_to(b).is_equal() }
+fun equals(a: I16, b: I16): Bool { a.compare_to(b).is_equal() }
+fun equals(a: I32, b: I32): Bool { a.compare_to(b).is_equal() }
+fun equals(a: I64, b: I64): Bool { a.compare_to(b).is_equal() }
+fun hash(hasher: &Hasher, value: U8) { hasher.hash(value.to_U64()) }
+fun hash(hasher: &Hasher, value: U16) { hasher.hash(value.to_U64()) }
+fun hash(hasher: &Hasher, value: U32) { hasher.hash(value.to_U64()) }
+fun hash(hasher: &Hasher, value: I8) { hasher.hash(value.to_U64()) }
+fun hash(hasher: &Hasher, value: I16) { hasher.hash(value.to_U64()) }
+fun hash(hasher: &Hasher, value: I32) { hasher.hash(value.to_U64()) }
+fun hash(hasher: &Hasher, value: I64) { hasher.hash(value.to_U64()) }
+fun write_with_radix[W](writer: W, radix: U64, int: U64) {
+  var divisor = 1
+  loop {
+    if int.divide(divisor).is_less_than(radix) then break
+    divisor = divisor.multiply(radix)
+  }
+  loop {
+    writer.write_char(int.divide(divisor).modulo(radix).to_U8().digit_to_char())
+    if divisor.equals(1) then break
+    divisor = divisor.divide(radix)
+  }
+}
+fun digit_to_char(digit: U8): U8 {
+  if digit.is_greater_than(9_U8)
+  then digit.subtract(10_U8).add('a)
+  else digit.add('0)
+}
+fun write[W](writer: W, int: U8) { writer.write_with_radix(10, int.to_U64()) }
+fun write[W](writer: W, int: U16) { writer.write_with_radix(10, int.to_U64()) }
+fun write[W](writer: W, int: U32) { writer.write_with_radix(10, int.to_U64()) }
+fun write[W](writer: W, int: U64) { writer.write_with_radix(10, int) }
+fun parse_U64(str: Slice[U8]): U64 {
+  var num = 0
+  for char in str do {
+    if not('0.until('9).contains(char))
+    then panic("non-digit in supposed number")
+    num = num.multiply(10).add(char.subtract('0).to_U64())
+  }
+  num
+}
+
+| Comparing  
+| You should implement a compare_to(T, T): Ordering function for types that can
+| be compared. This allows you to use functions such as is_at_least or min.
+enum Ordering { less, equal, greater }
+fun is_less(ord: Ordering): Bool {
+  switch ord case less true() case equal false() case greater false()
+}
+fun is_equal(ord: Ordering): Bool {
+  switch ord case less false() case equal true() case greater false()
+}
+fun is_greater(ord: Ordering): Bool {
+  switch ord case less false() case equal false() case greater true()
+}
+fun is_less_or_equal(ord: Ordering): Bool {
+  switch ord case less true() case equal true() case greater false()
+}
+fun is_greater_or_equal(ord: Ordering): Bool {
+  switch ord case less false() case equal true() case greater true()
+}
+fun equals(a: Ordering, b: Ordering): Bool {
+  switch a
+  case less b.is_less()
+  case equal b.is_equal()
+  case greater b.is_greater()
+}
+fun hash(hasher: &Hasher, ord: Ordering) {
+  hasher.hash(switch ord case less 'l case equal 'e case greater 'g)
+}
+fun write[W](writer: W, ord: Ordering) {
+  writer.write_str(
+    switch ord case less "less" case equal "equal" case greater "greater"
+  )
+}
+fun is_less_than[T](a: T, b: T): Bool { a.compare_to(b).is_less() }
+fun is_greater_than[T](a: T, b: T): Bool { a.compare_to(b).is_greater() }
+fun is_at_least[T](a: T, b: T): Bool { a.compare_to(b).is_greater_or_equal() }
+fun is_at_most[T](a: T, b: T): Bool { a.compare_to(b).is_less_or_equal() }
+fun min[T](a: T, b: T): T { if a.is_less_than(b) then a else b }
+fun max[T](a: T, b: T): T { if a.is_greater_than(b) then a else b }
+
+| Maybe  
+| Represents optional values. Like Option in Rust, but with the cooler Haskell
+| name. Martinaise has an orelse keyword, which you can write after a Maybe[T]
+| to get the underlying T if it's a some, or execute the expression after the
+| orelse if it's a none:
+| - Maybe[U8].some(2_U8) orelse 3_U8 = 2_U8
+| - Maybe[U8].none orelse 3_U8 = 3_U8
+enum Maybe[T] { some: T, none }
+fun some[T](value: T): Maybe[T] { Maybe.some(value) }
+fun none[T](): Maybe[T] { Maybe[T].none }
+fun unwrap[T](maybe: Maybe[T]): T { maybe orelse panic("called none.unwrap") }
+fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { inner orelse none[T]() }
+fun is_some[T](maybe: Maybe[T]): Bool {
+  switch maybe case some true() case none false()
+}
+fun is_none[T](maybe: Maybe[T]): Bool {
+  switch maybe case some false() case none true()
+}
+fun write[W, T](writer: W, maybe: Maybe[T]) {
+  switch maybe
+  case some(val) {
+    writer.write_str("some(")
+    writer.write(val)
+    writer.write_char('))
+  }
+  case none writer.write_str("none")
+}
+fun equals[T](a: Maybe[T], b: Maybe[T]): Bool {
+  switch a
+  case some(aa) { switch b case some(bb) aa.equals(bb) case none false() }
+  case none b.is_none()
+}
+fun hash[T](hasher: &Hasher, value: Maybe[T]) {
+  switch value
+  case some(inner) {
+    hasher.hash('s)
+    hasher.hash(inner)
+  }
+  case none hasher.hash('n)
+}
+
+| Result  
+| The result of something that can either work or fail.
+enum Result[O, E] { ok: O, error: E }
+fun ok[O, E](o: O): Result[O, E] { Result[O, E].ok(o) }
+fun error[O, E](e: E): Result[O, E] { Result[O, E].error(e) }
+fun unwrap[O, E](result: Result[O, E]): O {
+  switch result case ok(o) o case error(e) panic("called error.unwrap")
+}
+fun write[W, O, E](writer: W, result: Result[O, E]) {
+  switch result
+  case ok(o) {
+    writer.write_str("ok(")
+    writer.write(o)
+    writer.write_char('))
+  }
+  case error(e) {
+    writer.write_str("error(")
+    writer.write(e)
+    writer.write_char('))
+  }
+}
+fun equals[O, E](a: Result[O, E], b: Result[O, E]): Bool {
+  switch a
+  case ok(ao) { switch b case ok(bo) ao.equals(bo) case error false() }
+  case error(ae) { switch b case error(be) ae.equals(be) case ok false() }
+}
+fun hash[O, E](hasher: &Hasher, result: Result[O, E]) {
+  switch result
+  case ok(o) { hasher.hash('o) hasher.hash(o) }
+  case error(e) { hasher.hash('e) hasher.hash(e) }
+}
+
+| Memory  
+| Martinaise supports references: &T is a reference to a T. You can get a
+| reference to a value using the expr.& syntax. You can follow a reference
+| using the expr.* syntax.
+| The builtin libc functions work with addresses (U64) instead of references.
+| These addresses don't have any information about what kind of object is stored
+| at the address.
+fun libc_malloc(size: U64): U64 { ... }
+fun malloc(size: U64): U64 {
+  var address = libc_malloc(size)
+  if address.equals(0) then panic("out of memory")
+  address
+}
+fun size_of_type[T](): U64 { ... }
+fun to_address[T](ref: &T): U64 { ... }
+fun to_reference[T](address: U64): &T { ... }
+fun uninitialized[T](): &T { malloc(size_of_type[T]()).to_reference[T]() }
+fun put_on_heap[T](value: T): &T {
+  var ref = uninitialized[T]()
+  ref.* = value
+  ref
+}
+fun cast[A, B](ref: &A): &B { ref.to_address().to_reference[B]() }
+fun add_offset[T](ref: &T, offset: U64): &T {
+  ref.to_address().add(offset.multiply(size_of_type[T]())).to_reference[T]()
+}
+fun swap[T](a: &T, b: &T) {
+  var tmp = a.*
+  a.* = b.*
+  b.* = tmp
+}
+fun write_address[W](writer: W, address: U64) {
+  | max U64 is 18_446_744_073_709_551_615
+  var divisor = 1_152_921_504_606_846_976 | 16 ^ something
+  writer.write_str("0x")
+  loop {
+    writer.write_char(
+      address.divide(divisor).modulo(16).to_U8().digit_to_char()
+    )
+    if divisor.equals(1) then break
+    divisor = divisor.divide(16)
+  }
+}
+
+| Slice  
+| A slice refers to a memory region where values of the same type are right next
+| to each other. A slice has a pointer to the first element as well as a length.
+| In memory, it looks something like this:
+|
+|   [  item  ][  item  ][  item  ][  item  ]
+|   ^
+| [address + len 4]  <--  slice
+struct Slice[T] { data: &T, len: U64 }
+fun empty_slice[T](): Slice[T] { Slice { data = 0.to_reference[T](), len = 0 } }
+fun uninitialized_slice[T](len: U64): Slice[T] {
+  if len.equals(0) then return empty_slice[T]()
+  var data = malloc(len.multiply(size_of_type[T]())).to_reference[T]()
+  Slice { data, len }
+}
+fun filled_slice[T](len: U64, fill: T): Slice[T] {
+  var slice = uninitialized_slice[T](len)
+  for i in 0.to(len) do slice.get_ref(i).* = fill
+  slice
+}
+fun is_empty[T](slice: Slice[T]): Bool { slice.len.equals(0) }
+fun get[T](slice: Slice[T], index: U64): T { slice.data.add_offset(index).* }
+fun get_ref[T](slice: Slice[T], index: U64): &T {
+  if 0.to(slice.len).contains(index)
+  then slice.data.add_offset(index)
+  else panic("index out of bounds")
+}
+fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
+  if to.is_greater_than(slice.len)
+  then panic("subslice needs to be inside original slice")
+  Slice { data = slice.data.add_offset(from), len = to.subtract(from) }
+}
+fun subslice[T](slice: Slice[T], from: U64): Slice[T] {
+  slice.subslice(from, slice.len)
+}
+fun copy_to[T](from: Slice[T], to: Slice[T]) {
+  if not(from.len.equals(to.len)) then panic("copy_to slice lens don't match")
+  for i in 0.to(from.len) do to.get_ref(i).* = from.get(i)
+}
+fun make_null_terminated(slice: Slice[U8]): Slice[U8] {
+  var new = uninitialized_slice[U8](slice.len.inc())
+  slice.copy_to(new.subslice(0, slice.len))
+  new.get_ref(slice.len).* = 0_U8
+  new
+}
+fun compare_to[T](a: Slice[T], b: Slice[T]): Ordering {
+  var i = 0
+  loop {
+    if i.equals(a.len).and(i.equals(b.len)) then return Ordering.equal
+    if i.equals(a.len) then return Ordering.less
+    if i.equals(b.len) then return Ordering.greater
+    var ord = a.get(i).compare_to(b.get(i))
+    if not(ord.is_equal()) then return ord
+    i = i.inc()
+  }
+}
+fun equals[T](a: Slice[T], b: Slice[T]): Bool {
+  | TODO: support for types that only have equals, not compare_to
+  if a.len.equals(b.len) then compare_to(a, b).is_equal() else false()
+}
+fun hash[T](hasher: &Hasher, slice: Slice[T]) {
+  for item in slice do hasher.hash(item)
+}
+fun write[W, T](writer: W, slice: Slice[T]) {
+  writer.write_char('[)
+  var first = true()
+  for item in slice do {
+    if first then first = false() else writer.write_str(", ")
+    writer.write(item)
+  }
+  writer.write_char('])
+}
+
+| Files, Input & Output  
+| In C, a common way to work with files is with fopen, fclose, and similar
+| functions, which work with FILE* pointers. The FILE struct internally contains
+| a file descriptor, a small integer that's a handle to the file object in the
+| operating system kernel.
+| Martinaise doesn't use the FILE functions and instead works with file
+| descriptors using some libc functions (open, read, write, close). To make the
+| API type-safe, Martinaise has it's own wrapper around a file descriptor, the
+| File type.
+| 
+| For future-me reading through the code here, some general notes on files:
+| 
+| The open function takes a filename, flags, and a mode. There are several kinds
+| of flags:
+| - File access mode flags
+|   - RDONLY: Open for read only.
+|   - WRONLY: Open for write only.
+|   - RDWR: Open for both reading and writing.
+| - Open-time flags
+|   - CREAT: The file will be created if it doesn't already exist. Uses the mode
+|     for specifying file permissions.
+|   - TRUNC: Truncates the file to zero length after opening.
+|   - ...
+| - I/O operating modes
+|   - APPEND: Every write on that file descriptor will append to the end of the
+|     file, regardless of the current file position.
+|   - FSYNC: Each write call will make sure data is reliably stored on disk
+|     before returning.
+|   - ...
+| The mode is only used when creating a file. It uses the same format for file
+| permissions as chmod (0o666 means read and write access for everyone).
+|
+| Files can also be opened in an asynchronous mode where you can poll the
+| operating system for reads and writes. But then you have to maintain an event
+| loop yourself and everything gets much more complicated. Here, I only use the
+| blocking version.
+|
+| The flag constants are taken from the Zig implementation. The open-time flags
+| and I/O operating modes flags are specific to x86.
+|
+| https://www.gnu.org/software/libc/manual/html_node/Opening-and-Closing-Files.html
+fun libc_open(filename: U64, flags: U64, mode: U64): U64 { ... }
+fun libc_read(file: U64, buf: U64, len: U64): U64 { ... }
+fun libc_write(file: U64, buf: U64, len: U64): U64 { ... }
+fun libc_close(file: U64): U8 { ... }
+
+fun libc_open_flag_rdonly(): U64 { 0 } | 0o0
+fun libc_open_flag_wronly(): U64 { 1 } | 0o1
+fun libc_open_flag_rdwr(): U64 { 2 } | 0o2
+fun libc_open_flag_create(): U64 { 64 } | 0o100
+fun libc_open_flag_trunc(): U64 { 512 } | 0o1000
+fun libc_open_flag_append(): U64 { 1024 } | 0o2000
+
+struct File { descriptor: U64 }
+enum OpenFileFlag { read, write, create, truncate, append }
+fun hash(hasher: &Hasher, flag: OpenFileFlag) {
+  hasher.hash(
+    switch flag
+    case read 0
+    case write 1
+    case create 2
+    case truncate 3
+    case append 4
+  )
+}
+fun equals(a: OpenFileFlag, b: OpenFileFlag): Bool {
+  switch a
+  case read if b is read then true() else false()
+  case write if b is write then true() else false()
+  case create if b is create then true() else false()
+  case truncate if b is truncate then true() else false()
+  case append if b is append then true() else false()
+}
+fun open_file(
+  filename: Slice[U8], flags: Set[OpenFileFlag], mode: U64
+): Maybe[File] {
+  var os_flags = 0
+  os_flags = os_flags.or(
+    if flags.contains(OpenFileFlag.read) then
+      if flags.contains(OpenFileFlag.write)
+      then libc_open_flag_rdwr()
+      else libc_open_flag_rdonly()
+    else
+      if flags.contains(OpenFileFlag.write)
+      then libc_open_flag_wronly()
+      else panic("must read or write")
+  )
+  if flags.contains(OpenFileFlag.create)
+  then os_flags = os_flags.or(libc_open_flag_create())
+  if flags.contains(OpenFileFlag.truncate)
+  then os_flags = os_flags.or(libc_open_flag_trunc())
+  if flags.contains(OpenFileFlag.append)
+  then os_flags = os_flags.or(libc_open_flag_append())
+
+  var fd = libc_open(
+    filename.make_null_terminated().data.to_address(),
+    os_flags,
+    mode,
+  )
+  if fd.equals(0) then none[File]() else some(File { descriptor = fd })
+}
+
+fun read(file: File, buffer: Slice[U8]): U64 {
+  libc_read(file.descriptor, buffer.data.to_address(), buffer.len)
+}
+fun read_byte(file: File): Maybe[U8] {
+  var c = 0_U8
+  if libc_read(file.descriptor, c.&.to_address(), 1).equals(0)
+  then none[U8]()
+  else some(c)
+}
+fun write_bytes(file: File, buffer: Slice[U8]): U64 {
+  libc_write(file.descriptor, buffer.data.to_address(), buffer.len)
+}
+fun write_byte(file: File, byte: U8) {
+  libc_write(file.descriptor, byte.&.to_address(), 1).ignore()
+}
+fun close(file: File) { libc_close(file.descriptor).ignore() }
+
+fun read_file(name: Slice[U8]): Slice[U8] {
+  var file = open_file(name, vec(OpenFileFlag.read).to_set(), 0)
+    orelse panic("unable to open file")
+  var content = vec[U8]()
+  loop {
+    var byte = file.read_byte() orelse break
+    content.&.push(byte)
+  }
+  file.close()
+  content.to_slice()
+}
+fun write_file(name: Slice[U8], content: Slice[U8]) {
+  var file = open_file(
+    name,
+    vec(OpenFileFlag.write, OpenFileFlag.create, OpenFileFlag.truncate)
+      .to_set(),
+    438 | 0b666: read and write access for everyone
+  ) orelse panic("unable to open file")
+  for byte in content do file.write_byte(byte)
+  file.close()
+}
+
+| Printing  
+| You should implement a write[Writer](Writer, T) function for types that can be
+| printed. Writers are anything that has a write_byte(Writer, U8) function.
+| TODO: Use libc_write function more efficiently (not 1 byte per syscall)
+fun stdin(): File { File { descriptor = 0 } }
+fun stdout(): File { File { descriptor = 1 } }
+fun stderr(): File { File { descriptor = 2 } }
+fun print[T](value: T) { stdout().write(value) }
+fun println[T](value: T) { print(value) println() }
+fun println() { stdout().write_char(newline()) }
+fun prints(message: Slice[U8]) { stdout().write_str(message) }
+fun printsln(message: Slice[U8]) { prints(message) println() }
+fun eprint[T](value: T) { stderr().write(value) }
+fun eprintln[T](value: T) { eprint(value) eprintln() }
+fun eprintln() { stderr().write_char(newline()) }
+fun eprints(message: Slice[U8]) { stderr().write_str(message) }
+fun eprintsln(message: Slice[U8]) { eprints(message) eprintln() }
+fun newline(): U8 { 10_U8 } | TODO: refactor to var when we have global vars
+fun tab(): U8 { 9_U8 } | TODO: refactor to global var
+fun write_char[W](writer: W, char: U8) { writer.write_byte(char) }
+fun write_str[W](writer: W, str: Slice[U8]) {
+  for char in str do writer.write_char(char)
+}
+
+| Range  
+| Ranges have an inclusive start and exclusive end value.
+struct Range[T] { start: T, end: T }
+fun to[T](start: T, end: T): Range[T] { Range { start, end } }
+fun until[T](start: T, end: T): Range[T] { Range { start, end = end.inc() } }
+fun range_by[T](start: T, len: T): Range[T] {
+  Range { start, end = start.add(len) }
+}
+fun contains[T](range: Range[T], value: T): Bool {
+  value.is_at_least(range.start).and(value.is_less_than(range.end))
+}
+fun is_empty[T](range: Range[T]): Bool { range.start.is_at_least(range.end) }
+fun iter[T](range: Range[T]): RangeIter[T] { RangeIter { rest = range } }
+struct RangeIter[T] { rest: Range[T] }
+fun next[T](iter: &RangeIter[T]): Maybe[T] {
+  if iter.rest.is_empty() then none[T]() else {
+    var current = iter.rest.start
+    iter.rest.start = current.inc()
+    some(current)
+  }
+}
+
+| Tuples  
+fun tuple[A, B](a: A, b: B): Tuple2[A, B] { Tuple2 { a, b } }
+fun tuple[A, B, C](a: A, b: B, c: C): Tuple3[A, B, C] { Tuple3 { a, b, c } }
+struct Tuple2[A, B] { a: A, b: B }
+struct Tuple3[A, B, C] { a: A, b: B, c: C }
+fun write[W, A, B](writer: W, tuple: Tuple2[A, B]) {
+  writer.write_char('()
+  writer.write(tuple.a)
+  writer.write_str(", ")
+  writer.write(tuple.b)
+  writer.write_char('))
+}
+fun writer[W, A, B, C](writer: W, tuple: Tuple3[A, B, C]) {
+  writer.write_char('()
+  writer.write(tuple.a)
+  writer.write_str(", ")
+  writer.write(tuple.b)
+  writer.write_str(", ")
+  writer.write(tuple.c)
+  writer.write_char('))
+}
+
+| Point  
+struct Point[T] { x: T, y: T }
+fun write[W, T](writer: W, point: Point[T]) {
+  writer.write(tuple(point.x, point.y))
+}
+
+| Vec  
+| A growable array where you can efficiently push and pop data to/from the back.
+| This is implemented using a fixed-size slice. Once it fills up, a new slice is
+| allocated and the old items are copied over.
+struct Vec[T] { data: Slice[T], len: U64 }
+fun vec[T](): Vec[T] { Vec { data = empty_slice[T](), len = 0 } }
+| TODO: remove when there are slice literals
+fun vec[T](a: T): Vec[T] { var v = vec[T]() v.&.push(a) v }
+fun vec[T](a: T, b: T): Vec[T] { var v = vec[T]() v.&.push(a) v.&.push(b) v }
+fun vec[T](a: T, b: T, c: T): Vec[T] {
+  var v = vec[T]()
+  v.&.push(a)
+  v.&.push(b)
+  v.&.push(c)
+  v
+}
+fun vec[T](a: T, b: T, c: T, d: T): Vec[T] {
+  var v = vec[T]()
+  v.&.push(a)
+  v.&.push(b)
+  v.&.push(c)
+  v.&.push(d)
+  v
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T): Vec[T] {
+  var v = vec[T]()
+  v.&.push(a)
+  v.&.push(b)
+  v.&.push(c)
+  v.&.push(d)
+  v.&.push(e)
+  v
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T): Vec[T] {
+  var v = vec[T]()
+  v.&.push(a)
+  v.&.push(b)
+  v.&.push(c)
+  v.&.push(d)
+  v.&.push(e)
+  v.&.push(f)
+  v
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T): Vec[T] {
+  var v = vec[T]()
+  v.&.push(a)
+  v.&.push(b)
+  v.&.push(c)
+  v.&.push(d)
+  v.&.push(e)
+  v.&.push(f)
+  v.&.push(g)
+  v
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T): Vec[T] {
+  var v = vec[T]()
+  v.&.push(a)
+  v.&.push(b)
+  v.&.push(c)
+  v.&.push(d)
+  v.&.push(e)
+  v.&.push(f)
+  v.&.push(g)
+  v.&.push(h)
+  v
+}
+fun push[T](vec: &Vec[T], item: T) {
+  if vec.data.len.equals(0) then vec.data = uninitialized_slice[T](8)
+  if vec.data.len.equals(vec.len) then {
+    var new_data = uninitialized_slice[T](vec.data.len.multiply(2))
+    vec.data.copy_to(new_data.subslice(0, vec.data.len))
+    vec.data = new_data
+  }
+  vec.data.get_ref(vec.len).* = item
+  vec.len = vec.len.add(1)
+}
+fun push_all[T](vec: &Vec[T], items: Slice[T]) {
+  for item in items do vec.push(item)
+}
+fun pop[T](vec: &Vec[T]): T {
+  if vec.len.equals(0) then panic("called pop on empty Vec")
+  vec.len = vec.len.dec()
+  vec.data.get(vec.len)
+}
+fun get[T](vec: Vec[T], index: U64): T { vec.data.get(index) }
+fun get_ref[T](vec: Vec[T], index: U64): &T { vec.data.get_ref(index) }
+fun is_empty[T](vec: Vec[T]): Bool { vec.len.equals(0) }
+fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0, vec.len) }
+fun equals[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice().equals(b.to_slice()) }
+fun iter[T](vec: Vec[T]): SliceIter[T] { vec.to_slice().iter() }
+fun write[W, T](writer: W, vec: Vec[T]) { writer.write(vec.to_slice()) }
+fun write_byte(writer: &Vec[U8], byte: U8) { writer.&.push(byte) }
+
+| Stack  
+| Something where you can push and pop items. Essentially just a Vec, but
+| sometimes this type expresses the intent more clearly.
+struct Stack[T] { vec: Vec[T] }
+fun stack[T](): Stack[T] { Stack { vec = vec[T]() } }
+fun len[T](stack: Stack[T]): U64 { stack.vec.len }
+fun is_empty[T](stack: Stack[T]): Bool { stack.vec.is_empty() }
+fun push[T](stack: &Stack[T], item: T) { stack.vec.&.push(item) }
+fun pop[T](stack: &Stack[T]): T { stack.vec.&.pop() }
+fun top[T](stack: Stack[T]): T { stack.top(0) }
+fun top[T](stack: Stack[T], n: U64): T {
+  stack.vec.get(stack.vec.len.subtract(1).subtract(n))
+}
+fun top_ref[T](stack: Stack[T]): &T { stack.top_ref(0) }
+fun top_ref[T](stack: Stack[T], n: U64): &T {
+  stack.vec.get_ref(stack.vec.len.subtract(1).subtract(n))
+}
+fun equals[T](a: Stack[T], b: Stack[T]): Bool { a.vec.equals(b.vec) }
+fun write[W, T](writer: W, stack: Stack[T]) { writer.write(stack.vec) }
+
+| Deque  
+| A growable array-like structure where you can push and pop from both ends.
+| It maintains an inclusive start and an exclusive end index. Basically, there
+| are two possibilities how this can be layed out:
+|
+| Start before end:           End before start:
+| [-][0][1][2][3][4][-][-]    [3][4][-][-][-][0][1][2]
+|     s              e               e        s
+struct Deque[T] { data: Slice[T], start: U64, end: U64 }
+fun deque[T](): Deque[T] {
+  Deque { data = uninitialized_slice[T](8), start = 0, end = 0 }
+}
+fun len[T](deque: Deque[T]): U64 {
+  if deque.end.is_at_least(deque.start)
+  then deque.end.subtract(deque.start)
+  else deque.start.add(deque.data.len).subtract(deque.end)
+}
+fun is_empty[T](deque: Deque[T]): Bool { deque.len().equals(0) }
+fun reserve[T](deque: &Deque[T], size: U64) {
+  if deque.data.len.is_at_least(size) then return
+  var slices = deque.to_slices()
+  var total_len = deque.len()
+  deque.data = uninitialized_slice[T](size)
+  slices.a.copy_to(deque.data.subslice(0, slices.a.len))
+  slices.b.copy_to(deque.data.subslice(slices.a.len, total_len))
+  deque.start = 0
+  deque.end = total_len
+}
+fun push_front[T](deque: &Deque[T], item: T) {
+  if deque.data.len.equals(deque.len().dec())
+  then deque.reserve(deque.data.len.multiply(2))
+  deque.start = if deque.start.equals(0)
+    then deque.data.len
+    else deque.start.dec()
+  deque.data.get_ref(deque.start).* = item
+}
+fun pop_front[T](deque: &Deque[T]): T {
+  if deque.is_empty() then panic("pop_front on empty deque")
+  var item = deque.data.get(deque.start)
+  deque.start = deque.start.inc().modulo(deque.data.len)
+  item
+}
+fun push_back[T](deque: &Deque[T], item: T) {
+  if deque.data.len.equals(deque.len().dec())
+  then deque.reserve(deque.data.len.multiply(2))
+  deque.data.get_ref(deque.end).* = item
+  deque.end = deque.end.inc().modulo(deque.data.len)
+}
+fun pop_back[T](deque: &Deque[T]): T {
+  if deque.is_empty() then panic("pop_back on empty deque")
+  deque.end = if deque.end.equals(0)
+    then deque.data.len
+    else deque.end.dec()
+  deque.data.get(deque.end)
+}
+fun get[T](deque: Deque[T], index: U64): T { deque.get_ref(index).* }
+fun get_ref[T](deque: Deque[T], index: U64): &T {
+  deque.data.get_ref(index.add(deque.start).modulo(deque.data.len))
+}
+fun to_slices[T](deque: Deque[T]): Tuple[Slice[T], Slice[T]] {
+  if deque.end.is_at_least(deque.start)
+  then tuple(deque.data.subslice(deque.start, deque.end), empty_slice[T]())
+  else tuple(
+    deque.data.subslice(deque.start, deque.data.len),
+    deque.data.subslice(0, deque.start)
+  )
+}
+fun equals[T](a: Deque[T], b: Deque[T]): Bool {
+  if a.len().notEquals(b.len()) then return false()
+  for i in 0.to(a.len()) do
+    if a.get(i).notEquals(b.get(i)) then return false()
+  true()
+}
+
+| Map   
+| Stores key-value-pairs for efficient lookup. The key has to support hash and
+| equals.
+struct Map[K, V] { buckets: Slice[MapBucket[K, V]], size: U64 }
+enum MapBucket[K, V] { empty, filled: MapEntry[K, V] }
+struct MapEntry[K, V] { key: K, value: V }
+fun map[K, V](): Map[K, V] {
+  Map { buckets = filled_slice(8, MapBucket[K, V].empty), size = 0 }
+}
+fun is_empty[K, V](map: Map[K, V]): Bool { map.size.equals(0) }
+fun put[K, V](map: &Map[K, V], key: K, value: V) {
+  var fill_percentage = 100.multiply(map.size).divide(map.buckets.len)
+  if fill_percentage.is_at_least(60) then {
+    var old_buckets = map.buckets
+    map.* = Map {
+      buckets = filled_slice(
+        map.buckets.len.multiply(2),
+        MapBucket[K, V].empty
+      ),
+      size = 0,
+    }
+    for bucket in old_buckets do
+      if bucket is filled(entry) then map.raw_insert(entry.key, entry.value)
+  }
+  map.raw_insert(key, value)
+}
+fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
+  var i = key.hash().modulo(map.buckets.len)
+  loop {
+    var bucket = map.buckets.get_ref(i)
+    switch bucket.*
+    case empty {
+      bucket.* = MapBucket.filled(MapEntry { key, value })
+      map.size = map.size.add(1)
+      break
+    }
+    case filled(entry)
+      if entry.key.equals(key) then {
+        bucket.* = MapBucket.filled(MapEntry { key, value })
+        break
+      } else i = i.add(1).modulo(map.buckets.len)
+  }
+}
+fun contains[K, V](map: Map[K, V], key: K): Bool { map.get(key).is_some() }
+fun get[K, V](map: Map[K, V], key: K): Maybe[V] {
+  switch map.get_ref(key) case some(val) some(val.*) case none none[V]()
+}
+fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
+  var i = key.hash().modulo(map.buckets.len)
+  loop {
+    var bucket = map.buckets.get_ref(i)
+    switch bucket.*
+    case empty return none[&V]()
+    case filled(entry)
+      if entry.key.equals(key)
+      then return some(entry.value.&)
+      else i = i.add(1).modulo(map.buckets.len)
+  }
+}
+fun write[W, K, V](writer: W, map: Map[K, V]) {
+  writer.write_char('{)
+  var first = true()
+  for bucket in map.buckets do
+    switch bucket
+    case empty {}
+    case filled(entry) {
+      if first then first = false() else writer.write_str(", ")
+      writer.write(entry.key)
+      writer.write_str(": ")
+      writer.write(entry.value)
+    }
+  writer.write_char('})
+}
+fun iter[K, V](map: Map[K, V]): MapIter[K, V] {
+  MapIter { buckets = map.buckets, index = 0 }
+}
+struct MapIter[K, V] { buckets: Slice[MapBucket[K, V]], index: U64 }
+fun next[K, V](map: &MapIter[K, V]): Maybe[MapEntry[K, V]] {
+  loop {
+    if map.index.is_at_least(map.buckets.len)
+    then return none[MapEntry[K, V]]()
+    map.index = map.index.add(1)
+    if map.buckets.get(map.index.subtract(1)) is filled(entry)
+    then return some(entry)
+  }
+}
+
+| Set  
+struct Set[T] { map: Map[T, Nothing] }
+fun set[T](): Set[T] { Set[T] { map = map[T, Nothing]() } }
+fun is_empty[T](set: Set[T]): Bool { set.map.size.equals(0) }
+fun put[T](set: &Set[T], value: T) { set.map.&.put(value, {}) }
+fun contains[T](set: Set[T], value: T): Bool { set.map.get(value).is_some() }
+fun to_set[T](vec: Vec[T]): Set[T] {
+  var set = set[T]()
+  for item in vec do set.&.put(item)
+  set
+}
+fun write[W, T](writer: W, set: Set[T]) {
+  writer.write_char('{)
+  var first = true()
+  for item in set do {
+    if first then first = false() else writer.write_str(", ")
+    writer.write(item)
+  }
+  writer.write_char('})
+}
+fun iter[T](set: Set[T]): SetIter[T] {
+  SetIter { buckets = set.map.buckets, index = 0 }
+}
+struct SetIter[T] { buckets: Slice[MapBucket[T, Nothing]], index: U64 }
+fun next[T](set: &SetIter[T]): Maybe[T] {
+  loop {
+    if set.index.is_at_least(set.buckets.len) then return none[T]()
+    set.index = set.index.add(1)
+    if set.buckets.get(set.index.subtract(1)) is filled(entry)
+    then return some(entry.key)
+  }
+}
+
+| Slice utility stuff  
+fun split(slice: Slice[U8], separator: Slice[U8]): Slice[Slice[U8]] {
+  var result = vec[Slice[U8]]()
+  for part in slice.iter().iter_split(separator) do result.&.push(part)
+  result.to_slice()
+}
+fun lines(slice: Slice[U8]): Slice[Slice[U8]] { slice.split("
+") }
+fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
+  if prefix.len.is_greater_than(slice.len) then return false()
+  for i in 0.to(prefix.len) do
+    if not(slice.get(i).equals(prefix.get(i))) then return false()
+  true()
+}
+fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
+  if suffix.len.is_greater_than(slice.len) then return false()
+  for i in 0.to(suffix.len) do
+    if not(
+      slice.get(slice.len.subtract(suffix.len).add(i)).equals(suffix.get(i))
+    )
+    then return false()
+  true()
+}
+fun trim_prefix(slice: &Slice[U8], prefix: Slice[U8]) {
+  if slice.starts_with(prefix)
+  then slice.* = slice.subslice(prefix.len)
+  else panic("slice doesn't start with prefix")
+}
+fun find[T](slice: Slice[T], needle: T): Maybe[U64] {
+  for i in 0.to(slice.len) do if slice.get(i).equals(needle) then return some(i)
+  none[U64]()
+}
+fun sort[T](slice: &Slice[T]) {
+  | quick sort
+  if slice.len.is_at_most(1) then return {}
+  var pivot = slice.get(slice.len.dec())
+  var i = 0
+  for j in 0.to(slice.len) do
+    if slice.get(j).is_less_than(pivot) then {
+      i = i.inc()
+      swap(slice.get_ref(i.dec()), slice.get_ref(j))
+    }
+  swap(slice.get_ref(i), slice.get_ref(slice.len.dec()))
+  sort(slice.subslice(0, i).&)
+  sort(slice.subslice(min(i.inc(), slice.len.dec()), slice.len).&)
+}
+fun iter[T](slice: Slice[T]): SliceIter[T] { SliceIter[T] { slice, index = 0 } }
+struct SliceIter[T] { slice: Slice[T], index: U64 }
+fun next[T](iter: &SliceIter[T]): Maybe[T] {
+  var item = if iter.index.is_less_than(iter.slice.len)
+    then some(iter.slice.get(iter.index))
+    else none[T]()
+  iter.index = iter.index.add(1)
+  item
+}
+fun rev_iter[T](slice: Slice[T]): SliceRevIter[T] {
+  SliceRevIter { slice, index = slice.len }
+}
+struct SliceRevIter[T] {
+  slice: Slice[T],
+  index: U64, | last yielded item
+}
+fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
+  if iter.index.is_greater_than(0) then {
+    iter.index = iter.index.subtract(1)
+    some[T](iter.slice.get(iter.index))
+  } else none[T]()
+}
+fun iter_split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
+  SplitIter[I] { iter, separator }
+}
+struct SplitIter[I] { iter: I, separator: Slice[U8] }
+fun iter[I](iter: SplitIter[I]): SplitIter[I] { iter }
+fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
+  var line = vec[U8]()
+  loop
+    switch self.iter.&.next()
+    case none
+      if line.len.is_greater_than(0) then break else return none[Slice[U8]]()
+    case some(c) {
+      line.&.push(c)
+      if line.to_slice().subslice(line.len.subtract(self.separator.len))
+        .equals(self.separator)
+      then return some(
+        line.to_slice().subslice(0, line.len.subtract(self.separator.len))
+      )
+    }
+  some(line.to_slice())
+}
+fun min[T](slice: Set[T]): Maybe[T] {
+  var candidate = none[T]()
+  for item in slice do
+    switch candidate
+    case some(c) candidate = some(min(c, item))
+    case none candidate = some(item)
+  return candidate
+}
+|fun enumerate[I](iter: I): Enumerated[I] {
+|  Enumerated[I] { iter, counter = 0 }
+|}
+|struct Enumerated[T, I] { iter: I, counter: U64 }
+| TODO: Support inferring part of the return type like here
+|fun next[I](self: &Enumerated[I]): Maybe[Pair[U64, _]] { ... }
+
+| TODO: segment tree, treap

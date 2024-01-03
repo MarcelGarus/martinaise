@@ -1,6 +1,6 @@
-martinaise: martinaise_1 compiler/1/stdlib.mar
+martinaise: martinaise_1 compiler/2/stdlib.mar
 	cp martinaise_1 martinaise
-	cp compiler/1/stdlib.mar stdlib.mar
+	cp compiler/2/stdlib.mar stdlib.mar
 
 martinaise_0: $(wildcard compiler/0/src/*) compiler/0/build.zig
 	@echo "# Martinaise 0"
