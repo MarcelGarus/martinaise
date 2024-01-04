@@ -11,19 +11,17 @@
 | deleting code in this file.
 
 | Language todos  
-| TODO: type aliases
 | TODO: validate all signatures before lowering
-| TODO: global constants
+| TODO: string interpolation
 | TODO: break and continue with targets
-| TODO: string interpolation?
-| TODO: funs as values, function types, higher-order funs
-| TODO: var bool = foo is some
-| TODO: enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
 | TODO: infer return types
-| TODO: allow underscore for ignoring values
+| TODO: enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
+| TODO: funs as values, function types, higher-order funs?
 | TODO: operators?
+| TODO: var bool = foo is some?
 | TODO: slice literals? array literals?
-| TODO: struct destructuring? probably not
+| TODO: type aliases?
+| TODO: struct destructuring?
 
 | Nothing (aka Unit or Void)  
 | Nothing is a type with only one instance. From an information theoretical
