@@ -53,3 +53,4 @@ It uses the compiler 1 stdlib, but it's designed to compile the compiler 2 stdli
   - makes `orelse` customizable (not just work on `Maybe`)
   - introduces `Str`, `Char`, `OsStr`
   - ints support radixes such as `8#666`
+  - fixes inner variables replacing ones in outer scopes

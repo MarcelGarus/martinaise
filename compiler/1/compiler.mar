@@ -1266,6 +1266,8 @@ fun write_line_number[W](writer: W, n: U64) {
 | ignored. While the AST may contain invalid code (like 3 = 1), the Mono is
 | guaranteed to be correct – during the monomorphization, variable scoping, name
 | lookups, and type checking take place.
+| 
+| TODO: explain slots, statements, expressions
 
 struct Mono {
   type_defs: Map[Type, MonoTypeDef],
@@ -1454,6 +1456,135 @@ fun write[W](writer: W, expr: MonoExpr) {
   case never writer.write_str("_never")
 }
 
+| Context  
+| When monomorphizing fails, we want to have backtraces – a path from the main
+| function over all monomorphized function to the failing location. The Context
+| tracks what the compiler is currently doing – it's basically a stack of
+| function signatures. Every time a signature is pushed or popped, it also
+| prints a one-line message to the console, something like this:
+|
+| Compiling main > println > print > write > write_with_radix > digit_to_char...
+
+struct Context { signatures: Vec[Slice[U8]] }
+
+fun push(context: &Context, signature: Slice[U8]) {
+  context.signatures.&.push(signature)
+  context.print_status()
+}
+fun pop(context: &Context) {
+  context.signatures.&.pop()
+  context.print_status()
+}
+
+fun print_status(context: Context) {
+  var out = vec[U8]().&
+  out.write_str("Compiling ")
+  var first = true()
+  for signature in context.signatures do {
+    if first then first = false() else out.write_str(" > ")
+    | Because we want many signatures to fit on one line, only write the
+    | function name up to the first opening parenthesis or bracket.
+    var j = 0
+    loop
+      if signature.get(j).equals('().or(signature.get(j).equals('[))
+      then break
+      else j = j.inc()
+    out.write_str(signature.subslice(0, j))
+  }
+  if out.len.is_greater_than(80) then {
+    out.len = 77
+    out.write_str("...")
+  }
+  print_on_same_line(out.to_slice())
+}
+fun write_stack_trace[W](writer: W, context: Context) {
+  for signature in context.signatures do {
+    writer.write_str(" - ")
+    writer.write_str(signature)
+    writer.write_char(newline())
+  }
+}
+
+| Tracking Variables That Are In Scope  
+| In Martinaise, variable shadowing is allowed – you can create a new variable
+| with the same name as an existing one, whether in the same scope or an inner
+| scope.
+| Initially, information about which variables are in scope were stored in a
+| hash map. Unfortunately, managing nested scopes gets difficult or inefficient
+| pretty quickly.
+| In Candy, we just dealt with this problem using some fancy new thing (tm). In
+| our case, this is an immutable hash map from the "im" Rust crate – a hash map
+| where inserting values returns a new hash map instead. The resulting hash maps
+| share a lot of the data internally, so memory usage is not too bad. Still,
+| we're creating heap-allocated pointer-linked nodes all over the place.
+| Martinaise uses a much simpler approach: When new variables are defined, they
+| are just appended to a vector. When entering scopes, we remember the length of
+| the vector and we truncate it to that length when we exit the scope. For
+| variable lookups, we walk the vec in reverse. Here's an example:
+|
+| var foo = 2
+| var bar = 3
+| var baz = {
+|   var foo = foo.inc()
+|   bar = bar.dec()
+|   foo.multiply(2)
+| }
+|
+| ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐
+| │ foo = 2 │ (1) │ foo = 2 │ (2) │ foo = 2 │ (3) │ foo = 2 │ (4) │ foo = 2 │
+| ├─────────┤     ├─────────┤     ├─────────┤     ├─────────┤     ├─────────┤
+| │ bar = 3 │     │ bar = 3 │     │ bar = 2 │     │ bar = 3 │     │ bar = 3 │
+| └─────────┘     ├─────────┤     ├─────────┤     └─────────┘     ├─────────┤
+|                 │ foo = 3 │     │ foo = 3 │                     │ baz = 6 │
+|                 └─────────┘     └─────────┘                     └─────────┘
+|
+| 1. When entering the baz scope, foo and bar are already defined. Because we
+|    enter a scope, we remember the length of the variable vector (length 2).
+|    The definition of foo inside the baz scope gets appended to the vector.
+| 2. When accessing variables, we walk the vector from the end to the beginning.
+|    "foo" accesses the foo from the inner scope, "bar" accesses the bar from
+|    the outer scope. Here, bar is changed to a new value.
+| 3. When exiting a scope, we truncate the vector to the length we remembered
+|    (length 2). The newly defined foo goes out of scope.
+| 4. New definitions are again just appended to the vector.
+|
+| You might think that doing a linear search on a vector is horribly
+| inefficient. Thankfully, some aspects of this problem make this not-so-bad in
+| practice:
+|
+| - Variable scopes tend to be small. Variables are local to a function, so they
+|   are limited by the function length.
+| - Martinaise makes it easy to start new scopes to avoid cluttering the
+|   surrounding namespace. This makes the number of variables in a scope even
+|   smaller.
+| - You tend to use recently defined variables more often. As a result, walking
+|   the vector is often pretty slow.
+| - Computers are super fast. Linearly scanning through memory is one of the
+|   fastest memory access patterns you can have, unlike traversing down nodes of
+|   a hash map.
+
+struct Vars[T] { visible: Vec[VarInScope[T]] }
+struct VarInScope[T] { name: Slice[U8], data: T }
+struct VarScope { num_visible: U64 }
+
+fun vars[T](): Vars[T] { Vars { visible = vec[VarInScope[T]]() } }
+
+fun define[T](vars: &Vars[T], name: Slice[U8], data: T) {
+  vars.visible.&.push(VarInScope { name, data })
+}
+fun lookup[T](vars: Vars[T], name: Slice[U8]): Maybe[T] {
+  for var_ in vars.visible.to_slice().rev_iter() do
+    if var_.name.equals(name) then return some(var_.data)
+  none[T]()
+}
+
+fun snapshot[T](vars: Vars[T]): VarScope {
+  VarScope { num_visible = vars.visible.len }
+}
+fun restore[T](vars: &Vars[T], scope: VarScope) {
+  vars.visible.len = scope.num_visible
+}
+
 | Type Solving  
 | When compiling generic code, the free type variables need to be bound to
 | concrete types. For example, to compile a function foo[A](), we need to know
@@ -1481,10 +1612,12 @@ fun write[W](writer: W, expr: MonoExpr) {
 |    to concrete types. It can be used to specialize the generic code to the
 |    usage site.
 |    In the example above, the resulting type environment would be {A: U64}.
+
 struct TypeSolver {
   vars: Set[Slice[U8]],
   env: Map[Slice[U8], Type],
 }
+
 fun create_type_solver[Iter](vars_: Iter): TypeSolver {
   | TODO: make sure each type var only exists once
   var vars = set[Slice[U8]]()
@@ -1574,44 +1707,6 @@ fun finish(solver: TypeSolver): Result[Map[Slice[U8], Type], Slice[U8]] {
 | function is encountered recursively, only its signature is needed to figure
 | out how to use it.
 
-| When monomorphizing fails, we want to have backtraces – a path from the main
-| function over all monomorphized function to the failing location. The Context
-| tracks what the compiler is currently doing – it's basically a stack of
-| function signatures. Every time a signature is pushed or popped, it also
-| prints a one-line message to the console, something like this:
-| 
-| Compiling main > println > print > write > write_with_radix > digit_to_char...
-struct Context { signatures: Vec[Slice[U8]] }
-fun push(context: &Context, signature: Slice[U8]) {
-  context.signatures.&.push(signature)
-  context.print_status()
-}
-fun pop(context: &Context) {
-  context.signatures.&.pop()
-  context.print_status()
-}
-fun print_status(context: Context) {
-  var out = vec[U8]().&
-  out.write_str("Compiling ")
-  var first = true()
-  for signature in context.signatures do {
-    if first then first = false() else out.write_str(" > ")
-    | Because we want many signatures to fit on one line, only write the
-    | function name up to the first opening parenthesis or bracket.
-    var j = 0
-    loop
-      if signature.get(j).equals('().or(signature.get(j).equals('[))
-      then break
-      else j = j.inc()
-    out.write_str(signature.subslice(0, j))
-  }
-  if out.len.is_greater_than(80) then {
-    out.len = 77
-    out.write_str("...")
-  }
-  print_on_same_line(out.to_slice())
-}
-
 fun monomorphize(ast: Ast): Result[Mono, Slice[U8]] {
   var context = Context { signatures = vec[Slice[U8]]() }
   var mono = Mono {
@@ -1631,12 +1726,7 @@ fun monomorphize(ast: Ast): Result[Mono, Slice[U8]] {
       var out = vec[U8]().&
       out.write_str("Error when compiling")
       out.write_char(newline())
-      for signature in context.signatures do {
-        out.write_str(" - ")
-        out.write_str(signature)
-        out.write_char(newline())
-      }
-      out.write_char(newline())
+      out.write_stack_trace(context)
       out.write_str(error)
       out.to_slice()
     })
@@ -1924,14 +2014,14 @@ fun monomorphize(
     slots = vec[MonoSlot](),
     body = vec[MonoStatement](),
   }
-  var vars = map[Slice[U8], MonoSlotRef]() {
+  var vars = vars[MonoSlotRef]() {
     for i in 0.to(fun_.args.len) do {
       var slot = MonoSlotRef { index = mono_fun.slots.len }
       mono_fun.slots.&.push(MonoSlot {
         type = arg_types.get(i),
         initial_value = MonoSlotValue.arg(i)
       })
-      vars.&.put(fun_.args.get(i).name, slot)
+      vars.&.define(fun_.args.get(i).name, slot)
     }
   }
 
@@ -1950,7 +2040,7 @@ fun monomorphize(
     break_scopes = stack[BreakScope](),
     continue_scopes = stack[ContinueScope](),
   }
-  var body_result = compile_fun.&.compile(fun_.body)?
+  var body_result = compile_fun.&.compile_body(fun_.body)?
 
   | For builtin functions, we trust the fully specified return type.
   | For user-written functions, we take the actual return type.
@@ -1974,7 +2064,7 @@ struct CompileFun {
   fun_: &MonoFun,
   type_env: Map[Slice[U8], Type], | maps fun type args to concrete types
   next_label: U64,
-  vars: Map[Slice[U8], MonoSlotRef],
+  vars: Vars[MonoSlotRef],
   expected_return_type: Type,     | return type from function signature
   return_type: Maybe[Type],       | return type deduced from body
   | When lowering loops, breaks and continues don't know where to jump yet.
@@ -2066,13 +2156,35 @@ fun new_returned_type(self: &CompileFun, returned: Type): Result[Nothing, Slice[
   ok[Nothing, Slice[U8]]({})
 }
 
-fun compile(self: &CompileFun, body: Vec[AstExpr]): Result[MonoExpr, Slice[U8]] {
+| Most expressions are compiled in a separate variable scope. For example, this
+| shouldn't work:
+|
+| foo(var a = 3, a)
+|
+| Only the body expression compiles child expressions in a common scope:
+|
+| {
+|   var a = a
+|   var b = a  | works
+| }
+fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
+  var scope = self.vars.snapshot()
+  var mono = self.compile_in_current_scope(expr)
+  self.vars.&.restore(scope)
+  mono
+}
+fun compile_body(
+  self: &CompileFun, body: Vec[AstExpr]
+): Result[MonoExpr, Slice[U8]] {
+  var scope = self.vars.snapshot()
   var last = none[MonoExpr]()
-  for expr in body do last = some(self.compile(expr)?)
+  for expr in body do last = some(self.compile_in_current_scope(expr)?)
+  self.vars.&.restore(scope)
   ok[MonoExpr, Slice[U8]](last orelse nothing_expr())
 }
-
-fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
+fun compile_in_current_scope(
+  self: &CompileFun, expr: AstExpr
+): Result[MonoExpr, Slice[U8]] {
   ok[MonoExpr,Slice[U8]](
     switch expr
     case int(int) self.slot_expr(self.add_slot(
@@ -2084,7 +2196,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       self.slot_expr(self.add_slot(type("Str"), MonoSlotValue.str(str)))
     }
     case name(name) self.slot_expr(
-      self.vars.get(name)
+      self.vars.lookup(name)
         orelse return error[MonoExpr, Slice[U8]]({
           var out = vec[U8]().&
           out.write_char('")
@@ -2405,7 +2517,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
         to = self.slot_expr(slot),
         value,
       }))
-      self.vars.&.put(var_.name, slot)
+      self.vars.&.define(var_.name, slot)
       nothing_expr()
     }
     case assign(assign) {
@@ -2559,11 +2671,12 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
           of = value,
           variant = case_.variant,
         }))
-        | TODO: create inner vars
+        var scope = self.vars.snapshot()
         if case_.binding is some(binding) then
-          self.vars.&.put(binding, unpacked)
-
+          self.vars.&.define(binding, unpacked)
         var then_ = self.compile(case_.then_.*)?
+        self.vars.&.restore(scope)
+
         if not(then_.type.is_never()) then {
           switch type
           case none type = some(then_.type)
@@ -2654,7 +2767,6 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       | TODO: save the loop start instead
       self.continue_scopes.&.push(ContinueScope { continues = vec[U64]() })
 
-      | TODO: Create inner vars
       var loop_start = self.put_label()
       self.compile(expr.*)?
       self.put(MonoStatement.jump(MonoJump { target = loop_start }))
@@ -2774,7 +2886,7 @@ fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Slice[U8]] {
       }))
       self.slot_expr(ok_payload)
     }
-    case body(body) self.compile(body)?
+    case body(body) self.compile_body(body)?
   )
 }
 

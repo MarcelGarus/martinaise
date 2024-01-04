@@ -13,7 +13,6 @@
 | Language todos  
 | TODO: type aliases
 | TODO: validate all signatures before lowering
-| TODO: validate field in make struct
 | TODO: global constants
 | TODO: break and continue with targets
 | TODO: string interpolation?
@@ -528,6 +527,7 @@ struct SliceRevIter[T] {
   slice: Slice[T],
   index: U64, | last yielded item
 }
+fun iter[T](iter: SliceRevIter[T]): SliceRevIter[T] { iter }
 fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
   if iter.index.is_greater_than(0) then {
     iter.index = iter.index.subtract(1)
