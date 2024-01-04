@@ -8,7 +8,7 @@
 | only provides very slim wrappers around some libc functions.
 | Everything else is defined in Martinaise code, even very basic things like
 | Bool. The compiler relies on some of these definitions, so be careful when
-| deleting code in this file because that may crash the compiler.
+| deleting code in this file.
 
 | Language todos  
 | TODO: type aliases
@@ -38,20 +38,20 @@
 struct Nothing {}
 
 fun write[W](writer: W, nothing: Nothing) { writer.write("nothing") }
-fun equals(a: Nothing, b: Nothing): Bool { true() }
+fun equals(a: Nothing, b: Nothing): Bool { true }
 fun ignore[T](value: T) {}
 
 | Never and Panics  
 | Never is a type with zero instances. If you write a function that accepts an
-| argument of Never, it can never be called – you can be sure there is no
-| instance of Never.
+| argument of Never, it can never be called (otherwise, the caller would have
+| a Never instance).
 | Why do we need something like this? Some expressions always abort control
 | flow, for example `return 3` or `continue` or `break(your_leg)`. These
 | evaluate to the Never type. Because Never is never instantiated, it can be
 | assigned to anything:
 |
 | foo.some_bool = return "Hi"
-| 2.add(break 9)
+| 2.add(maybe_int orelse break)
 | Maybe[U64].some(todo())
 
 enum Never {}
@@ -60,15 +60,14 @@ fun halt(): Never { loop {} }
 fun libc_exit(status: U8): Nothing { ... }
 fun exit(status: U8): Never { libc_exit(status) halt() }
 
-fun panic(message: Str): Never {
-  stderr().write(message)
-  stderr().write(newline())
-  exit(1_U8)
-}
+fun panic(message: Str): Never { stderr.writeln(message) exit(1_U8) }
 fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
 fun todo(): Never { panic("todo") }
-fun assert(condition: Bool) { if not(condition) then panic("assert failed") }
+fun assert(condition: Bool) { assert(condition, "assert failed") }
+fun assert(condition: Bool, message: Str) {
+  if not(condition) then panic(message)
+}
 
 | Equality  
 | You should implement an equals(T, T): Bool function for types that can be
@@ -102,22 +101,23 @@ fun is_not_empty[T](container: T): Bool { not(container.is_empty()) }
 
 | Bool  
 | After the Never type with zero instances and the Nothing type with one
-| instance, scientists discovered a groundbreaking concept: A type with two
-| instances!
+| instance, Norwegian scientists discovered a groundbreaking concept: A type
+| with two instances!
 | Like with Never and Nothing, the Martinaise compiler depends on this type
-| existing. Please don't remove it.
+| existing. Please don't remove it. And pretty please don't reassign the global
+| true and false variables.
 
 enum Bool { true, false }
 
-fun true(): Bool { Bool.true } | TODO: make these global vars once that works
-fun false(): Bool { Bool.false }
+var true = Bool.true
+var false = Bool.false
 
 fun equals(a: Bool, b: Bool): Bool { if a then b else not(b) }
-fun not(a: Bool): Bool { if a then false() else true() }
+fun not(a: Bool): Bool { if a then false else true }
 fun and(a: Bool, b: Bool): Bool { if a then b else a }
-fun or(a: Bool, b: Bool): Bool { if a then true() else b }
+fun or(a: Bool, b: Bool): Bool { if a then true else b }
 fun xor(a: Bool, b: Bool): Bool { if a then not(b) else b }
-fun implies(a: Bool, b: Bool): Bool { if a then b else true() }
+fun implies(a: Bool, b: Bool): Bool { if a then b else true }
 
 fun write[W](writer: W, b: Bool) {
   writer.write(if b then "true" else "false")
@@ -135,6 +135,8 @@ fun none[T](): Maybe[T] { Maybe[T].none }
 
 fun unwrap[T](maybe: Maybe[T]): T { maybe orelse panic("called none.unwrap") }
 fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { inner orelse none[T]() }
+fun is_some[T](maybe: Maybe[T]): Bool { if maybe is some then true else false }
+fun is_none[T](maybe: Maybe[T]): Bool { if maybe is none then true else false }
 
 fun write[W, T](writer: W, maybe: Maybe[T]) {
   switch maybe
@@ -147,7 +149,7 @@ fun write[W, T](writer: W, maybe: Maybe[T]) {
 }
 fun equals[T](a: Maybe[T], b: Maybe[T]): Bool {
   switch a
-  case some(aa) { switch b case some(bb) aa.equals(bb) case none false() }
+  case some(aa) { switch b case some(bb) aa.equals(bb) case none false }
   case none b.is_none()
 }
 fun hash[T](hasher: &Hasher, value: Maybe[T]) {
@@ -185,8 +187,8 @@ fun write[W, O, E](writer: W, result: Result[O, E]) {
 }
 fun equals[O, E](a: Result[O, E], b: Result[O, E]): Bool {
   switch a
-  case ok(ao) { switch b case ok(bo) ao.equals(bo) case error false() }
-  case error(ae) { switch b case error(be) ae.equals(be) case ok false() }
+  case ok(ao) { switch b case ok(bo) ao.equals(bo) case error false }
+  case error(ae) { switch b case error(be) ae.equals(be) case ok false }
 }
 fun hash[O, E](hasher: &Hasher, result: Result[O, E]) {
   switch result
@@ -322,19 +324,19 @@ fun parse_U64(str: Str): U64 {
 enum Ordering { less, equal, greater }
 
 fun is_less(ord: Ordering): Bool {
-  switch ord case less true() case equal false() case greater false()
+  switch ord case less true case equal false case greater false
 }
 fun is_equal(ord: Ordering): Bool {
-  switch ord case less false() case equal true() case greater false()
+  switch ord case less false case equal true case greater false
 }
 fun is_greater(ord: Ordering): Bool {
-  switch ord case less false() case equal false() case greater true()
+  switch ord case less false case equal false case greater true
 }
 fun is_less_or_equal(ord: Ordering): Bool {
-  switch ord case less true() case equal true() case greater false()
+  switch ord case less true case equal true case greater false
 }
 fun is_greater_or_equal(ord: Ordering): Bool {
-  switch ord case less false() case equal true() case greater true()
+  switch ord case less false case equal true case greater true
 }
 fun equals(a: Ordering, b: Ordering): Bool {
   switch a
@@ -459,8 +461,8 @@ fun compare_to[T](a: Slice[T], b: Slice[T]): Ordering {
   }
 }
 fun equals[T](a: Slice[T], b: Slice[T]): Bool {
-  a.len.equals(b.len) orelse return false()
-  | TODO: support for types that only have equals, not compare_to
+  a.len.equals(b.len) orelse return false
+  | TODO: support types that only have equals, not compare_to
   compare_to(a, b).is_equal()
 }
 fun hash[T](hasher: &Hasher, slice: Slice[T]) {
@@ -468,28 +470,22 @@ fun hash[T](hasher: &Hasher, slice: Slice[T]) {
 }
 fun write[W, T](writer: W, slice: Slice[T]) {
   writer.write('[)
-  var first = true()
-  for item in slice do {
-    if first then first = false() else writer.write(", ")
-    writer.write(item)
-  }
+  writer.write_comma_separated(slice)
   writer.write('])
 }
 
 fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
-  if prefix.len.is_greater_than(slice.len) then return false()
+  if prefix.len.is_greater_than(slice.len) then return false
   for i in 0.to(prefix.len) do
-    if not(slice.get(i).equals(prefix.get(i))) then return false()
-  true()
+    if not(slice.get(i).equals(prefix.get(i))) then return false
+  true
 }
 fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
-  if suffix.len.is_greater_than(slice.len) then return false()
+  if suffix.len.is_greater_than(slice.len) then return false
   for i in 0.to(suffix.len) do
-    if not(
-      slice.get(slice.len.subtract(suffix.len).add(i)).equals(suffix.get(i))
-    )
-    then return false()
-  true()
+    slice.get(slice.len.subtract(suffix.len).add(i)).equals(suffix.get(i))
+      orelse return false
+  true
 }
 fun find[T](slice: Slice[T], needle: T): Maybe[U64] {
   for i in 0.to(slice.len) do if slice.get(i).equals(needle) then return some(i)
@@ -568,7 +564,7 @@ fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
 | formatted nicely.
 | Finally, OsStr is a string useful for operating system APIs – basically a
 | char*. You can't efficiently get the length or do many interesting operations
-| on it, buuuuut it's null-terminated.
+| on it. It's null-terminated.
 
 struct Str { bytes: Slice[U8] }
 struct OsStr { ref: &U8 } | null-terminated
@@ -625,8 +621,8 @@ fun compare_to(a: Str, b: Str): Ordering {
   }
 }
 fun equals(a: Str, b: Str): Bool {
-  | TODO: support for types that only have equals, not compare_to
-  if a.len().equals(b.len()) then compare_to(a, b).is_equal() else false()
+  | TODO: support types that only have equals, not compare_to
+  if a.len().equals(b.len()) then compare_to(a, b).is_equal() else false
 }
 fun hash(hasher: &Hasher, str: Str) {
   for byte in str.bytes do hasher.hash(byte)
@@ -732,11 +728,11 @@ fun hash(hasher: &Hasher, flag: OpenFileFlag) {
 }
 fun equals(a: OpenFileFlag, b: OpenFileFlag): Bool {
   switch a
-  case read if b is read then true() else false()
-  case write if b is write then true() else false()
-  case create if b is create then true() else false()
-  case truncate if b is truncate then true() else false()
-  case append if b is append then true() else false()
+  case read if b is read then true else false
+  case write if b is write then true else false
+  case create if b is create then true else false
+  case truncate if b is truncate then true else false
+  case append if b is append then true else false
 }
 
 fun open_file(
@@ -814,19 +810,30 @@ fun write_file(name: Str, content: Slice[U8]) {
 | printed. Writers are anything that has a write_byte(Writer, U8) function.
 | TODO: Use libc_write function more efficiently (not 1 byte per syscall)
 
-fun stdin(): File { File { descriptor = 0 } }
-fun stdout(): File { File { descriptor = 1 } }
-fun stderr(): File { File { descriptor = 2 } }
+var stdin = File { descriptor = 0 }
+var stdout = File { descriptor = 1 }
+var stderr = File { descriptor = 2 }
 
-fun print[T](value: T) { stdout().write(value) }
+fun writeln[W](writer: W) { writer.write(newline) }
+fun writeln[W, T](writer: W, value: T) { writer.write(value) writer.writeln() }
+fun write_comma_separated[W, T](writer: W, iter: T) {
+  var first = true
+  for item in iter do {
+    if first then first = false else writer.write(", ")
+    writer.write(item)
+  }
+}
+
+fun print[T](value: T) { stdout.write(value) }
+fun println() { print(newline) }
 fun println[T](value: T) { print(value) println() }
-fun println() { stdout().write(newline()) }
-fun eprint[T](value: T) { stderr().write(value) }
-fun eprintln[T](value: T) { eprint(value) eprintln() }
-fun eprintln() { stderr().write(newline()) }
 
-fun newline(): Char { 10_U8.to_char() } | TODO: refactor to var when we have global vars
-fun tab(): Char { 9_U8.to_char() } | TODO: refactor to global var
+fun eprint[T](value: T) { stderr.write(value) }
+fun eprintln() { eprint(newline) }
+fun eprintln[T](value: T) { eprint(value) eprintln() }
+
+var newline = 10_U8.to_char()
+var tab = 9_U8.to_char()
 
 | Range  
 | Ranges have an inclusive start and exclusive end value.
@@ -1069,10 +1076,9 @@ fun to_slices[T](deque: Deque[T]): Tuple[Slice[T], Slice[T]] {
   )
 }
 fun equals[T](a: Deque[T], b: Deque[T]): Bool {
-  if a.len().notEquals(b.len()) then return false()
-  for i in 0.to(a.len()) do
-    if a.get(i).notEquals(b.get(i)) then return false()
-  true()
+  a.len().equals(b.len()) orelse return false
+  for i in 0.to(a.len()) do a.get(i).equals(b.get(i)) orelse return false
+  true
 }
 
 | Map   
@@ -1140,12 +1146,12 @@ fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
 
 fun write[W, K, V](writer: W, map: Map[K, V]) {
   writer.write('{)
-  var first = true()
+  var first = true
   for bucket in map.buckets do
     switch bucket
     case empty {}
     case filled(entry) {
-      if first then first = false() else writer.write(", ")
+      if first then first = false else writer.write(", ")
       writer.write(entry.key)
       writer.write(": ")
       writer.write(entry.value)
@@ -1184,9 +1190,9 @@ fun contains[T](set: Set[T], value: T): Bool { set.map.get(value).is_some() }
 
 fun write[W, T](writer: W, set: Set[T]) {
   writer.write('{)
-  var first = true()
+  var first = true
   for item in set do {
-    if first then first = false() else writer.write(", ")
+    if first then first = false else writer.write(", ")
     writer.write(item)
   }
   writer.write('})

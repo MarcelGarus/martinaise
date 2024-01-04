@@ -183,25 +183,30 @@ fun write[W](writer: W, int: Int) {
 | The compiler input is parsed into an abstract syntax tree. This tree is a
 | representation of the program that roughly corresponds to the structure of the
 | source code.
+
 struct Ast { defs: Vec[AstDef] }
 enum AstDef {
   builtin_type: Slice[U8], | not parsed from code
   struct_: AstStruct,
   enum_: AstEnum,
+  var_: AstVar, | same AstVar as in funs
   fun_: AstFun,
 }
+
 struct AstStruct {
   name: Slice[U8],
   type_args: Vec[Slice[U8]],
   fields: Vec[AstStructField],
 }
 struct AstStructField { name: Slice[U8], type: Type }
+
 struct AstEnum {
   name: Slice[U8],
   type_args: Vec[Slice[U8]],
   variants: Vec[AstEnumVariant],
 }
 struct AstEnumVariant { name: Slice[U8], type: Type }
+
 struct AstFun {
   name: Slice[U8],
   type_args: Vec[Slice[U8]],
@@ -271,6 +276,7 @@ fun write[W](writer: W, def: AstDef) {
   }
   case struct_(s) writer.write(s)
   case enum_(e) writer.write(e)
+  case var_(v) writer.write(v)
   case fun_(f) writer.write(f)
 }
 fun write_signature[W](writer: W, def: AstDef) {
@@ -288,6 +294,10 @@ fun write_signature[W](writer: W, def: AstDef) {
     writer.write_str("enum ")
     writer.write_str(e.name)
     writer.write_type_args(e.type_args)
+  }
+  case var_(v) {
+    writer.write_str("var ")
+    writer.write_str(v.name)
   }
   case fun_(f) {
     writer.write_str(f.name)
@@ -336,6 +346,13 @@ fun write[W](writer: W, e: AstEnum) {
     }
     writer.write_char('})
   }
+}
+fun write[W](writer: W, var_: AstVar) { writer.write(0, var_) }
+fun write[W](writer: W, indent: U64, var_: AstVar) {
+  writer.write_str("var ")
+  writer.write_str(var_.name)
+  writer.write_str(" = ")
+  writer.write(indent, var_.value.*)
 }
 fun write[W](writer: W, f: AstFun) {
   writer.write_str("fun ")
@@ -422,12 +439,7 @@ fun write[W](writer: W, indent: U64, expr: AstExpr) {
     writer.write_char('.)
     writer.write_str(member.name)
   }
-  case var_(var_) {
-    writer.write_str("var ")
-    writer.write_str(var_.name)
-    writer.write_str(" = ")
-    writer.write(indent, var_.value.*)
-  }
+  case var_(var_) writer.write(var_)
   case assign(assign) {
     writer.write(indent, assign.to.*)
     writer.write_str(" = ")
@@ -662,7 +674,7 @@ fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]
   if parser.parse_str()? is some(s) then return parsed(s)
   if parser.parse_make()? is some(s) then return parsed(s)
   if parser.parse_body()? is some(b) then return parsed(AstExpr.body(b))
-  if parser.parse_var()? is some(v) then return parsed(v)
+  if parser.parse_var()? is some(v) then return parsed(AstExpr.var_(v))
   if parser.parse_if()? is some(i) then return parsed(i)
   if parser.parse_switch()? is some(s) then return parsed(s)
   if parser.parse_loop()? is some(l) then return parsed(l)
@@ -806,15 +818,15 @@ fun parse_body(parser: &Parser): Result[Maybe[Vec[AstExpr]], Slice[U8]] {
   parsed(statements)
 }
 
-fun parse_var(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
-  parser.consume_keyword("var") orelse return no_match[AstExpr]()
+fun parse_var(parser: &Parser): Result[Maybe[AstVar], Slice[U8]] {
+  parser.consume_keyword("var") orelse return no_match[AstVar]()
   var name = parser.parse_lower_name()
-    orelse return bad_input[AstExpr]("Expected the name of the variable.")
+    orelse return bad_input[AstVar]("Expected the name of the variable.")
   parser.consume_prefix("=")
-    orelse return bad_input[AstExpr]("Expected an equals sign.")
+    orelse return bad_input[AstVar]("Expected an equals sign.")
   var value = parser.parse_expr()?
-    orelse return bad_input[AstExpr]("Expected the value of the variable.")
-  parsed(AstExpr.var_(AstVar { name, value = value.put_on_heap() }))
+    orelse return bad_input[AstVar]("Expected the value of the variable.")
+  parsed(AstVar { name, value = value.put_on_heap() })
 }
 
 fun parse_if(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
@@ -1129,6 +1141,7 @@ fun parse_enum(parser: &Parser): Result[Maybe[AstEnum], Slice[U8]] {
 fun parse_def(parser: &Parser): Result[Maybe[AstDef], Slice[U8]] {
   if parser.parse_struct()? is some(s) then return parsed(AstDef.struct_(s))
   if parser.parse_enum()? is some(e) then return parsed(AstDef.enum_(e))
+  if parser.parse_var()? is some(v) then return parsed(AstDef.var_(v))
   if parser.parse_fun()? is some(f) then return parsed(AstDef.fun_(f))
   no_match[AstDef]()
 }
@@ -1267,13 +1280,20 @@ fun write_line_number[W](writer: W, n: U64) {
 | guaranteed to be correct – during the monomorphization, variable scoping, name
 | lookups, and type checking take place.
 | 
-| TODO: explain slots, statements, expressions
+| TODO: explain slots, statements, expressions, vars
 
 struct Mono {
+  | Monomorphized type definitions.
   type_defs: Map[Type, MonoTypeDef],
-  | keys are monomorphized function signatures such as "foo(Int)"
+
+  | Global variables. They map to a function that computes the value.
+  vars: Map[Slice[U8], MonoFun],
+  vars_init_order: Vec[Slice[U8]],
+
+  | Monomorphized functions. Keys are signatures such as "foo[U8](U8)".
   funs: Map[Slice[U8], MonoFun],
 }
+
 enum MonoTypeDef {
   builtin_type,
   struct_: MonoStruct,
@@ -1283,6 +1303,7 @@ struct MonoStruct { fields: Vec[MonoStructField] }
 struct MonoStructField { name: Slice[U8], type: Type }
 struct MonoEnum { variants: Vec[MonoEnumVariant] }
 struct MonoEnumVariant { name: Slice[U8], type: Type }
+
 struct MonoFun {
   type_args: Vec[Type],
   arg_types: Vec[Type],
@@ -1321,7 +1342,13 @@ struct MonoGetEnumValue { to: MonoSlotRef, of: MonoExpr, variant: Slice[U8] }
 struct MonoRef { to: MonoSlotRef, of: MonoExpr }
 
 struct MonoExpr { type: Type, kind: MonoExprKind }
-enum MonoExprKind { slot: MonoSlotRef, member: MonoMember, nothing, never }
+enum MonoExprKind {
+  nothing,
+  never,
+  global: Slice[U8],
+  slot: MonoSlotRef,
+  member: MonoMember,
+}
 struct MonoMember { of: &MonoExpr, name: Slice[U8] }
 
 fun write[W](writer: W, mono: Mono) {
@@ -1331,6 +1358,16 @@ fun write[W](writer: W, mono: Mono) {
   for entry in mono.type_defs do {
     writer.write_str("- ")
     writer.write(entry.key)
+    writer.write_char(newline())
+  }
+
+  writer.write_str("Vars:")
+  writer.write_char(newline())
+  for entry in mono.vars do {
+    writer.write_str("- ")
+    writer.write(entry.key)
+    writer.write_str(": ")
+    writer.write(entry.value.return_type)
     writer.write_char(newline())
   }
 
@@ -1446,6 +1483,10 @@ fun write[W](writer: W, slot: MonoSlotRef) {
 }
 fun write[W](writer: W, expr: MonoExpr) {
   switch expr.kind
+  case global(name) {
+    writer.write_str("global_")
+    writer.write_str(name)
+  }
   case slot(slot) writer.write(slot)
   case member(member) {
     writer.write(member.of.*)
@@ -1585,6 +1626,43 @@ fun restore[T](vars: &Vars[T], scope: VarScope) {
   vars.visible.len = scope.num_visible
 }
 
+| Type Sinks  
+| At some places in the code, types need to "line up". Because of the Never
+| type, this is less strict that type equality. Take this code for example:
+|
+| var a = if condition then 3 else return 4
+|
+| Even though both branches of the if have different types (U64 and Never), they
+| still line up properly to a final U64 type. Type sinks are a way to ensure
+| multiple expressions evaluate to the same type.
+
+struct TypeSink { current: Maybe[Type] }
+
+fun type_sink(): TypeSink { TypeSink { current = none[Type]() } }
+fun type_sink(type: Type): TypeSink { TypeSink { current = some(type) } }
+
+fun add(sink: &TypeSink, type: Type): Result[Nothing, Slice[U8]] {
+  if type.equals(type("Never")) then return ok[Nothing, Slice[U8]]({})
+  switch sink.current
+  case some(t) {
+    if t.equals(type) then return ok[Nothing, Slice[U8]]({})
+    return error[Nothing, Slice[U8]]({
+      var out = vec[U8]().&
+      out.write_str(" expected: ")
+      out.write(t)
+      out.write_char(newline())
+      out.write_str("   actual: ")
+      out.write(type)
+      out.to_slice()
+    })
+  }
+  case none {
+    sink.current = some(type)
+    ok[Nothing, Slice[U8]]({})
+  }
+}
+fun finish(sink: TypeSink): Type { sink.current.unwrap() }
+
 | Type Solving  
 | When compiling generic code, the free type variables need to be bound to
 | concrete types. For example, to compile a function foo[A](), we need to know
@@ -1708,9 +1786,12 @@ fun finish(solver: TypeSolver): Result[Map[Slice[U8], Type], Slice[U8]] {
 | out how to use it.
 
 fun monomorphize(ast: Ast): Result[Mono, Slice[U8]] {
+  | TODO: constructor
   var context = Context { signatures = vec[Slice[U8]]() }
   var mono = Mono {
     type_defs = map[Type, MonoTypeDef](),
+    vars = map[Slice[U8], MonoFun](),
+    vars_init_order = vec[Slice[U8]](),
     funs = map[Slice[U8], MonoFun](),
   }
   type("Never").monomorphize(map[Slice[U8], Type](), ast, mono.&)
@@ -1727,6 +1808,7 @@ fun monomorphize(ast: Ast): Result[Mono, Slice[U8]] {
       out.write_str("Error when compiling")
       out.write_char(newline())
       out.write_stack_trace(context)
+      out.write_char(newline())
       out.write_str(error)
       out.to_slice()
     })
@@ -1750,6 +1832,7 @@ fun name(def: AstDef): Slice[U8] {
   case builtin_type(name) name
   case struct_(struct_) struct_.name
   case enum_(enum_) enum_.name
+  case var_(var_) var_.name
   case fun_(fun_) fun_.name
 }
 
@@ -1778,6 +1861,19 @@ fun lookup_type(ast: Ast, name: Slice[U8]): Result[AstDef, Slice[U8]] {
     out.to_slice()
   })
   ok[AstDef, Slice[U8]](matches.get(0))
+}
+
+| Looks up the global variable with the given name. Names of global variables
+| have to be unique.
+fun lookup_global_var(ast: Ast, name: Slice[U8]): Maybe[AstVar] {
+  var matches = vec[AstVar]()
+  for def in ast.defs do
+    if def is var_(var_) then
+      if name.equals(var_.name) then matches.&.push(var_)
+
+  if matches.is_empty() then return none[AstVar]()
+  if matches.len.is_greater_than(1) then return none[AstVar]()
+  some(matches.get(0))
 }
 
 | Looks up the function with the given name, the given number of type args
@@ -1968,9 +2064,70 @@ fun monomorphize(
       })
     mono.type_defs.&.put(type, MonoTypeDef.enum_(MonoEnum { variants }))
   }
-  case fun_(fun_) unreachable()
+  case var_ unreachable()
+  case fun_ unreachable()
 
   ok[Type, Slice[U8]](type)
+}
+
+| Monomorphizes a global variable (well, it can't have type arguments, so
+| compiling would be the more appropriate term), outputting all the required
+| type defs, other global variables, and functions into the mono.
+fun monomorphize(
+  var_: AstVar, context: &Context, ast: Ast, mono: &Mono
+): Result[Nothing, Slice[U8]] {
+  if mono.vars.contains(var_.name)
+  then return ok[Nothing, Slice[U8]]({})
+
+  context.push({
+    var out = vec[U8]().&
+    out.write_str("var ")
+    out.write_str(var_.name)
+    out.write_str(" ()")
+    out.to_slice()
+  })
+
+  var mono_fun = MonoFun {
+    type_args = vec[Type](),
+    arg_types = vec[Type](),
+    return_type = type("_"),
+    is_builtin = false(),
+    slots = vec[MonoSlot](),
+    body = vec[MonoStatement](),
+  }
+
+  var compile_fun = CompileFun {
+    context,
+    ast,
+    mono,
+    fun_ = mono_fun.&,
+    type_env = map[Slice[U8], Type](),
+    vars = vars[MonoSlotRef](),
+    return_type = type_sink(),
+    break_scopes = stack[BreakScope](),
+    continue_scopes = stack[ContinueScope](),
+  }
+
+  var value = compile_fun.&.compile(var_.value.*)?
+  if compile_fun.return_type.&.add(value.type) is error(error)
+    then return error[Nothing, Slice[U8]]({
+      var out = vec[U8]().&
+      out.write_str(
+        "The value of the variable doesn't match its expected type.")
+      out.write_char(newline())
+      out.write_str(error)
+      out.to_slice()
+    })
+
+  if not(value.type.is_never()) then
+    mono_fun.body.&.push(MonoStatement.return_(value))
+  mono_fun.return_type = compile_fun.return_type.finish()
+
+  mono.vars.&.put(var_.name, mono_fun)
+  mono.vars_init_order.&.push(var_.name)
+
+  context.&.pop()
+  ok[Nothing, Slice[U8]]({})
 }
 
 | Monomorphizes a function, outputting it into the mono. Returns the function
@@ -2029,14 +2186,13 @@ fun monomorphize(
   mono.funs.&.put(signature, mono_fun)
 
   var compile_fun = CompileFun {
-    context = context,
+    context,
     ast,
     mono,
     fun_ = mono_fun.&,
     type_env,
     vars,
-    expected_return_type = return_type,
-    return_type = none[Type](),
+    return_type = type_sink(return_type),
     break_scopes = stack[BreakScope](),
     continue_scopes = stack[ContinueScope](),
   }
@@ -2045,10 +2201,18 @@ fun monomorphize(
   | For builtin functions, we trust the fully specified return type.
   | For user-written functions, we take the actual return type.
   if not(fun_.is_builtin) then {
-    compile_fun.&.new_returned_type(body_result.type)?
+    if compile_fun.return_type.&.add(body_result.type) is error(error)
+    then return error[Slice[U8], Slice[U8]]({
+      var out = vec[U8]().&
+      out.write_str(
+        "The last expression of the function body doesn't match the return type.")
+      out.write_char(newline())
+      out.write_str(error)
+      out.to_slice()
+    })
     if body_result.type.name.not_equals("Never") then
       mono_fun.body.&.push(MonoStatement.return_(body_result))
-    mono_fun.return_type = compile_fun.return_type orelse body_result.type
+    mono_fun.return_type = compile_fun.return_type.finish()
   }
 
   mono.funs.&.put(signature, mono_fun)
@@ -2065,8 +2229,7 @@ struct CompileFun {
   type_env: Map[Slice[U8], Type], | maps fun type args to concrete types
   next_label: U64,
   vars: Vars[MonoSlotRef],
-  expected_return_type: Type,     | return type from function signature
-  return_type: Maybe[Type],       | return type deduced from body
+  return_type: TypeSink,
   | When lowering loops, breaks and continues don't know where to jump yet.
   | Instead, they fill these structures with jump addresses that need to be
   | adjusted later.
@@ -2123,39 +2286,6 @@ fun update(self: &CompileFun, index: U64, statement: MonoStatement) {
   self.fun_.body.get_ref(index).* = statement
 }
 
-fun new_returned_type(self: &CompileFun, returned: Type): Result[Nothing, Slice[U8]] {
-  if returned.is_never() then return ok[Nothing, Slice[U8]]({})
-
-  | TODO: Allow placeholders in types
-  if not(returned.equals(self.expected_return_type))
-  then return error[Nothing, Slice[U8]]({
-    var out = vec[U8]().&
-    out.write_str("This function should return ")
-    out.write(self.expected_return_type)
-    out.write_str(", but it returns ")
-    out.write(returned)
-    out.write_str(".")
-    out.to_slice()
-  })
-
-  if self.return_type is some(expected_type)
-  then if not(returned.equals(expected_type))
-    then return error[Nothing, Slice[U8]]({
-      var out = vec[U8]().&
-      out.write_str("This function returns multiple different types.")
-      out.write_char(newline())
-      out.write_str("previous > ")
-      out.write(expected_type)
-      out.write_char(newline())
-      out.write_str("current  > ")
-      out.write(returned)
-      out.to_slice()
-    })
-
-  self.return_type = some(returned)
-  ok[Nothing, Slice[U8]]({})
-}
-
 | Most expressions are compiled in a separate variable scope. For example, this
 | shouldn't work:
 |
@@ -2195,9 +2325,25 @@ fun compile_in_current_scope(
       type("Str").monomorphize(map[Slice[U8], Type](), self.ast, self.mono)
       self.slot_expr(self.add_slot(type("Str"), MonoSlotValue.str(str)))
     }
-    case name(name) self.slot_expr(
-      self.vars.lookup(name)
-        orelse return error[MonoExpr, Slice[U8]]({
+    case name(name) {
+      switch self.vars.lookup(name)
+      case some(slot) self.slot_expr(slot)
+      case none {
+        switch self.ast.lookup_global_var(name)
+        case some(ast_var) {
+          ast_var.monomorphize(self.context, self.ast, self.mono)
+          eprints("getting type of global var ")
+          eprints(name)
+          eprintln()
+          var type = self.mono.vars.get(name).unwrap().return_type
+          eprintsln("got type")
+          MonoExpr {
+            kind = MonoExprKind.global(name),
+            type,
+          }
+        }
+        case none return error[MonoExpr, Slice[U8]]({
+          | TODO: print which variables are in scope
           var out = vec[U8]().&
           out.write_char('")
           out.write_str(name)
@@ -2205,7 +2351,8 @@ fun compile_in_current_scope(
           out.write_str(" is not in scope.")
           out.to_slice()
         })
-    )
+      }
+    }
     case call(call) {
       var callee = none[MonoExpr]()
       var name =
@@ -2828,7 +2975,16 @@ fun compile_in_current_scope(
     }
     case return_(arg) {
       var arg = self.compile(arg.*)?
-      self.new_returned_type(arg.type)?
+      if self.return_type.&.add(arg.type) is error(error)
+      then return error[MonoExpr, Slice[U8]]({
+        var out = vec[U8]().&
+        out.write_str(
+          "The type of a return doesn't match the return type up to this point:"
+        )
+        out.write_char(newline())
+        out.write_str(error)
+        out.to_slice()
+      })
       self.put(MonoStatement.return_(arg))
       never_expr()
     }
@@ -2837,8 +2993,8 @@ fun compile_in_current_scope(
       if expr.type.name.not_equals("Result")
       then return error[MonoExpr, Slice[U8]](
         "The try operator ? can only be used on Results.")
-      var return_type = self.expected_return_type
-      if return_type.name.not_equals("result")
+      var return_type = self.return_type.finish()
+      if return_type.name.not_equals("Result")
       then return error[MonoExpr, Slice[U8]](
         "The try operator ? can only be used in functions that return Result.")
       if expr.type.args.get(1).not_equals(return_type.args.get(1)) then
@@ -2846,10 +3002,14 @@ fun compile_in_current_scope(
           var out = vec[U8]().&
           out.write_str("You used ? on a Result where the error type doesn't match the error type of the function.")
           out.write_char(newline())
-          out.write_str("   error of value > ")
+          out.write_char(newline())
+          out.write_str("    type of value: Result[..., ")
           out.write(expr.type.args.get(1))
-          out.write_str("error of function > ")
+          out.write_str("]")
+          out.write_char(newline())
+          out.write_str(" type of function: Result[..., ")
           out.write(return_type.args.get(1))
+          out.write_str("]")
           out.to_slice()
         })
 
@@ -3015,6 +3175,10 @@ fun write_expr_as_c[W](writer: W, expr: MonoExpr) {
   switch expr.kind
   case nothing writer.write_str("_nothing")
   case never writer.write_str("_never")
+  case global(name) {
+    writer.write_str("global_")
+    writer.write_str(name)
+  }
   case slot(slot) writer.write(slot)
   case member(member)
     if member.name.equals("*") then {
@@ -3260,16 +3424,12 @@ fun compile_to_c(mono: Mono): Slice[U8] {
   }
 
   { | Functions
-    var ordered_funs = vec[Slice[U8]]() {
-      for fun_ in mono.funs do ordered_funs.&.push(fun_.key)
-      ordered_funs.to_slice().&.sort()
-    }
-    var funs_to_index = map[Slice[U8], U64]() {
-      for i in 0.to(ordered_funs.len) do
-        funs_to_index.&.put(ordered_funs.get(i), i)
-    }
+    var ordered_funs = vec[Slice[U8]]()
+    for fun_ in mono.funs do ordered_funs.&.push(fun_.key)
+    ordered_funs.to_slice().&.sort()
 
     | Declarations
+    out.write_char(newline())
     out.write_str("/// Function declarations")
     out.write_char(newline())
     for fun_name in ordered_funs do {
@@ -3291,12 +3451,43 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       out.write_char(newline())
     }
 
+    { | Globals declarations
+      out.write_char(newline())
+      out.write_str("/// Global declarations")
+      out.write_char(newline())
+      for global in mono.vars do {
+        var name = global.key
+        var type = global.value.return_type
+
+        out.write_str(type.mangle())
+        out.write_str(" global_")
+        out.write_str(name)
+        out.write_str(";")
+        out.write_char(newline())
+      }
+      out.write_str(type("Nothing").mangle())
+      out.write_str(" _nothing;")
+      out.write_char(newline())
+      out.write_str(type("Never").mangle())
+      out.write_str(" _never;")
+      out.write_char(newline())
+      out.write_char(newline())
+    }
+
+    | Globals initializers
+    out.write_str("/// Global initializers")
     out.write_char(newline())
-    out.write_str(type("Nothing").mangle())
-    out.write_str(" _nothing;")
-    out.write_str(type("Never").mangle())
-    out.write_str(" _never;")
-    out.write_char(newline())
+    for global in mono.vars do {
+      var name = global.key
+      var type = global.value.return_type
+
+      out.write_str(global.value.return_type.mangle())
+      out.write_str(" _compute_global_")
+      out.write_str(global.key)
+      out.write_str("() ")
+      out.write_str(global.value.fun_body_to_c())
+      out.write_char(newline())
+    }
     out.write_char(newline())
 
     | Definitions
@@ -3318,10 +3509,12 @@ fun compile_to_c(mono: Mono): Slice[U8] {
         out.write_str(" arg")
         out.write(i)
       }
-      out.write_str(") {")
-      out.write_char(newline())
+      out.write_str(") ")
 
       if fun_.is_builtin then {
+        out.write_str("{")
+        out.write_char(newline())
+
         if builtin_funs.get(signature) is some(body)
         then out.write_str(body)
         else if signature.starts_with("to_address")
@@ -3362,171 +3555,194 @@ fun compile_to_c(mono: Mono): Slice[U8] {
         out.write_char(newline())
         out.write_str("}")
         continue
-      }
-
-      for i in 0.to(fun_.slots.len) do {
-        var slot = fun_.slots.get(i)
-        out.write_str("  ")
-        out.write_str(slot.type.mangle())
-        out.write_str(" _")
-        out.write(i)
-        out.write_str(";")
-        switch slot.initial_value
-        case uninitialized {}
-        case arg(j) {
-          out.write_str(" _")
-          out.write(i)
-          out.write_str(" = arg")
-          out.write(j)
-          out.write_str(";")
-        }
-        case int(int) {
-          out.write_str(" _")
-          out.write(i)
-          out.write_str(".value = ")
-          out.write(int)
-          out.write_str("ULL;")
-        }
-        case str(str) {
-          out.write_str(" _")
-          out.write(i)
-          out.write_str(".")
-          out.write_str("bytes".mangle())
-          out.write_str(".")
-          out.write_str("data".mangle())
-          out.write_str(".pointer = (")
-          out.write_str(type("U8").mangle())
-          out.write_str("*) ")
-          out.write_char('")
-          for char in str do {
-            out.write_str("\x")
-            out.write_with_radix(16, char.to_U64())
-          }
-          out.write_char('")
-          out.write_str("; _")
-          out.write(i)
-          out.write_str(".")
-          out.write_str("bytes".mangle())
-          out.write_str(".")
-          out.write_str("len".mangle())
-          out.write_str(".value = ")
-          out.write(str.len)
-          out.write_str(";")
-        }
+      } else {
+        out.write_str(fun_.fun_body_to_c())
         out.write_char(newline())
       }
-      for statement in fun_.body do {
-        switch statement
-        case label(label) {
-          out.write_str("")
-          out.write(label)
-          out.write_str(":")
-          out.write_char(newline())
-        }
-        case assign(assign) {
-          out.write_str("  ")
-          out.write_expr_as_c(assign.to)
-          out.write_str(" = ")
-          out.write_expr_as_c(assign.value)
-          out.write_str(";")
-          out.write_char(newline())
-        }
-        case set_enum(set_enum) {
-          out.write_str("  ")
-          out.write(set_enum.slot)
-          out.write_str(".variant = ")
-          out.write_str(fun_.slots.get(set_enum.slot.index).type.mangle())
-          out.write_str("_dot_")
-          out.write_str(set_enum.variant)
-          out.write_str(";")
-          out.write_char(newline())
-          out.write_str("  ")
-          out.write(set_enum.slot)
-          out.write_str(".as.")
-          out.write_str(set_enum.variant.mangle())
-          out.write_str(" = ")
-          out.write_expr_as_c(set_enum.value)
-          out.write_str(";")
-          out.write_char(newline())
-        }
-        case call(call) {
-          out.write_str("  ")
-          out.write(call.to)
-          out.write_str(" = ")
-          out.write_str(call.fun_.mangle())
-          out.write_str("(")
-          var first = true()
-          for arg in call.args do {
-            if first then first = false() else out.write_str(", ")
-            out.write_expr_as_c(arg)
-          }
-          out.write_str(");")
-          out.write_char(newline())
-        }
-        case jump(jump) {
-          out.write_str("  ")
-          out.write_str("goto ")
-          out.write(jump.target)
-          out.write_str(";")
-          out.write_char(newline())
-        }
-        case jump_if_variant(jump) {
-          out.write_str("  ")
-          out.write_str("if (")
-          out.write_expr_as_c(jump.condition)
-          out.write_str(".variant == ")
-          out.write_str(jump.condition.type.mangle())
-          out.write_str("_dot_")
-          out.write_str(jump.variant)
-          out.write_str(") goto ")
-          out.write(jump.target)
-          out.write_str(";")
-          out.write_char(newline())
-        }
-        case get_enum_value(get_enum_value) {
-          out.write_str("  ")
-          out.write(get_enum_value.to)
-          out.write_str(" = ")
-          out.write_expr_as_c(get_enum_value.of)
-          out.write_str(".as.")
-          out.write_str(get_enum_value.variant.mangle())
-          out.write_str(";")
-          out.write_char(newline())
-        }
-        case return_(expr) {
-          | If a Never is returned, the return is not reached anyway. If we emit
-          | it, C complains that Never doesn't match the function's return type.
-          if not(expr.type.is_never()) then {
-            out.write_str("  ")
-            out.write_str("return ")
-            out.write_expr_as_c(expr)
-            out.write_str("; ")
-            out.write_char(newline())
-          }
-        }
-        case ref(ref) {
-          out.write_str("  ")
-          out.write(ref.to)
-          out.write_str(".pointer = &")
-          out.write_expr_as_c(ref.of)
-          out.write_str(";")
-          out.write_char(newline())
-        }
-        default {}
-      }
-      out.write_str("}")
-      out.write_char(newline())
     }
     out.write_str("// actual main function")
     out.write_char(newline())
     out.write_str("int main() {")
     out.write_char(newline())
+
+    for global in mono.vars_init_order do {
+      out.write_str("  global_")
+      out.write_str(global)
+      out.write_str(" = _compute_global_")
+      out.write_str(global)
+      out.write_str("();")
+      out.write_char(newline())
+    }
+
+    | TODO: pass on arguments
     out.write_str("  ")
     out.write_str("main()".mangle())
     out.write_str("();")
     out.write_char(newline())
     out.write_str("}")
   }
+  out.to_slice()
+}
+fun fun_body_to_c(fun_: MonoFun): Slice[U8] {
+  var out = vec[U8]().&
+
+  out.write_str("{")
+  out.write_char(newline())
+
+  for i in 0.to(fun_.slots.len) do {
+    var slot = fun_.slots.get(i)
+    out.write_str("  ")
+    out.write_str(slot.type.mangle())
+    out.write_str(" _")
+    out.write(i)
+    out.write_str(";")
+    switch slot.initial_value
+    case uninitialized {}
+    case arg(j) {
+      out.write_str(" _")
+      out.write(i)
+      out.write_str(" = arg")
+      out.write(j)
+      out.write_str(";")
+    }
+    case int(int) {
+      out.write_str(" _")
+      out.write(i)
+      out.write_str(".value = ")
+      out.write(int)
+      out.write_str("ULL;")
+    }
+    case str(str) {
+      out.write_str(" _")
+      out.write(i)
+      out.write_str(".")
+      out.write_str("bytes".mangle())
+      out.write_str(".")
+      out.write_str("data".mangle())
+      out.write_str(".pointer = (")
+      out.write_str(type("U8").mangle())
+      out.write_str("*) ")
+      out.write_char('")
+      for char in str do {
+        out.write_str("\x")
+        out.write_with_radix(16, char.to_U64())
+      }
+      out.write_char('")
+      out.write_str("; _")
+      out.write(i)
+      out.write_str(".")
+      out.write_str("bytes".mangle())
+      out.write_str(".")
+      out.write_str("len".mangle())
+      out.write_str(".value = ")
+      out.write(str.len)
+      out.write_str(";")
+    }
+    out.write_char(newline())
+  }
+
+  for statement in fun_.body do {
+    switch statement
+    case label(label) {
+      out.write_str("")
+      out.write(label)
+      out.write_str(":")
+      out.write_char(newline())
+    }
+    case assign(assign) {
+      out.write_str("  ")
+      out.write_expr_as_c(assign.to)
+      out.write_str(" = ")
+      out.write_expr_as_c(assign.value)
+      out.write_str(";")
+      out.write_char(newline())
+    }
+    case set_enum(set_enum) {
+      out.write_str("  ")
+      out.write(set_enum.slot)
+      out.write_str(".variant = ")
+      out.write_str(fun_.slots.get(set_enum.slot.index).type.mangle())
+      out.write_str("_dot_")
+      out.write_str(set_enum.variant)
+      out.write_str(";")
+      out.write_char(newline())
+      out.write_str("  ")
+      out.write(set_enum.slot)
+      out.write_str(".as.")
+      out.write_str(set_enum.variant.mangle())
+      out.write_str(" = ")
+      out.write_expr_as_c(set_enum.value)
+      out.write_str(";")
+      out.write_char(newline())
+    }
+    case call(call) {
+      out.write_str("  ")
+      out.write(call.to)
+      out.write_str(" = ")
+      out.write_str(call.fun_.mangle())
+      out.write_str("(")
+      var first = true()
+      for arg in call.args do {
+        if first then first = false() else out.write_str(", ")
+        out.write_expr_as_c(arg)
+      }
+      out.write_str(");")
+      out.write_char(newline())
+    }
+    case jump(jump) {
+      out.write_str("  ")
+      out.write_str("goto ")
+      out.write(jump.target)
+      out.write_str(";")
+      out.write_char(newline())
+    }
+    case jump_if_variant(jump) {
+      out.write_str("  ")
+      out.write_str("if (")
+      out.write_expr_as_c(jump.condition)
+      out.write_str(".variant == ")
+      out.write_str(jump.condition.type.mangle())
+      out.write_str("_dot_")
+      out.write_str(jump.variant)
+      out.write_str(") goto ")
+      out.write(jump.target)
+      out.write_str(";")
+      out.write_char(newline())
+    }
+    case get_enum_value(get_enum_value) {
+      out.write_str("  ")
+      out.write(get_enum_value.to)
+      out.write_str(" = ")
+      out.write_expr_as_c(get_enum_value.of)
+      out.write_str(".as.")
+      out.write_str(get_enum_value.variant.mangle())
+      out.write_str(";")
+      out.write_char(newline())
+    }
+    case return_(expr) {
+      | If a Never is returned, the return is not reached anyway. If we emit
+      | it, C complains that Never doesn't match the function's return type.
+      if not(expr.type.is_never()) then {
+        out.write_str("  ")
+        out.write_str("return ")
+        out.write_expr_as_c(expr)
+        out.write_str("; ")
+        out.write_char(newline())
+      }
+    }
+    case ref(ref) {
+      out.write_str("  ")
+      out.write(ref.to)
+      out.write_str(".pointer = &")
+      out.write_expr_as_c(ref.of)
+      out.write_str(";")
+      out.write_char(newline())
+    }
+    default {}
+  }
+
+  out.write_str("}")
+
   out.to_slice()
 }
 

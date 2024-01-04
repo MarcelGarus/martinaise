@@ -1169,7 +1169,7 @@ const FunMonomorphizer = struct {
             },
             .body => |body| return try self.compile_body(body),
             else => {
-                try self.format_err("Compiling {any}\n", .{expression});
+                std.debug.print("Compiling expr {any}\n", .{expression});
                 return error.Todo;
             },
         }
