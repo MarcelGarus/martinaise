@@ -1280,15 +1280,15 @@ fun write_line_number[W](writer: W, n: U64) {
 | guaranteed to be correct – during the monomorphization, variable scoping, name
 | lookups, and type checking take place.
 | 
-| TODO: explain slots, statements, expressions, vars
+| TODO: explain slots, statements, expressions, globals
 
 struct Mono {
   | Monomorphized type definitions.
   type_defs: Map[Type, MonoTypeDef],
 
   | Global variables. They map to a function that computes the value.
-  vars: Map[Slice[U8], MonoFun],
-  vars_init_order: Vec[Slice[U8]],
+  globals: Map[Slice[U8], MonoFun],
+  globals_init_order: Vec[Slice[U8]],
 
   | Monomorphized functions. Keys are signatures such as "foo[U8](U8)".
   funs: Map[Slice[U8], MonoFun],
@@ -1361,9 +1361,9 @@ fun write[W](writer: W, mono: Mono) {
     writer.write_char(newline())
   }
 
-  writer.write_str("Vars:")
+  writer.write_str("Globals:")
   writer.write_char(newline())
-  for entry in mono.vars do {
+  for entry in mono.globals do {
     writer.write_str("- ")
     writer.write(entry.key)
     writer.write_str(": ")
@@ -1790,8 +1790,8 @@ fun monomorphize(ast: Ast): Result[Mono, Slice[U8]] {
   var context = Context { signatures = vec[Slice[U8]]() }
   var mono = Mono {
     type_defs = map[Type, MonoTypeDef](),
-    vars = map[Slice[U8], MonoFun](),
-    vars_init_order = vec[Slice[U8]](),
+    globals = map[Slice[U8], MonoFun](),
+    globals_init_order = vec[Slice[U8]](),
     funs = map[Slice[U8], MonoFun](),
   }
   type("Never").monomorphize(map[Slice[U8], Type](), ast, mono.&)
@@ -2076,7 +2076,7 @@ fun monomorphize(
 fun monomorphize(
   var_: AstVar, context: &Context, ast: Ast, mono: &Mono
 ): Result[Nothing, Slice[U8]] {
-  if mono.vars.contains(var_.name)
+  if mono.globals.contains(var_.name)
   then return ok[Nothing, Slice[U8]]({})
 
   context.push({
@@ -2123,8 +2123,8 @@ fun monomorphize(
     mono_fun.body.&.push(MonoStatement.return_(value))
   mono_fun.return_type = compile_fun.return_type.finish()
 
-  mono.vars.&.put(var_.name, mono_fun)
-  mono.vars_init_order.&.push(var_.name)
+  mono.globals.&.put(var_.name, mono_fun)
+  mono.globals_init_order.&.push(var_.name)
 
   context.&.pop()
   ok[Nothing, Slice[U8]]({})
@@ -2335,7 +2335,7 @@ fun compile_in_current_scope(
           eprints("getting type of global var ")
           eprints(name)
           eprintln()
-          var type = self.mono.vars.get(name).unwrap().return_type
+          var type = self.mono.globals.get(name).unwrap().return_type
           eprintsln("got type")
           MonoExpr {
             kind = MonoExprKind.global(name),
@@ -3455,7 +3455,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       out.write_char(newline())
       out.write_str("/// Global declarations")
       out.write_char(newline())
-      for global in mono.vars do {
+      for global in mono.globals do {
         var name = global.key
         var type = global.value.return_type
 
@@ -3477,7 +3477,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
     | Globals initializers
     out.write_str("/// Global initializers")
     out.write_char(newline())
-    for global in mono.vars do {
+    for global in mono.globals do {
       var name = global.key
       var type = global.value.return_type
 
@@ -3565,7 +3565,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
     out.write_str("int main() {")
     out.write_char(newline())
 
-    for global in mono.vars_init_order do {
+    for global in mono.globals_init_order do {
       out.write_str("  global_")
       out.write_str(global)
       out.write_str(" = _compute_global_")
