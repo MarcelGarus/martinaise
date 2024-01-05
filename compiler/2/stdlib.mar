@@ -91,6 +91,9 @@ struct Hasher { state: U64 }
 fun hash(hasher: &Hasher, val: U64) {
   hasher.state = hasher.state.multiply(33).add(val)
 }
+fun hash_all[I](hasher: &Hasher, iter: I) {
+  for item in iter do hasher.hash(item)
+}
 
 | Emptiness  
 | Do you sometimes feel empty inside? Some collections in the stdlib do so as
@@ -386,7 +389,6 @@ fun put_on_heap[T](value: T): &T {
   ref.* = value
   ref
 }
-fun cast[A, B](ref: &A): &B { ref.to_address().to_reference[B]() }
 fun add_offset[T](ref: &T, offset: U64): &T {
   ref.to_address().add(offset.multiply(size_of_type[T]())).to_reference[T]()
 }
@@ -394,6 +396,16 @@ fun swap[T](a: &T, b: &T) {
   var tmp = a.*
   a.* = b.*
   b.* = tmp
+}
+| Casts an A to a B by reinterpreting the memory of A. This is very unsafe, so
+| only use it if you know what you're doing.
+fun cast[A, B](a: A): B {
+  | at least a small sanity check
+  assert(
+    size_of_type[A]().equals(size_of_type[B]()),
+    "cast between types of different sizes",
+  )
+  a.&.to_address().to_reference[B]().*
 }
 
 fun write_address[W](writer: W, address: U64) {
@@ -435,18 +447,6 @@ fun get_ref[T](slice: Slice[T], index: U64): &T {
   0.to(slice.len).contains(index) orelse panic("index out of bounds")
   slice.data.add_offset(index)
 }
-fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
-  to.is_at_most(slice.len)
-    orelse panic("subslice needs to be inside original slice")
-  Slice { data = slice.data.add_offset(from), len = to.subtract(from) }
-}
-fun subslice[T](slice: Slice[T], from: U64): Slice[T] {
-  slice.subslice(from, slice.len)
-}
-fun copy_to[T](from: Slice[T], to: Slice[T]) {
-  from.len.equals(to.len) orelse panic("copy_to slice lens don't match")
-  for i in 0.to(from.len) do to.get_ref(i).* = from.get(i)
-}
 
 fun compare_to[T](a: Slice[T], b: Slice[T]): Ordering {
   var i = 0
@@ -471,38 +471,6 @@ fun write[W, T](writer: W, slice: Slice[T]) {
   writer.write('[)
   writer.write_comma_separated(slice)
   writer.write('])
-}
-
-fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
-  if prefix.len.is_greater_than(slice.len) then return false
-  for i in 0.to(prefix.len) do
-    if not(slice.get(i).equals(prefix.get(i))) then return false
-  true
-}
-fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
-  if suffix.len.is_greater_than(slice.len) then return false
-  for i in 0.to(suffix.len) do
-    slice.get(slice.len.subtract(suffix.len).add(i)).equals(suffix.get(i))
-      orelse return false
-  true
-}
-fun find[T](slice: Slice[T], needle: T): Maybe[U64] {
-  for i in 0.to(slice.len) do if slice.get(i).equals(needle) then return some(i)
-  none[U64]()
-}
-fun sort[T](slice: &Slice[T]) {
-  | quick sort
-  if slice.len.is_at_most(1) then return {}
-  var pivot = slice.get(slice.len.dec())
-  var i = 0
-  for j in 0.to(slice.len) do
-    if slice.get(j).is_less_than(pivot) then {
-      i = i.inc()
-      swap(slice.get_ref(i.dec()), slice.get_ref(j))
-    }
-  swap(slice.get_ref(i), slice.get_ref(slice.len.dec()))
-  sort(slice.subslice(0, i).&)
-  sort(slice.subslice(min(i.inc(), slice.len.dec()), slice.len).&)
 }
 
 fun iter[T](slice: Slice[T]): Iter[T, _] {
@@ -532,6 +500,75 @@ fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
   } else none[T]()
 }
 
+fun copy_to[T](from: Slice[T], to: Slice[T]) {
+  assert(from.len.equals(to.len), "copy_to slice lens don't match")
+  for i in 0.to(from.len) do to.get_ref(i).* = from.get(i)
+}
+fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
+  assert(to.is_at_most(slice.len), "subslice needs to be inside original slice")
+  Slice { data = slice.data.add_offset(from), len = to.subtract(from) }
+}
+fun first[T](slice: Slice[T]): Maybe[T] {
+  assert(slice.is_not_empty(), "first only works on non-empty slices")
+  slice.get(0)
+}
+fun first[T](slice: Slice[T], amount: U64): Slice[T] {
+  assert(amount.is_at_most(slice.len), "first amount too big")
+  slice.subslice(0, amount)
+}
+fun last[T](slice: Slice[T]): Maybe[T] {
+  assert(slice.is_not_empty(), "last only works on non-empty slices")
+  slice.get(slice.len.dec())
+}
+fun last[T](slice: Slice[T], amount: U64): Slice[T] {
+  assert(amount.is_at_most(slice.len), "last amount too big")
+  slice.subslice(slice.len.subtract(amount), slice.len)
+}
+fun without_first[T](slice: Slice[T], amount: U64): Slice[T] {
+  assert(amount.is_at_most(slice.len), "without_first amount too big")
+  slice.subslice(amount, slice.len)
+}
+fun without_last[T](slice: Slice[T], amount: U64): Slice[T] {
+  assert(amount.is_at_most(slice.len), "without_last amount too big")
+  slice.subslice(0, slice.len.subtract(amount))
+}
+fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
+  if prefix.len.is_greater_than(slice.len) then return false
+  for i in 0.to(prefix.len) do
+    if not(slice.get(i).equals(prefix.get(i))) then return false
+  true
+}
+fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
+  if suffix.len.is_greater_than(slice.len) then return false
+  for i in 0.to(suffix.len) do
+    slice.get(slice.len.subtract(suffix.len).add(i)).equals(suffix.get(i))
+      orelse return false
+  true
+}
+fun trim_prefix[T](slice: &Slice[T], prefix: Slice[T]) {
+  assert(slice.starts_with(prefix), "trim_prefix doesn't match prefix")
+  slice.* = slice.without_first(prefix.len)
+}
+fun trim_suffix[T](slice: &Slice[T], suffix: Slice[T]) {
+  assert(slice.ends_with(suffix), "trim_suffix doesn't match suffix")
+  slice.* = slice.without_last(suffix.len)
+}
+
+fun sort[T](slice: &Slice[T]) {
+  | quick sort
+  if slice.len.is_at_most(1) then return {}
+  var pivot = slice.get(slice.len.dec())
+  var i = 0
+  for j in 0.to(slice.len) do
+    if slice.get(j).is_less_than(pivot) then {
+      i = i.inc()
+      swap(slice.get_ref(i.dec()), slice.get_ref(j))
+    }
+  swap(slice.get_ref(i), slice.get_ref(slice.len.dec()))
+  sort(slice.subslice(0, i).&)
+  sort(slice.subslice(min(i.inc(), slice.len.dec()), slice.len).&)
+}
+
 | Strings & Chars  
 | A Char (short for Character) is a wrapper around a U8. When you write
 | something like 'a in your code, that gets turned into a Char. Don't confuse
@@ -545,23 +582,32 @@ fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
 | char*. You can't efficiently get the length or do many interesting operations
 | on it. It's null-terminated.
 
-struct Str { bytes: Slice[U8] }
-struct OsStr { ref: &U8 } | null-terminated
 struct Char { byte: U8 }
+struct Str { chars: Slice[Char] }
+struct OsStr { address: U64 } | null-terminated
 
-fun to_str(bytes: Slice[U8]): Str { Str { bytes } }
 fun to_char(byte: U8): Char { Char { byte } }
+
+fun to_str(chars: Slice[Char]): Str { Str { chars } }
+fun to_str(bytes: Slice[U8]): Str {
+  Str { chars = bytes.cast[Slice[U8], Slice[Char]]() }
+}
+fun bytes(str: Str): Slice[U8] { str.chars.cast[Slice[Char], Slice[U8]]() }
+
 fun to_os_str(str: Str): OsStr {
   | make it null-terminated
   var bytes = uninitialized_slice[U8](str.len().inc())
-  str.bytes.copy_to(bytes.substr(0, str.len()))
+  str.bytes().copy_to(bytes.subslice(0, str.len()))
   bytes.get_ref(str.len()).* = 0_U8
-  OsStr { ref = bytes.data }
+  OsStr { address = bytes.data.to_address() }
 }
 fun to_str(str: OsStr): Str {
   var len = 0
-  loop if str.ref.add_offset(len).*.equals(0) then break else len = len.inc()
-  Str { bytes = Slice { data = str.ref, len } }
+  loop
+    if str.address.to_reference[U8]().add_offset(len).*.equals(0)
+    then break
+    else len = len.inc()
+  Str { chars = Slice { data = str.address.to_reference[Char](), len } }
 }
 
 fun parse_digit(char: Char): U8 {
@@ -575,19 +621,14 @@ fun equals(a: Char, b: Char): Bool { a.byte.equals(b.byte) }
 fun hash(hasher: &Hasher, char: Char) { hash.hash(char) }
 fun write[W](writer: W, char: Char) { writer.write_byte(char.byte) }
 
-fun len(str: Str): U64 { str.bytes.len }
+fun len(str: Str): U64 { str.chars.len }
 fun is_empty(str: Str): Bool { str.len().equals(0) }
 fun get(str: Str, index: U64): Char { str.get_ref(index).* }
 fun get_ref(str: Str, index: U64): &Char {
   0.to(str.len()).contains(index) orelse panic("index out of bounds")
   str.bytes.get_ref(index).cast[Char]()
 }
-fun substr(str: Str, from: U64, to: U64): Str {
-  to.is_at_most(str.len())
-    orelse panic("substr needs to be inside original str")
-  Str { bytes = str.bytes.subslice(from, to) }
-}
-fun substr(str: Str, from: U64): Str { str.substr(from, str.len()) }
+
 fun compare_to(a: Str, b: Str): Ordering {
   var i = 0
   loop {
@@ -607,7 +648,7 @@ fun hash(hasher: &Hasher, str: Str) {
   for byte in str.bytes do hasher.hash(byte)
 }
 fun write[W](writer: W, str: Str) {
-  for byte in str.bytes do writer.write_byte(byte)
+  for char in str.chars do writer.write(char)
 }
 
 fun iter(str: Str): Iter[Char, _] {
@@ -617,28 +658,63 @@ struct StrIter { str: Str, index: U64 }
 fun next(iter: &StrIter): Maybe[Char] {
   if iter.index.is_less_than(iter.str.len())
   then {
-    var char = iter.str.bytes.get(iter.index).to_char()
+    var char = iter.str.chars.get(iter.index)
     iter.index = iter.index.inc()
     some(char)
   }
   else none[Char]()
 }
 
+fun substr(str: Str, from: U64, to: U64): Str {
+  to.is_at_most(str.len())
+    orelse panic("substr needs to be inside original str")
+  Str { bytes = str.bytes.subslice(from, to) }
+}
+fun first(str: Str): Maybe[Char] {
+  assert(str.is_not_empty(), "first only works on non-empty strs")
+  str.get(0)
+}
+fun first(str: Str, amount: U64): Str {
+  assert(amount.is_at_most(str.len), "first amount too big")
+  str.substr(0, amount)
+}
+fun last(str: Str): Maybe[T] {
+  assert(str.is_not_empty(), "last only works on non-empty strs")
+  str.get(str.len.dec())
+}
+fun last(str: Str, amount: U64): Str {
+  assert(amount.is_at_most(str.len), "last amount too big")
+  str.substr(str.len.subtract(amount), str.len)
+}
+fun without_first(str: Str, amount: U64): Str {
+  assert(amount.is_at_most(str.len), "without_first amount too big")
+  str.substr(amount, str.len)
+}
+fun without_last(str: Str, amount: U64): Str {
+  assert(amount.is_at_most(str.len), "without_last amount too big")
+  str.substr(0, slice.len.subtract(amount))
+}
+fun starts_with(str: Str, prefix: Str): Bool {
+  str.bytes.starts_with(prefix.bytes)
+}
+fun ends_with(str: Str, suffix: Str): Bool {
+  str.bytes.ends_with(prefix.bytes)
+}
+fun trim_prefix(str: &Str, prefix: Str) {
+  assert(str.starts_with(prefix), "trim_prefix doesn't match prefix")
+  str.* = str.without_first(prefix.len)
+}
+fun trim_suffix(str: &Str, suffix: Str) {
+  assert(str.ends_with(suffix), "trim_suffix doesn't match suffix")
+  str.* = str.without_last(suffix.len)
+}
 fun split(str: Str, separator: Str): Slice[Str] {
   var parts = vec[Str]()
-  for part in str.iter().iter_split(separator) do parts.&.push(part)
+  for part in str.iter().split(separator.chars) do parts.&.push(part.to_str())
   parts.to_slice()
 }
 fun lines(slice: Str): Slice[Str] { slice.split("
 ") }
-fun trim_prefix(str: &Str, prefix: Str) {
-  str.starts_with(prefix) orelse panic("str doesn't start with prefix")
-  str.* = str.substr(prefix.len)
-}
-fun trim_suffix(str: &Str, prefix: Str) {
-  str.starts_with(prefix) orelse panic("str doesn't start with prefix")
-  str.* = str.substr(prefix.len)
-}
 
 | Range  
 | Ranges have an inclusive start and exclusive end value.
@@ -804,49 +880,50 @@ fun find[T, I](iter: &Iter[T, I], needle: T): Maybe[U64] {
   none[U64]()
 }
 
-| Splits an Iter of U8s at the given separator.
-fun iter_split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
-  SplitIter[I] { iter, separator }
+| Splits an Iter at the given items forming a separator.
+fun split[T, I](iter: Iter[T, I], separator: Slice[T]): Iter[Slice[T], _] {
+  SplitIter { inner = iter.inner, separator }
+    .wrap_in_iter[Slice[T], SplitIter[T, I]]()
 }
-struct SplitIter[I] { iter: I, separator: Slice[U8] }
-fun iter[I](iter: SplitIter[I]): SplitIter[I] { iter }
-fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
-  var line = vec[U8]()
+struct SplitIter[T, I] { inner: I, separator: Slice[T] }
+fun next[T, I](self: &SplitIter[T, I]): Maybe[Slice[T]] {
+  var current = vec[T]()
   loop
-    switch self.iter.&.next()
+    switch self.inner.&.next()
     case none
-      if line.len.is_greater_than(0) then break else return none[Slice[U8]]()
-    case some(c) {
-      line.&.push(c)
-      if line.to_slice().subslice(line.len.subtract(self.separator.len))
-        .equals(self.separator)
-      then return some(
-        line.to_slice().subslice(0, line.len.subtract(self.separator.len))
-      )
+      if current.len.is_greater_than(0)
+      then return some(current.to_slice())
+      else return none[Slice[T]]()
+    case some(item) {
+      current.&.push(item)
+      if current.to_slice().ends_with(self.separator)
+      then return some(current.to_slice().without_last(self.separator.len))
     }
-  some(line.to_slice())
 }
 
-
-
-fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
-  if prefix.len.is_greater_than(slice.len) then return false
-  for i in 0.to(prefix.len) do
-    if not(slice.get(i).equals(prefix.get(i))) then return false
-  true
+| Splits an Iter at the given separator.
+fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
+  iter.split(vec(separator).to_slice())
 }
 
-fun split(str: Str, separator: Str): Slice[Str] {
-  var parts = vec[Str]()
-  for part in str.iter().iter_split(separator) do parts.&.push(part)
-  parts.to_slice()
-}
-fun lines(slice: Str): Slice[Str] { slice.split("
-") }
-fun trim_prefix(str: &Str, prefix: Str) {
-  str.starts_with(prefix) orelse panic("str doesn't start with prefix")
-  str.* = str.substr(prefix.len)
-}
+| fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
+|   if prefix.len.is_greater_than(slice.len) then return false
+|   for i in 0.to(prefix.len) do
+|     if not(slice.get(i).equals(prefix.get(i))) then return false
+|   true
+| }
+
+| fun split(str: Str, separator: Str): Slice[Str] {
+|   var parts = vec[Str]()
+|   for part in str.iter().iter_split(separator) do parts.&.push(part)
+|   parts.to_slice()
+| }
+| fun lines(slice: Str): Slice[Str] { slice.split("
+| ") }
+| fun trim_prefix(str: &Str, prefix: Str) {
+|   str.starts_with(prefix) orelse panic("str doesn't start with prefix")
+|   str.* = str.substr(prefix.len)
+| }
 
 
 | Files, Input & Output  
@@ -947,7 +1024,7 @@ fun open_file(
   then os_flags = os_flags.or(libc_open_flag_append())
 
   var fd = libc_open(
-    filename.to_os_str().data.to_address(),
+    filename.to_os_str().address,
     os_flags,
     mode,
   )
@@ -1006,6 +1083,9 @@ var stderr = File { descriptor = 2 }
 
 fun writeln[W](writer: W) { writer.write(newline) }
 fun writeln[W, T](writer: W, value: T) { writer.write(value) writer.writeln() }
+fun write_all[W, I](writer: W, iter: I) {
+  for item in iter do writer.write(item)
+}
 fun write_comma_separated[W, T](writer: W, iter: T) {
   var first = true
   for item in iter do {
@@ -1146,7 +1226,7 @@ fun is_empty[T](vec: Vec[T]): Bool { vec.len.equals(0) }
 fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0, vec.len) }
 
 fun equals[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice().equals(b.to_slice()) }
-fun iter[T](vec: Vec[T]): SliceIter[T] { vec.to_slice().iter() }
+fun iter[T](vec: Vec[T]): Iter[T, _] { vec.to_slice().iter() }
 fun write[W, T](writer: W, vec: Vec[T]) { writer.write(vec.to_slice()) }
 fun write_byte(writer: &Vec[U8], byte: U8) { writer.&.push(byte) }
 

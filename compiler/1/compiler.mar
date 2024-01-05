@@ -3624,36 +3624,37 @@ fun fun_body_to_c(fun_: MonoFun): Slice[U8] {
 
   for i in 0.to(fun_.slots.len) do {
     var slot = fun_.slots.get(i)
+    var slot_ref = MonoSlotRef { index = i }
     out.write_str("  ")
     out.write_str(slot.type.mangle())
-    out.write_str(" _")
-    out.write(i)
+    out.write_str(" ")
+    out.write(slot_ref)
     out.write_str(";")
     switch slot.initial_value
     case uninitialized {}
     case arg(j) {
-      out.write_str(" _")
-      out.write(i)
+      out.write_str(" ")
+      out.write(slot_ref)
       out.write_str(" = arg")
       out.write(j)
       out.write_str(";")
     }
     case int(int) {
-      out.write_str(" _")
-      out.write(i)
+      out.write_str(" ")
+      out.write(slot_ref)
       out.write_str(".value = ")
       out.write(int)
       out.write_str("ULL;")
     }
     case str(str) {
-      out.write_str(" _")
-      out.write(i)
+      out.write_str(" ")
+      out.write(slot_ref)
       out.write_str(".")
-      out.write_str("bytes".mangle())
+      out.write_str("chars".mangle())
       out.write_str(".")
       out.write_str("data".mangle())
       out.write_str(".pointer = (")
-      out.write_str(type("U8").mangle())
+      out.write_str(type("Char").mangle())
       out.write_str("*) ")
       out.write_char('")
       for char in str do {
@@ -3661,10 +3662,10 @@ fun fun_body_to_c(fun_: MonoFun): Slice[U8] {
         out.write_with_radix(16, char.to_U64())
       }
       out.write_char('")
-      out.write_str("; _")
-      out.write(i)
+      out.write_str("; ")
+      out.write(slot_ref)
       out.write_str(".")
-      out.write_str("bytes".mangle())
+      out.write_str("chars".mangle())
       out.write_str(".")
       out.write_str("len".mangle())
       out.write_str(".value = ")
@@ -3677,7 +3678,6 @@ fun fun_body_to_c(fun_: MonoFun): Slice[U8] {
   for statement in fun_.body do {
     switch statement
     case label(label) {
-      out.write_str("")
       out.write(label)
       out.write_str(":")
       out.write_char(newline())

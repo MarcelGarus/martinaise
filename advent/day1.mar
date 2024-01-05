@@ -1,17 +1,15 @@
-fun find_first_digit[I](iter: I): U8 {
-  {
-    loop {
-      var char = iter.next().unwrap()
-      if '0.to('9).contains(char) then break(char)
-    }
-  }.subtract('0)
+fun find_first_digit[I](iter: &Iter[Char, I]): U64 {
+  for char in iter do
+    if '0.to('9).contains(char)
+    then return char.byte.subtract('0.byte).to_U64()
+  panic("iter doesn't contain a digit")
 }
 
 fun main(): Never {
   var sum = 0
-  for line in read_file("advent/day1.smol").lines() do {
-    var first_digit = line.iter().&.find_first_digit().to_U64()
-    var last_digit = line.rev_iter().&.find_first_digit().to_U64()
+  for line in read_file("advent/day1.smol").to_str().lines() do {
+    var first_digit = line.chars.iter().&.find_first_digit()
+    var last_digit = line.chars.rev_iter().&.find_first_digit()
     sum = sum.add(first_digit.multiply(10).add(last_digit))
   }
   println(sum)

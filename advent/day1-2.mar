@@ -34,7 +34,7 @@ fun find_first_digit[I](iter: I, digit_names: Vec[Slice[U8]]): U8 {
 }
 
 fun main(): Never {
-  var digit_names = vec[Slice[U8]]()
+  var digit_names = vec[Str]()
   digit_names.&.push("one")
   digit_names.&.push("two")
   digit_names.&.push("three")
