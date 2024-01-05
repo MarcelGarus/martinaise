@@ -132,6 +132,14 @@ fun hash(hasher: &Hasher, type: Type) {
   for arg in type.args do hasher.hash(arg)
 }
 
+| You can use _ to infer parts of the type, for example like Maybe[_].
+fun is_complete(type: Type): Bool {
+  if type.name.equals("_") then return false()
+  for arg in type.args do if not(arg.is_complete()) then return false()
+  true()
+}
+fun is_incomplete(type: Type): Bool { not(type.is_complete()) }
+
 | Numbers  
 | Number types such such as U8 or I32 are special in Candy. These numbers and
 | mathematical functions for them are magically in scope. Here are some basic
@@ -626,8 +634,9 @@ fun parse_type(parser: &Parser): Result[Maybe[Type], Slice[U8]] {
   if parser.consume_prefix("&") is some then {
     var arg = parser.parse_type()?
       orelse return bad_input[Type]("After &, there must come a type.")
-    return parsed(Type { name = "&", args = vec(arg) })
+    return parsed(type("&", vec(arg)))
   }
+  if parser.consume_prefix("_") is some then return parsed(type("_"))
 
   var name = parser.parse_upper_name() orelse return no_match[Type]()
   var args = parser.parse_type_args()? orelse vec[Type]()
@@ -1365,7 +1374,7 @@ fun write[W](writer: W, mono: Mono) {
   writer.write_char(newline())
   for entry in mono.globals do {
     writer.write_str("- ")
-    writer.write(entry.key)
+    writer.write_str(entry.key)
     writer.write_str(": ")
     writer.write(entry.value.return_type)
     writer.write_char(newline())
@@ -1644,22 +1653,40 @@ fun type_sink(type: Type): TypeSink { TypeSink { current = some(type) } }
 fun add(sink: &TypeSink, type: Type): Result[Nothing, Slice[U8]] {
   if type.equals(type("Never")) then return ok[Nothing, Slice[U8]]({})
   switch sink.current
-  case some(t) {
-    if t.equals(type) then return ok[Nothing, Slice[U8]]({})
-    return error[Nothing, Slice[U8]]({
+  case none {
+    sink.current = some(type)
+    ok[Nothing, Slice[U8]]({})
+  }
+  case some(current) {
+    switch merge(current, type)
+    case some(merged) {
+      sink.current = some(merged)
+      ok[Nothing, Slice[U8]]({})
+    }
+    case none return error[Nothing, Slice[U8]]({
       var out = vec[U8]().&
       out.write_str(" expected: ")
-      out.write(t)
+      out.write(current)
       out.write_char(newline())
       out.write_str("   actual: ")
       out.write(type)
       out.to_slice()
     })
   }
-  case none {
-    sink.current = some(type)
-    ok[Nothing, Slice[U8]]({})
-  }
+}
+| Merges potentially incomplete types. For example, Maybe[A, _] and Maybe[_, B]
+| would get merged to Maybe[A, B].
+fun merge(a: Type, b: Type): Maybe[Type] {
+  if a.name.equals("_") then return some(b)
+  if b.name.equals("_") then return some(a)
+  if a.name.not_equals(b.name) then return none[Type]()
+  if a.args.len.not_equals(b.args.len) then return none[Type]()
+  var merged_args = vec[Type]()
+  for i in 0.to(a.args.len) do
+    switch merge(a.args.get(i), b.args.get(i))
+    case none return none[Type]()
+    case some(type) merged_args.&.push(type)
+  some(type(a.name, merged_args))
 }
 fun finish(sink: TypeSink): Type { sink.current.unwrap() }
 
@@ -2001,12 +2028,17 @@ fun write_call_signature[W](
 fun monomorphize(
   type: Type, type_env: Map[Slice[U8], Type], ast: Ast, mono: &Mono
 ): Result[Type, Slice[U8]] {
+  eprints("Monomorphizing type ")
+  eprintln(type)
+
   | TODO: Make sure generic types don't have parameters.
   var type = type_env.get(type.name) orelse {
     var args = vec[Type]()
     for arg in type.args do args.&.push(arg.monomorphize(type_env, ast, mono)?)
     Type { name = type.name, args }
   }
+
+  if type.is_incomplete() then return ok[Type, Slice[U8]](type)
 
   if mono.type_defs.contains(type) then return ok[Type, Slice[U8]](type)
   | TODO: explain
@@ -2390,6 +2422,8 @@ fun compile_in_current_scope(
       self.compile_call(name, callee, type_args, args)?
     }
     case make_struct(make_struct) {
+      eprints("Making struct ")
+      eprintln(make_struct.type.name)
       var struct_ =
         switch self.ast.lookup_type(make_struct.type.name)?
         case struct_(s) s
