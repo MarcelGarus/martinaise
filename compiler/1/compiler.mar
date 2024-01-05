@@ -3147,14 +3147,13 @@ fun mangle(name: Slice[U8]): Slice[U8] {
     var mangled = vec[U8]().&
     mangled.write_str("mar_")
     for c in name do {
-      if c.equals('_) then { mangled.write_str("") continue }
       if c.equals('_) then { mangled.write_str("__") continue }
       if c.equals('[) then { mangled.write_str("_of_") continue }
       if c.equals(']) then { mangled.write_str("_end_") continue }
       if c.equals('() then { mangled.write_str("_withargs_") continue }
       if c.equals(')) then { mangled.write_str("_end_") continue }
       if c.equals(',) then { mangled.write_str("_and_") continue }
-      if c.equals('&) then { mangled.write_str("_amp_") continue }
+      if c.equals('&) then { mangled.write_str("_refto_") continue }
       if c.equals('*) then { mangled.write_str("_star_") continue }
       if c.equals(' ) then continue
       mangled.write_char(c)

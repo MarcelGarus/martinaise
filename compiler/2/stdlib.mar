@@ -12,10 +12,12 @@
 
 | Language todos  
 | TODO: validate all signatures before lowering
+| TODO: allow types on vars
 | TODO: string interpolation
 | TODO: break and continue with targets
-| TODO: infer return types
 | TODO: enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
+| TODO: disallow _ in type args, structs, enums, and recursive functions
+| TODO: improve int parsing: be strict about whitespace, use :U8
 | TODO: funs as values, function types, higher-order funs?
 | TODO: operators?
 | TODO: var bool = foo is some?
@@ -408,11 +410,10 @@ fun write_address[W](writer: W, address: U64) {
 | Slice  
 | A slice refers to a memory region where values of the same type are right next
 | to each other. A slice has a pointer to the first element as well as a length.
-| In memory, it looks something like this:
 |
-|   [  item  ][  item  ][  item  ][  item  ]
-|   ^
-| [address + len 4]  <--  slice
+| [  item  ][  item  ][  item  ][  item  ]
+| ^
+| len 4
 
 struct Slice[T] { data: &T, len: U64 }
 
@@ -504,51 +505,31 @@ fun sort[T](slice: &Slice[T]) {
   sort(slice.subslice(min(i.inc(), slice.len.dec()), slice.len).&)
 }
 
-fun iter[T](slice: Slice[T]): SliceIter[T] { SliceIter[T] { slice, index = 0 } }
+fun iter[T](slice: Slice[T]): Iter[T, _] {
+  SliceIter[T] { slice, index = 0 }.wrap_in_iter[T, SliceIter[T]]()
+}
 struct SliceIter[T] { slice: Slice[T], index: U64 }
 fun next[T](iter: &SliceIter[T]): Maybe[T] {
-  var item = if iter.index.is_less_than(iter.slice.len)
+  var item =
+    if iter.index.is_less_than(iter.slice.len)
     then some(iter.slice.get(iter.index))
     else none[T]()
   iter.index = iter.index.add(1)
   item
 }
 
-fun rev_iter[T](slice: Slice[T]): SliceRevIter[T] {
-  SliceRevIter { slice, index = slice.len }
+fun rev_iter[T](slice: Slice[T]): Iter[T, _] {
+  SliceRevIter { slice, index = slice.len }.wrap_in_iter[T, SliceRevIter[T]]()
 }
 struct SliceRevIter[T] {
   slice: Slice[T],
   index: U64, | last yielded item
 }
-fun iter[T](iter: SliceRevIter[T]): SliceRevIter[T] { iter }
 fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
   if iter.index.is_greater_than(0) then {
     iter.index = iter.index.subtract(1)
     some[T](iter.slice.get(iter.index))
   } else none[T]()
-}
-
-fun iter_split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
-  SplitIter[I] { iter, separator }
-}
-struct SplitIter[I] { iter: I, separator: Slice[U8] }
-fun iter[I](iter: SplitIter[I]): SplitIter[I] { iter }
-fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
-  var line = vec[U8]()
-  loop
-    switch self.iter.&.next()
-    case none
-      if line.len.is_greater_than(0) then break else return none[Slice[U8]]()
-    case some(c) {
-      line.&.push(c)
-      if line.to_slice().subslice(line.len.subtract(self.separator.len))
-        .equals(self.separator)
-      then return some(
-        line.to_slice().subslice(0, line.len.subtract(self.separator.len))
-      )
-    }
-  some(line.to_slice())
 }
 
 | Strings & Chars  
@@ -629,7 +610,9 @@ fun write[W](writer: W, str: Str) {
   for byte in str.bytes do writer.write_byte(byte)
 }
 
-fun iter(str: Str): StrIter { StrIter { str, index = 0 } }
+fun iter(str: Str): Iter[Char, _] {
+  StrIter { str, index = 0 }.wrap_in_iter[Char, StrIter]()
+}
 struct StrIter { str: Str, index: U64 }
 fun next(iter: &StrIter): Maybe[Char] {
   if iter.index.is_less_than(iter.str.len())
@@ -656,6 +639,215 @@ fun trim_suffix(str: &Str, prefix: Str) {
   str.starts_with(prefix) orelse panic("str doesn't start with prefix")
   str.* = str.substr(prefix.len)
 }
+
+| Range  
+| Ranges have an inclusive start and exclusive end value.
+
+struct Range[T] { start: T, end: T }
+
+fun to[T](start: T, end: T): Range[T] { Range { start, end } }
+fun until[T](start: T, end: T): Range[T] { Range { start, end = end.inc() } }
+fun range_by[T](start: T, len: T): Range[T] {
+  Range { start, end = start.add(len) }
+}
+
+fun contains[T](range: Range[T], value: T): Bool {
+  value.is_at_least(range.start).and(value.is_less_than(range.end))
+}
+fun is_empty[T](range: Range[T]): Bool { range.start.is_at_least(range.end) }
+
+fun iter[T](range: Range[T]): Iter[T, _] {
+  RangeIter { rest = range }.wrap_in_iter[T, RangeIter[T]]()
+}
+struct RangeIter[T] { rest: Range[T] }
+fun next[T](iter: &RangeIter[T]): Maybe[T] {
+  if iter.rest.is_empty() then none[T]() else {
+    var current = iter.rest.start
+    iter.rest.start = current.inc()
+    some(current)
+  }
+}
+
+| Iterating  
+| Martinaise supports for loops for iterating. They are just syntactic sugar for
+| calling an iter() function and then repeatedly calling next() on the result:
+|
+| for a in b do ...
+|
+| $iter = b.iter().&
+| loop switch $iter.next() case none break case some(a) {
+|   ...
+| }
+|
+| Because Martinaise has no concept of traits or constraints, defining methods
+| for iterators becomes difficult: You want it to work on all iterators, but
+| defining a method such as split[I](iter: I) means that you can call split on
+| every single type now, polluting the namespace. Also, you can't constrain the
+| item type: What if you want to offer a new function only on iterators which
+| yield U8s?
+| That's why there's a wrapper struct Iter[T, I], which just wraps an actual
+| iterator implementation and delegates next() to it. The T is not used or
+| constrained by the type system, but things fail if I.next() doesn't return a
+| Maybe[T] – the T is a poor man's associated type, if you will.
+| Methods that return an iterator can use the wrap_in_iter() function to make
+| all the iterator functions available.
+|
+| When you chain iterators together, you actually just nest the types. Take this
+| example:
+| 
+| zip("Hello".iter().enumerate(), "world".iter())
+| 
+| Here, "Hello".iter() and "world".iter() return an Iter[Char, StrIter]. The
+| enumerate() gets the inner StrIter, wraps it in an EnumeratedIter and re-wraps
+| it in an Iter to an Iter[Enumerated[Char], EnumeratedIter[Char, StrIter]].
+| Finally, the zip() unwraps both Iters and creates an Iter with a ZipIter,
+| resulting in this:
+| 
+| Iter[
+|   Tuple2[Enumerated[Char], Char],
+|   ZipIter[Enumerated[Char], Char, EnumeratedIter[Char, StrIter], StrIter],
+| ]
+
+struct Iter[T, I] { inner: I }
+
+fun wrap_in_iter[T, I](inner: I): Iter[T, I] {
+  | TODO: typecheck once you can write types on vars
+  | if false() then var t: Maybe[T] = inner.next()
+  Iter[T, I] { inner }
+}
+fun iter[T, I](iter: Iter[T, I]): Iter[T, I] { iter }
+fun next[T, I](iter: &Iter[T, I]): Maybe[T] { iter.inner.&.next() }
+
+fun is_empty[T, I](iter: &Iter[T, I]): Bool { iter.next().is_none() }
+
+| Skips the given amount of elements on the inner iter, then acts like the inner
+| iter.
+fun skip[T, I](iter: Iter[T, I], amount: U64): Iter[T, _] {
+  SkipIter[T, I] { inner = iter.inner, amount }.wrap_in_iter[T, SkipIter[T]]()
+}
+struct SkipIter[T, I] { inner: I, amount: U64 }
+fun next[T, I](iter: &SkipIter[T, I]): Maybe[T] {
+  for i in 0.to(iter.amount) do {
+    var next = iter.inner.&.next()
+    if next is none then return next
+  }
+  iter.amount = 0
+  iter.inner.&.next()
+}
+
+| Takes the given amount of elements, then ends.
+fun take[T, I](iter: Iter[T, I]): Iter[T, _] {
+  TakeIter[T, I] { inner = iter.inner, amount }.wrap_in_iter[T, TakeIter[T]]()
+}
+struct TakeIter[T, I] { inner: I, amount: U64 }
+fun next[T, I](iter: &TakeIter[T, I]): Maybe[T] {
+  if iter.amount.is_greater_than(0)
+  then {
+    iter.amount = iter.amount.dec()
+    iter.inner.&.next()
+  }
+  else none[T]()
+}
+
+| Zips two iters of equal length.
+fun zip[A, B, IA, IB](a: Iter[A, IA], b: Iter[B, IB]): Iter[Tuple2[A, B], _] {
+  ZipIter[A, B, IA, IB] { a = a.inner, b = b.inner }
+    .wrap_in_iter[Tuple2[A, B], ZipIter[A, B, IA, IB]]()
+}
+struct ZipIter[A, B, IA, IB] { a: IA, b: IB }
+fun next[A, B, IA, IB](iter: &ZipIter[A, B, IA, IB]): Maybe[Tuple2[A, B]] {
+  switch iter.a.&.next()
+  case some(a) {
+    switch iter.b.&.next()
+    case none panic("zip iters have unequal length")
+    case some(b) some(tuple(a, b))
+  }
+  case none {
+    switch iter.b.&.next()
+    case some panic("zip iters have unequal length")
+    case none none[Tuple2[A, B]]()
+  }
+}
+
+| Wraps items in Enumerated[T], which also has an index.
+fun enumerate[T, I](iter: Iter[T, I]): Iter[Enumerated[T], _] {
+  EnumeratedIter[T, I] { inner = iter.inner, index = 0 }
+    .wrap_in_iter[Enumerated[T], EnumeratedIter[T, I]]()
+}
+struct Enumerated[T] { index: U64, item: T }
+struct EnumeratedIter[T, I] { inner: I, index: U64 }
+fun next[T, I](iter: &EnumeratedIter[T, I]): Maybe[Enumerated[T]] {
+  switch iter.inner.&.next()
+  case some(item) {
+    iter.index = iter.index.inc()
+    some(Enumerated { index = iter.index, item })
+  }
+  case none none[Enumerated[T]]()
+}
+fun write[W, T](writer: W, enumerated: Enumerated[T]) {
+  writer.write("(")
+  writer.write(enumerated.index)
+  writer.write(": ")
+  writer.write(enumerated.item)
+  writer.write(")")
+}
+
+| Gets the element at the given index.
+fun get[T, I](iter: &Iter[T, I], index: U64): Maybe[T] {
+  iter.skip(index).get()
+}
+
+| Finds the needle in the iter, returning its position.
+fun find[T, I](iter: &Iter[T, I], needle: T): Maybe[U64] {
+  for en in iter.enumerated() do
+    if en.item.equals(needle) then return some(en.index)
+  none[U64]()
+}
+
+| Splits an Iter of U8s at the given separator.
+fun iter_split[I](iter: I, separator: Slice[U8]): SplitIter[I] {
+  SplitIter[I] { iter, separator }
+}
+struct SplitIter[I] { iter: I, separator: Slice[U8] }
+fun iter[I](iter: SplitIter[I]): SplitIter[I] { iter }
+fun next[I](self: &SplitIter[I]): Maybe[Slice[U8]] {
+  var line = vec[U8]()
+  loop
+    switch self.iter.&.next()
+    case none
+      if line.len.is_greater_than(0) then break else return none[Slice[U8]]()
+    case some(c) {
+      line.&.push(c)
+      if line.to_slice().subslice(line.len.subtract(self.separator.len))
+        .equals(self.separator)
+      then return some(
+        line.to_slice().subslice(0, line.len.subtract(self.separator.len))
+      )
+    }
+  some(line.to_slice())
+}
+
+
+
+fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
+  if prefix.len.is_greater_than(slice.len) then return false
+  for i in 0.to(prefix.len) do
+    if not(slice.get(i).equals(prefix.get(i))) then return false
+  true
+}
+
+fun split(str: Str, separator: Str): Slice[Str] {
+  var parts = vec[Str]()
+  for part in str.iter().iter_split(separator) do parts.&.push(part)
+  parts.to_slice()
+}
+fun lines(slice: Str): Slice[Str] { slice.split("
+") }
+fun trim_prefix(str: &Str, prefix: Str) {
+  str.starts_with(prefix) orelse panic("str doesn't start with prefix")
+  str.* = str.substr(prefix.len)
+}
+
 
 | Files, Input & Output  
 | In C, a common way to work with files is with fopen, fclose, and similar
@@ -832,32 +1024,6 @@ fun eprintln[T](value: T) { eprint(value) eprintln() }
 
 var newline = 10_U8.to_char()
 var tab = 9_U8.to_char()
-
-| Range  
-| Ranges have an inclusive start and exclusive end value.
-
-struct Range[T] { start: T, end: T }
-
-fun to[T](start: T, end: T): Range[T] { Range { start, end } }
-fun until[T](start: T, end: T): Range[T] { Range { start, end = end.inc() } }
-fun range_by[T](start: T, len: T): Range[T] {
-  Range { start, end = start.add(len) }
-}
-
-fun contains[T](range: Range[T], value: T): Bool {
-  value.is_at_least(range.start).and(value.is_less_than(range.end))
-}
-fun is_empty[T](range: Range[T]): Bool { range.start.is_at_least(range.end) }
-
-fun iter[T](range: Range[T]): RangeIter[T] { RangeIter { rest = range } }
-struct RangeIter[T] { rest: Range[T] }
-fun next[T](iter: &RangeIter[T]): Maybe[T] {
-  if iter.rest.is_empty() then none[T]() else {
-    var current = iter.rest.start
-    iter.rest.start = current.inc()
-    some(current)
-  }
-}
 
 | Tuples  
 fun tuple[A, B](a: A, b: B): Tuple2[A, B] { Tuple2 { a, b } }
