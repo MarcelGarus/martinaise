@@ -4,64 +4,100 @@
   "scopeName": "source.mar",
   "fileTypes": ["mar"],
   "patterns": [
-    {
-      "name": "keyword",
-      "match": "\\b(fun|struct|enum|var)\\b"
-    },
-    {
-      "name": "keyword.control",
-      "match": "\\b(if|then|else|switch|default|orelse|loop|for|in|do|break|continue|return)\\b"
-    },
-    {
-      "name": "keyword.control",
-      "match": "case\\s+([a-zA-Z_0-9]*)",
-      "captures": {
-        "1": {
-          "name": "emphasis"
-        }
-      }
-    },
-    {
-      "name": "keyword.control",
-      "match": "is\\s+([a-zA-Z_0-9]*)",
-      "captures": {
-        "1": {
-          "name": "emphasis"
-        }
-      }
-    },
-    { "include": "#comments" },
-    {
-      "name": "string.quoted.double",
-      "begin": "\"",
-      "end": "\""
-    },
-    {
-      "name": "string.quoted.single",
-      "match": "'."
-    },
-    {
-      "name": "constant.numeric",
-      "match": "\\b[0-9][0-9_]*(_(U8|U16|U32|U64|I8|I16|I32|I64))?\\b"
-    },
-    {
-      "name": "constant.numeric",
-      "match": "#[0-9a-fA-F]*(_(U8|U16|U32|U64|I8|I16|I32|I64))?\\b"
-    },
-    {
-      "name": "entity.name.function",
-      "match": "([a-z][a-zA-Z_0-9]*)(?=\\s*(\\(|\\[))"
-    },
-    {
-      "name": "entity.name.type",
-      "match": "\\b[A-Z][a-zA-Z_0-9]*\\b"
-    },
-    {
-      "name": "variable",
-      "match": "\\b[a-z][a-zA-Z_0-9]*\\b"
-    }
+    { "include": "#all" }
   ],
   "repository": {
+    "all": {
+      "patterns": [
+        {
+          "name": "keyword",
+          "match": "\\b(fun|struct|enum|var)\\b"
+        },
+        {
+          "name": "keyword.control",
+          "match": "\\b(if|then|else|switch|default|orelse|loop|for|in|do|break|continue|return)\\b"
+        },
+        {
+          "name": "keyword.control",
+          "match": "case\\s+([a-zA-Z_0-9]*)",
+          "captures": {
+            "1": {
+              "name": "emphasis"
+            }
+          }
+        },
+        {
+          "name": "keyword.control",
+          "match": "is\\s+([a-zA-Z_0-9]*)",
+          "captures": {
+            "1": {
+              "name": "emphasis"
+            }
+          }
+        },
+        { "include": "#comments" },
+        {
+          "name": "string.char",
+          "match": "#."
+        },
+        {
+          "name": "string.quoted.meta.2",
+          "begin": "''\"",
+          "end": "\"''",
+          "patterns": [
+            {
+              "begin": "{{{",
+              "end": "}}}",
+              "patterns": [{ "include": "#all" }]
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.meta.1",
+          "begin": "'\"",
+          "end": "\"'",
+          "patterns": [
+            {
+              "begin": "{{",
+              "end": "}}",
+              "patterns": [{ "include": "#all" }]
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.meta.0",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "begin": "{",
+              "end": "}",
+              "patterns": [{ "include": "#all" }]
+            }
+          ]
+        },
+        {
+          "name": "constant.numeric",
+          "match": "\\b[0-9][0-9_]*(_(U8|U16|U32|U64|I8|I16|I32|I64))?\\b"
+        },
+        {
+          "name": "constant.numeric",
+          "match": "#[0-9a-fA-F]*(_(U8|U16|U32|U64|I8|I16|I32|I64))?\\b"
+        },
+        {
+          "name": "entity.name.function",
+          "match": "([a-z][a-zA-Z_0-9]*)(?=\\s*(\\(|\\[))"
+        },
+        {
+          "name": "entity.name.type",
+          "match": "\\b[A-Z][a-zA-Z_0-9]*\\b"
+        },
+        {
+          "name": "variable",
+          "match": "\\b[a-z][a-zA-Z_0-9]*\\b"
+        }
+      ]
+    },
     "comments": {
       "patterns": [
         {
