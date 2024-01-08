@@ -13,7 +13,6 @@
 | Language todos  
 | TODO: validate all signatures before lowering
 | TODO: allow types on vars
-| TODO: string interpolation
 | TODO: break and continue with targets
 | TODO: enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
 | TODO: disallow _ in type args, structs, enums, and recursive functions

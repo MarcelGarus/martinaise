@@ -769,12 +769,80 @@ fun parse_char(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
 }
 
 fun parse_str(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
-  if parser.current().not_equals('") then return no_match[AstExpr]()
-  parser.advance()
-  var start = parser.cursor
-  loop if parser.current().equals('") then break else parser.advance()
-  parser.advance()
-  parsed(AstExpr.str(parser.code.subslice(start, parser.cursor.dec())))
+  var parts = parser.parse_str_parts()? orelse return no_match[AstExpr]()
+  if parts.len.equals(1) then {
+    var expr = parts.get(0)
+    if expr is str then return parsed(expr)
+  }
+  var body = vec[AstExpr]()
+  body.&.push(var_("$str",
+    AstExpr.name("vec")
+      .call(some(vec(type("U8"))), vec[AstExpr]())
+      .member("&")))
+  for part in parts do
+    body.&.push(AstExpr.name("$str").member("write").call(vec(part)))
+  body.&.push(AstExpr.name("$str").member("to_slice").call().member("to_str").call())
+  parsed(AstExpr.body(body))
+}
+| Parses a string literal, potentially with interpolation, into expressions.
+| Metaness 0: "Hello" -> ["Hello"]
+|             "Hello, {3}!" -> ["Hello", 3]
+| Metaness 1: '"foo " bar"' -> ['foo " bar ']
+fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Slice[U8]] {
+  | strings starts with metaness single quotes, then a double quote
+  var metaness = 0
+  loop
+      if parser.rest().get(metaness).not_equals('')
+      then break
+      else metaness = metaness.inc()
+  if parser.rest().get(metaness).not_equals('")
+  then return
+    if metaness.is_at_least(1)
+    then bad_input[Vec[AstExpr]]("Expected a double quote.")
+    else no_match[Vec[AstExpr]]()
+  parser.advance_by(metaness.inc())
+
+  var parts = vec[AstExpr]()
+  var part_start = parser.cursor
+  loop {
+    { | (metaness + 1) braces = interpolation
+      var enough_braces = true()
+      for i in 0.until(metaness) do
+        if parser.rest().get(i).not_equals('{) then enough_braces = false()
+      if enough_braces then {
+        if parser.cursor.is_greater_than(part_start) then {
+          parts.&.push(AstExpr.str(
+            parser.code.subslice(part_start, parser.cursor)
+          ))
+          part_start = parser.cursor
+        }
+        parser.advance_by(metaness.inc())
+        parts.&.push(
+          parser.parse_expr()?
+            orelse return bad_input[Vec[AstExpr]](
+              "Expected an expression as string interpolation.")
+        )
+        for i in 0.until(metaness) do
+          parser.consume_prefix("}") orelse return bad_input[Vec[AstExpr]](
+            "Expected a closing brace after string interpolation.")
+        part_start = parser.cursor
+      }
+    }
+    | double quote + metaness single quotes = string ends
+    if parser.current().equals('") then if {
+      var is_followed_by_enough_single_quotes = true()
+      for j in 1.until(metaness) do
+        if parser.rest().get(j).not_equals('')
+        then is_followed_by_enough_single_quotes = false()
+      is_followed_by_enough_single_quotes
+    } then {
+      parts.&.push(AstExpr.str(parser.code.subslice(part_start, parser.cursor)))
+      parser.advance_by(metaness.inc())
+      return parsed(parts)
+    }
+    | everything else is a literal character
+    parser.advance()
+  }
 }
 
 fun parse_make(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
@@ -986,6 +1054,13 @@ fun parse_expr_suffix_member(parser: &Parser, current: AstExpr): Result[Maybe[As
   if parser.consume_prefix("&") is some then return parsed(current.member("&"))
   if parser.parse_lower_name() is some(name)
   then return parsed(current.member(name))
+  if parser.parse_str_parts()? is some(parts) then return {
+    var body = vec[AstExpr]()
+    body.&.push(var_("$str", current.member("&")))
+    for part in parts do
+      body.&.push(AstExpr.name("$str").member("write").call(vec(part)))
+    parsed(AstExpr.body(body))
+  }
   return bad_input[AstExpr]("Expected the name of a member.")
 }
 
