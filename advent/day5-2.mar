@@ -51,5 +51,5 @@ fun main(): Never {
   println(current)
   println(current.min())
 
-  exit(0_U8)
+  exit(0:U8)
 }

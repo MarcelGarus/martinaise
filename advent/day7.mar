@@ -21,20 +21,20 @@ fun hand_score(hand: Slice[U8]): U8 {
   for card in hand do
     if card_to_amount.contains(card)
     then card_to_amount.&.insert(card, card_to_amount.get(card).unwrap().inc())
-    else card_to_amount.&.insert(card, 1_U8)
+    else card_to_amount.&.insert(card, 1:U8)
 
   var amounts = vec[U8]()
   for card_and_amount in card_to_amount do
     amounts.&.push(card_and_amount.value)
   amounts.to_slice().&.sort()
 
-  if amounts.equals(vec[U8](5_U8)) then return 6_U8 | five of a kind
-  if amounts.equals(vec[U8](1_U8, 4_U8)) then return 5_U8 | four of a kind
-  if amounts.equals(vec[U8](2_U8, 3_U8)) then return 4_U8 | full house
-  if amounts.equals(vec[U8](1_U8, 1_U8, 3_U8)) then return 3_U8 | three of a kind
-  if amounts.equals(vec[U8](1_U8, 2_U8, 2_U8)) then return 2_U8 | two pair
-  if amounts.equals(vec[U8](1_U8, 1_U8, 1_U8, 2_U8)) then return 1_U8 | one pair
-  0_U8
+  if amounts.equals(vec[U8](5:U8)) then return 6:U8 | five of a kind
+  if amounts.equals(vec[U8](1:U8, 4:U8)) then return 5:U8 | four of a kind
+  if amounts.equals(vec[U8](2:U8, 3:U8)) then return 4:U8 | full house
+  if amounts.equals(vec[U8](1:U8, 1:U8, 3:U8)) then return 3:U8 | three of a kind
+  if amounts.equals(vec[U8](1:U8, 2:U8, 2:U8)) then return 2:U8 | two pair
+  if amounts.equals(vec[U8](1:U8, 1:U8, 1:U8, 2:U8)) then return 1:U8 | one pair
+  0:U8
 }
 
 fun main(): Never {
@@ -55,5 +55,5 @@ fun main(): Never {
   }
   println(total)
 
-  exit(0_U8)
+  exit(0:U8)
 }

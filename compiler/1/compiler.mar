@@ -724,8 +724,6 @@ fun parse_digits(parser: &Parser, radix: U64): Result[Maybe[U64], Slice[U8]] {
     if char.equals('_) then parser.advance() else break
   }
   if parser.cursor.equals(start) then return no_match[U64]()
-  if parser.code.get(parser.cursor.dec()).equals('_)
-  then parser.cursor = parser.cursor.dec()
   parsed(num)
 }
 
@@ -737,7 +735,7 @@ fun parse_int(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
     value = parser.parse_digits(radix)? orelse return bad_input[AstExpr](
       "Expected the value of the number after the radix pound.")
   }
-  parser.consume_prefix("_")
+  parser.consume_prefix(":")
     orelse return parsed(AstExpr.int(Int {
       value,
       config = IntConfig { signedness = Signedness.unsigned, bits = 64 },

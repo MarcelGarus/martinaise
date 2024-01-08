@@ -35,5 +35,5 @@ fun main(): Never {
   println(ids)
   println(ids.min())
 
-  exit(0_U8)
+  exit(0:U8)
 }

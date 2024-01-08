@@ -13,5 +13,5 @@ fun main(): Never {
     sum = sum.add(first_digit.multiply(10).add(last_digit))
   }
   println(sum)
-  exit(0_U8)
+  exit(0:U8)
 }

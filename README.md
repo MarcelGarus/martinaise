@@ -106,7 +106,7 @@ It's designed to compile the compiler 1 stdlib.
 - 0: The first compiler, written in Zig.
 - 1: A compiler written in Martinaise.
   - makes `orelse` customizable (not just work on `Maybe`)
-  - ints support radixes such as `8#666`
+  - ints support radixes such as `8#666:U32`
   - fixes inner variables replacing ones in outer scopes
   - ensure all struct fields are set during creation
   - support global variables

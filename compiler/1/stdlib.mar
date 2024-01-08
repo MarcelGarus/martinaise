@@ -60,7 +60,7 @@ fun halt(): Never { loop {} }
 fun libc_exit(status: U8): Nothing { ... }
 fun exit(status: U8): Never { libc_exit(status) halt() }
 
-fun panic(message: Str): Never { stderr.writeln(message) exit(1_U8) }
+fun panic(message: Str): Never { stderr.writeln(message) exit(1:U8) }
 fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
 fun todo(): Never { panic("todo") }
@@ -243,7 +243,7 @@ fun to_orelse[O, E](result: Result[O, E]): Orelse[O, E] {
 | U64 is an unsigned integer of 64 bits.
 |
 | If you just with a number such as 3, it's a U64 by default. You can be
-| explicit about the type by using a prefix: 3_U8
+| explicit about the type by using a prefix: 3:U8
 |
 | All integers also support the following mathematical operations:
 | - add(Int, Int): Int
@@ -257,22 +257,22 @@ fun to_orelse[O, E](result: Result[O, E]): Orelse[O, E] {
 | - compare_to(Int, Int): Ordering
 | - to_<OtherInt>(Int): OtherInt, e.g. to_U8() for non-U8 ints
 
-fun inc(a: U8): U8 { a.add(1_U8) }
-fun inc(a: U16): U16 { a.add(1_U16) }
-fun inc(a: U32): U32 { a.add(1_U32) }
-fun inc(a: U64): U64 { a.add(1_U64) }
-fun inc(a: I8): I8 { a.add(1_I8) }
-fun inc(a: I16): I16 { a.add(1_I16) }
-fun inc(a: I32): I32 { a.add(1_I32) }
-fun inc(a: I64): I64 { a.add(1_I64) }
-fun dec(a: U8): U8 { a.subtract(1_U8) }
-fun dec(a: U16): U16 { a.subtract(1_U16) }
-fun dec(a: U32): U32 { a.subtract(1_U32) }
-fun dec(a: U64): U64 { a.subtract(1_U64) }
-fun dec(a: I8): I8 { a.subtract(1_I8) }
-fun dec(a: I16): I16 { a.subtract(1_I16) }
-fun dec(a: I32): I32 { a.subtract(1_I32) }
-fun dec(a: I64): I64 { a.subtract(1_I64) }
+fun inc(a: U8): U8 { a.add(1:U8) }
+fun inc(a: U16): U16 { a.add(1:U16) }
+fun inc(a: U32): U32 { a.add(1:U32) }
+fun inc(a: U64): U64 { a.add(1:U64) }
+fun inc(a: I8): I8 { a.add(1:I8) }
+fun inc(a: I16): I16 { a.add(1:I16) }
+fun inc(a: I32): I32 { a.add(1:I32) }
+fun inc(a: I64): I64 { a.add(1:I64) }
+fun dec(a: U8): U8 { a.subtract(1:U8) }
+fun dec(a: U16): U16 { a.subtract(1:U16) }
+fun dec(a: U32): U32 { a.subtract(1:U32) }
+fun dec(a: U64): U64 { a.subtract(1:U64) }
+fun dec(a: I8): I8 { a.subtract(1:I8) }
+fun dec(a: I16): I16 { a.subtract(1:I16) }
+fun dec(a: I32): I32 { a.subtract(1:I32) }
+fun dec(a: I64): I64 { a.subtract(1:I64) }
 fun equals(a: U8, b: U8): Bool { a.compare_to(b).is_equal() }
 fun equals(a: U16, b: U16): Bool { a.compare_to(b).is_equal() }
 fun equals(a: U32, b: U32): Bool { a.compare_to(b).is_equal() }
@@ -302,8 +302,8 @@ fun write_with_radix[W](writer: W, radix: U64, int: U64) {
   }
 }
 fun digit_to_char(digit: U8): Char {
-  if digit.is_greater_than(9_U8)
-  then digit.subtract(10_U8).add(#a.byte).to_char()
+  if digit.is_greater_than(9:U8)
+  then digit.subtract(10:U8).add(#a.byte).to_char()
   else digit.add(#0.byte).to_char()
 }
 fun write[W](writer: W, int: U8) { writer.write_with_radix(10, int.to_U64()) }
@@ -598,7 +598,7 @@ fun to_os_str(str: Str): OsStr {
   | make it null-terminated
   var bytes = uninitialized_slice[U8](str.len().inc())
   str.bytes().copy_to(bytes.subslice(0, str.len()))
-  bytes.get_ref(str.len()).* = 0_U8
+  bytes.get_ref(str.len()).* = 0:U8
   OsStr { address = bytes.data.to_address() }
 }
 fun to_str(str: OsStr): Str {
@@ -1035,7 +1035,7 @@ fun read(file: File, buffer: Slice[U8]): U64 {
   libc_read(file.descriptor, buffer.data.to_address(), buffer.len)
 }
 fun read_byte(file: File): Maybe[U8] {
-  var c = 0_U8
+  var c = 0:U8
   if libc_read(file.descriptor, c.&.to_address(), 1).equals(0)
   then none[U8]()
   else some(c)
@@ -1102,8 +1102,8 @@ fun eprint[T](value: T) { stderr.write(value) }
 fun eprintln() { eprint(newline) }
 fun eprintln[T](value: T) { eprint(value) eprintln() }
 
-var newline = 10_U8.to_char()
-var tab = 9_U8.to_char()
+var newline = 10:U8.to_char()
+var tab = 9:U8.to_char()
 
 | Tuples  
 fun tuple[A, B](a: A, b: B): Tuple2[A, B] { Tuple2 { a, b } }

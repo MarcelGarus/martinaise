@@ -27,5 +27,5 @@ fun main(): Never {
   for line in read_file("advent/day2.big").lines() do
     sum = sum.add(line.game_score())
   println(sum)
-  exit(0_U8)
+  exit(0:U8)
 }

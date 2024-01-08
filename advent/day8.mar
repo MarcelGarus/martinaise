@@ -26,5 +26,5 @@ fun main(): Never {
   }
   println(step)
 
-  exit(0_U8)
+  exit(0:U8)
 }
