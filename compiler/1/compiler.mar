@@ -1002,12 +1002,8 @@ fun parse_expr_suffix_call(parser: &Parser, current: AstExpr): Result[Maybe[AstE
     parser.consume_prefix(",") orelse break
   }
   parser.consume_prefix(")")
-    orelse {
-      eprintsln("args = ")
-      for arg in args do stderr().write(0, arg)
-      return bad_input[AstExpr](
+    orelse return bad_input[AstExpr](
       "Expected closing parenthesis of the call.")
-    }
   parsed(current.call(type_args, args))
 }
 
@@ -1755,7 +1751,6 @@ fun unify(solver: &TypeSolver, generic: Type, concrete: Type): Result[Bool, Slic
   ok[Bool, Slice[U8]](true())
 }
 fun finish(solver: TypeSolver): Result[Map[Slice[U8], Type], Slice[U8]] {
-  eprintsln("Finishing solver")
   for var_ in solver.vars do
     if not(solver.env.contains(var_)) then
       return error[Map[Slice[U8], Type], Slice[U8]]({
@@ -2028,9 +2023,6 @@ fun write_call_signature[W](
 fun monomorphize(
   type: Type, type_env: Map[Slice[U8], Type], ast: Ast, mono: &Mono
 ): Result[Type, Slice[U8]] {
-  eprints("Monomorphizing type ")
-  eprintln(type)
-
   | TODO: Make sure generic types don't have parameters.
   var type = type_env.get(type.name) orelse {
     var args = vec[Type]()
@@ -2364,11 +2356,7 @@ fun compile_in_current_scope(
         switch self.ast.lookup_global_var(name)
         case some(ast_var) {
           ast_var.monomorphize(self.context, self.ast, self.mono)
-          eprints("getting type of global var ")
-          eprints(name)
-          eprintln()
           var type = self.mono.globals.get(name).unwrap().return_type
-          eprintsln("got type")
           MonoExpr {
             kind = MonoExprKind.global(name),
             type,
@@ -2422,8 +2410,6 @@ fun compile_in_current_scope(
       self.compile_call(name, callee, type_args, args)?
     }
     case make_struct(make_struct) {
-      eprints("Making struct ")
-      eprintln(make_struct.type.name)
       var struct_ =
         switch self.ast.lookup_type(make_struct.type.name)?
         case struct_(s) s
@@ -2508,8 +2494,6 @@ fun compile_in_current_scope(
           out.to_slice()
         })
       }
-      eprintsln("make struct")
-      eprintln()
       var type_env = solver.finish()?
 
       var unspecialized_type = make_struct.type
@@ -2600,8 +2584,6 @@ fun compile_in_current_scope(
         out.write_str(".")
         out.to_slice()
       })
-      eprintsln("make enum")
-      eprintln()
       var type_env = solver.finish()?
 
       var unspecialized_type = make_enum.type
