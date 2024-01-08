@@ -1,6 +1,5 @@
 zig-out
 zig-cache
 
-/martinaise_*
-/martinaise
+martinaise
 /stdlib.mar

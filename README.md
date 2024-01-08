@@ -22,20 +22,20 @@ To get an in-depth understanding of Martinaise, take a look at the most recent f
 
 ## Usage
 
-Install Zig.
-To bootstrap the compiler, run the Makefile:
+Martinaise is self-hosting – the compiler is written in Martinaise itself.
+So, you first need to bootstrap Martinaise.
 
-```bash
-make
+1. In the command line, navigate to the project root (the folder where this README is).
+2. **Option A:** Install [Zig](https://ziglang.org).  
+   **Option B (TODO: support this):** Run `make skip-zig`. The first compiler written in Martinaise was compiled into C and is included in this repo. This command compiles this (generated, unreadable) C code instead of compiling all the way from the original compiler written in Zig.
+3. Run `make`. This builds all compiler generations. The newest compiler will be placed into the project root as the `martinaise` executable.
+4. Run `./martinaise help` for help and go from there.  
+   Martinaise programs can be compiled and run using `./martinaise c path/to/program.mar > output.c && cc output.c -o output && ./output`
+
+
+```
 ```
 
-This will create a `martinaise` executable, which you can use to compile programs:
-
-```
-./martinaise c advent/day1.mar > output.c && cc output.c -o day1
-```
-
-TODO: Make it possible to bootstrap without Zig by caching having the compiled `martinaise_1.c` in the repo.
 
 ## Language History
 

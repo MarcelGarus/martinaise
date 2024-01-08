@@ -1,20 +1,27 @@
-martinaise: martinaise_1 compiler/2/stdlib.mar
-	cp martinaise_1 martinaise
-	cp compiler/2/stdlib.mar stdlib.mar
+martinaise: compiler/1/martinaise compiler/1/stdlib.mar
+	@cp compiler/1/martinaise martinaise
+	@cp compiler/1/stdlib.mar stdlib.mar
 	@echo "# Done with bootstrapping"
 
-martinaise_0: $(wildcard compiler/0/src/*) compiler/0/build.zig
+compiler/0/martinaise: $(wildcard compiler/0/src/*) compiler/0/build.zig
 	@echo "# Martinaise 0"
 	cd compiler/0; \
-		zig build
-	cp compiler/0/zig-out/bin/martinaise martinaise_0
+		zig build && \
+		cp zig-out/bin/martinaise martinaise
 
-martinaise_1: martinaise_0 $(wildcard compiler/1/*)
+compiler/1/martinaise: compiler/0/martinaise $(wildcard compiler/1/*.mar)
 	@echo "# Martinaise 1"
-	cd compiler/1; \
-		./../../martinaise_0 compile compiler.mar; \
-		cc output.c -o ../../martinaise_1; \
+	cd compiler/0; \
+		./martinaise compile ../1/compiler.mar && \
+		cc output.c -o ../1/martinaise && \
 		rm output.c
 
+skip-zig:
+	cd compiler/1; \
+		cc compiler.c -o martinaise && \
+		touch stdlib.mar
+
 clean:
-	rm martinaise_*
+	rm -rf compiler/0/zig-out;
+	rm -rf compiler/0/zig-cache;
+	find . -name martinaise -delete
