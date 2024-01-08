@@ -37,10 +37,6 @@
         },
         { "include": "#comments" },
         {
-          "name": "string.char",
-          "match": "#."
-        },
-        {
           "name": "string.quoted.meta.2",
           "begin": "''\"",
           "end": "\"''",
@@ -78,11 +74,15 @@
         },
         {
           "name": "constant.numeric",
-          "match": "\\b[0-9][0-9_]*\\b"
+          "match": "[0-9_]#[0-9a-fA-F]*\\b"
         },
         {
           "name": "constant.numeric",
-          "match": "#[0-9a-fA-F]*\\b"
+          "match": "\\b[0-9][0-9_]*\\b"
+        },
+        {
+          "name": "string.char",
+          "match": "#."
         },
         {
           "name": "entity.name.function",
