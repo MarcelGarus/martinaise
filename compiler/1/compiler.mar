@@ -753,7 +753,7 @@ fun parse_int(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
 }
 
 fun parse_char(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
-  parser.consume_prefix("'") orelse return no_match[AstExpr]()
+  parser.consume_prefix("#") orelse return no_match[AstExpr]()
   var char = parser.current()
   parser.advance()
   parsed(AstExpr.make_struct(AstMakeStruct {

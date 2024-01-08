@@ -146,7 +146,7 @@ fun write[W, T](writer: W, maybe: Maybe[T]) {
   case some(val) {
     writer.write("some(")
     writer.write(val)
-    writer.write('))
+    writer.write(#))
   }
   case none writer.write("none")
 }
@@ -158,10 +158,10 @@ fun equals[T](a: Maybe[T], b: Maybe[T]): Bool {
 fun hash[T](hasher: &Hasher, value: Maybe[T]) {
   switch value
   case some(inner) {
-    hasher.hash('s)
+    hasher.hash(#s)
     hasher.hash(inner)
   }
-  case none hasher.hash('n)
+  case none hasher.hash(#n)
 }
 
 | Result  
@@ -180,12 +180,12 @@ fun write[W, O, E](writer: W, result: Result[O, E]) {
   case ok(o) {
     writer.write("ok(")
     writer.write(o)
-    writer.write('))
+    writer.write(#))
   }
   case error(e) {
     writer.write("error(")
     writer.write(e)
-    writer.write('))
+    writer.write(#))
   }
 }
 fun equals[O, E](a: Result[O, E], b: Result[O, E]): Bool {
@@ -195,8 +195,8 @@ fun equals[O, E](a: Result[O, E], b: Result[O, E]): Bool {
 }
 fun hash[O, E](hasher: &Hasher, result: Result[O, E]) {
   switch result
-  case ok(o) { hasher.hash('o) hasher.hash(o) }
-  case error(e) { hasher.hash('e) hasher.hash(e) }
+  case ok(o) { hasher.hash(#o) hasher.hash(o) }
+  case error(e) { hasher.hash(#e) hasher.hash(e) }
 }
 
 | Orelse  
@@ -303,8 +303,8 @@ fun write_with_radix[W](writer: W, radix: U64, int: U64) {
 }
 fun digit_to_char(digit: U8): Char {
   if digit.is_greater_than(9_U8)
-  then digit.subtract(10_U8).add('a.byte).to_char()
-  else digit.add('0.byte).to_char()
+  then digit.subtract(10_U8).add(#a.byte).to_char()
+  else digit.add(#0.byte).to_char()
 }
 fun write[W](writer: W, int: U8) { writer.write_with_radix(10, int.to_U64()) }
 fun write[W](writer: W, int: U16) { writer.write_with_radix(10, int.to_U64()) }
@@ -313,9 +313,9 @@ fun write[W](writer: W, int: U64) { writer.write_with_radix(10, int) }
 fun parse_U64(str: Str): U64 {
   var num = 0
   for char in str do {
-    if not('0.until('9).contains(char))
+    if not(#0.until(#9).contains(char))
     then panic("non-digit in supposed number")
-    num = num.multiply(10).add(char.subtract('0).to_U64())
+    num = num.multiply(10).add(char.subtract(#0).to_U64())
   }
   num
 }
@@ -349,7 +349,7 @@ fun equals(a: Ordering, b: Ordering): Bool {
 }
 
 fun hash(hasher: &Hasher, ord: Ordering) {
-  hasher.hash(switch ord case less 'l case equal 'e case greater 'g)
+  hasher.hash(switch ord case less #l case equal #e case greater #g)
 }
 fun write[W](writer: W, ord: Ordering) {
   writer.write(
@@ -468,9 +468,9 @@ fun hash[T](hasher: &Hasher, slice: Slice[T]) {
   for item in slice do hasher.hash(item)
 }
 fun write[W, T](writer: W, slice: Slice[T]) {
-  writer.write('[)
+  writer.write(#[)
   writer.write_comma_separated(slice)
-  writer.write('])
+  writer.write(#])
 }
 
 fun iter[T](slice: Slice[T]): Iter[T, _] {
@@ -571,7 +571,7 @@ fun sort[T](slice: &Slice[T]) {
 
 | Strings & Chars  
 | A Char (short for Character) is a wrapper around a U8. When you write
-| something like 'a in your code, that gets turned into a Char. Don't confuse
+| something like #a in your code, that gets turned into a Char. Don't confuse
 | the Char with a Unicode code point, grapheme cluster, or anything like that.
 | This is as much a "character" as the C char. But who are we to judge?
 | Character is a heavily overloaded term anyways.
@@ -611,9 +611,9 @@ fun to_str(str: OsStr): Str {
 }
 
 fun parse_digit(char: Char): U8 {
-  if '0.to('9).contains(char.byte) then return char.byte.subtract('0.byte)
-  if 'a.to('z).contains(char.byte) then return char.byte.subtract('a.byte).add(16)
-  if 'A.to('Z).contains(char.byte) then return char.byte.subtract('A.byte).add(16)
+  if #0.to(#9).contains(char.byte) then return char.byte.subtract(#0.byte)
+  if #a.to(#z).contains(char.byte) then return char.byte.subtract(#a.byte).add(16)
+  if #A.to(#Z).contains(char.byte) then return char.byte.subtract(#A.byte).add(16)
   panic("not a digit")
 }
 fun compare_to(a: Char, b: Char): Ordering { a.byte.compare_to(b.byte) }
@@ -1111,20 +1111,20 @@ fun tuple[A, B, C](a: A, b: B, c: C): Tuple3[A, B, C] { Tuple3 { a, b, c } }
 struct Tuple2[A, B] { a: A, b: B }
 struct Tuple3[A, B, C] { a: A, b: B, c: C }
 fun write[W, A, B](writer: W, tuple: Tuple2[A, B]) {
-  writer.write('()
+  writer.write(#()
   writer.write(tuple.a)
   writer.write(", ")
   writer.write(tuple.b)
-  writer.write('))
+  writer.write(#))
 }
 fun writer[W, A, B, C](writer: W, tuple: Tuple3[A, B, C]) {
-  writer.write('()
+  writer.write(#()
   writer.write(tuple.a)
   writer.write(", ")
   writer.write(tuple.b)
   writer.write(", ")
   writer.write(tuple.c)
-  writer.write('))
+  writer.write(#))
 }
 
 | Point  
@@ -1389,7 +1389,7 @@ fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
 }
 
 fun write[W, K, V](writer: W, map: Map[K, V]) {
-  writer.write('{)
+  writer.write(#{)
   var first = true
   for bucket in map.buckets do
     switch bucket
@@ -1400,7 +1400,7 @@ fun write[W, K, V](writer: W, map: Map[K, V]) {
       writer.write(": ")
       writer.write(entry.value)
     }
-  writer.write('})
+  writer.write(#})
 }
 
 fun iter[K, V](map: Map[K, V]): MapIter[K, V] {
@@ -1433,13 +1433,13 @@ fun put[T](set: &Set[T], value: T) { set.map.&.put(value, {}) }
 fun contains[T](set: Set[T], value: T): Bool { set.map.get(value).is_some() }
 
 fun write[W, T](writer: W, set: Set[T]) {
-  writer.write('{)
+  writer.write(#{)
   var first = true
   for item in set do {
     if first then first = false else writer.write(", ")
     writer.write(item)
   }
-  writer.write('})
+  writer.write(#})
 }
 
 fun iter[T](set: Set[T]): SetIter[T] {

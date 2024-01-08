@@ -1,7 +1,7 @@
 fun find_first_digit[I](iter: &Iter[Char, I]): U64 {
   for char in iter do
-    if '0.to('9).contains(char)
-    then return char.byte.subtract('0.byte).to_U64()
+    if #0.to(#9).contains(char)
+    then return char.byte.subtract(#0.byte).to_U64()
   panic("iter doesn't contain a digit")
 }
 
