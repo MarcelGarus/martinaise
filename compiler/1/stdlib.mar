@@ -705,8 +705,7 @@ fun split(str: Str, separator: Str): Slice[Str] {
   for part in str.iter().split(separator.chars) do parts.&.push(part.to_str())
   parts.to_slice()
 }
-fun lines(slice: Str): Slice[Str] { slice.split("
-") }
+fun lines(slice: Str): Slice[Str] { slice.split("{newline}") }
 
 | Range  
 | Ranges have an inclusive start and exclusive end value.

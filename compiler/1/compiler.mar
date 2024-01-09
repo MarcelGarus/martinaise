@@ -804,7 +804,7 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Slice[U8]] {
   parser.advance_by(metaness.inc())
 
   var parts = vec[AstExpr]()
-  var part_start = parser.cursor
+  var part = vec[U8]()
   loop {
     { | (metaness + 1) braces = interpolation
       var num_braces = 0
@@ -813,22 +813,38 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Slice[U8]] {
         then num_braces = num_braces.inc()
         else break
       if num_braces.is_at_least(metaness.inc()) then {
-        var end_of_literal = parser.cursor.add(num_braces).subtract(metaness.inc())
-        if end_of_literal.is_greater_than(part_start)
-        then parts.&.push(AstExpr.str(
-          parser.code.subslice(part_start, end_of_literal)
-        ))
+        for i in 0.to(num_braces.subtract(metaness.inc())) do part.&.push('{)
+        if part.is_not_empty() then {
+          parts.&.push(AstExpr.str(part.to_slice()))
+          part = vec[U8]()
+        }
         parser.advance_by(num_braces)
-        parts.&.push(
-          parser.parse_expr()?
-            orelse return bad_input[Vec[AstExpr]](
-              "Expected an expression as string interpolation.")
-        )
+        var expr = parser.parse_expr()?
+          orelse return bad_input[Vec[AstExpr]](
+            "Expected an expression as string interpolation.")
+        parts.&.push(expr)
         for i in 0.until(metaness) do
           parser.consume_prefix("}") orelse return bad_input[Vec[AstExpr]](
             "Expected a closing brace after string interpolation.")
-        part_start = parser.cursor
+        continue
       }
+    }
+    | newline doesn't appear in str, parses next line until quote
+    |   single quote -> newline inserted
+    |   double quote -> no newline inserted
+    if parser.current().equals(newline()) then {
+      parser.advance()
+      loop {
+        var char = parser.current()
+        if char.equals(' ) then { parser.advance() continue }
+        if char.equals('") then break | to fix syntax highlighting: "'
+        if char.equals('') then { part.&.push(newline()) break }
+        eprintsln("bad string")
+        return bad_input[Vec[AstExpr]](
+          "After a newline, a string needs to have a single or double quote.")
+      }
+      parser.advance()
+      continue
     }
     | double quote + metaness single quotes = string ends
     if parser.current().equals('") then if { | to fix syntax highlighting: "'
@@ -838,11 +854,12 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Slice[U8]] {
         then is_followed_by_enough_single_quotes = false()
       is_followed_by_enough_single_quotes
     } then {
-      parts.&.push(AstExpr.str(parser.code.subslice(part_start, parser.cursor)))
+      if part.is_not_empty() then parts.&.push(AstExpr.str(part.to_slice()))
       parser.advance_by(metaness.inc())
       return parsed(parts)
     }
     | everything else is a literal character
+    part.&.push(parser.current())
     parser.advance()
   }
 }
