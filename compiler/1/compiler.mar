@@ -1344,7 +1344,7 @@ fun format_error_with_context(code: Slice[U8], offset: U64, error: Slice[U8]): S
   var num_lines_to_display = min(lines.len, 4)
   var out = vec[U8]().&
   for line_number in lines.len.subtract(num_lines_to_display).to(lines.len) do {
-    out.write_line_number(line_number.inc())
+    out.write_line_number(line_number)
     out.write_str(" | ")
     out.write_str(lines.get(line_number).to_slice())
     out.write_char(newline())
