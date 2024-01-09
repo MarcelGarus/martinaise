@@ -37,7 +37,7 @@
 
 struct Nothing {}
 
-fun write[W](writer: W, nothing: Nothing) { writer.write("nothing") }
+fun write[W](writer: W, nothing: Nothing) { writer."nothing" }
 fun equals(a: Nothing, b: Nothing): Bool { true }
 fun ignore[T](value: T) {}
 
@@ -51,7 +51,7 @@ fun ignore[T](value: T) {}
 | assigned to anything:
 |
 | foo.some_bool = return "Hi"
-| 2.add(maybe_int orelse break)
+| 2.add(if condition then 3 else break)
 | Maybe[U64].some(todo())
 
 enum Never {}
@@ -143,12 +143,8 @@ fun is_none[T](maybe: Maybe[T]): Bool { if maybe is none then true else false }
 
 fun write[W, T](writer: W, maybe: Maybe[T]) {
   switch maybe
-  case some(val) {
-    writer.write("some(")
-    writer.write(val)
-    writer.write(#))
-  }
-  case none writer.write("none")
+  case some(val) writer."some({val})"
+  case none writer."none"
 }
 fun equals[T](a: Maybe[T], b: Maybe[T]): Bool {
   switch a
@@ -177,16 +173,8 @@ fun unwrap[O, E](result: Result[O, E]): O {
 
 fun write[W, O, E](writer: W, result: Result[O, E]) {
   switch result
-  case ok(o) {
-    writer.write("ok(")
-    writer.write(o)
-    writer.write(#))
-  }
-  case error(e) {
-    writer.write("error(")
-    writer.write(e)
-    writer.write(#))
-  }
+  case ok(o) writer."ok({o})"
+  case error(e) writer."error({e})"
 }
 fun equals[O, E](a: Result[O, E], b: Result[O, E]): Bool {
   switch a
@@ -281,24 +269,34 @@ fun equals(a: I8, b: I8): Bool { a.compare_to(b).is_equal() }
 fun equals(a: I16, b: I16): Bool { a.compare_to(b).is_equal() }
 fun equals(a: I32, b: I32): Bool { a.compare_to(b).is_equal() }
 fun equals(a: I64, b: I64): Bool { a.compare_to(b).is_equal() }
-fun hash(hasher: &Hasher, value: U8) { hasher.hash(value.to_U64()) }
-fun hash(hasher: &Hasher, value: U16) { hasher.hash(value.to_U64()) }
-fun hash(hasher: &Hasher, value: U32) { hasher.hash(value.to_U64()) }
-fun hash(hasher: &Hasher, value: I8) { hasher.hash(value.to_U64()) }
-fun hash(hasher: &Hasher, value: I16) { hasher.hash(value.to_U64()) }
-fun hash(hasher: &Hasher, value: I32) { hasher.hash(value.to_U64()) }
-fun hash(hasher: &Hasher, value: I64) { hasher.hash(value.to_U64()) }
+fun hash(hasher: &Hasher, int: U8) { hasher.hash(int.to_U64()) }
+fun hash(hasher: &Hasher, int: U16) { hasher.hash(int.to_U64()) }
+fun hash(hasher: &Hasher, int: U32) { hasher.hash(int.to_U64()) }
+fun hash(hasher: &Hasher, int: I8) { hasher.hash(int.to_U64()) }
+fun hash(hasher: &Hasher, int: I16) { hasher.hash(int.to_U64()) }
+fun hash(hasher: &Hasher, int: I32) { hasher.hash(int.to_U64()) }
+fun hash(hasher: &Hasher, int: I64) { hasher.hash(int.to_U64()) }
 
-fun write_with_radix[W](writer: W, radix: U64, int: U64) {
+fun write[W](writer: W, int: U8) { writer.write(radix(10, int)) }
+fun write[W](writer: W, int: U16) { writer.write(radix(10, int)) }
+fun write[W](writer: W, int: U32) { writer.write(radix(10, int)) }
+fun write[W](writer: W, int: U64) { writer.write(radix(10, int)) }
+fun radix(radix: U64, int: U64): RadixFormat { RadixFormat { radix, int } }
+fun radix(radix: U64, int: U8) { radix(10, int.to_U64()) }
+fun radix(radix: U64, int: U16) { radix(10, int.to_U64()) }
+fun radix(radix: U64, int: U32) { radix(10, int.to_U64()) }
+struct RadixFormat { radix: U64, int: U64 }
+fun write[W](writer: W, format: RadixFormat) {
   var divisor = 1
   loop {
-    if int.divide(divisor).is_less_than(radix) then break
-    divisor = divisor.multiply(radix)
+    if format.int.divide(divisor).is_less_than(format.radix) then break
+    divisor = divisor.multiply(format.radix)
   }
   loop {
-    writer.write(int.divide(divisor).modulo(radix).to_U8().digit_to_char())
+    writer.write(
+      format.int.divide(divisor).modulo(format.radix).to_U8().digit_to_char())
     if divisor.equals(1) then break
-    divisor = divisor.divide(radix)
+    divisor = divisor.divide(format.radix)
   }
 }
 fun digit_to_char(digit: U8): Char {
@@ -306,10 +304,6 @@ fun digit_to_char(digit: U8): Char {
   then digit.subtract(10:U8).add(#a.byte).to_char()
   else digit.add(#0.byte).to_char()
 }
-fun write[W](writer: W, int: U8) { writer.write_with_radix(10, int.to_U64()) }
-fun write[W](writer: W, int: U16) { writer.write_with_radix(10, int.to_U64()) }
-fun write[W](writer: W, int: U32) { writer.write_with_radix(10, int.to_U64()) }
-fun write[W](writer: W, int: U64) { writer.write_with_radix(10, int) }
 fun parse_U64(str: Str): U64 {
   var num = 0
   for char in str do {
@@ -411,7 +405,7 @@ fun cast[A, B](a: A): B {
 fun write_address[W](writer: W, address: U64) {
   | max U64 is 18_446_744_073_709_551_615
   var divisor = 1_152_921_504_606_846_976 | 16 ^ something
-  writer.write("0x")
+  writer."0x"
   loop {
     writer.write(address.divide(divisor).modulo(16).to_U8().digit_to_char())
     if divisor.equals(1) then break
@@ -468,9 +462,7 @@ fun hash[T](hasher: &Hasher, slice: Slice[T]) {
   for item in slice do hasher.hash(item)
 }
 fun write[W, T](writer: W, slice: Slice[T]) {
-  writer.write(#[)
-  writer.write_comma_separated(slice)
-  writer.write(#])
+  writer.write("[{comma_separated(slice)}]")
 }
 
 fun iter[T](slice: Slice[T]): Iter[T, _] {
@@ -861,11 +853,7 @@ fun next[T, I](iter: &EnumeratedIter[T, I]): Maybe[Enumerated[T]] {
   case none none[Enumerated[T]]()
 }
 fun write[W, T](writer: W, enumerated: Enumerated[T]) {
-  writer.write("(")
-  writer.write(enumerated.index)
-  writer.write(": ")
-  writer.write(enumerated.item)
-  writer.write(")")
+  writer."({enumerated.index}: {enumerated.item})"
 }
 
 | Gets the element at the given index.
@@ -1083,12 +1071,14 @@ var stderr = File { descriptor = 2 }
 
 fun writeln[W](writer: W) { writer.write(newline) }
 fun writeln[W, T](writer: W, value: T) { writer.write(value) writer.writeln() }
-fun write_all[W, I](writer: W, iter: I) {
-  for item in iter do writer.write(item)
+
+fun comma_separated[I](iter: I): CommaSeparatedFormat[I] {
+  CommaSeparatedFormat { iter }
 }
-fun write_comma_separated[W, T](writer: W, iter: T) {
+struct CommaSeparatedFormat[I] { iter: I }
+fun write[W, T](writer: W, format: CommaSeparatedFormat[T]) {
   var first = true
-  for item in iter do {
+  for item in format.iter do {
     if first then first = false else writer.write(", ")
     writer.write(item)
   }
@@ -1111,20 +1101,10 @@ fun tuple[A, B, C](a: A, b: B, c: C): Tuple3[A, B, C] { Tuple3 { a, b, c } }
 struct Tuple2[A, B] { a: A, b: B }
 struct Tuple3[A, B, C] { a: A, b: B, c: C }
 fun write[W, A, B](writer: W, tuple: Tuple2[A, B]) {
-  writer.write(#()
-  writer.write(tuple.a)
-  writer.write(", ")
-  writer.write(tuple.b)
-  writer.write(#))
+  writer."({tuple.a}, {tuple.b})"
 }
 fun writer[W, A, B, C](writer: W, tuple: Tuple3[A, B, C]) {
-  writer.write(#()
-  writer.write(tuple.a)
-  writer.write(", ")
-  writer.write(tuple.b)
-  writer.write(", ")
-  writer.write(tuple.c)
-  writer.write(#))
+  writer."({tuple.a}, {tuple.b}, {tuple.c})"
 }
 
 | Point  
@@ -1388,23 +1368,16 @@ fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
   }
 }
 
+fun write[W, K, V](writer: W, entry: MapEntry[K, V]) {
+  writer."{entry.key}: {entry.value}"
+}
 fun write[W, K, V](writer: W, map: Map[K, V]) {
-  writer.write(#{)
-  var first = true
-  for bucket in map.buckets do
-    switch bucket
-    case empty {}
-    case filled(entry) {
-      if first then first = false else writer.write(", ")
-      writer.write(entry.key)
-      writer.write(": ")
-      writer.write(entry.value)
-    }
-  writer.write(#})
+  writer."{{comma_separated(map.iter())}}"
 }
 
-fun iter[K, V](map: Map[K, V]): MapIter[K, V] {
+fun iter[K, V](map: Map[K, V]): Iter[MapEntry[K, V], _] {
   MapIter { buckets = map.buckets, index = 0 }
+    .wrap_in_iter[MapEntry[K, V], MapIter[K, V]]()
 }
 struct MapIter[K, V] { buckets: Slice[MapBucket[K, V]], index: U64 }
 fun next[K, V](map: &MapIter[K, V]): Maybe[MapEntry[K, V]] {
@@ -1442,8 +1415,9 @@ fun write[W, T](writer: W, set: Set[T]) {
   writer.write(#})
 }
 
-fun iter[T](set: Set[T]): SetIter[T] {
+fun iter[T](set: Set[T]): Iter[T, _] {
   SetIter { buckets = set.map.buckets, index = 0 }
+    .wrap_in_iter[T, SetIter[T]]()
 }
 struct SetIter[T] { buckets: Slice[MapBucket[T, Nothing]], index: U64 }
 fun next[T](set: &SetIter[T]): Maybe[T] {
