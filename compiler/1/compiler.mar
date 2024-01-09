@@ -324,7 +324,8 @@ fun write[W](writer: W, s: AstStruct) {
   writer.write_str(s.name)
   writer.write_type_args(s.type_args)
   if s.fields.is_empty() then writer.write_str(" {}") else {
-    writer.write_str(" {")
+    writer.write_char(' )
+    writer.write_char('{)
     writer.write_char(newline())
     for field in s.fields do {
       writer.write_str("  ")
@@ -342,7 +343,8 @@ fun write[W](writer: W, e: AstEnum) {
   writer.write_str(e.name)
   writer.write_type_args(e.type_args)
   if e.variants.is_empty() then writer.write_str(" {}") else {
-    writer.write_str(" {")
+    writer.write_char(' )
+    writer.write_char('{)
     writer.write_char(newline())
     for variant in e.variants do {
       writer.write_str("  ")
@@ -400,9 +402,9 @@ fun write[W](writer: W, indent: U64, expr: AstExpr) {
   switch expr
   case int(int) writer.write(int)
   case str(str) {
-    writer.write_char('")
+    writer.write_char('") | to fix syntax highlighting: "'
     writer.write_str(str)
-    writer.write_char('")
+    writer.write_char('") | to fix syntax highlighting: "'
   }
   case name(name) writer.write_str(name)
   case call(call) {
@@ -419,7 +421,8 @@ fun write[W](writer: W, indent: U64, expr: AstExpr) {
   }
   case make_struct(struct_) {
     writer.write(struct_.type)
-    writer.write_str(" {")
+    writer.write_char(' )
+    writer.write_char('{)
     if struct_.fields.is_not_empty() then {
       writer.write_char(newline())
       for field in struct_.fields do {
@@ -793,7 +796,7 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Slice[U8]] {
       if parser.rest().get(metaness).not_equals('')
       then break
       else metaness = metaness.inc()
-  if parser.rest().get(metaness).not_equals('")
+  if parser.rest().get(metaness).not_equals('") | to fix syntax highlighting: "'
   then return
     if metaness.is_at_least(1)
     then bad_input[Vec[AstExpr]]("Expected a double quote.")
@@ -804,17 +807,18 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Slice[U8]] {
   var part_start = parser.cursor
   loop {
     { | (metaness + 1) braces = interpolation
-      var enough_braces = true()
-      for i in 0.until(metaness) do
-        if parser.rest().get(i).not_equals('{) then enough_braces = false()
-      if enough_braces then {
-        if parser.cursor.is_greater_than(part_start) then {
-          parts.&.push(AstExpr.str(
-            parser.code.subslice(part_start, parser.cursor)
-          ))
-          part_start = parser.cursor
-        }
-        parser.advance_by(metaness.inc())
+      var num_braces = 0
+      loop
+        if parser.rest().get(num_braces).equals('{)
+        then num_braces = num_braces.inc()
+        else break
+      if num_braces.is_at_least(metaness.inc()) then {
+        var end_of_literal = parser.cursor.add(num_braces).subtract(metaness.inc())
+        if end_of_literal.is_greater_than(part_start)
+        then parts.&.push(AstExpr.str(
+          parser.code.subslice(part_start, end_of_literal)
+        ))
+        parser.advance_by(num_braces)
         parts.&.push(
           parser.parse_expr()?
             orelse return bad_input[Vec[AstExpr]](
@@ -827,7 +831,7 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Slice[U8]] {
       }
     }
     | double quote + metaness single quotes = string ends
-    if parser.current().equals('") then if {
+    if parser.current().equals('") then if { | to fix syntax highlighting: "'
       var is_followed_by_enough_single_quotes = true()
       for j in 1.until(metaness) do
         if parser.rest().get(j).not_equals('')
@@ -1477,9 +1481,9 @@ fun write[W](writer: W, name: Slice[U8], fun_: MonoFun) {
     }
     case int(int) writer.write(int)
     case str(str) {
-      writer.write_char('")
+      writer.write_char('") | to fix syntax highlighting: "'
       writer.write_str(str)
-      writer.write_char('")
+      writer.write_char('") | to fix syntax highlighting: "'
     }
     i = i.inc()
   }
@@ -1940,18 +1944,18 @@ fun lookup_type(ast: Ast, name: Slice[U8]): Result[AstDef, Slice[U8]] {
   if matches.is_empty() then return error[AstDef, Slice[U8]]({
     var out = vec[U8]().&
     out.write_str("There is no type named ")
-    out.write_char('")
+    out.write_char('") | to fix syntax highlighting: "'
     out.write_str(name)
-    out.write_char('")
+    out.write_char('") | to fix syntax highlighting: "'
     out.write_str(".")
     out.to_slice()
   })
   if matches.len.is_greater_than(1) then return error[AstDef, Slice[U8]]({
     var out = vec[U8]().&
     out.write_str("There are multiple types named ")
-    out.write_char('")
+    out.write_char('") | to fix syntax highlighting: "'
     out.write_str(name)
-    out.write_char('")
+    out.write_char('") | to fix syntax highlighting: "'
     out.write_str(".")
     out.to_slice()
   })
@@ -2028,9 +2032,9 @@ fun lookup_fun(
     if name_matches.is_empty()
     then {
       out.write_str("There are no definitions named ")
-      out.write_char('")
+      out.write_char('") | to fix syntax highlighting: "'
       out.write_str(name)
-      out.write_char('")
+      out.write_char('") | to fix syntax highlighting: "'
       out.write_str(".")
     }
     else {
@@ -2171,15 +2175,15 @@ fun monomorphize(
 | compiling would be the more appropriate term), outputting all the required
 | type defs, other global variables, and functions into the mono.
 fun monomorphize(
-  var_: AstVar, context: &Context, ast: Ast, mono: &Mono
+  global: AstVar, context: &Context, ast: Ast, mono: &Mono
 ): Result[Nothing, Slice[U8]] {
-  if mono.globals.contains(var_.name)
+  if mono.globals.contains(global.name)
   then return ok[Nothing, Slice[U8]]({})
 
   context.push({
     var out = vec[U8]().&
     out.write_str("var ")
-    out.write_str(var_.name)
+    out.write_str(global.name)
     out.write_str(" ()")
     out.to_slice()
   })
@@ -2205,7 +2209,7 @@ fun monomorphize(
     continue_scopes = stack[ContinueScope](),
   }
 
-  var value = compile_fun.&.compile(var_.value.*)?
+  var value = compile_fun.&.compile(global.value.*)?
   if compile_fun.return_type.&.add(value.type) is error(error)
     then return error[Nothing, Slice[U8]]({
       var out = vec[U8]().&
@@ -2220,8 +2224,8 @@ fun monomorphize(
     mono_fun.body.&.push(MonoStatement.return_(value))
   mono_fun.return_type = compile_fun.return_type.finish()
 
-  mono.globals.&.put(var_.name, mono_fun)
-  mono.globals_init_order.&.push(var_.name)
+  mono.globals.&.put(global.name, mono_fun)
+  mono.globals_init_order.&.push(global.name)
 
   context.&.pop()
   ok[Nothing, Slice[U8]]({})
@@ -2419,7 +2423,7 @@ fun compile_in_current_scope(
       MonoSlotValue.int(int.value),
     ))
     case str(str) {
-      type("Str").monomorphize(map[Slice[U8], Type](), self.ast, self.mono)
+      type("Str").monomorphize(map[Slice[U8], Type](), self.ast, self.mono)?
       self.slot_expr(self.add_slot(type("Str"), MonoSlotValue.str(str)))
     }
     case name(name) {
@@ -2427,23 +2431,25 @@ fun compile_in_current_scope(
       case some(slot) self.slot_expr(slot)
       case none {
         switch self.ast.lookup_global_var(name)
-        case some(ast_var) {
-          ast_var.monomorphize(self.context, self.ast, self.mono)
+        case some(global) {
+          global.monomorphize(self.context, self.ast, self.mono)?
           var type = self.mono.globals.get(name).unwrap().return_type
           MonoExpr {
             kind = MonoExprKind.global(name),
             type,
           }
         }
-        case none return error[MonoExpr, Slice[U8]]({
-          | TODO: print which variables are in scope
-          var out = vec[U8]().&
-          out.write_char('")
-          out.write_str(name)
-          out.write_char('")
-          out.write_str(" is not in scope.")
-          out.to_slice()
-        })
+        case none {
+          return error[MonoExpr, Slice[U8]]({
+            | TODO: print which variables are in scope
+            var out = vec[U8]().&
+            out.write_char('") | to fix syntax highlighting: "'
+            out.write_str(name)
+            out.write_char('") | to fix syntax highlighting: "'
+            out.write_str(" is not in scope.")
+            out.to_slice()
+          })
+        }
       }
     }
     case call(call) {
@@ -2504,9 +2510,9 @@ fun compile_in_current_scope(
           out.write_str("You tried to create a ")
           out.write_str(make_struct.type.name)
           out.write_str(", but the ")
-          out.write_char('")
+          out.write_char('") | to fix syntax highlighting: "'
           out.write_str(field.name)
-          out.write_char('")
+          out.write_char('") | to fix syntax highlighting: "'
           out.write_str(" field is missing.")
           out.to_slice()
         })
@@ -2558,9 +2564,9 @@ fun compile_in_current_scope(
           out.write_str("Tried to assign ")
           out.write(value.type)
           out.write_str(" to field ")
-          out.write_char('")
+          out.write_char('") | to fix syntax highlighting: "'
           out.write_str(name)
-          out.write_char('")
+          out.write_char('") | to fix syntax highlighting: "'
           out.write_str(" of type ")
           out.write(type_in_struct)
           out.write_str(".")
@@ -2721,9 +2727,9 @@ fun compile_in_current_scope(
           if field.name.equals(member.name) then field_type = some(field.type)
         field_type orelse return error[MonoExpr, Slice[U8]]({
           var out = vec[U8]().&
-          out.write_char('")
+          out.write_char('") | to fix syntax highlighting: "'
           out.write_str(member.name)
-          out.write_char('")
+          out.write_char('") | to fix syntax highlighting: "'
           out.write_str(" is not a field on ")
           out.write(of.type)
           out.write_str(".")
@@ -2825,9 +2831,9 @@ fun compile_in_current_scope(
           out.write_str("When switching on ")
           out.write(value.type)
           out.write_str(", you handle the ")
-          out.write_char('")
+          out.write_char('") | to fix syntax highlighting: "'
           out.write_str(case_.variant)
-          out.write_char('")
+          out.write_char('") | to fix syntax highlighting: "'
           out.write_str(" variant multiple times.")
           out.to_slice()
         })
@@ -2844,9 +2850,9 @@ fun compile_in_current_scope(
           out.write_str("You switched on ")
           out.write(value.type)
           out.write_str(", which doesn't have a ")
-          out.write_char('")
+          out.write_char('") | to fix syntax highlighting: "'
           out.write_str(case_.variant)
-          out.write_char('")
+          out.write_char('") | to fix syntax highlighting: "'
           out.write_str(" variant.")
           out.write_char(newline())
           out.write_str("It only has these variants:")
@@ -2865,9 +2871,9 @@ fun compile_in_current_scope(
             out.write_str("You switched on ")
             out.write(value.type)
             out.write_str(", but you don't handle the ")
-            out.write_char('")
+            out.write_char('") | to fix syntax highlighting: "'
             out.write_str(variant.name)
-            out.write_char('")
+            out.write_char('") | to fix syntax highlighting: "'
             out.write_str(" variant.")
             out.to_slice()
           })
@@ -2927,9 +2933,9 @@ fun compile_in_current_scope(
                 out.write_str("Previous switch cases return ")
                 out.write(expected)
                 out.write_str(", but the case for ")
-                out.write_char('")
+                out.write_char('") | to fix syntax highlighting: "'
                 out.write_str(case_.variant)
-                out.write_char('")
+                out.write_char('") | to fix syntax highlighting: "'
                 out.write_str(" returns ")
                 out.write(then_.type)
                 out.write_str(".")
@@ -3140,8 +3146,11 @@ fun compile_in_current_scope(
 }
 
 fun compile_call(
-  self: &CompileFun, name: Slice[U8],
-  callee: Maybe[MonoExpr], type_args: Maybe[Vec[Type]], args: Vec[MonoExpr]
+  self: &CompileFun,
+  name: Slice[U8],
+  callee: Maybe[MonoExpr],
+  type_args: Maybe[Vec[Type]],
+  explicit_args: Vec[MonoExpr],
 ): Result[MonoExpr, Slice[U8]] {
   | Martinaise supports auto-dereferencing: If you call value.foo() on a value
   | of type &T, we first look for functions matching foo(&T). If none match, we
@@ -3149,48 +3158,43 @@ fun compile_call(
   | find one, your code acts as if it was value.*.foo().
   var first_error = none[Slice[U8]]()
   loop {
-    var full_args = vec[MonoExpr]()
-    if callee is some(c) then full_args.&.push(c)
-    for arg in args do full_args.&.push(arg)
+    var args = vec[MonoExpr]()
+    var arg_types = vec[Type]()
+    if callee is some(c) then {
+      args.&.push(c)
+      arg_types.&.push(c.type)
+    }
+    for arg in explicit_args do {
+      args.&.push(arg)
+      arg_types.&.push(arg.type)
+    }
 
-    switch self.compile_call_without_auto_deref(name, type_args, full_args)
-    case ok(expr) return ok[MonoExpr, Slice[U8]](expr)
+    switch self.ast.lookup_fun(name, type_args, arg_types)
     case error(error) {
       if first_error is none then first_error = some(error)
-
-      if callee is some(c) then
-        if c.type.name.equals("&") then {
-          | Dereference the callee
-          callee = some(MonoExpr {
-            kind = MonoExprKind.member(MonoMember {
-              of = c.put_on_heap(),
-              name = "*"
-            }),
-            type = c.type.args.get(0),
-          })
-          continue
-        }
-
+      if callee is some(c) then if c.type.name.equals("&") then {
+        | Dereference the callee
+        callee = some(MonoExpr {
+          kind = MonoExprKind.member(MonoMember {
+            of = c.put_on_heap(),
+            name = "*"
+          }),
+          type = c.type.args.get(0),
+        })
+        continue
+      }
       return error[MonoExpr, Slice[U8]](first_error.unwrap())
     }
+    case ok(solution) {
+      var fun_ = solution.fun_.monomorphize(
+        solution.type_env,
+        self.context, self.ast, self.mono
+      )?
+      var result = self.add_slot(self.mono.funs.get(fun_).unwrap().return_type)
+      self.put(MonoStatement.call(MonoCall { to = result, fun_, args }))
+      return ok[MonoExpr, Slice[U8]](self.slot_expr(result))
+    }
   }
-}
-fun compile_call_without_auto_deref(
-  self: &CompileFun, name: Slice[U8],
-  type_args: Maybe[Vec[Type]], args: Vec[MonoExpr]
-): Result[MonoExpr, Slice[U8]] {
-  var arg_types = vec[Type]()
-  for arg in args do arg_types.&.push(arg.type)
-
-  var solution = self.ast.lookup_fun(name, type_args, arg_types)?
-  var fun_ = solution.fun_.monomorphize(
-    solution.type_env,
-    self.context, self.ast, self.mono
-  )?
-
-  var result = self.add_slot(self.mono.funs.get(fun_).unwrap().return_type)
-  self.put(MonoStatement.call(MonoCall { to = result, fun_, args }))
-  ok[MonoExpr, Slice[U8]](self.slot_expr(result))
 }
 
 | C Backend  
@@ -3600,7 +3604,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       out.write_str(") ")
 
       if fun_.is_builtin then {
-        out.write_str("{")
+        out.write_str("{") | to fix syntax highlighting: "}"
         out.write_char(newline())
 
         if builtin_funs.get(signature) is some(body)
@@ -3650,7 +3654,8 @@ fun compile_to_c(mono: Mono): Slice[U8] {
     }
     out.write_str("// actual main function")
     out.write_char(newline())
-    out.write_str("int main() {")
+    out.write_str("int main() ")
+    out.write_char('{)
     out.write_char(newline())
 
     for global in mono.globals_init_order do {
@@ -3674,7 +3679,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
 fun fun_body_to_c(fun_: MonoFun): Slice[U8] {
   var out = vec[U8]().&
 
-  out.write_str("{")
+  out.write_char('{)
   out.write_char(newline())
 
   for i in 0.to(fun_.slots.len) do {
@@ -3711,12 +3716,12 @@ fun fun_body_to_c(fun_: MonoFun): Slice[U8] {
       out.write_str(".pointer = (")
       out.write_str(type("Char").mangle())
       out.write_str("*) ")
-      out.write_char('")
+      out.write_char('") | to fix syntax highlighting: "'
       for char in str do {
         out.write_str("\x")
         out.write_with_radix(16, char.to_U64())
       }
-      out.write_char('")
+      out.write_char('") | to fix syntax highlighting: "'
       out.write_str("; ")
       out.write(slot_ref)
       out.write_str(".")
