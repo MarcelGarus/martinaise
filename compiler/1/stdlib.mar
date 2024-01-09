@@ -500,7 +500,7 @@ fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
   assert(to.is_at_most(slice.len), "subslice needs to be inside original slice")
   Slice { data = slice.data.add_offset(from), len = to.subtract(from) }
 }
-fun first[T](slice: Slice[T]): Maybe[T] {
+fun first[T](slice: Slice[T]): T {
   assert(slice.is_not_empty(), "first only works on non-empty slices")
   slice.get(0)
 }
@@ -508,7 +508,7 @@ fun first[T](slice: Slice[T], amount: U64): Slice[T] {
   assert(amount.is_at_most(slice.len), "first amount too big")
   slice.subslice(0, amount)
 }
-fun last[T](slice: Slice[T]): Maybe[T] {
+fun last[T](slice: Slice[T]): T {
   assert(slice.is_not_empty(), "last only works on non-empty slices")
   slice.get(slice.len.dec())
 }
@@ -662,7 +662,7 @@ fun substr(str: Str, from: U64, to: U64): Str {
     orelse panic("substr needs to be inside original str")
   Str { bytes = str.bytes.subslice(from, to) }
 }
-fun first(str: Str): Maybe[Char] {
+fun first(str: Str): Char {
   assert(str.is_not_empty(), "first only works on non-empty strs")
   str.get(0)
 }
@@ -670,7 +670,7 @@ fun first(str: Str, amount: U64): Str {
   assert(amount.is_at_most(str.len), "first amount too big")
   str.substr(0, amount)
 }
-fun last(str: Str): Maybe[T] {
+fun last(str: Str): T {
   assert(str.is_not_empty(), "last only works on non-empty strs")
   str.get(str.len.dec())
 }
@@ -856,7 +856,10 @@ fun write[W, T](writer: W, enumerated: Enumerated[T]) {
 }
 
 | Gets the element at the given index.
-fun get[T, I](iter: &Iter[T, I], index: U64): Maybe[T] {
+fun get[T, I](iter: &Iter[T, I], index: U64): T {
+  iter.get_maybe(index).unwrap()
+}
+fun get_maybe[T, I](iter: &Iter[T, I], index: U64): Maybe[T] {
   iter.skip(index).get()
 }
 
@@ -1351,10 +1354,7 @@ fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
   }
 }
 fun contains[K, V](map: Map[K, V], key: K): Bool { map.get(key).is_some() }
-fun get[K, V](map: Map[K, V], key: K): Maybe[V] {
-  switch map.get_ref(key) case some(val) some(val.*) case none none[V]()
-}
-fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
+fun get_maybe_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
   var i = key.hash().modulo(map.buckets.len)
   loop {
     var bucket = map.buckets.get_ref(i)
@@ -1366,6 +1366,11 @@ fun get_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
       else i = i.add(1).modulo(map.buckets.len)
   }
 }
+fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
+  switch map.get_ref(key) case some(val) some(val.*) case none none[V]()
+}
+fun get_ref[K, V](map: Map[K, V], key: K): &V { map.get_maybe_ref().unwrap() }
+fun get[K, V](map: Map[K, V], key: K): V { map.get_maybe().unwrap() }
 
 fun write[W, K, V](writer: W, entry: MapEntry[K, V]) {
   writer."{entry.key}: {entry.value}"
