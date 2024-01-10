@@ -829,19 +829,24 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Slice[U8]] {
         continue
       }
     }
-    | newline doesn't appear in str, parses next line until quote
-    |   single quote -> newline inserted
-    |   double quote -> no newline inserted
+    | newline doesn't appear in str, parses next line until single quote
+    | if n before single quote, also insert a newline
     if parser.current().equals(newline()) then {
       parser.advance()
       loop {
         var char = parser.current()
         if char.equals(' ) then { parser.advance() continue }
-        if char.equals('") then break | to fix syntax highlighting: "'
-        if char.equals('') then { part.&.push(newline()) break }
-        eprintsln("bad string")
+        if char.equals('') then break
+        if char.equals('n) then {
+          parser.advance()
+          if parser.current().not_equals('')
+          then return bad_input[Vec[AstExpr]](
+            "Expected single quote after the newline.")
+          part.&.push(newline())
+          break
+        }
         return bad_input[Vec[AstExpr]](
-          "After a newline, a string needs to have a single or double quote.")
+          "After a newline, a string needs to have a single quote.")
       }
       parser.advance()
       continue
