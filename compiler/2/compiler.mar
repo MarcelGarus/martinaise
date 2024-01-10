@@ -63,13 +63,13 @@ fun clear_terminal() {
 }
 
 fun write_ansi_escape_sequence[W](writer: W, sequence: Str) {
-  writer.write_byte(27:U8)
-  writer.write_str(sequence)
+  writer.write(27:U8.to_char())
+  writer.write(sequence)
 }
 fun print_on_same_line(message: Str) {
-  stderr().write_ansi_escape_sequence("[1A") | move cursor up one line
-  stderr().write_ansi_escape_sequence("[K")  | erase the current line
-  eprintsln(message)
+  stderr.write_ansi_escape_sequence("[1A") | move cursor up one line
+  stderr.write_ansi_escape_sequence("[K")  | erase the current line
+  eprintln(message)
 }
 
 | Types  
@@ -96,7 +96,8 @@ fun write[W](writer: W, type: Type) {
 fun type_args[T](args: Vec[T]): TypeArgsFormat[T] { TypeArgsFormat { args } }
 struct TypeArgsFormat[T] { args: Vec[T] }
 fun write[W, T](writer: W, type_args: TypeArgsFormat[T]) {
-  if type_args.is_not_empty() then writer."[{comma_separated(type_args)}]"
+  if type_args.args.is_not_empty()
+  then writer."[{comma_separated(type_args.args)}]"
 }
 
 fun equals(a: Type, b: Type): Bool {
@@ -138,7 +139,9 @@ var all_int_configs = {
 }
 
 fun equals(a: Signedness, b: Signedness): Bool {
-  a.to_char().equals(b.to_char())
+  switch a
+  case signed { switch b case signed true case unsigned false }
+  case unsigned { switch b case signed false case unsigned true }
 }
 fun equals(a: IntConfig, b: IntConfig): Bool {
   a.signedness.equals(b.signedness).and(a.bits.equals(b.bits))
@@ -148,7 +151,7 @@ fun equals(a: Int, b: Int): Bool {
 }
 
 fun write[W](writer: W, signedness: Signedness) {
-  writer.write(switch s case signed #I case unsigned #U)
+  writer.write(switch signedness case signed #I case unsigned #U)
 }
 fun write[W](writer: W, config: IntConfig) {
   writer."{config.signedness}{config.bits}"
@@ -277,7 +280,7 @@ fun write[W](writer: W, enum_: AstEnum) {
 }
 
 struct Indent { amount: U64 }
-fun inc(indent: Indent): Indent { Indent { amount = amount.inc() } }
+fun inc(indent: Indent): Indent { Indent { amount = indent.amount.inc() } }
 fun write[W](writer: W, indent: Indent) {
   for i in 0.to(indent.amount.multiply(2)) do writer." "
 }
@@ -293,17 +296,12 @@ fun write[W](writer: W, var_: AstVar) {
   writer.write(Indent { amount = 0 }, var_)
 }
 fun write[W](writer: W, indent: Indent, var_: AstVar) {
-  writer."var {var_.name} = {var_.value.indent(indent)}"
+  writer."var {var_.name} = {var_.value.*.indent(indent)}"
 }
 fun write[W](writer: W, fun_: AstFun) {
-  writer."fun {fun_.name}{type_args(fun_.type_args)}("
-  var first = true
-  for arg in fun_.args do {
-    if first then first = false else writer.", "
-    writer."{arg.name}: {arg.type}"
-  }
-  writer."): {fun_.returns} "
-  if f.is_builtin
+  writer."fun {fun_.name}{type_args(fun_.type_args)}
+    '({comma_separated(fun_.args)}): {fun_.returns} "
+  if fun_.is_builtin
   then writer.'"{ ... }"'
   else writer.write_body(Indent { amount = 0 }, fun_.body)
 }
@@ -341,42 +339,44 @@ fun write[W](writer: W, indent: Indent, expr: AstExpr) {
     }
   }
   case make_enum(enum_)
-    writer."{enum_.type}.{enum_.variant}({enum_.arg.indent(indent)})"
-  case member(member) writer."{member.of.indent(indent)}.{member.name}"
+    writer."{enum_.type}.{enum_.variant}({enum_.arg.*.indent(indent)})"
+  case member(member) writer."{member.of.*.indent(indent)}.{member.name}"
   case var_(var_) writer.write(var_)
   case assign(assign)
-    writer."{assign.to.indent(indent)} = {assign.value.indent(indent)}"
+    writer."{assign.to.*.indent(indent)} = {assign.value.*.indent(indent)}"
   case switch_(switch_) {
-    writer."switch {switch_.value.indent(indent)}"
+    writer."switch {switch_.value.*.indent(indent)}"
     for case_ in switch_.cases do {
       writer."{newline}{indent}case {case_.variant}"
       if case_.binding is some(binding) then writer."({binding})"
-      writer." {case_.then_.indent(indent)}"
+      writer." {case_.then_.*.indent(indent)}"
     }
     if switch_.default_ is some(default_)
-    then writer."{newline}{indent}default {default_.indent(indent)}"
+    then writer."{newline}{indent}default {default_.*.indent(indent)}"
   }
-  case loop_(expr) writer."loop {expr.indent(indent)}"
-  case break_(break_) writer."break({break_.indent(indent)})"
+  case loop_(expr) writer."loop {expr.*.indent(indent)}"
+  case break_(arg) writer."break({arg.*.indent(indent)})"
   case continue_ writer."continue"
-  case return_(return_) writer."return {return_.indent(indent)}"
-  case try(expr) writer."{expr.indent(indent)}?"
+  case return_(arg) writer."return {arg.*.indent(indent)}"
+  case try(expr) writer."{expr.*.indent(indent)}?"
   case body(body) writer.write_body(indent, body)
 }
+fun write[W](writer: W, arg: AstFunArg) { writer."{arg.name}: {arg.type}" }
 
-fun signature(fun_: AstFun): AstFunSignature { AstFunSignature { fun_ } }
-struct AstFunSignature { fun_ }
-fun write[W](writer: W, signature: AstFunSignature) {
-  writer."fun {f.name}{type_args(f.type_args)}({comma_separated(f.args)})"
+fun signature(def: AstDef): AstSignature { AstSignature { def } }
+fun signature(fun_: AstFun): AstSignature {
+  AstSignature { def = AstDef.fun_(fun_) }
 }
-fun write_signature[W](writer: W, def: AstDef) {
-  switch def
+struct AstSignature { def: AstDef }
+fun write[W](writer: W, signature: AstSignature) {
+  switch signature.def
   case builtin_type(name) writer."builtin {name}"
   case struct_(struct_)
     writer."struct {struct_.name}{type_args(struct_.type_args)}"
   case enum_(enum_) writer."enum {enum_.name}{type_args(enum_.type_args)}"
   case var_(var_) writer."var {var_.name}"
-  case fun_(fun_) writer."{fun_}"
+  case fun_(fun_) writer
+    ."fun {fun_.name}{type_args(fun_.type_args)}({comma_separated(fun_.args)})"
 }
 
 | Parsing  
@@ -418,18 +418,18 @@ fun write_signature[W](writer: W, def: AstDef) {
 
 struct Parser { code: Str, cursor: U64 }
 
-fun current(parser: Parser): U8 { parser.code.get(parser.cursor) }
-fun rest(parser: Parser): Str { parser.code.subslice(parser.cursor) }
+fun current(parser: Parser): Char { parser.code.get(parser.cursor) }
+fun rest(parser: Parser): Str { parser.code.without_first(parser.cursor) }
 fun advance(parser: &Parser) { parser.advance_by(1) }
 fun advance_by(parser: &Parser, n: U64) { parser.cursor = parser.cursor.add(n) }
 | TODO: move into stdlib
-fun is_whitespace(char: U8): Bool {
-  char.equals(# ).or(char.equals(tab())).or(char.equals(newline))
+fun is_whitespace(char: Char): Bool {
+  char.equals(# ).or(char.equals(tab)).or(char.equals(newline))
 }
 
 fun consume_whitespace(parser: &Parser) {
   loop {
-    if parser.cursor.is_at_least(parser.code.len) then break
+    if parser.cursor.is_at_least(parser.code.len()) then break
     var char = parser.current()
     if char.is_whitespace() then {
       parser.cursor = parser.cursor.inc()
@@ -437,7 +437,7 @@ fun consume_whitespace(parser: &Parser) {
     }
     if char.equals(#|) then {
       loop {
-        if parser.cursor.is_at_least(parser.code.len) then break
+        if parser.cursor.is_at_least(parser.code.len()) then break
         if parser.current().equals(newline) then break
         parser.cursor = parser.cursor.inc()
       }
@@ -449,7 +449,7 @@ fun consume_whitespace(parser: &Parser) {
 fun consume_prefix(parser: &Parser, prefix: Str): Bool {
   parser.consume_whitespace()
   parser.rest().starts_with(prefix) orelse return false
-  parser.advance_by(prefix.len)
+  parser.advance_by(prefix.len())
   true
 }
 | Also makes sure there's a non-letter following, so consume_keyword("fun")
@@ -457,15 +457,15 @@ fun consume_prefix(parser: &Parser, prefix: Str): Bool {
 fun consume_keyword(parser: &Parser, keyword: Str): Bool {
   parser.consume_whitespace()
   parser.rest().starts_with(keyword) orelse return false
-  if parser.rest().len.is_greater_than(keyword.len) then {
-    var char_after = parser.rest().get(keyword.len)
+  if parser.rest().len().is_greater_than(keyword.len()) then {
+    var char_after = parser.rest().get(keyword.len())
     var goes_on = char_after.equals(#_)
       .or(#A.until(#Z).contains(char_after))
       .or(#a.until(#z).contains(char_after))
       .or(#0.until(#9).contains(char_after))
     if goes_on then return false
   }
-  parser.advance_by(keyword.len)
+  parser.advance_by(keyword.len())
   true
 }
 
@@ -482,7 +482,7 @@ fun parse_name(parser: &Parser): Maybe[Str] {
     break
   }
   if parser.cursor.equals(start) then return none[Str]()
-  some(parser.code.subslice(start, parser.cursor))
+  some(parser.code.substr(start, parser.cursor))
 }
 
 fun parse_lower_name(parser: &Parser): Maybe[Str] {
@@ -618,14 +618,14 @@ fun parse_int(parser: &Parser): Result[Maybe[AstExpr], Str] {
     value = parser.parse_digits(radix)? orelse return bad_input[AstExpr](
       "Expected the value of the number after the radix pound.")
   }
-  if parser.current().not_equals(":") then return parsed(AstExpr.int(Int {
+  if parser.current().not_equals(#:) then return parsed(AstExpr.int(Int {
     value,
     config = IntConfig { signedness = Signedness.unsigned, bits = 64 },
   }))
   parser.advance()
   var signedness =
-    if parser.current().equals("I") is some then Signedness.signed
-    else if parser.current().equals("U") is some then Signedness.unsigned
+    if parser.current().equals(#I) then Signedness.signed
+    else if parser.current().equals(#U) then Signedness.unsigned
     else return bad_input[AstExpr]("Expected a signedness (U or I).")
   parser.advance()
   var bits = parser.parse_digits(10)?
@@ -644,7 +644,7 @@ fun parse_char(parser: &Parser): Result[Maybe[AstExpr], Str] {
     fields = vec(AstMakeStructField {
       name = "byte",
       value = AstExpr.int(Int {
-        value = char.to_U64(),
+        value = char.byte.to_U64(),
         config = IntConfig { signedness = Signedness.unsigned, bits = 8 }
       }),
     })
@@ -688,7 +688,7 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
   parser.advance_by(metaness.inc())
 
   var parts = vec[AstExpr]()
-  var part = vec[U8]()
+  var part = vec[Char]()
   loop {
     | (metaness + 1) braces -> interpolation
     var num_braces = 0
@@ -699,8 +699,8 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
     if num_braces.is_at_least(metaness.inc()) then {
       for i in 0.to(num_braces.subtract(metaness.inc())) do part.&.push(#{)
       if part.is_not_empty() then {
-        parts.&.push(AstExpr.str(part.to_slice()))
-        part = vec[U8]()
+        parts.&.push(AstExpr.str(part.to_str()))
+        part = vec[Char]()
       }
       parser.advance_by(num_braces)
       var expr = parser.parse_expr()? orelse return bad_input[Vec[AstExpr]](
@@ -720,13 +720,6 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
         var char = parser.current()
         if char.equals(# ) then { parser.advance() continue }
         if char.equals(#') then break
-        if char.equals(#n) then {
-          parser.advance()
-          parser.current().equals(#') orelse return bad_input[Vec[AstExpr]](
-            "Expected a single quote after the newline.")
-          part.&.push(newline())
-          break
-        }
         return bad_input[Vec[AstExpr]](
           "After a newline, a string needs to have a single quote.")
       }
@@ -741,7 +734,7 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
         then is_followed_by_enough_single_quotes = false
       is_followed_by_enough_single_quotes
     } then {
-      if part.is_not_empty() then parts.&.push(AstExpr.str(part.to_slice()))
+      if part.is_not_empty() then parts.&.push(AstExpr.str(part.to_str()))
       parser.advance_by(metaness.inc())
       return parsed(parts)
     }
@@ -777,7 +770,7 @@ fun parse_make(parser: &Parser): Result[Maybe[AstExpr], Str] {
       orelse return bad_input[AstExpr]("Expected the variant.")
 
     var arg = AstExpr.body(vec[AstExpr]())
-    if parser.consume_prefix("(") is some then {
+    if parser.consume_prefix("(") then {
       arg = parser.parse_expr()? orelse return bad_input[AstExpr](
         "Expected an argument for the variant.")
       parser.consume_prefix(")")
@@ -973,7 +966,7 @@ fun parse_expr_suffix_member(parser: &Parser, current: AstExpr): Result[Maybe[As
   then return parsed(current.member(name))
   if parser.parse_str_parts()? is some(parts) then return {
     var body = vec[AstExpr]()
-    body.&.push(var_("$str", current.member("&")))
+    body.&.push(var_("$str", current))
     for part in parts do
       body.&.push(AstExpr.name("$str").member("write").call(vec(part)))
     parsed(AstExpr.body(body))
@@ -1062,7 +1055,7 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
   parser.consume_prefix(")")
     orelse return bad_input[AstFun]("Expected a closing parenthesis.")
   var returns = type("Nothing")
-  if parser.consume_prefix(":") is some
+  if parser.consume_prefix(":")
   then returns = parser.parse_type()?
     orelse return bad_input[AstFun]("Expected the return type.")
   var is_builtin = false
@@ -1129,7 +1122,7 @@ fun parse_def(parser: &Parser): Result[Maybe[AstDef], Str] {
 fun parse_defs(parser: &Parser): Result[Vec[AstDef], Str] {
   var defs = vec[AstDef]()
   loop switch parser.parse_def()? case some(d) defs.&.push(d) case none break
-  if parser.cursor.is_less_than(parser.code.len)
+  if parser.cursor.is_less_than(parser.code.len())
   then return error[Vec[AstDef], Str]("Expected a definition.")
   ok[Vec[AstDef], Str](defs)
 }
@@ -1143,7 +1136,7 @@ fun parse(code: Str, stdlib_size: U64): Result[Ast, Str] {
     then error[Ast, Str](format_error_with_context(
       parser.code, parser.cursor, error))
     else error[Ast, Str](format_error_with_context(
-      parser.code.subslice(stdlib_size),
+      parser.code.without_first(stdlib_size),
       parser.cursor.subtract(stdlib_size),
       error
     ))
@@ -1159,7 +1152,7 @@ fun parse(code: Str, stdlib_size: U64): Result[Ast, Str] {
     }))
 
     | Int stuff
-    for config in all_int_configs() do {
+    for config in all_int_configs do {
       var type = config.to_type()
       defs.&.push(AstDef.builtin_type(type.name))
 
@@ -1181,7 +1174,7 @@ fun parse(code: Str, stdlib_size: U64): Result[Ast, Str] {
       defs.&.push_builtin_fun("xor", two_args, type)
 
       | Conversion function
-      for target_config in all_int_configs() do
+      for target_config in all_int_configs do
         if config.not_equals(target_config) then {
           var target_type = target_config.to_type()
           defs.&.push_builtin_fun("to_{target_type}",
@@ -1201,15 +1194,15 @@ fun push_builtin_fun(
   }))
 }
 fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
-  var lines = vec[Vec[U8]]()
-  var current_line = vec[U8]()
+  var lines = vec[Vec[Char]]()
+  var current_line = vec[Char]()
   var offset_in_line = 0
-  for i in 0.to(code.len) do {
+  for i in 0.to(code.len()) do {
     if i.equals(offset) then offset_in_line = current_line.len
     if code.get(i).equals(newline)
     then {
       lines.&.push(current_line)
-      current_line = vec[U8]()
+      current_line = vec[Char]()
       if i.is_at_least(offset) then break
     }
     else current_line.&.push(code.get(i))
@@ -1217,25 +1210,22 @@ fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
   | Now, lines contains all lines up to the line that contains the error.
   | offset_in_line is the offset into the last complete line.
   var num_lines_to_display = min(lines.len, 4)
-  var out = vec[U8]().&
+  var out = vec[Char]().&
   for line_number in lines.len.subtract(num_lines_to_display).to(lines.len) do {
     out.write_line_number(line_number)
-    out.write_str(" | ")
-    out.write_str(lines.get(line_number).to_slice())
-    out.write_char(newline)
+    out." | {lines.get(line_number).to_str()}{newline}"
   }
-  for i in 0.to(7.add(offset_in_line)) do out.write_char(# )
-  out.write_char(#^)
-  out.write_char(newline)
-  for i in 0.to(7.add(offset_in_line)) do out.write_char(# )
-  out.write_str(error)
-  out.to_slice()
+  for i in 0.to(7.add(offset_in_line)) do out." "
+  out."^{newline}"
+  for i in 0.to(7.add(offset_in_line)) do out." "
+  out.write(error)
+  out.to_str()
 }
 fun write_line_number[W](writer: W, n: U64) {
   if n.is_at_least(1000) then writer.write(n)
-  else if n.is_at_least(100) then { writer.write_str(" ") writer.write(n) }
-  else if n.is_at_least(10) then { writer.write_str("  ") writer.write(n) }
-  else { writer.write_str("   ") writer.write(n) }
+  else if n.is_at_least(100) then writer.write(" {n}")
+  else if n.is_at_least(10) then writer.write("  {n}")
+  else writer.write("   {n}")
 }
 
 | Mono  
@@ -1397,6 +1387,10 @@ struct Context { signatures: Vec[Str] }
 fun push(context: &Context, signature: Str) {
   context.signatures.&.push(signature)
   context.print_status()
+  if context.signatures.len.is_at_least(100) then {
+    for signature in context.signatures do eprintln(signature)
+    panic("overflow")
+  }
 }
 fun pop(context: &Context) {
   context.signatures.&.pop()
@@ -1585,7 +1579,7 @@ fun finish(sink: TypeSink): Type { sink.current.unwrap() }
 
 struct TypeSolver { vars: Set[Str], env: Map[Str, Type] }
 
-fun create_type_solver[Iter](vars_: Iter): TypeSolver {
+fun create_type_solver[I](vars_: I): TypeSolver {
   | TODO: make sure each type var only exists once
   var vars = set[Str]()
   for var_ in vars_ do vars.&.put(var_)
@@ -1608,24 +1602,23 @@ fun unify(solver: &TypeSolver, generic: Type, concrete: Type): Result[Bool, Str]
     return ok[Bool, Str](true)
   }
 
-  if generic.name.not_equals(concrete.name) then return ok[Bool, Str](false)
-  if generic.args.len.not_equals(concrete.args.len) then return ok[Bool, Str](false)
-  for i in 0.to(generic.args.len) do
-    if not(solver.unify(generic.args.get(i), concrete.args.get(i))?)
-    then return ok[Bool, Str](false)
+  generic.name.equals(concrete.name) orelse return ok[Bool, Str](false)
+  generic.args.len.equals(concrete.args.len) orelse return ok[Bool, Str](false)
+  for zip in zip(generic.args.iter(), concrete.args.iter()) do
+    solver.unify(zip.a, zip.b)? orelse return ok[Bool, Str](false)
 
   ok[Bool, Str](true)
 }
 fun finish(solver: TypeSolver): Result[Map[Str, Type], Str] {
   for var_ in solver.vars do
     if not(solver.env.contains(var_)) then return error[Map[Str, Type], Str]({
-      var out = vec[U8]().&
+      var out = vec[Char]().&
       if solver.env.size.is_greater_than(0) then {
         out."These type variables are bound:{newline}"
         for entry in solver.env do out." - {entry.key} = {entry.value}{newline}"
       }
       out."The type variable {var_} is unbound."
-      out.to_slice()
+      out.to_str()
     })
 
   ok[Map[Str, Type], Str](solver.env)
@@ -1673,7 +1666,7 @@ fun monomorphize(ast: Ast): Result[Mono, Str] {
   }
   type("Never").monomorphize(map[Str, Type](), ast, mono.&)
   type("Nothing").monomorphize(map[Str, Type](), ast, mono.&)
-  for config in all_int_configs() do
+  for config in all_int_configs do
     mono.type_defs.&.put(config.to_type(), MonoTypeDef.builtin_type)
 
   var main = ast.lookup_fun("main", none[Vec[Type]](), vec[Type]())?.fun_
@@ -1810,9 +1803,10 @@ struct CallSignature {
   name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type]
 }
 fun write[W](writer: W, signature: CallSignature) {
-  writer."{name}"
-  if type_args is some(type_args_) then writer.write_type_args(type_args_)
-  writer."({comma_separated(arg_types)})"
+  writer."{signature.name}"
+  if signature.type_args is some(type_args_)
+  then writer.write(type_args(type_args_))
+  writer."({comma_separated(signature.arg_types)})"
 }
 
 | Monomorphizes a type, outputting all the required type defs into the mono. For
@@ -1823,7 +1817,7 @@ fun monomorphize(
   type: Type, type_env: Map[Str, Type], ast: Ast, mono: &Mono
 ): Result[Type, Str] {
   | TODO: Make sure generic types don't have parameters.
-  var type = type_env.get(type.name) orelse {
+  var type = type_env.get_maybe(type.name) orelse {
     var args = vec[Type]()
     for arg in type.args do args.&.push(arg.monomorphize(type_env, ast, mono)?)
     Type { name = type.name, args }
@@ -2452,7 +2446,7 @@ fun compile_in_current_scope(
           switch type
           case none type = some(then_.type)
           case some(expected)
-            then_.type.equals(expected) orelse return error[MonoExpr, Str]({
+            then_.type.equals(expected) orelse return error[MonoExpr, Str](
               '"When lowering this:{{newline}}
                '{{indented(indent(0), AstExpr.switch_(switch_))}}{{newline}}
                'Previous switch cases return {{expected}}, but the case for 
@@ -2684,21 +2678,21 @@ fun compile_call(
 | TODO: what standard?
 
 fun mangle(name: Str): Str {
-    var mangled = vec[U8]().&
-    mangled.write_str("mar_")
-    for c in name do {
-      if c.equals(#_) then { mangled.write_str("__") continue }
-      if c.equals(#[) then { mangled.write_str("_of_") continue }
-      if c.equals(#]) then { mangled.write_str("_end_") continue }
-      if c.equals(#() then { mangled.write_str("_withargs_") continue }
-      if c.equals(#)) then { mangled.write_str("_end_") continue }
-      if c.equals(#,) then { mangled.write_str("_and_") continue }
-      if c.equals(#&) then { mangled.write_str("_refto_") continue }
-      if c.equals(#*) then { mangled.write_str("_star_") continue }
-      if c.equals(# ) then continue
-      mangled.write_char(c)
-    }
-    mangled.to_slice()
+  var mangled = vec[U8]().&
+  mangled.write_str("mar_")
+  for c in name do {
+    if c.equals(#_) then { mangled.write_str("__") continue }
+    if c.equals(#[) then { mangled.write_str("_of_") continue }
+    if c.equals(#]) then { mangled.write_str("_end_") continue }
+    if c.equals(#() then { mangled.write_str("_withargs_") continue }
+    if c.equals(#)) then { mangled.write_str("_end_") continue }
+    if c.equals(#,) then { mangled.write_str("_and_") continue }
+    if c.equals(#&) then { mangled.write_str("_refto_") continue }
+    if c.equals(#*) then { mangled.write_str("_star_") continue }
+    if c.equals(# ) then continue
+    mangled.write_char(c)
+  }
+  mangled.to_slice()
 }
 
 fun mangle(type: Type): Str {
@@ -2812,7 +2806,7 @@ fun compile_to_c(mono: Mono): Str {
     '  result.value = close(arg0.value);{newline}
     '  return result;")
 
-  for config in all_int_configs() do {
+  for config in all_int_configs do {
     var type = config.to_type()
 
     | Type
@@ -2853,7 +2847,7 @@ fun compile_to_c(mono: Mono): Str {
     )
 
     | Conversion functions
-    for target_config in all_int_configs() do {
+    for target_config in all_int_configs do {
       if config.equals(target_config) then continue
       var target_type = target_config.to_type()
       builtin_funs.&.put(
@@ -2879,7 +2873,7 @@ fun compile_to_c(mono: Mono): Str {
         '// {type}{newline}"
       switch def
       case builtin_type
-        out."{builtin_types.get_maybe(type).unwrap("Unknown builtin type"))}
+        out."{builtin_types.get_maybe(type).unwrap("Unknown builtin type")}
           '{newline}"
       case struct_(struct_) {
         out."struct {type.mangle()} {{newline}"
@@ -3129,7 +3123,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
 
   print_on_same_line("Parsing {file_path}")
   var ast = parse(input, stdlib.len)
-    orelse(error) { eprintsln(error) return false }
+    orelse(error) { eprintln(error) return false }
   if command is ast then { println(ast) return true }
 
   print_on_same_line("Compiling {file_path}")
@@ -3197,10 +3191,10 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   true
 }
 
-fun wrong_usage(): Never { print_usage_info(stderr()) exit(1:U8) }
+fun wrong_usage(): Never { print_usage_info(stderr) exit(1:U8) }
 
 fun main(args: Slice[Str]) {
-  eprintsln("Welcome to Martinaise in Martinaise.")
+  eprintln("Welcome to Martinaise 2.")
 
   | Ways to use this program:
   | - martinaise help
@@ -3213,7 +3207,7 @@ fun main(args: Slice[Str]) {
   if args.len.is_less_than(2) then wrong_usage()
   var command = parse_command(args.get(1)) orelse wrong_usage()
   if command is help then {
-    print_usage_info(stdout())
+    print_usage_info(stdout)
     exit(0:U8)
   }
   if args.len.is_less_than(3) then wrong_usage()

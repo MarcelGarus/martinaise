@@ -14,6 +14,7 @@
 | TODO: validate all signatures before lowering
 | TODO: allow types on vars
 | TODO: break and continue with targets
+| TODO: add String type
 | TODO: enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
 | TODO: disallow _ in type args, structs, enums, and recursive functions
 | TODO: improve int parsing: be strict about whitespace, use :U8
@@ -282,9 +283,9 @@ fun write[W](writer: W, int: U16) { writer.write(radix(10, int)) }
 fun write[W](writer: W, int: U32) { writer.write(radix(10, int)) }
 fun write[W](writer: W, int: U64) { writer.write(radix(10, int)) }
 fun radix(radix: U64, int: U64): RadixFormat { RadixFormat { radix, int } }
-fun radix(radix: U64, int: U8) { radix(10, int.to_U64()) }
-fun radix(radix: U64, int: U16) { radix(10, int.to_U64()) }
-fun radix(radix: U64, int: U32) { radix(10, int.to_U64()) }
+fun radix(radix: U64, int: U8): RadixFormat { radix(10, int.to_U64()) }
+fun radix(radix: U64, int: U16): RadixFormat { radix(10, int.to_U64()) }
+fun radix(radix: U64, int: U32): RadixFormat { radix(10, int.to_U64()) }
 struct RadixFormat { radix: U64, int: U64 }
 fun write[W](writer: W, format: RadixFormat) {
   var divisor = 1
@@ -601,6 +602,8 @@ fun to_str(str: OsStr): Str {
     else len = len.inc()
   Str { chars = Slice { data = str.address.to_reference[Char](), len } }
 }
+fun to_str(chars: Slice[Char]): Str { Str { chars } }
+fun to_str(chars: Vec[Char]): Str { Str { chars = chars.to_slice() } }
 
 fun parse_digit(char: Char): U8 {
   if #0.to(#9).contains(char.byte) then return char.byte.subtract(#0.byte)
@@ -610,15 +613,22 @@ fun parse_digit(char: Char): U8 {
 }
 fun compare_to(a: Char, b: Char): Ordering { a.byte.compare_to(b.byte) }
 fun equals(a: Char, b: Char): Bool { a.byte.equals(b.byte) }
-fun hash(hasher: &Hasher, char: Char) { hash.hash(char) }
+fun hash(hasher: &Hasher, char: Char) { hasher.hash(char) }
 fun write[W](writer: W, char: Char) { writer.write_byte(char.byte) }
+fun inc(char: Char): Char { Char { byte = char.byte.inc() } }
+fun dec(char: Char): Char { Char { byte = char.byte.dec() } }
+fun add(char: Char, delta: U8): Char { Char { byte = char.byte.add(delta) } }
+fun subtract(char: Char, delta: U8): Char {
+  Char { byte = char.byte.subtract(delta) }
+}
+fun subtract(char: Char, other: Char): U8 { char.byte.subtract(other.byte) }
 
 fun len(str: Str): U64 { str.chars.len }
 fun is_empty(str: Str): Bool { str.len().equals(0) }
 fun get(str: Str, index: U64): Char { str.get_ref(index).* }
 fun get_ref(str: Str, index: U64): &Char {
   0.to(str.len()).contains(index) orelse panic("index out of bounds")
-  str.bytes.get_ref(index).cast[Char]()
+  str.chars.get_ref(index)
 }
 
 fun compare_to(a: Str, b: Str): Ordering {
@@ -637,7 +647,7 @@ fun equals(a: Str, b: Str): Bool {
   if a.len().equals(b.len()) then compare_to(a, b).is_equal() else false
 }
 fun hash(hasher: &Hasher, str: Str) {
-  for byte in str.bytes do hasher.hash(byte)
+  for char in str.chars do hasher.hash(char)
 }
 fun write[W](writer: W, str: Str) {
   for char in str.chars do writer.write(char)
@@ -660,45 +670,45 @@ fun next(iter: &StrIter): Maybe[Char] {
 fun substr(str: Str, from: U64, to: U64): Str {
   to.is_at_most(str.len())
     orelse panic("substr needs to be inside original str")
-  Str { bytes = str.bytes.subslice(from, to) }
+  Str { chars = str.chars.subslice(from, to) }
 }
 fun first(str: Str): Char {
   assert(str.is_not_empty(), "first only works on non-empty strs")
   str.get(0)
 }
 fun first(str: Str, amount: U64): Str {
-  assert(amount.is_at_most(str.len), "first amount too big")
+  assert(amount.is_at_most(str.len()), "first amount too big")
   str.substr(0, amount)
 }
 fun last(str: Str): T {
   assert(str.is_not_empty(), "last only works on non-empty strs")
-  str.get(str.len.dec())
+  str.get(str.len().dec())
 }
 fun last(str: Str, amount: U64): Str {
-  assert(amount.is_at_most(str.len), "last amount too big")
-  str.substr(str.len.subtract(amount), str.len)
+  assert(amount.is_at_most(str.len()), "last amount too big")
+  str.substr(str.len().subtract(amount), str.len())
 }
 fun without_first(str: Str, amount: U64): Str {
-  assert(amount.is_at_most(str.len), "without_first amount too big")
-  str.substr(amount, str.len)
+  assert(amount.is_at_most(str.len()), "without_first amount too big")
+  str.substr(amount, str.len())
 }
 fun without_last(str: Str, amount: U64): Str {
-  assert(amount.is_at_most(str.len), "without_last amount too big")
-  str.substr(0, slice.len.subtract(amount))
+  assert(amount.is_at_most(str.len()), "without_last amount too big")
+  str.substr(0, slice.len().subtract(amount))
 }
 fun starts_with(str: Str, prefix: Str): Bool {
-  str.bytes.starts_with(prefix.bytes)
+  str.chars.starts_with(prefix.chars)
 }
 fun ends_with(str: Str, suffix: Str): Bool {
-  str.bytes.ends_with(prefix.bytes)
+  str.chars.ends_with(prefix.chars)
 }
 fun trim_prefix(str: &Str, prefix: Str) {
   assert(str.starts_with(prefix), "trim_prefix doesn't match prefix")
-  str.* = str.without_first(prefix.len)
+  str.* = str.without_first(prefix.len())
 }
 fun trim_suffix(str: &Str, suffix: Str) {
   assert(str.ends_with(suffix), "trim_suffix doesn't match suffix")
-  str.* = str.without_last(suffix.len)
+  str.* = str.without_last(suffix.len())
 }
 fun split(str: Str, separator: Str): Slice[Str] {
   var parts = vec[Str]()
@@ -709,7 +719,7 @@ fun lines(slice: Str): Slice[Str] { slice.split("{newline}") }
 fun pad_right(str: Str, len: U64, char: Char): Str {
   var vec = vec[U8]()
   vec.&.write(str)
-  loop if vec.len.is_less_than(len) then vec.write(char) else break
+  loop if vec.len().is_less_than(len) then vec.write(char) else break
   vec.to_slice().to_str()
 }
 
@@ -1217,6 +1227,7 @@ fun equals[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice().equals(b.to_slice()) }
 fun iter[T](vec: Vec[T]): Iter[T, _] { vec.to_slice().iter() }
 fun write[W, T](writer: W, vec: Vec[T]) { writer.write(vec.to_slice()) }
 fun write_byte(writer: &Vec[U8], byte: U8) { writer.&.push(byte) }
+fun write_byte(writer: &Vec[Char], byte: U8) { writer.&.push(Char { byte }) }
 
 | Stack  
 | Something where you can push and pop items. Essentially just a Vec, but
@@ -1359,7 +1370,9 @@ fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
       } else i = i.add(1).modulo(map.buckets.len)
   }
 }
-fun contains[K, V](map: Map[K, V], key: K): Bool { map.get(key).is_some() }
+fun contains[K, V](map: Map[K, V], key: K): Bool {
+  map.get_maybe(key).is_some()
+}
 fun get_maybe_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
   var i = key.hash().modulo(map.buckets.len)
   loop {
@@ -1373,10 +1386,12 @@ fun get_maybe_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
   }
 }
 fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
-  switch map.get_ref(key) case some(val) some(val.*) case none none[V]()
+  switch map.get_maybe_ref(key) case some(val) some(val.*) case none none[V]()
 }
-fun get_ref[K, V](map: Map[K, V], key: K): &V { map.get_maybe_ref().unwrap() }
-fun get[K, V](map: Map[K, V], key: K): V { map.get_maybe().unwrap() }
+fun get_ref[K, V](map: Map[K, V], key: K): &V {
+  map.get_maybe_ref(key).unwrap()
+}
+fun get[K, V](map: Map[K, V], key: K): V { map.get_maybe(key).unwrap() }
 
 fun write[W, K, V](writer: W, entry: MapEntry[K, V]) {
   writer."{entry.key}: {entry.value}"
@@ -1413,7 +1428,7 @@ fun to_set[T](vec: Vec[T]): Set[T] {
 
 fun is_empty[T](set: Set[T]): Bool { set.map.size.equals(0) }
 fun put[T](set: &Set[T], value: T) { set.map.&.put(value, {}) }
-fun contains[T](set: Set[T], value: T): Bool { set.map.get(value).is_some() }
+fun contains[T](set: Set[T], value: T): Bool { set.map.contains(value) }
 
 fun write[W, T](writer: W, set: Set[T]) {
   writer.write(#{)
