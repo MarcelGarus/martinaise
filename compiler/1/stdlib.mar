@@ -706,6 +706,12 @@ fun split(str: Str, separator: Str): Slice[Str] {
   parts.to_slice()
 }
 fun lines(slice: Str): Slice[Str] { slice.split("{newline}") }
+fun pad_right(str: Str, len: U64, char: Char): Str {
+  var vec = vec[U8]()
+  vec.&.write(str)
+  loop if vec.len.is_less_than(len) then vec.write(char) else break
+  vec.to_slice().to_str()
+}
 
 | Range  
 | Ranges have an inclusive start and exclusive end value.
