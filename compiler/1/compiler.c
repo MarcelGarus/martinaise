@@ -19129,9 +19129,22 @@ mar_Result_of_Maybe_of_AstExpr_end__and_Slice_of_U8_end__end_ mar_parse__expr__w
   statement_206: mar_Result_of_Maybe_of_AstExpr_end__and_Slice_of_U8_end__end_ _206 = mar_parsed_of_AstExpr_end__withargs_AstExpr_end_(_205);
   statement_207: return _206; mar_Never _207;
   statement_208: goto statement_209; mar_Never _208;
-  statement_209: mar_Result_of_Maybe_of_AstExpr_end__and_Slice_of_U8_end__end_ _209 = mar_no__match_of_AstExpr_end__withargs__end_();
-  statement_210: return _209; mar_Never _210;
-  statement_211: // end
+  statement_209: mar_Nothing _209;
+  statement_210: mar_U8 _210 = mar_current_withargs_Parser_end_((*(_0.pointer)));
+  statement_211: mar_U8 _211; _211.value = 59ULL;
+  statement_212: mar_Bool _212 = mar_equals_withargs_U8_and_U8_end_(_210, _211);
+  statement_213: if ((_212).variant == mar_Bool_dot_mar_true) goto statement_217; mar_Never _213;
+  statement_214: mar_Nothing _214;
+  statement_215: _209 = _214; mar_Nothing _215;
+  statement_216: goto statement_222; mar_Never _216;
+  statement_217: mar_Nothing _217 = (_212).as.mar_true;
+  statement_218: mar_Slice_of_U8_end_ _218; _218.mar_data.pointer = (mar_U8*) "\x4e\x69\x63\x65\x20\x74\x72\x79\x2c\x20\x4d\x69\x6b\x21"; _218.mar_len.value = 14;
+  statement_219: mar_Result_of_Maybe_of_AstExpr_end__and_Slice_of_U8_end__end_ _219 = mar_bad__input_of_AstExpr_end__withargs_Slice_of_U8_end__end_(_218);
+  statement_220: return _219; mar_Never _220;
+  statement_221: goto statement_222; mar_Never _221;
+  statement_222: mar_Result_of_Maybe_of_AstExpr_end__and_Slice_of_U8_end__end_ _222 = mar_no__match_of_AstExpr_end__withargs__end_();
+  statement_223: return _222; mar_Never _223;
+  statement_224: // end
 }
 
 // parse_for(&Parser)

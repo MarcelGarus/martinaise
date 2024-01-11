@@ -695,6 +695,8 @@ fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]
   if parser.parse_continue()? is some(c) then return parsed(c)
   if parser.parse_return()? is some(r) then return parsed(r)
   if parser.parse_lower_name() is some(n) then return parsed(AstExpr.name(n))
+  if parser.current().equals(';) then return bad_input[AstExpr](
+    "Nice try, Mik!")
   no_match[AstExpr]()
 }
 fun parse_expr_suffix(parser: &Parser, expr: AstExpr): Result[Maybe[AstExpr], Slice[U8]] {
