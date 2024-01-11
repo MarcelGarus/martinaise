@@ -1,15 +1,5 @@
-fun ok(): Result[U64, U64] { ok[U64, U64](1) }
-fun parse_type(): Result[U64, U64] { ok() }
-fun parse_type_args(): Result[U64, U64] {
-  parse_type()?
-  ok()
-}
 fun main(): Never {
-  false() orelse printsln("Hi")
-  some(3) orelse panic("bad")
-  println(none[U64]() orelse 2)
-  println(ok[U64, U64](0) orelse 2)
-  println(error[U64, U64](0) orelse 2)
-
-  exit(0_U8)
+  false orelse println("Hi")
+  some(3) orelse(err) panic("bad")
+  exit(0:U8)
 }
