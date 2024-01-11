@@ -585,6 +585,7 @@ fun to_str(chars: Slice[Char]): Str { Str { chars } }
 fun to_str(bytes: Slice[U8]): Str {
   Str { chars = bytes.cast[Slice[U8], Slice[Char]]() }
 }
+fun to_str(chars: Vec[Char]): Str { Str { chars = chars.to_slice() } }
 fun bytes(str: Str): Slice[U8] { str.chars.cast[Slice[Char], Slice[U8]]() }
 
 fun to_os_str(str: Str): OsStr {
@@ -602,8 +603,6 @@ fun to_str(str: OsStr): Str {
     else len = len.inc()
   Str { chars = Slice { data = str.address.to_reference[Char](), len } }
 }
-fun to_str(chars: Slice[Char]): Str { Str { chars } }
-fun to_str(chars: Vec[Char]): Str { Str { chars = chars.to_slice() } }
 
 fun parse_digit(char: Char): U8 {
   if #0.to(#9).contains(char.byte) then return char.byte.subtract(#0.byte)
