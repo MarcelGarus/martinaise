@@ -137,7 +137,8 @@ enum Maybe[T] { some: T, none }
 fun some[T](value: T): Maybe[T] { Maybe.some(value) }
 fun none[T](): Maybe[T] { Maybe[T].none }
 
-fun unwrap[T](maybe: Maybe[T]): T { maybe orelse panic("called none.unwrap") }
+fun unwrap[T](maybe: Maybe[T], message: Str): T { maybe orelse panic(message) }
+fun unwrap[T](maybe: Maybe[T]): T { maybe.unwrap("called none.unwrap") }
 fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { inner orelse none[T]() }
 fun is_some[T](maybe: Maybe[T]): Bool { if maybe is some then true else false }
 fun is_none[T](maybe: Maybe[T]): Bool { if maybe is none then true else false }
@@ -622,6 +623,11 @@ fun subtract(char: Char, delta: U8): Char {
 }
 fun subtract(char: Char, other: Char): U8 { char.byte.subtract(other.byte) }
 
+fun string(): &String { String { chars = vec[Char]() }.& }
+struct String { chars: Vec[Char] }
+fun write_byte(string: &String, byte: U8) { string.chars.&.push(Char { byte }) }
+fun to_str(string: String): Str { Str { chars = string.chars.to_slice() } }
+
 fun len(str: Str): U64 { str.chars.len }
 fun is_empty(str: Str): Bool { str.len().equals(0) }
 fun get(str: Str, index: U64): Char { str.get_ref(index).* }
@@ -716,10 +722,10 @@ fun split(str: Str, separator: Str): Slice[Str] {
 }
 fun lines(slice: Str): Slice[Str] { slice.split("{newline}") }
 fun pad_right(str: Str, len: U64, char: Char): Str {
-  var vec = vec[U8]()
-  vec.&.write(str)
-  loop if vec.len().is_less_than(len) then vec.write(char) else break
-  vec.to_slice().to_str()
+  var string = string()
+  string.write(str)
+  loop if string.chars.len.is_less_than(len) then string.write(char) else break
+  string.to_str()
 }
 
 | Range  

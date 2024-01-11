@@ -288,7 +288,8 @@ struct Indented[T] { indent: Indent, what: T }
 fun write[W, T](writer: W, indented: Indented[T]) {
   writer.write(indented.indent, indented.what)
 }
-fun indent[T](what: T, indent: Indent): Indented[T] {
+fun indent(amount: U64): Indent { Indent { amount } }
+fun indented[T](what: T, indent: Indent): Indented[T] {
   Indented { indent, what }
 }
 
@@ -296,7 +297,7 @@ fun write[W](writer: W, var_: AstVar) {
   writer.write(Indent { amount = 0 }, var_)
 }
 fun write[W](writer: W, indent: Indent, var_: AstVar) {
-  writer."var {var_.name} = {var_.value.*.indent(indent)}"
+  writer."var {var_.name} = {var_.value.*.indented(indent)}"
 }
 fun write[W](writer: W, fun_: AstFun) {
   writer."fun {fun_.name}{type_args(fun_.type_args)}
@@ -309,7 +310,7 @@ fun write_body[W](writer: W, indent: Indent, body: Vec[AstExpr]) {
   if body.is_empty() then { writer.'"{}"' return {} }
   writer.'"{{{newline}}"'
   for expr in body do
-    writer."{indent.inc()}{expr.indent(indent.inc())}{newline}"
+    writer."{indent.inc()}{expr.indented(indent.inc())}{newline}"
   writer."{indent}}"
 }
 fun write[W](writer: W, indent: Indent, expr: AstExpr) {
@@ -334,31 +335,31 @@ fun write[W](writer: W, indent: Indent, expr: AstExpr) {
       writer.'"{{{newline}}"'
       for field in struct_.fields do
         writer."{indent.inc()}{field.name} = 
-          '{field.value.indent(indent.inc())},{newline}"
+          '{field.value.indented(indent.inc())},{newline}"
       writer."{indent}}"
     }
   }
   case make_enum(enum_)
-    writer."{enum_.type}.{enum_.variant}({enum_.arg.*.indent(indent)})"
-  case member(member) writer."{member.of.*.indent(indent)}.{member.name}"
+    writer."{enum_.type}.{enum_.variant}({enum_.arg.*.indented(indent)})"
+  case member(member) writer."{member.of.*.indented(indent)}.{member.name}"
   case var_(var_) writer.write(var_)
   case assign(assign)
-    writer."{assign.to.*.indent(indent)} = {assign.value.*.indent(indent)}"
+    writer."{assign.to.*.indented(indent)} = {assign.value.*.indented(indent)}"
   case switch_(switch_) {
-    writer."switch {switch_.value.*.indent(indent)}"
+    writer."switch {switch_.value.*.indented(indent)}"
     for case_ in switch_.cases do {
       writer."{newline}{indent}case {case_.variant}"
       if case_.binding is some(binding) then writer."({binding})"
-      writer." {case_.then_.*.indent(indent)}"
+      writer." {case_.then_.*.indented(indent)}"
     }
     if switch_.default_ is some(default_)
-    then writer."{newline}{indent}default {default_.*.indent(indent)}"
+    then writer."{newline}{indent}default {default_.*.indented(indent)}"
   }
-  case loop_(expr) writer."loop {expr.*.indent(indent)}"
-  case break_(arg) writer."break({arg.*.indent(indent)})"
+  case loop_(expr) writer."loop {expr.*.indented(indent)}"
+  case break_(arg) writer."break({arg.*.indented(indent)})"
   case continue_ writer."continue"
-  case return_(arg) writer."return {arg.*.indent(indent)}"
-  case try(expr) writer."{expr.*.indent(indent)}?"
+  case return_(arg) writer."return {arg.*.indented(indent)}"
+  case try(expr) writer."{expr.*.indented(indent)}?"
   case body(body) writer.write_body(indent, body)
 }
 fun write[W](writer: W, arg: AstFunArg) { writer."{arg.name}: {arg.type}" }
@@ -1196,26 +1197,32 @@ fun push_builtin_fun(
   }))
 }
 fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
-  var lines = vec[Vec[Char]]()
-  var current_line = vec[Char]()
+  eprintln("Error is at offset {offset} in code of len {code.len()}.")
+  var lines = vec[Str]()
+  var current_line = string()
   var offset_in_line = 0
   for i in 0.to(code.len()) do {
-    if i.equals(offset) then offset_in_line = current_line.len
+    eprintln("i = {i}")
+    if i.equals(offset) then offset_in_line = current_line.chars.len
+    eprintln("is it a newline?")
+    eprintln(code)
+    eprintln("char {i} is {code.get(i)}")
     if code.get(i).equals(newline)
     then {
-      lines.&.push(current_line)
-      current_line = vec[Char]()
+      lines.&.push(current_line.to_str())
+      current_line = string()
+      eprintln("finished line {lines.len}")
       if i.is_at_least(offset) then break
     }
-    else current_line.&.push(code.get(i))
+    else current_line.write(code.get(i))
   }
   | Now, lines contains all lines up to the line that contains the error.
   | offset_in_line is the offset into the last complete line.
   var num_lines_to_display = min(lines.len, 4)
-  var out = vec[Char]().&
+  var out = string()
   for line_number in lines.len.subtract(num_lines_to_display).to(lines.len) do {
     out.write_line_number(line_number)
-    out." | {lines.get(line_number).to_str()}{newline}"
+    out." | {lines.get(line_number)}{newline}"
   }
   for i in 0.to(7.add(offset_in_line)) do out." "
   out."^{newline}"
@@ -1340,7 +1347,7 @@ fun write[W](writer: W, name: Str, fun_: MonoFun) {
     var slot = zip.a
     var index = zip.b
 
-    if index.is_greater_than(0) then writer.write_char(newline)
+    if index.is_greater_than(0) then writer.write(newline)
     writer."  _{index}: {slot.type} = "
     switch slot.initial_value
     case uninitialized writer."uninitialized"
@@ -1400,7 +1407,7 @@ fun pop(context: &Context) {
 }
 
 fun print_status(context: Context) {
-  var out = vec[U8]().&
+  var out = string()
   out.write("Compiling ")
   var first = true
   for signature in context.signatures do {
@@ -1412,14 +1419,14 @@ fun print_status(context: Context) {
       if char.item.equals(#().or(char.item.equals(#[))
       then { i = char.index break }
     }
-    out.write(signature.subslice(0, i))
-    if out.len.is_greater_than(80) then break
+    out.write(signature.substr(0, i))
+    if out.chars.len.is_greater_than(80) then break
   }
-  if out.len.is_greater_than(80) then {
-    out.len = 77
+  if out.chars.len.is_greater_than(80) then {
+    out.chars.len = 77
     out.write("...")
   }
-  print_on_same_line(out.to_slice())
+  print_on_same_line(out.to_str())
 }
 
 | Tracking Variables That Are In Scope  
@@ -1675,14 +1682,14 @@ fun monomorphize(ast: Ast): Result[Mono, Str] {
   var main_signature =
     main.monomorphize(map[Str, Type](), context.&, ast, mono.&)
     orelse(error) return error[Mono, Str]({
-      var out = vec[U8]().&
+      var out = string()
       out."Error when compiling{newline}"
       for signature in context.signatures do out." - {signature}{newline}"
       out."{newline}{error}"
-      out.to_slice()
+      out.to_str()
     })
 
-  var return_type = mono.funs.get(main_signature).unwrap().return_type
+  var return_type = mono.funs.get(main_signature).return_type
   if not(return_type.is_never()) then return error[Mono, Str](
     "The main function should return Never, but it returns {return_type}.
     '{newline}You can call exit(0:U8) if you want the program to stop.")
@@ -1761,7 +1768,7 @@ fun lookup_fun(
   }
 
   if full_matches.is_empty() then return error[LookupFunSolution, Str]({
-    var out = vec[U8]().&
+    var out = string()
     out.
       "This call doesn't work:{newline}
       ' > {call_signature(name, type_args, arg_types)}{newline}{newline}"
@@ -1772,10 +1779,10 @@ fun lookup_fun(
       for match in name_matches do
         out."{newline} - {AstDef.fun_(match).signature()}"
     }
-    out.to_slice()
+    out.to_str()
   })
   if full_matches.len.is_greater_than(1) then return error[LookupFunSolution, Str]({
-    var out = vec[U8]().&
+    var out = string()
     out.
       "This call doesn't work:{newline}
       ' > {call_signature(name, type_args, arg_types)}{newline}{newline}
@@ -1793,7 +1800,7 @@ fun lookup_fun(
         }
       }
     }
-    out.to_slice()
+    out.to_str()
   })
   ok[LookupFunSolution, Str](full_matches.get(0))
 }
@@ -1898,6 +1905,7 @@ fun monomorphize(
     mono,
     fun_ = mono_fun.&,
     type_env = map[Str, Type](),
+    next_label = 0,
     vars = vars[MonoSlotRef](),
     return_type = type_sink(),
     break_scopes = stack[BreakScope](),
@@ -1969,6 +1977,7 @@ fun monomorphize(
   var compile_fun = CompileFun {
     context, ast, mono,
     fun_ = mono_fun.&, type_env,
+    next_label = 0,
     vars,
     return_type = type_sink(return_type),
     break_scopes = stack[BreakScope](),
@@ -2104,7 +2113,7 @@ fun compile_in_current_scope(
         switch self.ast.lookup_global_var(name)
         case some(global) {
           global.monomorphize(self.context, self.ast, self.mono)?
-          var type = self.mono.globals.get(name).unwrap().return_type
+          var type = self.mono.globals.get(name).return_type
           MonoExpr { kind = MonoExprKind.global(name), type }
         }
         | TODO: print which variables are in scope
@@ -2124,7 +2133,7 @@ fun compile_in_current_scope(
         }
         default return error[MonoExpr, Str](
           "You tried to call this expression:{newline}
-          ' > {indented(indent(2), call.callee.*)}{newline}{newline}
+          ' > {call.callee.*.indented(indent(2))}{newline}{newline}
           'This expression can't be called.")
       var type_args =
         switch call.type_args
@@ -2289,12 +2298,12 @@ fun compile_in_current_scope(
         }
         else break
       var struct_ =
-        switch self.mono.type_defs.get(of.type).unwrap()
+        switch self.mono.type_defs.get(of.type)
         case struct_(s) s
         default return error[MonoExpr, Str](
           "You tried to access a field on {of.type}, but it's not a struct.
           '{newline}{
-            switch self.mono.type_defs.get(of.type).unwrap()
+            switch self.mono.type_defs.get(of.type)
             case builtin_type "builtin"
             case struct_ "struct"
             case enum_ "enum"
@@ -2304,11 +2313,11 @@ fun compile_in_current_scope(
         for field in struct_.fields do
           if field.name.equals(member.name) then field_type = some(field.type)
         field_type orelse return error[MonoExpr, Str]({
-          var out = vec[U8]().&
+          var out = string()
           out.'""{{member.name}}" is not a field on {{of.type}}.{{newline}}
             'It only contains these fields:"'
           for field in struct_.fields do out."{newline} - {field.name}"
-          out.to_slice()
+          out.to_str()
         })
       }
       
@@ -2370,7 +2379,7 @@ fun compile_in_current_scope(
 
       var value = self.compile(switch_.value.*)?
       var enum_ =
-        switch self.mono.type_defs.get(value.type).unwrap()
+        switch self.mono.type_defs.get(value.type)
         case enum_(e) e
         default return error[MonoExpr, Str](
           "You tried to switch on {value.type}, but you can only switch on 
@@ -2382,7 +2391,7 @@ fun compile_in_current_scope(
       for case_ in switch_.cases do {
         if handled.contains(case_.variant)
         then return error[MonoExpr, Str](
-          '"When switching on {{value.type}}, you handle the "{{case.variant}}" 
+          '"When switching on {{value.type}}, you handle the "{{case_.variant}}" 
           'variant multiple times."')
         | TODO: when supporting continue with label, use that
         var handled_this_case = false
@@ -2393,12 +2402,12 @@ fun compile_in_current_scope(
           }
         if handled_this_case then continue
         return error[MonoExpr, Str]({
-          var out = vec[U8]().&
+          var out = string()
           out.'"You switched on {{value.type}}, which doesn't have a 
-           '"{{case.variant}}" variant.{{newline}}
+           '"{{case_.variant}}" variant.{{newline}}
            'It only has these variants."'
           for variant in enum_.variants do out."{newline} - {variant.name}"
-          out.to_slice()
+          out.to_str()
         })
       }
       if switch_.default_ is none then
@@ -2422,7 +2431,7 @@ fun compile_in_current_scope(
       for case_ in switch_.cases do {
         var label = self.put_label()
         self.update(
-          jump_table_jumps.get(case_.variant).unwrap(),
+          jump_table_jumps.get(case_.variant),
           MonoStatement.jump_if_variant(MonoJumpIfVariant {
             condition = value, variant = case_.variant, target = label,
           })
@@ -2450,9 +2459,9 @@ fun compile_in_current_scope(
           case some(expected)
             then_.type.equals(expected) orelse return error[MonoExpr, Str](
               '"When lowering this:{{newline}}
-               '{{indented(indent(0), AstExpr.switch_(switch_))}}{{newline}}
+               '{{AstExpr.switch_(switch_).indented(indent(0))}}{{newline}}
                'Previous switch cases return {{expected}}, but the case for 
-               '"{{case_.variants}}" returns {{then_.type}}."')
+               '"{{case_.variant}}" returns {{then_.type}}."')
           self.put(MonoStatement.assign(MonoAssign {
             to = self.slot_expr(result), value = then_
           })).ignore()
@@ -2566,7 +2575,7 @@ fun compile_in_current_scope(
       if self.continue_scopes.is_empty() then return error[MonoExpr, Str](
         "There's a continue outside out a loop.")
       var scope = self.continue_scopes.top_ref()
-      scope.continues.&.push(var jump = self.put_placeholder())
+      scope.continues.&.push(self.put_placeholder())
       never_expr()
     }
     case return_(arg) {
@@ -2620,6 +2629,7 @@ fun compile_in_current_scope(
       self.slot_expr(ok_payload)
     }
     case body(body) self.compile_body(body)?
+    default todo()
   )
 }
 
@@ -2667,7 +2677,7 @@ fun compile_call(
         solution.type_env,
         self.context, self.ast, self.mono
       )?
-      var result = self.add_slot(self.mono.funs.get(fun_).unwrap().return_type)
+      var result = self.add_slot(self.mono.funs.get(fun_).return_type)
       self.put(MonoStatement.call(MonoCall { to = result, fun_, args }))
       return ok[MonoExpr, Str](self.slot_expr(result))
     }
@@ -2680,28 +2690,28 @@ fun compile_call(
 | TODO: what standard?
 
 fun mangle(name: Str): Str {
-  var mangled = vec[U8]().&
-  mangled.write_str("mar_")
+  var mangled = string()
+  mangled.write("mar_")
   for c in name do {
-    if c.equals(#_) then { mangled.write_str("__") continue }
-    if c.equals(#[) then { mangled.write_str("_of_") continue }
-    if c.equals(#]) then { mangled.write_str("_end_") continue }
-    if c.equals(#() then { mangled.write_str("_withargs_") continue }
-    if c.equals(#)) then { mangled.write_str("_end_") continue }
-    if c.equals(#,) then { mangled.write_str("_and_") continue }
-    if c.equals(#&) then { mangled.write_str("_refto_") continue }
-    if c.equals(#*) then { mangled.write_str("_star_") continue }
+    if c.equals(#_) then { mangled.write("__") continue }
+    if c.equals(#[) then { mangled.write("_of_") continue }
+    if c.equals(#]) then { mangled.write("_end_") continue }
+    if c.equals(#() then { mangled.write("_withargs_") continue }
+    if c.equals(#)) then { mangled.write("_end_") continue }
+    if c.equals(#,) then { mangled.write("_and_") continue }
+    if c.equals(#&) then { mangled.write("_refto_") continue }
+    if c.equals(#*) then { mangled.write("_star_") continue }
     if c.equals(# ) then continue
-    mangled.write_char(c)
+    mangled.write(c)
   }
-  mangled.to_slice()
+  mangled.to_str()
 }
 
 fun mangle(type: Type): Str {
   | TODO: add to_string to stdlib
-  var formatted = vec[U8]()
+  var formatted = string()
   formatted.&.write(type)
-  formatted.to_slice().mangle()
+  formatted.to_str().mangle()
 }
 
 fun sort_types_for_c(types: Map[Type, MonoTypeDef]): Vec[Type] {
@@ -2721,7 +2731,7 @@ fun sort_types_for_c(
     reached.put(type)
     return {}
   }
-  switch defs.get(type).unwrap()
+  switch defs.get(type)
   case builtin_type {
     out.push(type)
     reached.put(type)
@@ -2740,27 +2750,24 @@ fun sort_types_for_c(
   }
 }
 
-fun write_expr_as_c[W](writer: W, expr: MonoExpr) {
+fun as_c[T](value: T): AsC[T] { AsC { value } }
+struct AsC[T] { value: T }
+fun write[W, T](writer: W, as_c: AsC[T]) { writer.write_as_c(as_c.value) }
+
+fun write_as_c[W](writer: W, expr: MonoExpr) {
   switch expr.kind
   case nothing writer."_nothing"
   case never writer."_never"
   case global(name) writer."global_{name}"
   case slot(slot) writer.write(slot)
   case member(member)
-    if member.name.equals("*") then {
-      writer."(*"
-      writer.write_expr_as_c(member.of.*)
-      writer.".pointer)"
-    } else {
-      writer.write_expr_as_c(member.of.*)
-      writer.".{member.name.mangle()}"
-    }
+    if member.name.equals("*")
+    then writer."(*{member.of.*.as_c()}.pointer)"
+    else writer."{member.of.*.as_c()}.{member.name.mangle()}"
 }
 
-fun compile_to_c(mono: Mono): Str {
-  var out = vec[U8]().&
-
-  out.
+fun write_as_c[W](writer: W, mono: Mono) {
+  writer.
     "// This file is a compiler target.{newline}
     '#include <unistd.h>{newline}
     '#include <stdint.h>{newline}
@@ -2862,42 +2869,42 @@ fun compile_to_c(mono: Mono): Str {
   }
 
   { | Types
-    out."/// Types{newline}"
+    writer."/// Types{newline}"
 
     var sorted = sort_types_for_c(mono.type_defs)
 
     for type in sorted do
-      out."typedef struct {type.mangle()} {type.mangle()};{newline}"
+      writer."typedef struct {type.mangle()} {type.mangle()};{newline}"
 
     for type in sorted do {
       var def = mono.type_defs.get(type)
-      out."{newline}
+      writer."{newline}
         '// {type}{newline}"
       switch def
       case builtin_type
-        out."{builtin_types.get_maybe(type).unwrap("Unknown builtin type")}
+        writer."{builtin_types.get_maybe(type).unwrap("Unknown builtin type")}
           '{newline}"
       case struct_(struct_) {
-        out."struct {type.mangle()} {{newline}"
+        writer."struct {type.mangle()} {{newline}"
         for field in struct_.fields do
           if field.name.equals("*")
-          then out."  {field.type.mangle()}* pointer;{newline}"
-          else out."  {field.type.mangle()} {field.name.mangle()};{newline}"
-        out."};{newline}"
+          then writer."  {field.type.mangle()}* pointer;{newline}"
+          else writer."  {field.type.mangle()} {field.name.mangle()};{newline}"
+        writer."};{newline}"
       }
       case enum_(enum_) {
-        out."struct {type.mangle()} {{newline}"
+        writer."struct {type.mangle()} {{newline}"
         if enum_.variants.is_not_empty() then {
-          out."  enum {{newline}"
+          writer."  enum {{newline}"
           for variant in enum_.variants do
-            out."    {type.mangle()}_dot_{variant.name},{newline}"
-          out."  } variant;{newline}
+            writer."    {type.mangle()}_dot_{variant.name},{newline}"
+          writer."  } variant;{newline}
             '  union {{newline}"
           for variant in enum_.variants do
-            out."    {variant.type.mangle()} {variant.name.mangle()};{newline}"
-          out."  } as;{newline}"
+            writer."    {variant.type.mangle()} {variant.name.mangle()};{newline}"
+          writer."  } as;{newline}"
         }
-        out."};{newline}"
+        writer."};{newline}"
       }
     }
   }
@@ -2908,179 +2915,156 @@ fun compile_to_c(mono: Mono): Str {
     ordered_funs.to_slice().&.sort()
 
     | Declarations
-    out."{newline}
+    writer."{newline}
       '/// Function declarations{newline}"
     for fun_name in ordered_funs do {
-      var fun_ = mono.funs.get(fun_name).unwrap()
-      out."/* {fun_name} */ {fun_.return_type.mangle()} {fun_name.mangle()}("
+      var fun_ = mono.funs.get(fun_name)
+      writer."/* {fun_name} */ {fun_.return_type.mangle()} {fun_name.mangle()}("
       for i in 0.to(fun_.arg_types.len) do {
-        if i.is_greater_than(0) then out.", "
-        out."{fun_.arg_types.get(i).mangle()} arg{i}"
+        if i.is_greater_than(0) then writer.", "
+        writer."{fun_.arg_types.get(i).mangle()} arg{i}"
       }
-      out.");{newline}"
+      writer.");{newline}"
     }
 
     { | Globals declarations
-      out."{newline}
+      writer."{newline}
         '/// Global declarations{newline}"
       for global in mono.globals do {
         var name = global.key
         var type = global.value.return_type
-        out."{type.mangle()} global_{name};{newline}"
+        writer."{type.mangle()} global_{name};{newline}"
       }
-      out."{type("Nothing").mangle()} _nothing;{newline}"
-      out."{type("Never").mangle()} _never;{newline}{newline}"
+      writer."{type("Nothing").mangle()} _nothing;{newline}"
+      writer."{type("Never").mangle()} _never;{newline}{newline}"
     }
 
     { | Globals initializers
-      out."{newline}
+      writer."{newline}
         '/// Global initializers{newline}"
       for global in mono.globals do {
         var name = global.key
         var type = global.value.return_type
-        out."{global.value.return_type.mangle()} _compute_global_{global.key}
-          '() {global.value.fun_body_to_c()}{newline}"
+        writer."{global.value.return_type.mangle()} _compute_global_{global.key}
+          '() {global.value.as_c()}{newline}"
       }
-      out.write(newline)
+      writer.write(newline)
     }
 
     | Definitions
-    out."{newline}
+    writer."{newline}
       '/// Function definitions{newline}"
     for signature in ordered_funs do {
-      var fun_ = mono.funs.get(signature).unwrap()
-      out."{newline}
+      var fun_ = mono.funs.get(signature)
+      writer."{newline}
         '// {signature}{newline}
         '{fun_.return_type.mangle()} {signature.mangle()}("
       for arg in fun_.arg_types.iter().enumerate() do {
-        if arg.index.is_greater_than(0) then out.", "
-        out."{arg.item.mangle()} arg{arg.index}"
+        if arg.index.is_greater_than(0) then writer.", "
+        writer."{arg.item.mangle()} arg{arg.index}"
       }
-      out.") "
+      writer.") "
 
       if fun_.is_builtin then {
-        out.'"{{{newline}}"'
+        writer.'"{{{newline}}"'
 
         if builtin_funs.get_maybe(signature) is some(body)
-        then out.write(body)
+        then writer.write(body)
         else if signature.starts_with("to_address")
-        then out."
+        then writer."
           '  mar_U64 address;{newline}
           '  address.value = (uint64_t) arg0.pointer;{newline}
           '  return address;"
         else if signature.starts_with("to_reference")
-        then out."
+        then writer."
           '  {fun_.return_type.mangle()} ref;{newline}
           '  ref.pointer = ({fun_.type_args.get(0).mangle()}*) arg0.value;
             '{newline}
           '  return ref;"
         else if signature.starts_with("size_of_type")
-        then out."
+        then writer."
           '  mar_U64 size;{newline}
           '  size.value = (uint64_t) sizeof({
             fun_.type_args.get(0).mangle()});
           '  return size;"
         else panic("Unknown builtin fun {signature}")
-        out."{newline}}"
+        writer."{newline}}"
         continue
-      } else out."{fun_.fun_body_to_c()}{newline}"
+      } else writer."{fun_.as_c()}{newline}"
     }
 
-    out."
+    writer."
       '// actual main function{newline}
       'int main() {{newline}"
     for global in mono.globals_init_order do
-      out."  global_{global} = _compute_global_{global}();{newline}"
+      writer."  global_{global} = _compute_global_{global}();{newline}"
     | TODO: pass on arguments
-    out."  {"main()".mangle()}();{newline}}"
+    writer."  {"main()".mangle()}();{newline}}"
   }
-  out.to_slice()
 }
-fun fun_body_to_c(fun_: MonoFun): Str {
-  var out = vec[U8]().&
-
-  out."{{newline}"
+fun write_as_c[W](writer: W, fun_: MonoFun) {
+  writer."{{newline}"
 
   for slot in fun_.slots.iter().enumerate() do {
     var index = slot.index
     var slot = slot.item
     var slot_ref = MonoSlotRef { index }
-    out."  {slot.type.mangle()} {slot_ref};"
+    writer."  {slot.type.mangle()} {slot_ref};"
     switch slot.initial_value
     case uninitialized {}
-    case arg(j) out." {slot_ref} = arg{j};"
-    case int(int) out." {slot_ref}.value = {int}ULL;"
+    case arg(j) writer." {slot_ref} = arg{j};"
+    case int(int) writer." {slot_ref}.value = {int}ULL;"
     case str(str) {
-      out.'" {{slot_ref}}.{{mangle("chars")}}.{{mangle("data")}}.pointer = 
+      writer.'" {{slot_ref}}.{{mangle("chars")}}.{{mangle("data")}}.pointer = 
         '({{mangle(type("Char"))}}*) ""'
-      for char in str do out."\x{char.to_U64().radix(16)}"
-      out.'""; 
+      for char in str do writer."\x{char.byte.to_U64().radix(16)}"
+      writer.'""; 
         '{{slot_ref}}.{{mangle("chars")}}.{{mangle("len")}}.value = 
-          '{{str.len}};"'
+          '{{str.len()}};"'
     }
-    out."{newline}"
+    writer."{newline}"
   }
 
-  out."// statements"
+  writer."// statements"
   for statement in fun_.body do {
     switch statement
-    case label(label) out."{label}:{newline}"
-    case assign(assign) {
-      out."  "
-      out.write_expr_as_c(assign.to)
-      out." = "
-      out.write_expr_as_c(assign.value)
-      out.";{newline}"
-    }
+    case label(label) writer."{label}:{newline}"
+    case assign(assign)
+      writer."  {assign.to.as_c()} = {assign.value.as_c()};{newline}"
     case set_enum(set) {
-      out."  {set.slot}.variant = 
+      writer."  {set.slot}.variant = 
         '{fun_.slots.get(set.slot.index).type.mangle()}_dot_{set.variant};
           '{newline}
-        '  {set.slot}.as.{set.variant.mangle()} = "
-      out.write_expr_as_c(set.value)
-      out.";{newline}"
+        '  {set.slot}.as.{set.variant.mangle()} = {set.value.as_c()};
+          '{newline}"
     }
     case call(call) {
-      out."  {call.to} = {call.fun_.mangle()}("
+      writer."  {call.to} = {call.fun_.mangle()}("
       var first = true
       for arg in call.args do {
-        if first then first = false else out.", "
-        out.write_expr_as_c(arg)
+        if first then first = false else writer.", "
+        writer."{arg.as_c()}"
       }
-      out.");{newline}"
+      writer.");{newline}"
     }
-    case jump(jump) out."  goto {jump.target};{newline}"
+    case jump(jump) writer."  goto {jump.target};{newline}"
     case jump_if_variant(jump) {
-      out."  if ("
-      out.write_expr_as_c(jump.condition)
-      out.".variant == {jump.condition.type.mangle()}_dot_{jump.variant}) 
+      writer."  if ({jump.condition.as_c()}.variant 
+          '== {jump.condition.type.mangle()}_dot_{jump.variant}) 
         'goto {jump.target};{newline}"
     }
-    case get_enum_value(get) {
-      out."  {get.to} = "
-      out.write_expr_as_c(get.of)
-      out.".as.{get.variant.mangle()};{newline}"
-    }
-    case return_(expr) {
+    case get_enum_value(get)
+      writer."  {get.to} = {get.of.as_c()}.as.{get.variant.mangle()};{newline}"
+    case return_(expr)
       | If a Never is returned, the return is not reached anyway. If we emit it,
       | C complains that Never doesn't match the function's return type.
-      if not(expr.type.is_never()) then {
-        out."  return "
-        out.write_expr_as_c(expr)
-        out.";{newline}"
-      }
-    }
-    case ref(ref) {
-      out.write("  {ref.to}.pointer = &")
-      out.write_expr_as_c(ref.of)
-      out.";{newline}"
-    }
-    default {}
+      if not(expr.type.is_never())
+      then writer."  return {expr.as_c()};{newline}"
+    case ref(ref)
+      writer.write("  {ref.to}.pointer = &{ref.of.as_c()};{newline}")
   }
 
-  out."}"
-
-  out.to_slice()
+  writer."}"
 }
 
 | File Watching  
@@ -3119,26 +3103,26 @@ fun print_usage_info(out: File) {
 | (stuff is printed to stdout). Returns whether it ran through successfully.
 fun run_pipeline(command: Command, file_path: Str): Bool {
   print_on_same_line("Reading {file_path}")
-  var stdlib = read_file("stdlib.mar")
-  var file = read_file(file_path)
+  var stdlib = read_file("stdlib.mar").to_str()
+  var file = read_file(file_path).to_str()
   var input = "{stdlib}{newline}{file}{newline}"
 
   print_on_same_line("Parsing {file_path}")
-  var ast = parse(input, stdlib.len)
+  var ast = parse(input, stdlib.len())
     orelse(error) { eprintln(error) return false }
   if command is ast then { println(ast) return true }
 
   print_on_same_line("Compiling {file_path}")
   var mono = monomorphize(ast)
-    orelse(error) { print_on_same_line(err) return false }
+    orelse(error) { print_on_same_line(error) return false }
   if command is mono then { println(mono) return true }
 
   print_on_same_line("Compiling {file_path} to C")
-  var c = mono.compile_to_c()
-  if command is c then { printsln(c) return true }
+  var c = "{mono.as_c()}"
+  if command is c then { println(c) return true }
 
   todo()
-  write_file("output.c", c)
+  write_file("output.c", c.chars.cast[Slice[Char], Slice[U8]]())
   if command is compile then {
     return true
   }
@@ -3195,8 +3179,9 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
 
 fun wrong_usage(): Never { print_usage_info(stderr) exit(1:U8) }
 
-fun main(args: Slice[Str]) {
+fun main(args: Slice[Str]): Never {
   eprintln("Welcome to Martinaise 2.")
+  eprintln()
 
   | Ways to use this program:
   | - martinaise help

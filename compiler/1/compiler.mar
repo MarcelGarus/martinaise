@@ -3695,7 +3695,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
     }
     out.write_str("// actual main function")
     out.write_char(newline())
-    out.write_str("int main() ")
+    out.write_str("int main(int argc, char** argv) ")
     out.write_char('{)
     out.write_char(newline())
 
@@ -3708,10 +3708,30 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       out.write_char(newline())
     }
 
-    | TODO: pass on arguments
+    out.write_str("  mar_Str args_data[argc];")
+    out.write_char(newline())
+    out.write_str("  for (int i = 0; i < argc; i++) ")
+    out.write_char('{)
+    out.write_char(newline())
+    out.write_str("    args_data[i].mar_chars.mar_data.pointer = (mar_Char*) argv[i];")
+    out.write_char(newline())
+    out.write_str("    int len = 0;")
+    out.write_char(newline())
+    out.write_str("    while (argv[i][len] != '\0') len++;")
+    out.write_char(newline())
+    out.write_str("    args_data[i].mar_chars.mar_len.value = len;")
+    out.write_char(newline())
+    out.write_str("  }")
+    out.write_char(newline())
+    out.write_str("  mar_Slice_of_Str_end_ args;")
+    out.write_char(newline())
+    out.write_str("  args.mar_data.pointer = args_data;")
+    out.write_char(newline())
+    out.write_str("  args.mar_len.value = argc;")
+    out.write_char(newline())
     out.write_str("  ")
-    out.write_str("main()".mangle())
-    out.write_str("();")
+    out.write_str("main(Slice[Str])".mangle())
+    out.write_str("(args);")
     out.write_char(newline())
     out.write_str("}")
   }
