@@ -1932,7 +1932,7 @@ fun monomorphize(ast: Ast): Result[Mono, Slice[U8]] {
         args = vec(
           AstFunArg { name = "args", type = type("Slice", vec(type("Str"))) },
         ),
-        returns = type("Nothing"),
+        returns = type("Never"),
         is_builtin = false(),
         body = vec(AstExpr.name("main").call()),
       }
