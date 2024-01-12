@@ -779,12 +779,12 @@ fun parse_str(parser: &Parser): Result[Maybe[AstExpr], Slice[U8]] {
   }
   var body = vec[AstExpr]()
   body.&.push(var_("$str",
-    AstExpr.name("vec")
-      .call(some(vec(type("U8"))), vec[AstExpr]())
+    AstExpr.name("string_builder")
+      .call(none[Vec[Type]](), vec[AstExpr]())
       .member("&")))
   for part in parts do
     body.&.push(AstExpr.name("$str").member("write").call(vec(part)))
-  body.&.push(AstExpr.name("$str").member("to_slice").call().member("to_str").call())
+  body.&.push(AstExpr.name("$str").member("to_str").call())
   parsed(AstExpr.body(body))
 }
 | Parses a string literal, potentially with interpolation, into expressions.

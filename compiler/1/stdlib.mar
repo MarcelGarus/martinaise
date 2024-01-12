@@ -621,10 +621,13 @@ fun subtract(char: Char, delta: U8): Char {
 }
 fun subtract(char: Char, other: Char): U8 { char.byte.subtract(other.byte) }
 
-fun string_builder(): &StringBuilder { StringBuilder { chars = vec[Char]() }.put_on_heap() }
+fun string_builder(): StringBuilder { StringBuilder { chars = vec[Char]() } }
 struct StringBuilder { chars: Vec[Char] }
 fun write_byte(builder: &StringBuilder, byte: U8) {
   builder.chars.&.push(Char { byte })
+}
+fun write_bytes(builder: &StringBuilder, bytes: Slice[U8]) {
+  for byte in bytes do builder.write_byte(byte)
 }
 fun len(builder: StringBuilder): U64 { builder.chars.len }
 fun truncate_to_len(builder: &StringBuilder, len: U64) {
@@ -658,9 +661,7 @@ fun equals(a: Str, b: Str): Bool {
   if a.len().equals(b.len()) then compare_to(a, b).is_equal() else false
 }
 fun hash(hasher: &Hasher, str: Str) { hasher.hash(str.chars) }
-fun write[W](writer: W, str: Str) {
-  for char in str.chars do writer.write(char)
-}
+fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }
 
 fun iter(str: Str): Iter[Char, _] {
   StrIter { str, index = 0 }.wrap_in_iter[Char, StrIter]()
@@ -726,7 +727,7 @@ fun split(str: Str, separator: Str): Slice[Str] {
 }
 fun lines(slice: Str): Slice[Str] { slice.split("{newline}") }
 fun pad_right(str: Str, len: U64, char: Char): Str {
-  var string = string_builder()
+  var string = string_builder().&
   string.write(str)
   loop if string.len().is_less_than(len) then string.write(char) else break
   string.to_str()
@@ -1057,8 +1058,13 @@ fun read_byte(file: File): Maybe[U8] {
   else some(c)
 }
 
-fun write_bytes(file: File, buffer: Slice[U8]): U64 {
-  libc_write(file.descriptor, buffer.data.to_address(), buffer.len)
+fun write_bytes(file: File, buffer: Slice[U8]) {
+  loop {
+    if buffer.is_empty() then break
+    var written =
+      libc_write(file.descriptor, buffer.data.to_address(), buffer.len)
+    buffer = buffer.without_first(written)
+  }
 }
 fun write_byte(file: File, byte: U8) {
   libc_write(file.descriptor, byte.&.to_address(), 1).ignore()
@@ -1090,7 +1096,8 @@ fun write_file(name: Str, content: Slice[U8]) {
 
 | Printing  
 | You should implement a write[Writer](Writer, T) function for types that can be
-| printed. Writers are anything that has a write_byte(Writer, U8) function.
+| printed. Writers are anything that has a write_byte(Writer, U8) function and a
+| write_bytes(Writer, Slice[U8]) function.
 | TODO: Use libc_write function more efficiently (not 1 byte per syscall)
 
 var stdin = File { descriptor = 0 }
@@ -1123,6 +1130,36 @@ fun eprintln[T](value: T) { eprint(value) eprintln() }
 var newline = 10:U8.to_char()
 var tab = 9:U8.to_char()
 
+fun buffered_writer[W](writer: W, capacity: U64): BufferedWriter[W] {
+  assert(capacity.is_greater_than(0))
+  BufferedWriter {
+    buffer = filled_slice(capacity, 0:U8), len = 0, inner = writer
+  }
+}
+struct BufferedWriter[W] { buffer: Slice[U8], len: U64, inner: W }
+fun flush[W](self: &BufferedWriter[W]) {
+  self.inner.write_bytes(self.buffer.first(self.len))
+  self.len = 0
+}
+fun amount_free[W](self: BufferedWriter[W]): U64 {
+  self.buffer.len.subtract(self.len)
+}
+fun write_byte[W](self: &BufferedWriter[W], byte: U8) {
+  if self.amount_free().equals(0) then self.flush()
+  self.buffer.get_ref(self.len).* = byte
+  self.len = self.len.inc()
+}
+fun write_bytes[W](self: &BufferedWriter[W], bytes: Slice[U8]) {
+  if bytes.len.is_at_most(self.amount_free())
+  then for byte in bytes do self.write_byte(byte)
+  else {
+    self.flush()
+    if bytes.len.is_at_most(self.amount_free())
+    then for byte in bytes do self.write_byte(byte)
+    else self.inner.write_bytes(bytes)
+  }
+}
+
 | Tuples  
 fun tuple[A, B](a: A, b: B): Tuple2[A, B] { Tuple2 { a, b } }
 fun tuple[A, B, C](a: A, b: B, c: C): Tuple3[A, B, C] { Tuple3 { a, b, c } }
@@ -1150,64 +1187,28 @@ struct Vec[T] { data: Slice[T], len: U64 }
 
 fun vec[T](): Vec[T] { Vec { data = empty_slice[T](), len = 0 } }
 | TODO: remove when there are slice literals
-fun vec[T](a: T): Vec[T] { var v = vec[T]() v.&.push(a) v }
-fun vec[T](a: T, b: T): Vec[T] { var v = vec[T]() v.&.push(a) v.&.push(b) v }
+fun vec[T](a: T): Vec[T] { var v = vec[T]().& v.push(a) v.* }
+fun vec[T](a: T, b: T): Vec[T] { var v = vec[T]().& v.push(a) v.push(b) v.* }
 fun vec[T](a: T, b: T, c: T): Vec[T] {
-  var v = vec[T]()
-  v.&.push(a)
-  v.&.push(b)
-  v.&.push(c)
-  v
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.*
 }
 fun vec[T](a: T, b: T, c: T, d: T): Vec[T] {
-  var v = vec[T]()
-  v.&.push(a)
-  v.&.push(b)
-  v.&.push(c)
-  v.&.push(d)
-  v
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.*
 }
 fun vec[T](a: T, b: T, c: T, d: T, e: T): Vec[T] {
-  var v = vec[T]()
-  v.&.push(a)
-  v.&.push(b)
-  v.&.push(c)
-  v.&.push(d)
-  v.&.push(e)
-  v
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.*
 }
 fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T): Vec[T] {
-  var v = vec[T]()
-  v.&.push(a)
-  v.&.push(b)
-  v.&.push(c)
-  v.&.push(d)
-  v.&.push(e)
-  v.&.push(f)
-  v
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.*
 }
 fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T): Vec[T] {
-  var v = vec[T]()
-  v.&.push(a)
-  v.&.push(b)
-  v.&.push(c)
-  v.&.push(d)
-  v.&.push(e)
-  v.&.push(f)
-  v.&.push(g)
-  v
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.*
 }
 fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T): Vec[T] {
-  var v = vec[T]()
-  v.&.push(a)
-  v.&.push(b)
-  v.&.push(c)
-  v.&.push(d)
-  v.&.push(e)
-  v.&.push(f)
-  v.&.push(g)
-  v.&.push(h)
-  v
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.*
 }
 
 fun push[T](vec: &Vec[T], item: T) {
@@ -1236,8 +1237,6 @@ fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0, vec.len) }
 fun equals[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice().equals(b.to_slice()) }
 fun iter[T](vec: Vec[T]): Iter[T, _] { vec.to_slice().iter() }
 fun write[W, T](writer: W, vec: Vec[T]) { writer.write(vec.to_slice()) }
-fun write_byte(writer: &Vec[U8], byte: U8) { writer.&.push(byte) }
-fun write_byte(writer: &Vec[Char], byte: U8) { writer.&.push(Char { byte }) }
 
 | Stack  
 | Something where you can push and pop items. Essentially just a Vec, but

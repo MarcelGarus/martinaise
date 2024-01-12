@@ -663,12 +663,12 @@ fun parse_str(parser: &Parser): Result[Maybe[AstExpr], Str] {
   }
   var body = vec[AstExpr]()
   body.&.push(var_("$str",
-    AstExpr.name("vec")
-      .call(some(vec(type("U8"))), vec[AstExpr]())
+    AstExpr.name("string_builder")
+      .call(none[Vec[Type]](), vec[AstExpr]())
       .member("&")))
   for part in parts do
     body.&.push(AstExpr.name("$str").member("write").call(vec(part)))
-  body.&.push(AstExpr.name("$str").member("to_slice").call().member("to_str").call())
+  body.&.push(AstExpr.name("$str").member("to_str").call())
   parsed(AstExpr.body(body))
 }
 | Parses a string literal, potentially with interpolation, into expressions.
@@ -1198,14 +1198,14 @@ fun push_builtin_fun(
 }
 fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
   var lines = vec[Str]()
-  var current_line = string_builder()
+  var current_line = string_builder().&
   var offset_in_line = 0
   for i in 0.to(code.len()) do {
     if i.equals(offset) then offset_in_line = current_line.len()
     if code.get(i).equals(newline)
     then {
       lines.&.push(current_line.to_str())
-      current_line = string_builder()
+      current_line = string_builder().&
       if i.is_at_least(offset) then break
     }
     else current_line.write(code.get(i))
@@ -1213,7 +1213,7 @@ fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
   | Now, lines contains all lines up to the line that contains the error.
   | offset_in_line is the offset into the last complete line.
   var num_lines_to_display = min(lines.len, 4)
-  var out = string_builder()
+  var out = string_builder().&
   for line_number in lines.len.subtract(num_lines_to_display).to(lines.len) do {
     out.write_line_number(line_number)
     out." | {lines.get(line_number)}{newline}"
@@ -1403,7 +1403,7 @@ fun pop(context: &Context) {
 }
 
 fun print_status(context: Context) {
-  var out = string_builder()
+  var out = string_builder().&
   out.write("Compiling ")
   var first = true
   for signature in context.signatures do {
@@ -1617,7 +1617,7 @@ fun unify(solver: &TypeSolver, generic: Type, concrete: Type): Result[Bool, Str]
 fun finish(solver: TypeSolver): Result[Map[Str, Type], Str] {
   for var_ in solver.vars do
     if not(solver.env.contains(var_)) then return error[Map[Str, Type], Str]({
-      var out = vec[Char]().&
+      var out = string_builder().&
       if solver.env.size.is_greater_than(0) then {
         out."These type variables are bound:{newline}"
         for entry in solver.env do out." - {entry.key} = {entry.value}{newline}"
@@ -1697,7 +1697,7 @@ fun monomorphize(ast: Ast): Result[Mono, Str] {
   var main_signature =
     main.monomorphize(map[Str, Type](), context.&, ast, mono.&)
     orelse(error) return error[Mono, Str]({
-      var out = string_builder()
+      var out = string_builder().&
       out."Error when compiling{newline}"
       for signature in context.signatures do out." - {signature}{newline}"
       out."{newline}{error}"
@@ -1783,7 +1783,7 @@ fun lookup_fun(
   }
 
   if full_matches.is_empty() then return error[LookupFunSolution, Str]({
-    var out = string_builder()
+    var out = string_builder().&
     out.
       "This call doesn't work:{newline}
       ' > {call_signature(name, type_args, arg_types)}{newline}{newline}"
@@ -1797,7 +1797,7 @@ fun lookup_fun(
     out.to_str()
   })
   if full_matches.len.is_greater_than(1) then return error[LookupFunSolution, Str]({
-    var out = string_builder()
+    var out = string_builder().&
     out.
       "This call doesn't work:{newline}
       ' > {call_signature(name, type_args, arg_types)}{newline}{newline}
@@ -2328,7 +2328,7 @@ fun compile_in_current_scope(
         for field in struct_.fields do
           if field.name.equals(member.name) then field_type = some(field.type)
         field_type orelse return error[MonoExpr, Str]({
-          var out = string_builder()
+          var out = string_builder().&
           out.'""{{member.name}}" is not a field on {{of.type}}.{{newline}}
             'It only contains these fields:"'
           for field in struct_.fields do out."{newline} - {field.name}"
@@ -2417,7 +2417,7 @@ fun compile_in_current_scope(
           }
         if handled_this_case then continue
         return error[MonoExpr, Str]({
-          var out = string_builder()
+          var out = string_builder().&
           out.'"You switched on {{value.type}}, which doesn't have a 
            '"{{case_.variant}}" variant.{{newline}}
            'It only has these variants."'
@@ -2705,7 +2705,7 @@ fun compile_call(
 | TODO: what standard?
 
 fun mangle(name: Str): Str {
-  var mangled = string_builder()
+  var mangled = string_builder().&
   mangled.write("mar_")
   for c in name do {
     if c.equals(#_) then { mangled.write("__") continue }
@@ -2724,7 +2724,7 @@ fun mangle(name: Str): Str {
 
 fun mangle(type: Type): Str {
   | TODO: add to_string to stdlib
-  var formatted = string_builder()
+  var formatted = string_builder().&
   formatted.&.write(type)
   formatted.to_str().mangle()
 }
@@ -3143,10 +3143,16 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
 
   print_on_same_line("Compiling {file_path} to C")
   var c = "{mono.as_c()}"
-  if command is c then { println(c) return true }
+  print_on_same_line("Compiled {file_path} to C. Enjoy!")
+  if command is c then {
+    var buffered = stdout.buffered_writer(1024).&
+    buffered.writeln(c)
+    buffered.flush()
+    return true
+  }
 
   todo()
-  write_file("output.c", c.chars.cast[Slice[Char], Slice[U8]]())
+  write_file("output.c", c.bytes())
   if command is compile then {
     return true
   }
