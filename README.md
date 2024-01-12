@@ -114,3 +114,8 @@ It's designed to compile the compiler 1 stdlib.
   - introduces `Str`, `Char`, `OsStr`
   - char literals use `#` instead of `'`
   - string literals support interpolation, including metaness
+- 2: Another compiler written in Martinaise.
+  - uses all the new features, making it more concise
+  - produces the exact same C output as compiler 1
+  - adds buffered stdout stream for writing the C output faster
+  - can compile itself
