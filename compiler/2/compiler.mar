@@ -1197,21 +1197,15 @@ fun push_builtin_fun(
   }))
 }
 fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
-  eprintln("Error is at offset {offset} in code of len {code.len()}.")
   var lines = vec[Str]()
   var current_line = string_builder()
   var offset_in_line = 0
   for i in 0.to(code.len()) do {
-    eprintln("i = {i}")
     if i.equals(offset) then offset_in_line = current_line.len()
-    eprintln("is it a newline?")
-    eprintln(code)
-    eprintln("char {i} is {code.get(i)}")
     if code.get(i).equals(newline)
     then {
       lines.&.push(current_line.to_str())
       current_line = string_builder()
-      eprintln("finished line {lines.len}")
       if i.is_at_least(offset) then break
     }
     else current_line.write(code.get(i))
@@ -1679,7 +1673,27 @@ fun monomorphize(ast: Ast): Result[Mono, Str] {
   for config in all_int_configs do
     mono.type_defs.&.put(config.to_type(), MonoTypeDef.builtin_type)
 
-  var main = ast.lookup_fun("main", none[Vec[Type]](), vec[Type]())?.fun_
+  var main =
+    switch ast.lookup_fun("main",
+      none[Vec[Type]](), vec(type("Slice", vec(type("Str")))))
+    case ok(main_with_args) main_with_args.fun_
+    case error(error) {
+      switch ast.lookup_fun("main", none[Vec[Type]](), vec[Type]())
+      case error return error[Mono, Str](
+        "Your project must have one of these functions: main(Slice[Str]) or main()")
+      | Generate a main(Slice[Str]) function that just calls main()
+      case ok AstFun {
+        name = "main",
+        type_args = vec[Str](),
+        args = vec(
+          AstFunArg { name = "args", type = type("Slice", vec(type("Str"))) },
+        ),
+        returns = type("Never"),
+        is_builtin = false,
+        body = vec(AstExpr.name("main").call()),
+      }
+    }
+
   var main_signature =
     main.monomorphize(map[Str, Type](), context.&, ast, mono.&)
     orelse(error) return error[Mono, Str]({
@@ -1744,7 +1758,6 @@ fun lookup_fun(
     if def is fun_(fun_) then
       if fun_.name.equals(name) then name_matches.&.push(fun_)
 
-  for f in name_matches do eprintln(" - {f.name}")
   var full_matches = vec[LookupFunSolution]()
   for fun_ in name_matches do {
     var solver = create_type_solver(fun_.type_args)
@@ -2877,11 +2890,11 @@ fun write_as_c[W](writer: W, mono: Mono) {
 
     for type in sorted do
       writer."typedef struct {type.mangle()} {type.mangle()};{newline}"
+    writer."{newline}"
 
     for type in sorted do {
       var def = mono.type_defs.get(type)
-      writer."{newline}
-        '// {type}{newline}"
+      writer."// {type}{newline}"
       switch def
       case builtin_type
         writer."{builtin_types.get_maybe(type).unwrap("Unknown builtin type")}
@@ -2942,8 +2955,7 @@ fun write_as_c[W](writer: W, mono: Mono) {
     }
 
     { | Globals initializers
-      writer."{newline}
-        '/// Global initializers{newline}"
+      writer."/// Global initializers{newline}"
       for global in mono.globals do {
         var name = global.key
         var type = global.value.return_type
@@ -2954,8 +2966,7 @@ fun write_as_c[W](writer: W, mono: Mono) {
     }
 
     | Definitions
-    writer."{newline}
-      '/// Function definitions{newline}"
+    writer."/// Function definitions{newline}"
     for signature in ordered_funs do {
       var fun_ = mono.funs.get(signature)
       writer."{newline}
@@ -2997,11 +3008,23 @@ fun write_as_c[W](writer: W, mono: Mono) {
 
     writer."
       '// actual main function{newline}
-      'int main() {{newline}"
+      'int main(int argc, char** argv) {{newline}"
     for global in mono.globals_init_order do
       writer."  global_{global} = _compute_global_{global}();{newline}"
     | TODO: pass on arguments
-    writer."  {"main()".mangle()}();{newline}}"
+    writer.'"
+      '  mar_Str args_data[argc];{{newline}}
+      '  for (int i = 0; i < argc; i++) {{{newline}}
+      '    args_data[i].mar_chars.mar_data.pointer = (mar_Char*) argv[i];{{newline}}
+      '    int len = 0;{{newline}}
+      '    while (argv[i][len] != '\0') len++;{{newline}}
+      '    args_data[i].mar_chars.mar_len.value = len;{{newline}}
+      '  }{{newline}}
+      '  mar_Slice_of_Str_end_ args;{{newline}}
+      '  args.mar_data.pointer = args_data;{{newline}}
+      '  args.mar_len.value = argc;{{newline}}
+      '"'
+    writer."  {"main(Slice[Str])".mangle()}(args);{newline}}"
   }
 }
 fun write_as_c[W](writer: W, fun_: MonoFun) {
@@ -3027,7 +3050,6 @@ fun write_as_c[W](writer: W, fun_: MonoFun) {
     writer."{newline}"
   }
 
-  writer."// statements{newline}"
   for statement in fun_.body do {
     switch statement
     case label(label) writer."{label}:{newline}"

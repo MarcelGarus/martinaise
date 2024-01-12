@@ -1384,26 +1384,15 @@ fun contains[K, V](map: Map[K, V], key: K): Bool {
   map.get_maybe(key).is_some()
 }
 fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
-  eprintln("looking for key in map of size {map.size} with {map.buckets.len} buckets")
-  eprintln("foo")
-  stderr."key hash is {key.hash()}"
-  eprintln("bar")
   var i = key.hash().modulo(map.buckets.len)
   loop {
-    eprintln("checking bucket {i}")
     var bucket = map.buckets.get(i)
-    eprintln("got bucket")
     switch bucket
-    case empty {
-      eprintln("returning none")
-      return none[V]()
-    }
-    case filled(entry) {
-      eprintln("checking if keys are equal")
+    case empty return none[V]()
+    case filled(entry)
       if entry.key.equals(key)
       then return some(entry.value)
       else i = i.inc().modulo(map.buckets.len)
-    }
   }
 }
 fun get[K, V](map: Map[K, V], key: K): V { map.get_maybe(key).unwrap() }

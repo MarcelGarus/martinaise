@@ -2244,6 +2244,7 @@ fun monomorphize(
     mono,
     fun_ = mono_fun.&,
     type_env = map[Slice[U8], Type](),
+    next_label = 0,
     vars = vars[MonoSlotRef](),
     return_type = type_sink(),
     break_scopes = stack[BreakScope](),
@@ -2333,6 +2334,7 @@ fun monomorphize(
     mono,
     fun_ = mono_fun.&,
     type_env,
+    next_label = 0,
     vars,
     return_type = type_sink(return_type),
     break_scopes = stack[BreakScope](),
@@ -3345,42 +3347,54 @@ fun compile_to_c(mono: Mono): Slice[U8] {
   { | libc_malloc(size: U64): U64
     var code = vec[U8]().&
     code.write_str("  mar_U64 address;")
+    code.write_char(newline())
     code.write_str("  address.value = (uint64_t) malloc(arg0.value);")
+    code.write_char(newline())
     code.write_str("  return address;")
     builtin_funs.&.put("libc_malloc(U64)", code.to_slice())
   }
   { | libc_exit(status: U8): Never
     var code = vec[U8]().&
     code.write_str("  exit(arg0.value);")
+    code.write_char(newline())
     code.write_str("  mar_Nothing nothing;")
+    code.write_char(newline())
     code.write_str("  return nothing;")
     builtin_funs.&.put("libc_exit(U8)", code.to_slice())
   }
   { | libc_open(filename: U64, flags: U64, mode: U64): U64
     var code = vec[U8]().&
     code.write_str("  mar_U64 fd;")
+    code.write_char(newline())
     code.write_str("  fd.value = (uint64_t) open((char*) arg0.value, arg1.value, arg2.value);")
+    code.write_char(newline())
     code.write_str("  return fd;")
     builtin_funs.&.put("libc_open(U64, U64, U64)", code.to_slice())
   }
   { | libc_read(file: U64, buf: U64, len: U64): U8
     var code = vec[U8]().&
     code.write_str("  mar_U64 result;")
+    code.write_char(newline())
     code.write_str("  result.value = read(arg0.value, (void*) arg1.value, arg2.value);")
+    code.write_char(newline())
     code.write_str("  return result;")
     builtin_funs.&.put("libc_read(U64, U64, U64)", code.to_slice())
   }
   { | libc_write(file: U64, buf: U64, len: U64): U8
     var code = vec[U8]().&
     code.write_str("  mar_U64 result;")
+    code.write_char(newline())
     code.write_str("  result.value = write(arg0.value, (void*) arg1.value, arg2.value);")
+    code.write_char(newline())
     code.write_str("  return result;")
     builtin_funs.&.put("libc_write(U64, U64, U64)", code.to_slice())
   }
   { | libc_close(file: U64): U8
     var code = vec[U8]().&
     code.write_str("  mar_U8 result;")
+    code.write_char(newline())
     code.write_str("  result.value = close(arg0.value);")
+    code.write_char(newline())
     code.write_str("  return result;")
     builtin_funs.&.put("libc_close(U64)", code.to_slice())
   }
@@ -3464,8 +3478,10 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       var code = vec[U8]().&
       code.write_str("  ")
       code.write_str(target_type.mangle())
-      code.write_str("  i;")
+      code.write_str(" i;")
+      code.write_char(newline())
       code.write_str("  i.value = arg0.value;")
+      code.write_char(newline())
       code.write_str("  return i;")
       builtin_funs.&.put(name.to_slice(), code.to_slice())
     }
@@ -3485,10 +3501,10 @@ fun compile_to_c(mono: Mono): Slice[U8] {
       out.write_str(";")
       out.write_char(newline())
     }
+    out.write_char(newline())
 
     for type in sorted do {
       var def = mono.type_defs.get(type).unwrap()
-      out.write_char(newline())
       out.write_str("// ")
       out.write(type)
       out.write_char(newline())
@@ -3518,6 +3534,7 @@ fun compile_to_c(mono: Mono): Slice[U8] {
             out.write_char(newline())
           }
         out.write_str("};")
+        out.write_char(newline())
       }
       case enum_(enum_) {
         out.write_str("struct ")
@@ -3880,7 +3897,7 @@ fun fun_body_to_c(fun_: MonoFun): Slice[U8] {
         out.write_str("  ")
         out.write_str("return ")
         out.write_expr_as_c(expr)
-        out.write_str("; ")
+        out.write_str(";")
         out.write_char(newline())
       }
     }
