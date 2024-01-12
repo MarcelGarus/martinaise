@@ -1199,18 +1199,18 @@ fun push_builtin_fun(
 fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
   eprintln("Error is at offset {offset} in code of len {code.len()}.")
   var lines = vec[Str]()
-  var current_line = string()
+  var current_line = string_builder()
   var offset_in_line = 0
   for i in 0.to(code.len()) do {
     eprintln("i = {i}")
-    if i.equals(offset) then offset_in_line = current_line.chars.len
+    if i.equals(offset) then offset_in_line = current_line.len()
     eprintln("is it a newline?")
     eprintln(code)
     eprintln("char {i} is {code.get(i)}")
     if code.get(i).equals(newline)
     then {
       lines.&.push(current_line.to_str())
-      current_line = string()
+      current_line = string_builder()
       eprintln("finished line {lines.len}")
       if i.is_at_least(offset) then break
     }
@@ -1219,7 +1219,7 @@ fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
   | Now, lines contains all lines up to the line that contains the error.
   | offset_in_line is the offset into the last complete line.
   var num_lines_to_display = min(lines.len, 4)
-  var out = string()
+  var out = string_builder()
   for line_number in lines.len.subtract(num_lines_to_display).to(lines.len) do {
     out.write_line_number(line_number)
     out." | {lines.get(line_number)}{newline}"
@@ -1393,6 +1393,8 @@ fun write[W](writer: W, expr: MonoExpr) {
 
 struct Context { signatures: Vec[Str] }
 
+fun context(): Context { Context { signatures = vec[Str]() } }
+
 fun push(context: &Context, signature: Str) {
   context.signatures.&.push(signature)
   context.print_status()
@@ -1407,7 +1409,7 @@ fun pop(context: &Context) {
 }
 
 fun print_status(context: Context) {
-  var out = string()
+  var out = string_builder()
   out.write("Compiling ")
   var first = true
   for signature in context.signatures do {
@@ -1420,10 +1422,10 @@ fun print_status(context: Context) {
       then { i = char.index break }
     }
     out.write(signature.substr(0, i))
-    if out.chars.len.is_greater_than(80) then break
+    if out.len().is_greater_than(80) then break
   }
-  if out.chars.len.is_greater_than(80) then {
-    out.chars.len = 77
+  if out.len().is_greater_than(80) then {
+    out.truncate_to_len(77)
     out.write("...")
   }
   print_on_same_line(out.to_str())
@@ -1665,8 +1667,7 @@ fun finish(solver: TypeSolver): Result[Map[Str, Type], Str] {
 | out how to use it.
 
 fun monomorphize(ast: Ast): Result[Mono, Str] {
-  | TODO: constructor
-  var context = Context { signatures = vec[Str]() }
+  var context = context()
   var mono = Mono {
     type_defs = map[Type, MonoTypeDef](),
     globals = map[Str, MonoFun](),
@@ -1682,7 +1683,7 @@ fun monomorphize(ast: Ast): Result[Mono, Str] {
   var main_signature =
     main.monomorphize(map[Str, Type](), context.&, ast, mono.&)
     orelse(error) return error[Mono, Str]({
-      var out = string()
+      var out = string_builder()
       out."Error when compiling{newline}"
       for signature in context.signatures do out." - {signature}{newline}"
       out."{newline}{error}"
@@ -1743,6 +1744,7 @@ fun lookup_fun(
     if def is fun_(fun_) then
       if fun_.name.equals(name) then name_matches.&.push(fun_)
 
+  for f in name_matches do eprintln(" - {f.name}")
   var full_matches = vec[LookupFunSolution]()
   for fun_ in name_matches do {
     var solver = create_type_solver(fun_.type_args)
@@ -1768,7 +1770,7 @@ fun lookup_fun(
   }
 
   if full_matches.is_empty() then return error[LookupFunSolution, Str]({
-    var out = string()
+    var out = string_builder()
     out.
       "This call doesn't work:{newline}
       ' > {call_signature(name, type_args, arg_types)}{newline}{newline}"
@@ -1782,7 +1784,7 @@ fun lookup_fun(
     out.to_str()
   })
   if full_matches.len.is_greater_than(1) then return error[LookupFunSolution, Str]({
-    var out = string()
+    var out = string_builder()
     out.
       "This call doesn't work:{newline}
       ' > {call_signature(name, type_args, arg_types)}{newline}{newline}
@@ -2313,7 +2315,7 @@ fun compile_in_current_scope(
         for field in struct_.fields do
           if field.name.equals(member.name) then field_type = some(field.type)
         field_type orelse return error[MonoExpr, Str]({
-          var out = string()
+          var out = string_builder()
           out.'""{{member.name}}" is not a field on {{of.type}}.{{newline}}
             'It only contains these fields:"'
           for field in struct_.fields do out."{newline} - {field.name}"
@@ -2402,7 +2404,7 @@ fun compile_in_current_scope(
           }
         if handled_this_case then continue
         return error[MonoExpr, Str]({
-          var out = string()
+          var out = string_builder()
           out.'"You switched on {{value.type}}, which doesn't have a 
            '"{{case_.variant}}" variant.{{newline}}
            'It only has these variants."'
@@ -2690,7 +2692,7 @@ fun compile_call(
 | TODO: what standard?
 
 fun mangle(name: Str): Str {
-  var mangled = string()
+  var mangled = string_builder()
   mangled.write("mar_")
   for c in name do {
     if c.equals(#_) then { mangled.write("__") continue }
@@ -2709,7 +2711,7 @@ fun mangle(name: Str): Str {
 
 fun mangle(type: Type): Str {
   | TODO: add to_string to stdlib
-  var formatted = string()
+  var formatted = string_builder()
   formatted.&.write(type)
   formatted.to_str().mangle()
 }
@@ -2863,7 +2865,7 @@ fun write_as_c[W](writer: W, mono: Mono) {
         "to_{target_type}({type})",
         "  {target_type.mangle()} i;{newline}
         '  i.value = arg0.value;{newline}
-        '  return i,",
+        '  return i;",
       )
     }
   }
@@ -2920,9 +2922,9 @@ fun write_as_c[W](writer: W, mono: Mono) {
     for fun_name in ordered_funs do {
       var fun_ = mono.funs.get(fun_name)
       writer."/* {fun_name} */ {fun_.return_type.mangle()} {fun_name.mangle()}("
-      for i in 0.to(fun_.arg_types.len) do {
-        if i.is_greater_than(0) then writer.", "
-        writer."{fun_.arg_types.get(i).mangle()} arg{i}"
+      for arg_type in fun_.arg_types.iter().enumerate() do {
+        {if arg_type.index.is_greater_than(0) then writer.", "}
+        writer."{arg_type.item.mangle()} arg{arg_type.index}"
       }
       writer.");{newline}"
     }
@@ -3017,7 +3019,7 @@ fun write_as_c[W](writer: W, fun_: MonoFun) {
     case str(str) {
       writer.'" {{slot_ref}}.{{mangle("chars")}}.{{mangle("data")}}.pointer = 
         '({{mangle(type("Char"))}}*) ""'
-      for char in str do writer."\x{char.byte.to_U64().radix(16)}"
+      for char in str do writer."\x{char.byte.radix(16)}"
       writer.'""; 
         '{{slot_ref}}.{{mangle("chars")}}.{{mangle("len")}}.value = 
           '{{str.len()}};"'
@@ -3025,7 +3027,7 @@ fun write_as_c[W](writer: W, fun_: MonoFun) {
     writer."{newline}"
   }
 
-  writer."// statements"
+  writer."// statements{newline}"
   for statement in fun_.body do {
     switch statement
     case label(label) writer."{label}:{newline}"

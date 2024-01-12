@@ -279,14 +279,14 @@ fun hash(hasher: &Hasher, int: I16) { hasher.hash(int.to_U64()) }
 fun hash(hasher: &Hasher, int: I32) { hasher.hash(int.to_U64()) }
 fun hash(hasher: &Hasher, int: I64) { hasher.hash(int.to_U64()) }
 
-fun write[W](writer: W, int: U8) { writer.write(radix(10, int)) }
-fun write[W](writer: W, int: U16) { writer.write(radix(10, int)) }
-fun write[W](writer: W, int: U32) { writer.write(radix(10, int)) }
-fun write[W](writer: W, int: U64) { writer.write(radix(10, int)) }
-fun radix(radix: U64, int: U64): RadixFormat { RadixFormat { radix, int } }
-fun radix(radix: U64, int: U8): RadixFormat { radix(10, int.to_U64()) }
-fun radix(radix: U64, int: U16): RadixFormat { radix(10, int.to_U64()) }
-fun radix(radix: U64, int: U32): RadixFormat { radix(10, int.to_U64()) }
+fun write[W](writer: W, int: U8) { writer.write(radix(int, 10)) }
+fun write[W](writer: W, int: U16) { writer.write(radix(int, 10)) }
+fun write[W](writer: W, int: U32) { writer.write(radix(int, 10)) }
+fun write[W](writer: W, int: U64) { writer.write(radix(int, 10)) }
+fun radix(int: U64, radix: U64): RadixFormat { RadixFormat { radix, int } }
+fun radix(int: U8, radix: U64): RadixFormat { radix(int.to_U64(), radix) }
+fun radix(int: U16, radix: U64): RadixFormat { radix(int.to_U64(), radix) }
+fun radix(int: U32, radix: U64): RadixFormat { radix(int.to_U64(), radix) }
 struct RadixFormat { radix: U64, int: U64 }
 fun write[W](writer: W, format: RadixFormat) {
   var divisor = 1
@@ -460,9 +460,7 @@ fun equals[T](a: Slice[T], b: Slice[T]): Bool {
   | TODO: support types that only have equals, not compare_to
   compare_to(a, b).is_equal()
 }
-fun hash[T](hasher: &Hasher, slice: Slice[T]) {
-  for item in slice do hasher.hash(item)
-}
+fun hash[T](hasher: &Hasher, slice: Slice[T]) { hasher.hash_all(slice) }
 fun write[W, T](writer: W, slice: Slice[T]) {
   writer.write("[{comma_separated(slice)}]")
 }
@@ -613,7 +611,7 @@ fun parse_digit(char: Char): U8 {
 }
 fun compare_to(a: Char, b: Char): Ordering { a.byte.compare_to(b.byte) }
 fun equals(a: Char, b: Char): Bool { a.byte.equals(b.byte) }
-fun hash(hasher: &Hasher, char: Char) { hasher.hash(char) }
+fun hash(hasher: &Hasher, char: Char) { hasher.hash(char.byte) }
 fun write[W](writer: W, char: Char) { writer.write_byte(char.byte) }
 fun inc(char: Char): Char { Char { byte = char.byte.inc() } }
 fun dec(char: Char): Char { Char { byte = char.byte.dec() } }
@@ -623,10 +621,19 @@ fun subtract(char: Char, delta: U8): Char {
 }
 fun subtract(char: Char, other: Char): U8 { char.byte.subtract(other.byte) }
 
-fun string(): &String { String { chars = vec[Char]() }.& }
-struct String { chars: Vec[Char] }
-fun write_byte(string: &String, byte: U8) { string.chars.&.push(Char { byte }) }
-fun to_str(string: String): Str { Str { chars = string.chars.to_slice() } }
+fun string_builder(): &StringBuilder { StringBuilder { chars = vec[Char]() }.put_on_heap() }
+struct StringBuilder { chars: Vec[Char] }
+fun write_byte(builder: &StringBuilder, byte: U8) {
+  builder.chars.&.push(Char { byte })
+}
+fun len(builder: StringBuilder): U64 { builder.chars.len }
+fun truncate_to_len(builder: &StringBuilder, len: U64) {
+  assert(len.is_at_most(builder.chars.len))
+  builder.chars.len = len
+}
+fun to_str(builder: StringBuilder): Str {
+  Str { chars = builder.chars.to_slice() }
+}
 
 fun len(str: Str): U64 { str.chars.len }
 fun is_empty(str: Str): Bool { str.len().equals(0) }
@@ -648,12 +655,9 @@ fun compare_to(a: Str, b: Str): Ordering {
   }
 }
 fun equals(a: Str, b: Str): Bool {
-  | TODO: support types that only have equals, not compare_to
   if a.len().equals(b.len()) then compare_to(a, b).is_equal() else false
 }
-fun hash(hasher: &Hasher, str: Str) {
-  for char in str.chars do hasher.hash(char)
-}
+fun hash(hasher: &Hasher, str: Str) { hasher.hash(str.chars) }
 fun write[W](writer: W, str: Str) {
   for char in str.chars do writer.write(char)
 }
@@ -722,9 +726,9 @@ fun split(str: Str, separator: Str): Slice[Str] {
 }
 fun lines(slice: Str): Slice[Str] { slice.split("{newline}") }
 fun pad_right(str: Str, len: U64, char: Char): Str {
-  var string = string()
+  var string = string_builder()
   string.write(str)
-  loop if string.chars.len.is_less_than(len) then string.write(char) else break
+  loop if string.len().is_less_than(len) then string.write(char) else break
   string.to_str()
 }
 
@@ -867,8 +871,9 @@ struct EnumeratedIter[T, I] { inner: I, index: U64 }
 fun next[T, I](iter: &EnumeratedIter[T, I]): Maybe[Enumerated[T]] {
   switch iter.inner.&.next()
   case some(item) {
+    var index = iter.index
     iter.index = iter.index.inc()
-    some(Enumerated { index = iter.index, item })
+    some(Enumerated { index, item })
   }
   case none none[Enumerated[T]]()
 }
@@ -1365,36 +1370,41 @@ fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
     switch bucket.*
     case empty {
       bucket.* = MapBucket.filled(MapEntry { key, value })
-      map.size = map.size.add(1)
+      map.size = map.size.inc()
       break
     }
     case filled(entry)
       if entry.key.equals(key) then {
         bucket.* = MapBucket.filled(MapEntry { key, value })
         break
-      } else i = i.add(1).modulo(map.buckets.len)
+      } else i = i.inc().modulo(map.buckets.len)
   }
 }
 fun contains[K, V](map: Map[K, V], key: K): Bool {
   map.get_maybe(key).is_some()
 }
-fun get_maybe_ref[K, V](map: Map[K, V], key: K): Maybe[&V] {
+fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
+  eprintln("looking for key in map of size {map.size} with {map.buckets.len} buckets")
+  eprintln("foo")
+  stderr."key hash is {key.hash()}"
+  eprintln("bar")
   var i = key.hash().modulo(map.buckets.len)
   loop {
-    var bucket = map.buckets.get_ref(i)
-    switch bucket.*
-    case empty return none[&V]()
-    case filled(entry)
+    eprintln("checking bucket {i}")
+    var bucket = map.buckets.get(i)
+    eprintln("got bucket")
+    switch bucket
+    case empty {
+      eprintln("returning none")
+      return none[V]()
+    }
+    case filled(entry) {
+      eprintln("checking if keys are equal")
       if entry.key.equals(key)
-      then return some(entry.value.&)
-      else i = i.add(1).modulo(map.buckets.len)
+      then return some(entry.value)
+      else i = i.inc().modulo(map.buckets.len)
+    }
   }
-}
-fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
-  switch map.get_maybe_ref(key) case some(val) some(val.*) case none none[V]()
-}
-fun get_ref[K, V](map: Map[K, V], key: K): &V {
-  map.get_maybe_ref(key).unwrap()
 }
 fun get[K, V](map: Map[K, V], key: K): V { map.get_maybe(key).unwrap() }
 
@@ -1467,12 +1477,5 @@ fun min[T](slice: Set[T]): Maybe[T] {
     case none candidate = some(item)
   return candidate
 }
-
-|fun enumerate[I](iter: I): Enumerated[I] {
-|  Enumerated[I] { iter, counter = 0 }
-|}
-|struct Enumerated[T, I] { iter: I, counter: U64 }
-| TODO: Support inferring part of the return type like here
-|fun next[I](self: &Enumerated[I]): Maybe[Pair[U64, _]] { ... }
 
 | TODO: segment tree, treap
