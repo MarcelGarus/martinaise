@@ -3091,6 +3091,244 @@ fun write_as_c[W](writer: W, fun_: MonoFun) {
   writer."}"
 }
 
+| Memory Layout  
+| Finding efficient memory layouts for types is a bit tricky.
+|
+| enum CType { char: U8, short: U16, int: U32, long: U64 }
+| struct Foo {
+|   value: U32,
+|   flup: CType,
+|   foo: &Foo,
+|   baz: Maybe[Maybe[Str]],
+|   blub: Map[Str, U64],
+| }
+|
+| ▏0      ▏8      ▏16     ▏24     ▏32     ▏40     ▏48     ▏56     ▏64     ▏72     ▏80
+| ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+| Foo
+| val…    flup            foo     baz                     blub
+| ▓▓▓▓....▓▓▓▓▓▓▓▓▓.......▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░......▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+| U32     CType   │       &Foo    Maybe[Maybe[Str]…│      Map[Str, U64]
+|         char────┤               some─────────────┤      buckets         size
+|         ▓.......│               ░░░░░░░░░░░░░░░░░│      ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░
+|         …       │               Maybe[Str]      ││      Slice[MapBucket…U64
+|         short───┤               some────────────┤│      data    len
+|         ▓▓......│               ░░░░░░░░░░░░░░░░││      ▓▓▓▓▓▓▓▓░░░░░░░░
+|         U…      │               Str             ││      &MapBuc…U64
+|         int─────┤               chars           ││
+|         ▓▓▓▓....│               ░░░░░░░░░░░░░░░░││
+|         U32     │               Slice[Char]     ││
+|         long────┘               data    len     ││
+|         ▓▓▓▓▓▓▓▓                ░░░░░░░░▓▓▓▓▓▓▓▓││
+|         U64                     &Char   U64     ││
+|                                 none────────────┘│
+|                                 ................ │
+|                                 none─────────────┘
+|                                 .................
+
+struct MemLayout {
+  type: Type,
+  size: U64,
+  alignment: U64,
+  kind: MemLayoutKind,
+}
+enum MemLayoutKind { opaque, struct_: Vec[MemLayoutStructPart], enum_: Vec[MemLayoutVariant] }
+enum MemLayoutStructPart { padding: U64, field: MemLayoutField }
+struct MemLayoutField { name: Str, layout: MemLayout }
+struct MemLayoutVariant { name: Str, layout: MemLayout }
+
+fun mem_layout(type: Type, type_defs: Map[Type, MonoTypeDef]): MemLayout {
+  if type.name.equals("&")
+  then return MemLayout { type, size = 8, alignment = 8, kind = MemLayoutKind.opaque }
+
+  switch type_defs.get(type)
+  case builtin_type {
+    for config in all_int_configs do
+      if type.equals(config.to_type())
+      then return MemLayout {
+        type,
+        size = config.bits.divide(8),
+        alignment = config.bits.divide(8),
+        kind = MemLayoutKind.opaque,
+      }
+    panic("unknown builtin type {type.name}")
+  }
+  case struct_(struct_) {
+    var parts = vec[MemLayoutStructPart]()
+    var alignment = 1
+    var size = 0
+    | TODO: try permutations
+    for field in struct_.fields do {
+      var layout = field.type.mem_layout(type_defs)
+      alignment = max(alignment, layout.alignment)
+      if size.modulo(alignment).not_equals(0) then {
+        var padding = alignment.subtract(size.modulo(alignment))
+        parts.&.push(MemLayoutStructPart.padding(padding))
+        size = size.add(padding)
+      }
+      parts.&.push(MemLayoutStructPart.field(MemLayoutField {
+        name = field.name, layout,
+      }))
+      size = size.add(layout.size)
+    }
+    MemLayout { type, size, alignment, kind = MemLayoutKind.struct_(parts) }
+  }
+  case enum_(enum_) {
+    var variants = vec[MemLayoutVariant]()
+    var alignment = 1
+    var size = 0
+    for variant in enum_.variants do {
+      var layout = variant.type.mem_layout(type_defs)
+      alignment = max(alignment, layout.alignment)
+      size = max(size, layout.size)
+      variants.&.push(MemLayoutVariant { name = variant.name, layout })
+    }
+    var size = size.inc() | one byte for the tag
+    MemLayout { type, size, alignment, kind = MemLayoutKind.enum_(variants) }
+  }
+}
+
+| Printing a memory layout is actually more complicated than calculating it. But
+| it was quite fun to write.
+
+enum MemShade { a, b, padding }
+fun write[W](writer: W, shade: MemShade) {
+  writer.write(switch shade case a "▓" case b "░" case padding ".")
+  | writer.write(switch shade case a "▓" case b "▒" case padding "░")
+}
+| Adjacent fields should have different shades, inner fields want to start with
+| the same shading as the parent.
+fun choose_shade(previous: MemShade, preffered: MemShade) {
+  switch preffered
+  case padding unreachable()
+  case a if previous is a then MemShade.b else MemShade.a
+  case b if previous is b then MemShade.a else MemShade.b
+}
+struct MemWriter {
+  lines: Vec[StringBuilder],
+  last_shades: Vec[MemShade],
+}
+fun mem_writer(lines: U64): MemWriter {
+  var lines_vec = vec[StringBuilder]()
+  var last_shades = vec[MemShade]()
+  for i in 0.to(lines) do {
+    lines_vec.&.push(string_builder())
+    last_shades.&.push(MemShade.padding)
+  }
+  MemWriter { lines = lines_vec, last_shades }
+}
+fun line(writer: &MemWriter, index: U64): &StringBuilder {
+  writer.lines.get_ref(index)
+}
+fun shade(writer: &MemWriter, index: U64): &MemShade {
+  writer.last_shades.get_ref(index)
+}
+fun write[W](writer: W, layout: MemLayout) {
+  writer."Mem layout (size {layout.size}, alignment {layout.alignment}){newline}"
+  var mem_writer = mem_writer(layout.num_lines_when_printing().add(2))
+  mem_writer.lines.get_ref(layout.num_lines_when_printing())."##### end #####"
+  mem_writer.&.write(layout, 0, MemShade.a)
+
+  var byte = 0
+  loop {
+    if byte.is_greater_than(layout.size) then break
+    writer."▏{"{byte}".fit_to_size(7)}"
+    byte = byte.add(8)
+  }
+  writer."{newline}"
+
+  for line in mem_writer.lines do writer.writeln(line.to_str())
+}
+fun num_lines_when_printing(layout: MemLayout): U64 {
+  if layout.size.equals(0) then return 0
+  switch layout.kind
+  case opaque 2
+  case struct_(parts) {
+    var max = 0
+    for part in parts do
+      max = max(max,
+        switch part case padding 1 case field(field) field.layout.num_lines_when_printing())
+    max.add(3)
+  }
+  case enum_(variants) {
+    var sum = 0
+    for variant in variants do sum = sum.add(max(1, variant.layout.num_lines_when_printing())).inc()
+    sum.add(2)
+  }
+}
+fun write(writer: &MemWriter, layout: MemLayout, line: U64, preffered_shade: MemShade) {
+  if layout.size.equals(0) then return {}
+
+  var shade =
+    switch preffered_shade
+    case padding unreachable()
+    case a if writer.last_shades.get(line) is a then MemShade.b else MemShade.a
+    case b if writer.last_shades.get(line) is b then MemShade.a else MemShade.b
+  for i in 0.to(layout.size) do writer.line(line)."{shade}"
+  writer.last_shades.get_ref(line).* = shade
+
+  switch layout.kind
+  case opaque
+    writer.line(line.inc())."{format(layout.type).fit_to_size(layout.size)}"
+  case struct_(parts) {
+    writer.line(line.inc())."{format(layout.type).fit_to_size(layout.size)}"
+    var last_line = line.add(layout.num_lines_when_printing())
+    for part in parts do
+      switch part
+      case padding(padding) {
+        writer.line(line.add(2)).write_n(padding, " ")
+        writer.line(line.add(3)).write_n(padding, "{MemShade.padding}")
+        writer.shade(line.add(3)).* = MemShade.padding
+        for line in line.add(4).to(last_line) do {
+          writer.line(line).write_n(padding, " ")
+          writer.shade(line).* = MemShade.padding
+        }
+      }
+      case field(field) {
+        writer.line(line.add(2)).write(field.name.fit_to_size(field.layout.size))
+        writer.write(field.layout, line.add(3), shade)
+        for line
+        in line.add(3).add(field.layout.num_lines_when_printing()).to(last_line)
+        do writer.line(line).write_n(field.layout.size, " ")
+      }
+  }
+  case enum_(variants) {
+    writer.line(line.inc())."{format(layout.type).fit_to_size(layout.size.dec())}│"
+    var start_line = line
+    var line = line.add(2)
+    for variant in variants.iter().enumerate() do {
+      var is_last = variant.index.equals(variants.len.dec())
+      var variant = variant.item
+      var padding = layout.size.subtract(variant.layout.size).dec()
+      writer.line(line)."{variant.name.fit_to_size(layout.size.dec(), "─")}{if is_last then "┘" else "┤"}"
+      writer.write(variant.layout, line.inc(), shade)
+      writer.line(line.inc()).write_n(padding, "{MemShade.padding}")
+      writer.line(line.inc())."{if is_last then " " else "│"}"
+      var lines = variant.layout.num_lines_when_printing()
+      for line in line.add(2).to(line.inc().add(lines)) do {
+        writer.line(line).write_n(padding, " ")
+        writer.line(line)."{if is_last then " " else "│"}"
+      }
+      line = line.inc().add(variant.layout.num_lines_when_printing())
+    }
+    for line in start_line.to(line) do writer.shade(line).* = MemShade.padding
+  }
+}
+fun fit_to_size(str: Str, size: U64): Str { str.fit_to_size(size, " ") }
+fun fit_to_size(str: Str, size: U64, padding: Str): Str {
+  if size.equals(0) then return ""
+  if size.equals(1) then return "…"
+  if str.len().is_at_least(size) then str = "{str.first(size.dec())}…"
+
+  var string = string_builder().&
+  string.write(str)
+  for i in str.len().to(size) do string.write(padding)
+  string.to_str()
+}
+fun write_n[W](writer: W, n: U64, str: Str) {
+  for i in 0.to(n) do writer.write(str)
+}
+
 | File Watching  
 | TODO: implement
 
@@ -3139,6 +3377,8 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   print_on_same_line("Compiling {file_path}")
   var mono = monomorphize(ast)
     orelse(error) { print_on_same_line(error) return false }
+  println(type("Foo").mem_layout(mono.type_defs))
+  return true
   if command is mono then { println(mono) return true }
 
   print_on_same_line("Compiling {file_path} to C")
@@ -3210,7 +3450,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
 fun wrong_usage(): Never { print_usage_info(stderr) exit(1:U8) }
 
 fun main(args: Slice[Str]): Never {
-  eprintln("Welcome to Martinaise 2.")
+  eprintln("Welcome to Martinaise 3.")
   eprintln()
 
   | Ways to use this program:

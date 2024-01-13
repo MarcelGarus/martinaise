@@ -2179,8 +2179,8 @@ fun compile_in_current_scope(
       for field in struct_.fields do
         if not(fields.contains(field.name))
         then return error[MonoExpr, Str](
-          '"You tried to create a {make_struct.type.name}, but the 
-          '"{field.name}" field is missing."')
+          '"You tried to create a {{make_struct.type.name}}, but the 
+          '"{{field.name}}" field is missing."')
 
       var solver = create_type_solver(struct_.type_args)
       | TODO: Foo[] { ... } should not be treated like Foo { ... }

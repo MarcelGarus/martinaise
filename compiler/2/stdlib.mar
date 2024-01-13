@@ -1104,6 +1104,8 @@ var stdin = File { descriptor = 0 }
 var stdout = File { descriptor = 1 }
 var stderr = File { descriptor = 2 }
 
+fun format[T](value: T): Str { "{value}" }
+
 fun writeln[W](writer: W) { writer.write(newline) }
 fun writeln[W, T](writer: W, value: T) { writer.write(value) writer.writeln() }
 

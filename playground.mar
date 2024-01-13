@@ -1,4 +1,14 @@
+enum CType { char: U8, short: U16, int: U32, long: U64 }
+struct Foo {
+  value: U32,
+  flup: CType,
+  foo: &Foo,
+  baz: Maybe[Maybe[Str]],
+  blub: Map[Str, U64],
+}
+
 fun main(): Never {
+  var size = size_of_type[Foo]()
   false orelse println("Hi")
   some(3) orelse(err) panic("bad")
   exit(0:U8)

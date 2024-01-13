@@ -9,14 +9,14 @@ compiler/0/martinaise: $(wildcard compiler/0/src/*) compiler/0/build.zig
 		zig build && \
 		cp zig-out/bin/martinaise martinaise
 
-compiler/1/martinaise: compiler/0/martinaise compiler/0/stdlib.mar
+compiler/1/martinaise: compiler/1/compiler.mar compiler/0/martinaise compiler/0/stdlib.mar
 	@echo "# Martinaise 1"
 	cd compiler/0; \
 		./martinaise compile ../1/compiler.mar && \
 		cc output.c -o ../1/martinaise && \
 		rm output.c
 
-compiler/2/martinaise: compiler/1/martinaise compiler/1/stdlib.mar
+compiler/2/martinaise: compiler/2/compiler.mar compiler/1/martinaise compiler/1/stdlib.mar
 	@echo "# Martinaise 2"
 	cd compiler/1; \
 		./martinaise c ../2/compiler.mar > output.c && \
