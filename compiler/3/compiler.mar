@@ -3103,24 +3103,24 @@ fun write_as_c[W](writer: W, fun_: MonoFun) {
 |   blub: Map[Str, U64],
 | }
 |
-| ▏0      ▏8      ▏16     ▏24     ▏32     ▏40     ▏48     ▏56     ▏64     ▏72     ▏80
-| ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+| ▏0      ▏8      ▏16     ▏24     ▏32     ▏40     ▏48     ▏56     ▏64
+| ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 65
 | Foo
-| val…    flup            foo     baz                     blub
-| ▓▓▓▓....▓▓▓▓▓▓▓▓▓.......▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░......▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
-| U32     CType   │       &Foo    Maybe[Maybe[Str]…│      Map[Str, U64]
-|         char────┤               some─────────────┤      buckets         size
-|         ▓.......│               ░░░░░░░░░░░░░░░░░│      ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░
-|         …       │               Maybe[Str]      ││      Slice[MapBucket…U64
-|         short───┤               some────────────┤│      data    len
-|         ▓▓......│               ░░░░░░░░░░░░░░░░││      ▓▓▓▓▓▓▓▓░░░░░░░░
-|         U…      │               Str             ││      &MapBuc…U64
-|         int─────┤               chars           ││
-|         ▓▓▓▓....│               ░░░░░░░░░░░░░░░░││
-|         U32     │               Slice[Char]     ││
-|         long────┘               data    len     ││
-|         ▓▓▓▓▓▓▓▓                ░░░░░░░░▓▓▓▓▓▓▓▓││
-|         U64                     &Char   U64     ││
+| foo     blub                    baz                 val…flup
+| ▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓..▓▓▓▓░░░░░░░░░
+| &Foo    Map[Str, U64]           Maybe[Maybe[Str]…│  U32 CType   │
+|         buckets         size    some─────────────┤      char────┤
+|         ░░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░│      ░.......│
+|         Slice[MapBucket…U64     Maybe[Str]      ││      …       │
+|         data    len             some────────────┤│      short───┤
+|         ░░░░░░░░▓▓▓▓▓▓▓▓        ░░░░░░░░░░░░░░░░││      ░░......│
+|         &MapBuc…U64             Str             ││      U…      │
+|                                 chars           ││      int─────┤
+|                                 ░░░░░░░░░░░░░░░░││      ░░░░....│
+|                                 Slice[Char]     ││      U32     │
+|                                 data    len     ││      long────┘
+|                                 ░░░░░░░░▓▓▓▓▓▓▓▓││      ░░░░░░░░
+|                                 &Char   U64     ││      U64
 |                                 none────────────┘│
 |                                 ................ │
 |                                 none─────────────┘
@@ -3154,22 +3154,58 @@ fun mem_layout(type: Type, type_defs: Map[Type, MonoTypeDef]): MemLayout {
     panic("unknown builtin type {type.name}")
   }
   case struct_(struct_) {
-    var parts = vec[MemLayoutStructPart]()
+    | First, layout all the fields and determine this struct's alignment.
+    var fields = vec[MemLayoutField]()
     var alignment = 1
-    var size = 0
-    | TODO: try permutations
     for field in struct_.fields do {
       var layout = field.type.mem_layout(type_defs)
       alignment = max(alignment, layout.alignment)
-      if size.modulo(alignment).not_equals(0) then {
-        var padding = alignment.subtract(size.modulo(alignment))
+      fields.&.push(MemLayoutField { name = field.name, layout })
+    }
+
+    | Fields with a size that is a multiple of the alignment can all be put to
+    | the beginning.
+    var fields_sized_multiple_of_alignment = vec[MemLayoutField]()
+    var remaining_fields = vec[MemLayoutField]()
+    for field in fields do
+      if field.layout.size.modulo(alignment).equals(0)
+      then fields_sized_multiple_of_alignment.&.push(field)
+      else remaining_fields.&.push(field)
+
+    | For all remaining fields, try all permutations to find the one with the
+    | smallest overall size.
+    var smallest_permutation = uninitialized_slice[U64](remaining_fields.len)
+    var smallest_size_of_remaining = 999999999 | TODO
+    for permutation in permutations(remaining_fields.len) do {
+      var size = 0
+      for field in permutation do {
+        var field = remaining_fields.get(field)
+        size = size
+          .add(size.needed_for_multiple_of(field.layout.alignment)) | padding
+          .add(field.layout.size) | the field itself
+      }
+      if size.is_less_than(smallest_size_of_remaining) then {
+        smallest_size_of_remaining = size
+        permutation.copy_to(smallest_permutation)
+      }
+    }
+
+    | Build the actual layout.
+    var parts = vec[MemLayoutStructPart]()
+    var size = 0
+    for field in fields_sized_multiple_of_alignment do {
+      parts.&.push(MemLayoutStructPart.field(field))
+      size = size.add(field.layout.size)
+    }
+    for index in smallest_permutation do {
+      var field = remaining_fields.get(index)
+      var padding = size.needed_for_multiple_of(field.layout.alignment)
+      if padding.is_greater_than(0) then {
         parts.&.push(MemLayoutStructPart.padding(padding))
         size = size.add(padding)
       }
-      parts.&.push(MemLayoutStructPart.field(MemLayoutField {
-        name = field.name, layout,
-      }))
-      size = size.add(layout.size)
+      parts.&.push(MemLayoutStructPart.field(field))
+      size = size.add(field.layout.size)
     }
     MemLayout { type, size, alignment, kind = MemLayoutKind.struct_(parts) }
   }
@@ -3185,6 +3221,41 @@ fun mem_layout(type: Type, type_defs: Map[Type, MonoTypeDef]): MemLayout {
     }
     var size = size.inc() | one byte for the tag
     MemLayout { type, size, alignment, kind = MemLayoutKind.enum_(variants) }
+  }
+}
+
+fun needed_for_multiple_of(number: U64, factor: U64): U64 {
+  if number.modulo(factor).equals(0) then return 0
+  factor.subtract(number.modulo(factor))
+}
+
+fun permutations(size: U64): Iter[Slice[U64], Permutations] {
+  var numbers = vec[U64]()
+  for i in 0.to(size) do numbers.&.push(i)
+  Permutations { is_first = true, last = numbers.to_slice() }
+    .wrap_in_iter[Slice[U64], Permutations]()
+}
+struct Permutations { is_first: Bool, last: Slice[U64] }
+fun next(self: &Permutations): Maybe[Slice[U64]] {
+  if self.is_first then { self.is_first = false return some(self.last) }
+  if self.last.is_empty() then return none[Slice[U64]]()
+  var index = self.last.len.dec()
+  loop {
+    if index.equals(0) then { return none[Slice[U64]]() }
+    index = index.dec()
+    if self.last.get(index).is_less_than(self.last.get(index.inc())) then {
+      | Find the smallest element after the index that is greater than
+      | list[index].
+      var smallest_index = index.inc()
+      var smallest = self.last.get(index.inc())
+      for j in index.add(2).to(self.last.len) do
+        if self.last.get(j).is_greater_than(self.last.get(index))
+          .and(self.last.get(j).is_less_than(smallest))
+        then smallest_index = j
+      swap(self.last.get_ref(index), self.last.get_ref(smallest_index))
+      self.last.without_first(index.inc()).&.sort()
+      return some(self.last)
+    }
   }
 }
 
@@ -3204,6 +3275,9 @@ fun choose_shade(previous: MemShade, preffered: MemShade) {
   case a if previous is a then MemShade.b else MemShade.a
   case b if previous is b then MemShade.a else MemShade.b
 }
+
+| When walking the memory layout, we basically need to write multiple lines
+| simultaneously. So, that's what we do.
 struct MemWriter {
   lines: Vec[StringBuilder],
   last_shades: Vec[MemShade],
@@ -3224,9 +3298,7 @@ fun shade(writer: &MemWriter, index: U64): &MemShade {
   writer.last_shades.get_ref(index)
 }
 fun write[W](writer: W, layout: MemLayout) {
-  writer."Mem layout (size {layout.size}, alignment {layout.alignment}){newline}"
-  var mem_writer = mem_writer(layout.num_lines_when_printing().add(2))
-  mem_writer.lines.get_ref(layout.num_lines_when_printing())."##### end #####"
+  var mem_writer = mem_writer(layout.num_lines_when_printing())
   mem_writer.&.write(layout, 0, MemShade.a)
 
   var byte = 0
@@ -3237,7 +3309,11 @@ fun write[W](writer: W, layout: MemLayout) {
   }
   writer."{newline}"
 
-  for line in mem_writer.lines do writer.writeln(line.to_str())
+  for line in mem_writer.lines.iter().enumerate() do {
+    writer.write(line.item.to_str())
+    if line.index.equals(0) then writer." {layout.size}"
+    if line.index.is_less_than(mem_writer.lines.len.dec()) then writer.writeln()
+  }
 }
 fun num_lines_when_printing(layout: MemLayout): U64 {
   if layout.size.equals(0) then return 0
@@ -3289,7 +3365,10 @@ fun write(writer: &MemWriter, layout: MemLayout, line: U64, preffered_shade: Mem
         writer.write(field.layout, line.add(3), shade)
         for line
         in line.add(3).add(field.layout.num_lines_when_printing()).to(last_line)
-        do writer.line(line).write_n(field.layout.size, " ")
+        do {
+          writer.line(line).write_n(field.layout.size, " ")
+          writer.shade(line).* = MemShade.padding
+        }
       }
   }
   case enum_(variants) {
@@ -3377,6 +3456,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   print_on_same_line("Compiling {file_path}")
   var mono = monomorphize(ast)
     orelse(error) { print_on_same_line(error) return false }
+  print_on_same_line("Calculating memory layout")
   println(type("Foo").mem_layout(mono.type_defs))
   return true
   if command is mono then { println(mono) return true }
@@ -3452,6 +3532,7 @@ fun wrong_usage(): Never { print_usage_info(stderr) exit(1:U8) }
 fun main(args: Slice[Str]): Never {
   eprintln("Welcome to Martinaise 3.")
   eprintln()
+  eprintln(args)
 
   | Ways to use this program:
   | - martinaise help

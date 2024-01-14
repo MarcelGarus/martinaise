@@ -11,6 +11,7 @@
 | deleting code in this file.
 
 | Language todos  
+| TODO: change libc wrappers to use I32 for ints
 | TODO: validate all signatures before lowering
 | TODO: allow types on vars
 | TODO: break and continue with targets
