@@ -35,7 +35,34 @@
             }
           }
         },
-        { "include": "#comments" },
+        {
+          "begin": "(asm) {",
+          "end": "}",
+          "captures": {
+            "1": { "name": "keyword" }
+          },
+          "patterns": [{ "include": "#asm" }]
+        },
+        {
+          "name": "comment.line",
+          "match": "\\| (.*)  $",
+          "captures": {
+            "1": {
+              "name": "markup.bold"
+            }
+          }
+        },
+        {
+          "name": "comment.line",
+          "begin": "\\|",
+          "end": "$",
+          "patterns": [
+            {
+              "match": "\\bTODO\\b:?",
+              "name": "keyword.todo"
+            }
+          ]
+        },
         {
           "name": "string.quoted.meta.2",
           "begin": "''\"",
@@ -98,11 +125,11 @@
         }
       ]
     },
-    "comments": {
+    "asm": {
       "patterns": [
         {
           "name": "comment.line",
-          "match": "\\| (.*)  $",
+          "match": "\\; (.*)  $",
           "captures": {
             "1": {
               "name": "markup.bold"
@@ -111,7 +138,7 @@
         },
         {
           "name": "comment.line",
-          "begin": "\\|",
+          "begin": "\\;",
           "end": "$",
           "patterns": [
             {
@@ -119,6 +146,22 @@
               "name": "keyword.todo"
             }
           ]
+        },
+        {
+          "name": "keyword.control",
+          "match": "\\b(add|cmp|jmp|jnz|mov|push|ret|sub|syscall)\\b"
+        },
+        {
+          "name": "variable",
+          "match": "\\b(rax|eax|ax|ah|al|rbx|ebx|bx|bh|bl|rcx|ecx|cx|ch|cl|rsp|esp|sp|spl|rbp|ebp|bp|bpl|rdi|edi|di|dil|rsi|esi|si|sil|rdx|edx|dx|dh|dl|r0|r1|r2|r3|r4|r5|r6|r7|r8|r9)\\b"
+        },
+        {
+          "name": "entity.name.function",
+          "match": "\\b[a-z][a-z_0-9]*\\b"
+        },
+        {
+          "name": "constant.numeric",
+          "match": "\\b[0-9]+\\b"
         }
       ]
     }

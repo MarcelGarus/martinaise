@@ -195,10 +195,10 @@ struct AstFun {
   type_args: Vec[Str],
   args: Vec[AstFunArg],
   returns: Type,
-  is_builtin: Bool,
-  body: Vec[AstExpr],
+  kind: AstFunKind,
 }
 struct AstFunArg { name: Str, type: Type }
+enum AstFunKind { builtin, body: Vec[AstExpr], asm_: Str }
 enum AstExpr {
   int: Int,                   | 0_U32
   str: Str,                   | "foo"
@@ -302,9 +302,10 @@ fun write[W](writer: W, indent: Indent, var_: AstVar) {
 fun write[W](writer: W, fun_: AstFun) {
   writer."fun {fun_.name}{type_args(fun_.type_args)}
     '({comma_separated(fun_.args)}): {fun_.returns} "
-  if fun_.is_builtin
-  then writer.'"{ ... }"'
-  else writer.write_body(Indent { amount = 0 }, fun_.body)
+  switch fun_.kind
+  case builtin writer.'"{ ... }"'
+  case body(body) writer.write_body(Indent { amount = 0 }, body)
+  case asm_(code) writer.'"asm {{{newline}}{{code}}{{newline}}}"'
 }
 fun write_body[W](writer: W, indent: Indent, body: Vec[AstExpr]) {
   if body.is_empty() then { writer.'"{}"' return {} }
@@ -1061,13 +1062,17 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
   if parser.consume_prefix(":")
   then returns = parser.parse_type()?
     orelse return bad_input[AstFun]("Expected the return type.")
-  var is_builtin = false
-  var body =
-    if parser.consume_prefix('"{ ... }"')
-    then { is_builtin = true vec[AstExpr]() }
-    else parser.parse_body()?
-      orelse return bad_input[AstFun]("Expected a function body.")
-  parsed(AstFun { name = fun_name, type_args, args, returns, is_builtin, body })
+  var kind =
+    if parser.consume_prefix('"{ ... }"') then AstFunKind.builtin
+    else if parser.consume_prefix('"asm {"') then {
+      var start = parser.cursor
+      loop if parser.current().equals(#}) then break else parser.advance()
+      parser.advance() | consume closing brace
+      AstFunKind.asm_(parser.code.substr(start, parser.cursor))
+    }
+    else if parser.parse_body()? is some(body) then AstFunKind.body(body)
+    else return bad_input[AstFun]("Expected a function body.")
+  parsed(AstFun { name = fun_name, type_args, args, returns, kind })
 }
 
 fun parse_struct(parser: &Parser): Result[Maybe[AstStruct], Str] {
@@ -1192,8 +1197,7 @@ fun push_builtin_fun(
   defs: &Vec[AstDef], name: Str, args: Vec[AstFunArg], returns: Type
 ) {
   defs.push(AstDef.fun_(AstFun {
-    name, type_args = vec[Str](), args, returns,
-    is_builtin = true, body = vec[AstExpr](),
+    name, type_args = vec[Str](), args, returns, kind = AstFunKind.builtin
   }))
 }
 fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
@@ -1275,14 +1279,17 @@ struct MonoFun {
   type_args: Vec[Type],
   arg_types: Vec[Type],
   return_type: Type,
-  is_builtin: Bool,
-  slots: Vec[MonoSlot],
-  body: Vec[MonoStatement],
+  kind: MonoFunKind,
 }
 
 struct MonoSlot { type: Type, initial_value: MonoSlotValue }
 enum MonoSlotValue { uninitialized, arg: U64, int: U64, str: Str }
 struct MonoSlotRef { index: U64 }
+enum MonoFunKind { builtin, body: MonoFunBody, asm_: Str }
+struct MonoFunBody {
+  slots: Vec[MonoSlot],
+  statements: Vec[MonoStatement],
+}
 
 enum MonoStatement {
   label: MonoLabel,
@@ -1335,21 +1342,23 @@ fun write[W](writer: W, mono: Mono) {
 }
 fun write[W](writer: W, name: Str, fun_: MonoFun) {
   writer."{name}{newline}"
-  if fun_.is_builtin then { writer."  <builtin>" return {} }
-
-  for zip in zip(fun_.slots.iter(), 0.to(fun_.slots.len).iter()) do {
-    var slot = zip.a
-    var index = zip.b
-
-    if index.is_greater_than(0) then writer.write(newline)
-    writer."  _{index}: {slot.type} = "
-    switch slot.initial_value
-    case uninitialized writer."uninitialized"
-    case arg(i) writer."arg_{i}"
-    case int(int) writer.write(int)
-    case str(str) writer.'""{{str}}""'
+  switch fun_.kind
+  case builtin writer."  <builtin>"
+  case body(body) {
+    for zip in body.slots.iter().enumerate() do {
+      var index = zip.index
+      var slot = zip.item
+      if index.is_greater_than(0) then writer.write(newline)
+      writer."  _{index}: {slot.type} = "
+      switch slot.initial_value
+      case uninitialized writer."uninitialized"
+      case arg(i) writer."arg_{i}"
+      case int(int) writer.write(int)
+      case str(str) writer.'""{{str}}""'
+    }
+    for statement in body.statements do writer."{newline}  {statement}"
   }
-  for statement in fun_.body do writer."{newline}  {statement}"
+  case asm_(code) writer.write(code)
 }
 fun write[W](writer: W, statement: MonoStatement) {
   switch statement
@@ -1689,8 +1698,7 @@ fun monomorphize(ast: Ast): Result[Mono, Str] {
           AstFunArg { name = "args", type = type("Slice", vec(type("Str"))) },
         ),
         returns = type("Never"),
-        is_builtin = false,
-        body = vec(AstExpr.name("main").call()),
+        kind = AstFunKind.body(vec(AstExpr.name("main").call())),
       }
     }
 
@@ -1769,8 +1777,8 @@ fun lookup_fun(
     if arg_types.len.not_equals(fun_.args.len) then continue
     var matches = true
     for i in 0.to(arg_types.len) do
-      if not(solver.&.unify(fun_.args.get(i).type, arg_types.get(i))?)
-      then { matches = false break }
+      solver.&.unify(fun_.args.get(i).type, arg_types.get(i))?
+        orelse { matches = false break }
     if not(matches) then continue
     var type_env = solver.finish()
       orelse(error) return error[LookupFunSolution, Str](
@@ -1909,20 +1917,17 @@ fun monomorphize(
     type_args = vec[Type](),
     arg_types = vec[Type](),
     return_type = type("_"),
-    is_builtin = false,
-    slots = vec[MonoSlot](),
-    body = vec[MonoStatement](),
+    kind = MonoFunKind.builtin,
   }
 
   var compile_fun = CompileFun {
-    context,
-    ast,
-    mono,
-    fun_ = mono_fun.&,
+    context, ast, mono,
     type_env = map[Str, Type](),
+    return_type = type_sink(),
     next_label = 0,
     vars = vars[MonoSlotRef](),
-    return_type = type_sink(),
+    slots = vec[MonoSlot](),
+    statements = vec[MonoStatement](),
     break_scopes = stack[BreakScope](),
     continue_scopes = stack[ContinueScope](),
   }
@@ -1934,9 +1939,13 @@ fun monomorphize(
     '{error}")
 
   if not(value.type.is_never()) then
-    mono_fun.body.&.push(MonoStatement.return_(value))
-  mono_fun.return_type = compile_fun.return_type.finish()
+    compile_fun.statements.&.push(MonoStatement.return_(value))
 
+  mono_fun.return_type = compile_fun.return_type.finish()
+  mono_fun.kind = MonoFunKind.body(MonoFunBody {
+    slots = compile_fun.slots,
+    statements = compile_fun.statements,
+  })
   mono.globals.&.put(global.name, mono_fun)
   mono.globals_init_order.&.push(global.name)
 
@@ -1967,52 +1976,57 @@ fun monomorphize(
 
   var return_type = fun_.returns.monomorphize(type_env, ast, mono)?
 
-  var mono_fun = MonoFun {
-    type_args,
-    arg_types,
-    return_type = return_type,
-    is_builtin = fun_.is_builtin,
-    slots = vec[MonoSlot](),
-    body = vec[MonoStatement](),
-  }
-  var vars = vars[MonoSlotRef]() {
-    for i in 0.to(fun_.args.len) do {
-      var slot = MonoSlotRef { index = mono_fun.slots.len }
-      mono_fun.slots.&.push(MonoSlot {
-        type = arg_types.get(i),
-        initial_value = MonoSlotValue.arg(i)
-      })
-      vars.&.define(fun_.args.get(i).name, slot)
-    }
-  }
-
   | TODO: explain
-  mono.funs.&.put(signature, mono_fun)
+  mono.funs.&.put(signature, MonoFun {
+    type_args, arg_types, return_type, kind = MonoFunKind.builtin
+  })
 
-  var compile_fun = CompileFun {
-    context, ast, mono,
-    fun_ = mono_fun.&, type_env,
-    next_label = 0,
-    vars,
-    return_type = type_sink(return_type),
-    break_scopes = stack[BreakScope](),
-    continue_scopes = stack[ContinueScope](),
-  }
-  var body_result = compile_fun.&.compile_body(fun_.body)?
+  var kind =
+    switch fun_.kind
+    case builtin MonoFunKind.builtin
+    case asm_(code) MonoFunKind.asm_(code)
+    case body(body) {
+      var slots = vec[MonoSlot]()
+      var vars = vars[MonoSlotRef]()
+      for i in 0.to(fun_.args.len) do {
+        var slot = MonoSlotRef { index = slots.len }
+        slots.&.push(MonoSlot {
+          type = arg_types.get(i),
+          initial_value = MonoSlotValue.arg(i)
+        })
+        vars.&.define(fun_.args.get(i).name, slot)
+      }
+      var compile_fun = CompileFun {
+        context, ast, mono,
+        type_env,
+        return_type = type_sink(return_type),
+        next_label = 0,
+        vars,
+        slots,
+        statements = vec[MonoStatement](),
+        break_scopes = stack[BreakScope](),
+        continue_scopes = stack[ContinueScope](),
+      }
+      var body_result = compile_fun.&.compile_body(body)?
+      | For builtin functions and asm functions, we trust the fully specified
+      | return type. For Martinaise functions, we take the inferred return type.
+      if compile_fun.return_type.&.add(body_result.type) is error(error)
+      then return error[Str, Str](
+        "The last expression of the function body doesn't match the return type.
+        '{newline}{error}")
+      if not(body_result.type.is_never())
+      then compile_fun.statements.&.push(MonoStatement.return_(body_result))
 
-  | For builtin functions, we trust the fully specified return type.
-  | For user-written functions, we take the actual return type.
-  if not(fun_.is_builtin) then {
-    if compile_fun.return_type.&.add(body_result.type) is error(error)
-    then return error[Str, Str](
-      "The last expression of the function body doesn't match the return type.
-      '{newline}{error}")
-    if body_result.type.name.not_equals("Never") then
-      mono_fun.body.&.push(MonoStatement.return_(body_result))
-    mono_fun.return_type = compile_fun.return_type.finish()
-  }
+      return_type = compile_fun.return_type.finish()
+      MonoFunKind.body(MonoFunBody {
+        slots = compile_fun.slots,
+        statements = compile_fun.statements,
+      })
+    }
 
-  mono.funs.&.put(signature, mono_fun)
+  mono.funs.&.put(signature, MonoFun {
+    type_args, arg_types, return_type, kind
+  })
   context.pop()
 
   ok[Str, Str](signature)
@@ -2022,11 +2036,12 @@ struct CompileFun {
   context: &Context,
   ast: Ast,
   mono: &Mono,
-  fun_: &MonoFun,
   type_env: Map[Str, Type], | maps fun type args to concrete types
+  return_type: TypeSink,
   next_label: U64,
   vars: Vars[MonoSlotRef],
-  return_type: TypeSink,
+  slots: Vec[MonoSlot],
+  statements: Vec[MonoStatement],
   | When lowering loops, breaks and continues don't know where to jump yet.
   | Instead, they fill these structures with jump addresses that need to be
   | adjusted later.
@@ -2043,20 +2058,20 @@ struct ContinueScope { continues: Vec[U64] }
 fun add_slot(
   self: &CompileFun, type: Type, initial_value: MonoSlotValue
 ): MonoSlotRef {
-  var ref = MonoSlotRef { index = self.fun_.slots.len }
-  self.fun_.slots.&.push(MonoSlot { type, initial_value })
+  var ref = MonoSlotRef { index = self.slots.len }
+  self.slots.&.push(MonoSlot { type, initial_value })
   ref
 }
 fun add_slot(self: &CompileFun, type: Type): MonoSlotRef {
   self.add_slot(type, MonoSlotValue.uninitialized)
 }
 fun update_slot_type(self: &CompileFun, slot: MonoSlotRef, type: Type) {
-  self.fun_.slots.get_ref(slot.index).type = type
+  self.slots.get_ref(slot.index).type = type
 }
 fun slot_expr(self: CompileFun, slot: MonoSlotRef): MonoExpr {
   MonoExpr {
     kind = MonoExprKind.slot(slot),
-    type = self.fun_.slots.get(slot.index).type,
+    type = self.slots.get(slot.index).type,
   }
 }
 fun nothing_expr(): MonoExpr {
@@ -2066,8 +2081,8 @@ fun never_expr(): MonoExpr {
   MonoExpr { kind = MonoExprKind.never, type = type("Never") }
 }
 fun put(self: &CompileFun, statement: MonoStatement): U64 {
-  var index = self.fun_.body.len
-  self.fun_.body.&.push(statement)
+  var index = self.statements.len
+  self.statements.&.push(statement)
   index
 }
 fun put_label(self: &CompileFun): MonoLabel {
@@ -2080,7 +2095,7 @@ fun put_placeholder(self: &CompileFun): U64 {
   self.put(MonoStatement.label(MonoLabel { id = 0 }))
 }
 fun update(self: &CompileFun, index: U64, statement: MonoStatement) {
-  self.fun_.body.get_ref(index).* = statement
+  self.statements.get_ref(index).* = statement
 }
 
 | Most expressions are compiled in a separate variable scope. For example, this
@@ -2170,7 +2185,7 @@ fun compile_in_current_scope(
         switch self.ast.lookup_type(make_struct.type.name)?
         case struct_(s) s
         default return error[MonoExpr, Str](
-          "Tried to create a tsruct, but {make_struct.type.name} is not a 
+          "Tried to create a struct, but {make_struct.type.name} is not a 
           'struct type.")
       var fields = map[Str, MonoExpr]() {
         for field in make_struct.fields do
@@ -2958,9 +2973,10 @@ fun write_as_c[W](writer: W, mono: Mono) {
       writer."/// Global initializers{newline}"
       for global in mono.globals do {
         var name = global.key
-        var type = global.value.return_type
-        writer."{global.value.return_type.mangle()} _compute_global_{global.key}
-          '() {global.value.as_c()}{newline}"
+        var value = global.value
+        var body = if value.kind is body(body) then body else unreachable()
+        writer."{value.return_type.mangle()} _compute_global_{name}() 
+          '{body.as_c()}{newline}"
       }
       writer.write(newline)
     }
@@ -2978,7 +2994,8 @@ fun write_as_c[W](writer: W, mono: Mono) {
       }
       writer.") "
 
-      if fun_.is_builtin then {
+      switch fun_.kind
+      case builtin {
         writer.'"{{{newline}}"'
 
         if builtin_funs.get_maybe(signature) is some(body)
@@ -3002,8 +3019,9 @@ fun write_as_c[W](writer: W, mono: Mono) {
           '  return size;"
         else panic("Unknown builtin fun {signature}")
         writer."{newline}}"
-        continue
-      } else writer."{fun_.as_c()}{newline}"
+      }
+      case body(body) writer."{body.as_c()}{newline}"
+      case asm_(code) writer."<asm>"
     }
 
     writer."
@@ -3011,7 +3029,6 @@ fun write_as_c[W](writer: W, mono: Mono) {
       'int main(int argc, char** argv) {{newline}"
     for global in mono.globals_init_order do
       writer."  global_{global} = _compute_global_{global}();{newline}"
-    | TODO: pass on arguments
     writer.'"
       '  mar_Str args_data[argc];{{newline}}
       '  for (int i = 0; i < argc; i++) {{{newline}}
@@ -3027,10 +3044,10 @@ fun write_as_c[W](writer: W, mono: Mono) {
     writer."  {"main(Slice[Str])".mangle()}(args);{newline}}"
   }
 }
-fun write_as_c[W](writer: W, fun_: MonoFun) {
+fun write_as_c[W](writer: W, body: MonoFunBody) {
   writer."{{newline}"
 
-  for slot in fun_.slots.iter().enumerate() do {
+  for slot in body.slots.iter().enumerate() do {
     var index = slot.index
     var slot = slot.item
     var slot_ref = MonoSlotRef { index }
@@ -3050,14 +3067,14 @@ fun write_as_c[W](writer: W, fun_: MonoFun) {
     writer."{newline}"
   }
 
-  for statement in fun_.body do {
+  for statement in body.statements do {
     switch statement
     case label(label) writer."{label}:{newline}"
     case assign(assign)
       writer."  {assign.to.as_c()} = {assign.value.as_c()};{newline}"
     case set_enum(set) {
       writer."  {set.slot}.variant = 
-        '{fun_.slots.get(set.slot.index).type.mangle()}_dot_{set.variant};
+        '{body.slots.get(set.slot.index).type.mangle()}_dot_{set.variant};
           '{newline}
         '  {set.slot}.as.{set.variant.mangle()} = {set.value.as_c()};
           '{newline}"
@@ -3323,16 +3340,22 @@ fun num_lines_when_printing(layout: MemLayout): U64 {
     var max = 0
     for part in parts do
       max = max(max,
-        switch part case padding 1 case field(field) field.layout.num_lines_when_printing())
+        switch part
+        case padding 1
+        case field(field) field.layout.num_lines_when_printing()
+      )
     max.add(3)
   }
   case enum_(variants) {
     var sum = 0
-    for variant in variants do sum = sum.add(max(1, variant.layout.num_lines_when_printing())).inc()
+    for variant in variants do
+      sum = sum.add(max(1, variant.layout.num_lines_when_printing())).inc()
     sum.add(2)
   }
 }
-fun write(writer: &MemWriter, layout: MemLayout, line: U64, preffered_shade: MemShade) {
+fun write(
+  writer: &MemWriter, layout: MemLayout, line: U64, preffered_shade: MemShade
+) {
   if layout.size.equals(0) then return {}
 
   var shade =
@@ -3361,7 +3384,8 @@ fun write(writer: &MemWriter, layout: MemLayout, line: U64, preffered_shade: Mem
         }
       }
       case field(field) {
-        writer.line(line.add(2)).write(field.name.fit_to_size(field.layout.size))
+        writer.line(line.add(2))
+          .write(field.name.fit_to_size(field.layout.size))
         writer.write(field.layout, line.add(3), shade)
         for line
         in line.add(3).add(field.layout.num_lines_when_printing()).to(last_line)
@@ -3372,14 +3396,17 @@ fun write(writer: &MemWriter, layout: MemLayout, line: U64, preffered_shade: Mem
       }
   }
   case enum_(variants) {
-    writer.line(line.inc())."{format(layout.type).fit_to_size(layout.size.dec())}│"
+    writer.line(line.inc())
+      ."{format(layout.type).fit_to_size(layout.size.dec())}│"
     var start_line = line
     var line = line.add(2)
     for variant in variants.iter().enumerate() do {
       var is_last = variant.index.equals(variants.len.dec())
       var variant = variant.item
       var padding = layout.size.subtract(variant.layout.size).dec()
-      writer.line(line)."{variant.name.fit_to_size(layout.size.dec(), "─")}{if is_last then "┘" else "┤"}"
+      writer.line(line)
+        ."{variant.name.fit_to_size(layout.size.dec(), "─")}
+         '{if is_last then "┘" else "┤"}"
       writer.write(variant.layout, line.inc(), shade)
       writer.line(line.inc()).write_n(padding, "{MemShade.padding}")
       writer.line(line.inc())."{if is_last then " " else "│"}"
@@ -3457,8 +3484,8 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   var mono = monomorphize(ast)
     orelse(error) { print_on_same_line(error) return false }
   print_on_same_line("Calculating memory layout")
-  println(type("Foo").mem_layout(mono.type_defs))
-  return true
+  | println(type("Foo").mem_layout(mono.type_defs))
+  | return true
   if command is mono then { println(mono) return true }
 
   print_on_same_line("Compiling {file_path} to C")
