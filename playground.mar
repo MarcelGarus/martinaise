@@ -7,9 +7,160 @@ struct Foo {
   blub: Map[Str, U64],
 }
 
+struct CompileFun {
+  foo: Foo,
+  context: &Context,
+  ast: Ast,
+  mono: &Mono,
+  fun_: &MonoFun,
+  type_env: Map[Str, Type], | maps fun type args to concrete types
+  next_label: U64,
+  vars: Vars[MonoSlotRef],
+  return_type: TypeSink,
+  | When lowering loops, breaks and continues don't know where to jump yet.
+  | Instead, they fill these structures with jump addresses that need to be
+  | adjusted later.
+  break_scopes: Stack[BreakScope],
+  continue_scopes: Stack[ContinueScope],
+}
+struct Context {} | omitted
+struct Ast { defs: Vec[AstDef] }
+struct AstDef {} | omitted
+struct Mono {} | omitted
+struct MonoFun {} | omitted
+struct Type { name: Str, args: Vec[Type] }
+struct Vars[T] { visible: Vec[VarInScope[T]] }
+struct VarInScope[T] { name: Str, data: T }
+struct MonoSlotRef { index: U64 }
+struct TypeSink { current: Maybe[Type] }
+struct BreakScope {
+  result: MonoSlotRef,
+  type: Maybe[Type],
+  breaks: Vec[U64],
+}
+struct ContinueScope { continues: Vec[U64] }
+
+| Assembly  
+| In the end, all Martinaise code is lowered to x86_64 NASM-style assembly. A
+| big downside of this is that Martinaise is not portable. An upside is that you
+| can easily switch back and forth between Martinaise and assembly. Using the
+| asm keyword, you can implement functions in assembly language.
+|
+| Memory Layout  
+| The memory layout depends on the type:
+|
+| - Builtin types (U8, U16, U32, U64, I8, I16, I32, I64) are always aligned to a
+|   multiple of their size.
+|
+|  - Struct types have an alignment equal to the biggest alignment of their
+|   fields. All fields with a size that is a multiple of this alignment are
+|   moved to the front. All other fields are ordered in a way to minimize the
+|   overall size. You should not depend on the order of these other fields.
+| 
+|   Example:
+|
+|  - Enum types contain the payload followed by a single byte indicating which
+|   variant is active. The size reserved for the payload is the biggest size of
+|   all the possible variant payloads.
+|
+| Calling Convention  
+| Martinaise has its own calling convention. It is often less efficient than the
+| cdecl and RISC-V calling conventions, but way simpler.
+|
+| - Arguments  
+|   All arguments are passed on the stack. When a function starts executing, the
+|   last value on the stack is the callee (the call instruction automatically
+|   pushes it onto the stack). Below that are the arguments, layouted as if they
+|   were in an anonymous struct that is 8-byte aligned.
+|
+|   Example: foo(a: U16, b: U32, c: U32, d: U8) is called. When layouting a
+|   struct containing a, b, c, and d its layout would look like this:
+|
+|   bbbbccccaad
+|
+|   This value is padded to a multiple of 8 bytes, so at the beginning of the
+|   function execution, the stack looks like this:
+|
+|   [callee]bbbbccccaad.....[other stuff on the stack]
+|   ▏       ▏       ▏       ▏
+|   rsp    +8      +16     +24
+|
+|   More notes about this:
+|   - 1 character in this visualization represents one byte.
+|   - The stack grows down to lower addresses, so the relevant parts are at the
+|     lower addresses.
+|   - The arguments all fulfill their alignment requirements.
+|   - The arguments can be accessed like this:
+|     - a: [rsp + 16]
+|     - b: [rsp + 8]
+|     - c: [rsp + 12]
+|     - d: [rsp + 18]
+|   - You can rely on the fact that all arguments with a size that is a multiple
+|     of the highest alignment (4) are at the beginning in the order they were
+|     declared (in this example, b and c). You should NOT depend on the order of
+|     the other fields. This restrictions effectively prohibits you from
+|     manually implementing asm functions that take multiple arguments with a
+|     size that is not a multiple of the biggest alignment (such as this foo).
+|     Instead, consider writing asm functions with arguments that are explicitly
+|     of the same length and wrapping them with nicer-typed functions when
+|     necessary.
+|
+| - Return value  
+|   The rax register contains a pointer to a memory region where the return
+|   value of the function should be stored. Typically, this region is somewhere
+|   on the stack, probably owned by the parent function.
+|
+| - Registers  
+|   Calling a function doesn't change any register contents. If a function needs
+|   registers for some internal operations, it can push them to the stack before
+|   using them and restore them before returning.
+
+
+| opaque U8 = 1 byte, 1 aligned
+| opaque U16 = 2 byte, 2 aligned
+
+
+fun asm_exit(status: U8): Never asm {
+  ;        0   4   8   12
+  ; stack: [callee][st]
+  mov rax, 60        ; exit syscall number
+  mov rdi, [rsp + 8] ; status TODO: is this correct? status is only a U8
+  syscall
+  ; The syscall should never return, but for safety, we loop forever.
+  .halt: jmp .halt
+}
+
+fun asm_write(file: File, buffer: Slice[U8]) asm {
+  ;        0   4   8   12  20  24  32  40  48  56
+  ; stack: [callee][return][fd][buffer        ]
+  ;                            [data  ][len   ]
+  mov rax, 1          ; write syscall number
+  mov rdi, [rsp + 8]  ; file descriptor
+  mov rsi, [rsp + 12] ; buffer pointer
+  mov rdx, [rsp + 20] ; buffer len
+  syscall
+}
+
+fun asm_add(a: U64, b: U64): U64 asm {
+  ;        0   4   8   12  20  24  32  40  48
+  ; stack: [callee][return][a     ][b     ]
+  mov rbx, [rsp + 20]
+  add rbx, [rsp + 32]
+  mov [rax], rbx
+  ret
+}
+
+fun mar_add(a: U64, b: U64): U64 { asm_add(a, b) }
+
 fun main(): Never {
-  var size = size_of_type[Foo]()
-  false orelse println("Hi")
-  some(3) orelse(err) panic("bad")
-  exit(0:U8)
+  | libc_write(2, #H.&.to_address(), 1)
+  | libc_write(2, #e.&.to_address(), 1)
+  | libc_write(2, #l.&.to_address(), 1)
+  | libc_write(2, #l.&.to_address(), 1)
+  | libc_write(2, #o.&.to_address(), 1)
+  | libc_write(2, #!.&.to_address(), 1)
+  | libc_write(2, newline.&.to_address(), 1)
+  | TODO: println("Hello, world!")
+  var foo = mar_add(7, 35)
+  asm_exit(0:U8)
 }
