@@ -284,6 +284,11 @@ fun write[W](writer: W, int: U8) { writer.write(radix(int, 10)) }
 fun write[W](writer: W, int: U16) { writer.write(radix(int, 10)) }
 fun write[W](writer: W, int: U32) { writer.write(radix(int, 10)) }
 fun write[W](writer: W, int: U64) { writer.write(radix(int, 10)) }
+fun write[W](writer: W, int: I64) {
+  if int.is_less_than(0:I64)
+  then writer."-{0:I64.subtract(int).to_U64()}"
+  else writer."+{radix(int.to_U64(), 10)}"
+}
 fun radix(int: U64, radix: U64): RadixFormat { RadixFormat { radix, int } }
 fun radix(int: U8, radix: U64): RadixFormat { radix(int.to_U64(), radix) }
 fun radix(int: U16, radix: U64): RadixFormat { radix(int.to_U64(), radix) }
