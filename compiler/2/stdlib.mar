@@ -707,13 +707,13 @@ fun without_first(str: Str, amount: U64): Str {
 }
 fun without_last(str: Str, amount: U64): Str {
   assert(amount.is_at_most(str.len()), "without_last amount too big")
-  str.substr(0, slice.len().subtract(amount))
+  str.substr(0, str.len().subtract(amount))
 }
 fun starts_with(str: Str, prefix: Str): Bool {
   str.chars.starts_with(prefix.chars)
 }
 fun ends_with(str: Str, suffix: Str): Bool {
-  str.chars.ends_with(prefix.chars)
+  str.chars.ends_with(suffix.chars)
 }
 fun trim_prefix(str: &Str, prefix: Str) {
   assert(str.starts_with(prefix), "trim_prefix doesn't match prefix")
