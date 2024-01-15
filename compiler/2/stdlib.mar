@@ -112,7 +112,7 @@ fun is_not_empty[T](container: T): Bool { not(container.is_empty()) }
 | existing. Please don't remove it. And pretty please don't reassign the global
 | true and false variables.
 
-enum Bool { true, false }
+enum Bool { false, true }
 
 var true = Bool.true
 var false = Bool.false
