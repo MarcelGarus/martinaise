@@ -1067,8 +1067,11 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
     else if parser.consume_prefix('"asm {"') then {
       var start = parser.cursor
       loop if parser.current().equals(#}) then break else parser.advance()
+      var asm_code = parser.code.substr(start, parser.cursor)
+      asm_code.&.trim_prefix("{newline}")
+      asm_code.&.trim_suffix("{newline}")
       parser.advance() | consume closing brace
-      AstFunKind.asm_(parser.code.substr(start, parser.cursor))
+      AstFunKind.asm_(asm_code)
     }
     else if parser.parse_body()? is some(body) then AstFunKind.body(body)
     else return bad_input[AstFun]("Expected a function body.")
@@ -1266,10 +1269,11 @@ struct Mono {
 }
 
 enum MonoTypeDef {
-  builtin_type,
+  opaque: MonoOpaqueType,
   struct_: MonoStruct,
   enum_: MonoEnum,
 }
+struct MonoOpaqueType { size: U64, alignment: U64 }
 struct MonoStruct { fields: Vec[MonoStructField] }
 struct MonoStructField { name: Str, type: Type }
 struct MonoEnum { variants: Vec[MonoEnumVariant] }
@@ -1325,6 +1329,9 @@ enum MonoExprKind {
 }
 struct MonoMember { of: &MonoExpr, name: Str }
 
+fun hash(hasher: &Hasher, slot: MonoSlotRef) { hasher.hash(slot.index) }
+fun equals(a: MonoSlotRef, b: MonoSlotRef): Bool { a.index.equals(b.index) }
+
 fun write[W](writer: W, mono: Mono) {
   writer."Types:{newline}"
   | TODO: add keys and value iters to stdlib
@@ -1374,7 +1381,7 @@ fun write[W](writer: W, statement: MonoStatement) {
   case return_(returned) writer."return {returned}"
   case ref(expr) writer."{expr.to} = {expr.of}.&"
 }
-fun write[W](writer: W, label: MonoLabel) { writer."label_{label.id}" }
+fun write[W](writer: W, label: MonoLabel) { writer.".l_{label.id}" }
 fun write[W](writer: W, slot: MonoSlotRef) { writer."_{slot.index}" }
 fun write[W](writer: W, expr: MonoExpr) {
   switch expr.kind
@@ -1669,6 +1676,12 @@ fun finish(solver: TypeSolver): Result[Map[Str, Type], Str] {
 | function is encountered recursively, only its signature is needed to figure
 | out how to use it.
 
+fun to_type_def(config: IntConfig): MonoTypeDef {
+  MonoTypeDef.opaque(MonoOpaqueType {
+    size = config.bits.divide(8), alignment = config.bits.divide(8)
+  })
+}
+
 fun monomorphize(ast: Ast): Result[Mono, Str] {
   var context = context()
   var mono = Mono {
@@ -1680,7 +1693,7 @@ fun monomorphize(ast: Ast): Result[Mono, Str] {
   type("Never").monomorphize(map[Str, Type](), ast, mono.&)
   type("Nothing").monomorphize(map[Str, Type](), ast, mono.&)
   for config in all_int_configs do
-    mono.type_defs.&.put(config.to_type(), MonoTypeDef.builtin_type)
+    mono.type_defs.&.put(config.to_type(), config.to_type_def())
 
   var main =
     switch ast.lookup_fun("main",
@@ -1859,10 +1872,13 @@ fun monomorphize(
 
   if mono.type_defs.contains(type) then return ok[Type, Str](type)
   | TODO: explain
-  mono.type_defs.&.put(type, MonoTypeDef.builtin_type)
+  mono.type_defs.&.put(type,
+    MonoTypeDef.opaque(MonoOpaqueType { size = 0, alignment = 0 }))
 
   switch ast.lookup_type(type.name)?
-  case builtin_type mono.type_defs.&.put(type, MonoTypeDef.builtin_type)
+  case builtin_type unreachable()
+  case var_ unreachable()
+  case fun_ unreachable()
   case struct_(struct_) {
     var inner_type_env = map[Str, Type]()
     type.args.len.equals(struct_.type_args.len) orelse return error[Type, Str](
@@ -1897,8 +1913,6 @@ fun monomorphize(
 
     mono.type_defs.&.put(type, MonoTypeDef.enum_(MonoEnum { variants }))
   }
-  case var_ unreachable()
-  case fun_ unreachable()
 
   ok[Type, Str](type)
 }
@@ -2307,8 +2321,7 @@ fun compile_in_current_scope(
     case member(member) {
       var of = self.compile(member.of.*)?
       | expr.& references the of
-      if member.name.equals("&")
-      then {
+      if member.name.equals("&") then {
         var ref_type = type("&", vec(of.type))
           .monomorphize(self.type_env, self.ast, self.mono)?
         var slot = self.add_slot(ref_type)
@@ -2334,7 +2347,7 @@ fun compile_in_current_scope(
           "You tried to access a field on {of.type}, but it's not a struct.
           '{newline}{
             switch self.mono.type_defs.get(of.type)
-            case builtin_type "builtin"
+            case opaque "opaque"
             case struct_ "struct"
             case enum_ "enum"
           }")
@@ -2714,6 +2727,308 @@ fun compile_call(
   }
 }
 
+| Assembly Backend  
+
+fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, U64] {
+  var offsets = map[Str, U64]()
+  var offset = 0
+  for part in parts do
+    offset = offset.add(
+      switch part
+      case padding(padding) padding
+      case field(field) {
+        offsets.&.put(field.name, offset)
+        field.layout.size
+      }
+    )
+  offsets
+}
+
+fun write_as_asm[W](writer: W, mono: Mono) {
+  var layouts = mono.type_defs.mem_layout()
+  var arg_layouts = map[Str, MemLayout]() | maps fun signature to arg struct mem layout
+
+  for fun_ in mono.funs do {
+    var name = fun_.key
+    var arg_struct = MonoStruct { fields = vec[MonoStructField]() }
+    for arg in fun_.value.arg_types.iter().enumerate() do
+      arg_struct.fields.&.push(MonoStructField {
+        name = "arg_{arg.index}", type = arg.item,
+      })
+    arg_layouts.&.put(name, calculate_mem_layout(
+      type("arguments of {name}"), MonoTypeDef.struct_(arg_struct),
+      layouts.&, mono.type_defs,
+    ))
+
+    | writer."; Arg layout of {name}:{newline}{arg_layouts.get(name)}{newline}"
+  }
+
+
+  writer."; This file is a compiled Martinaise file.{newline}{newline}"
+
+  | TODO: Globals
+  | for global in mono.globals do {
+  |   var name = global.key
+  |   var type = global.value.return_type
+  |   writer."{type.mangle()} global_{name};{newline}"
+  | }
+  | for global in mono.globals do {
+  |   var name = global.key
+  |   var value = global.value
+  |   var body = if value.kind is body(body) then body else unreachable()
+  |   writer."{value.return_type.mangle()} _compute_global_{name}() 
+  |     '{body.as_c()}{newline}"
+  | }
+
+  | var rodata = vec[]()
+
+  writer."
+    '_memcpy:{newline}
+    '  ; DOES NOT FOLLOW THE MARTINAISE CALLING CONVENTION!{newline}
+    '  ; CORRPUTS ARGUMENTS!{newline}
+    '  ; - rdi = destination{newline}
+    '  ; - rsi = source{newline}
+    '  ; - r8 = amount{newline}
+    '  .loop cmp r8{newline}
+    '        jz  .end{newline}
+    '        mov [rdi] [rsi]{newline}
+    '        add rdi, 1{newline}
+    '        add rsi, 1{newline}
+    '  .end  ret{newline}{newline}"
+
+  for fun_ in mono.funs do {
+    var signature = fun_.key
+    var fun_ = fun_.value
+
+    writer.
+      "; {signature}{newline}
+      '{signature.mangle()}:{newline}"
+
+    switch fun_.kind
+    case asm_(code) writer."{code}{newline}"
+    case builtin {
+      if signature.starts_with("to_address")
+      then writer."
+        '  mar_U64 address;{newline}
+        '  address.value = (uint64_t) arg0.pointer;{newline}
+        '  return address;{newline}"
+      else if signature.starts_with("to_reference")
+      then writer."
+        '  {fun_.return_type.mangle()} ref;{newline}
+        '  ref.pointer = ({fun_.type_args.get(0).mangle()}*) arg0.value;
+          '{newline}
+        '  return ref;{newline}"
+      else if signature.starts_with("size_of_type")
+      then writer."
+        '  mar_U64 size;{newline}
+        '  size.value = (uint64_t) sizeof({
+          fun_.type_args.get(0).mangle()});
+        '  return size;{newline}"
+      else panic("Unknown builtin fun {signature}")
+    }
+    case body(body) {
+      var labels = vec[Str]().&
+
+      | The callee already packed the arguments on the stack.
+      | TODO: describe more about how this works
+      writer.
+        "{indent(labels)}push rbp{newline}
+        '{indent(labels)}mov rbp, rsp ; save pointer to this fun's stack frame start{newline}"
+
+      var arg_offsets =
+        if arg_layouts.get(signature).kind is struct_(fields)
+        then fields.name_to_offset_map()
+        else unreachable()
+
+      | Layout locals
+      var locals_struct = MonoStruct { fields = vec[MonoStructField]() }
+      for slot in body.slots.iter().enumerate() do {
+        if slot.item.initial_value is arg then continue | already on the stack
+        locals_struct.fields.&.push(MonoStructField {
+          name = "local_{slot.index}", type = slot.item.type,
+        })
+      }
+      var locals_layout = calculate_mem_layout(
+        type("locals of {signature}"), MonoTypeDef.struct_(locals_struct),
+        layouts.&, mono.type_defs,
+      )
+      var locals_offsets =
+        if locals_layout.kind is struct_(fields)
+        then fields.name_to_offset_map()
+        else unreachable()
+      var locals_size = locals_layout.size.round_up_to_multiple_of(8)
+
+      | Combine all slots – args and locals
+      var slot_offsets = map[MonoSlotRef, I64]() | relative to rbp
+      for slot in body.slots.iter().enumerate() do {
+        var offset =
+          if slot.item.initial_value is arg
+          then arg_offsets.get("arg_{slot.index}").add(16).to_I64() | callee's ip and rbp
+          else 0:I64.subtract(locals_size.to_I64())
+            .add(locals_offsets.get("local_{slot.index}").to_I64())
+        slot_offsets.&.put(MonoSlotRef { index = slot.index }, offset)
+      }
+
+      | Print the layout
+      writer.
+        "{indent(labels)}; rbp: callee's rbp{newline}
+        '{indent(labels)}; +8: callee's ip{newline}"
+      for slot in body.slots.iter().enumerate() do {
+        var slot_ref = MonoSlotRef { index = slot.index }
+        writer.
+          "{indent(labels)}; {slot_offsets.get(slot_ref)}: 
+          '{slot_ref}: {slot.item.type} = {
+            switch slot.item.initial_value
+            case uninitialized "uninitialized"
+            case arg(i) "arg_{i}"
+            case int(int) "{int}"
+            case str(str) '""{{str}}""'
+          }{newline}"
+      }
+      eprintln(slot_offsets)
+
+      writer."{indent(labels)}add rsp, {locals_size}{newline}"
+      | for slot in slot_offsets do {
+      |   var offset = slot.value
+      |   var slot = slot.key
+      |   switch body.slots.get(slot.index).initial_value
+      |   case uninitialized {}
+      |   case arg {}
+      |   case int(int) writer."  mov [rbp + {offset}], {int}{newline}"
+      |   case str(str) {
+      |     writer.
+      |       "  mov rsp, rodata_constant ; TODO{newline}
+      |       '  mov [rsp + 8] {str.len()}{newline}"
+      |     | writer.'" {{slot_ref}}.{{mangle("chars")}}.{{mangle("data")}}.pointer = 
+      |     |   '({{mangle(type("Char"))}}*) ""'
+      |     | for char in str do writer."\x{char.byte.radix(16)}"
+      |     | writer.'""; 
+      |     |   '{{slot_ref}}.{{mangle("chars")}}.{{mangle("len")}}.value = 
+      |     |     '{{str.len()}};"'
+      |   }
+      | }
+
+      labels.push(".body")
+      for statement in body.statements do {
+        if statement is label then {} else writer."{indent(labels)}; {statement}{newline}"
+        
+        switch statement
+        case label(label) labels.push("{label}")
+        case assign(assign) {
+          writer.save_address(assign.to, "rdi", slot_offsets)
+          writer.save_address(assign.value, "rsi", slot_offsets)
+          var size = layouts.get(assign.value.type).size
+          for i in 0.to(size) do
+            writer."{indent(labels)}mov [rdi + {i}] [rsi + {i}]{newline}"
+        }
+        case set_enum(set) {
+          var variant = 0
+          if mono.type_defs.get(body.slots.get(set.slot.index).type) is enum_(enum_) then {
+            for v in enum_.variants.iter().enumerate() do
+            if v.item.name.equals(set.variant) then variant = v.index
+          } else panic("is not an enum")
+
+          var to_offset = slot_offsets.get(set.slot)
+          var payload_size = layouts.get(set.value.type).size
+          var variant_tag_offset = to_offset.add(payload_size.to_I64())
+
+          writer."{indent(labels)}mov [rbp {variant_tag_offset}] {variant}{newline}"
+          writer.save_address(set.value, "rsi", slot_offsets)
+          for i in 0.to(payload_size) do
+            writer."{indent(labels)}mov [rbp + {to_offset.add(i.to_I64())}] [rsi + {i}]{newline}"
+        }
+        case call(call) {
+          writer."{indent(labels)}{call.to} = {call.fun_.mangle()}("
+          var first = true
+          for arg in call.args do {
+            if first then first = false else writer.", "
+            writer."{arg.as_c()}"
+          }
+          writer.");{newline}"
+        }
+        case jump(jump) writer."{indent(labels)}jmp {jump.target}{newline}"
+        case jump_if_variant(jump) {
+          writer."{indent(labels)};if ({jump.condition.as_c()}.variant 
+              '== {jump.condition.type.mangle()}_dot_{jump.variant}) 
+            'goto {jump.target};{newline}"
+          writer.
+            "{indent(labels)}cmp {jump.condition.as_c()}{newline}
+            '{indent(labels)}jz  {jump.target}{newline}"
+        }
+        case get_enum_value(get)
+          writer."{indent(labels)}{get.to} = {get.of.as_c()}.as.{get.variant.mangle()};{newline}"
+        case return_(expr)
+          writer.
+            "{indent(labels)}; return {expr.as_c()};{newline}
+            '{indent(labels)}jmp .end{newline}"
+        case ref(ref)
+          writer.write("{indent(labels)}{ref.to}.pointer = &{ref.of.as_c()};{newline}")
+      }
+      labels.push(".end")
+      writer.
+        "{indent(labels)}mov rsp, rbp{newline}
+        '{indent(labels)}pop rbp{newline}"
+    }
+    writer."{newline}"
+  }
+
+  writer."
+    '_start:{newline}
+    '  ; TODO: set up function{newline}"
+  for global in mono.globals_init_order do
+    writer."  global_{global} = _compute_global_{global}();{newline}"
+  writer.'"
+    '  mar_Str args_data[argc];{{newline}}
+    '  for (int i = 0; i < argc; i++) {{{newline}}
+    '    args_data[i].mar_chars.mar_data.pointer = (mar_Char*) argv[i];{{newline}}
+    '    int len = 0;{{newline}}
+    '    while (argv[i][len] != '\0') len++;{{newline}}
+    '    args_data[i].mar_chars.mar_len.value = len;{{newline}}
+    '  }{{newline}}
+    '  mar_Slice_of_Str_end_ args;{{newline}}
+    '  args.mar_data.pointer = args_data;{{newline}}
+    '  args.mar_len.value = argc;{{newline}}
+    '"'
+  writer."  {"main(Slice[Str])".mangle()}(args);{newline}}"
+}
+
+fun indent(labels: &Vec[Str]): LabeledIndent {
+  LabeledIndent { labels }
+}
+struct LabeledIndent { labels: &Vec[Str] }
+fun write[W](writer: W, self: LabeledIndent) {
+  if self.labels.is_empty()
+  then writer."        "
+  else if self.labels.len.equals(1)
+    then writer."  {self.labels.get(0).pad_right(5, # )} "
+    else {
+      writer." "
+      for label in self.labels do
+        writer." {label}:"
+      writer."{newline}        "
+    }
+  self.labels.len = 0
+}
+
+| Saves the address of the expr in the register.
+fun save_address[W](
+  writer: W, expr: MonoExpr, register: Str,
+  slots: Map[MonoSlotRef, I64],
+) {
+  switch expr.kind
+  case nothing {} | you can read zero bytes from anywhere
+  case never {} | you can read zero bytes from anywhere
+  case global(name) writer."        mov {register} <global address>" | TODO
+  case slot(slot) writer."
+    '        mov {register} [rbp {slots.get(slot)}]{newline}"
+  case member(member) {
+    writer.save_address(member.of.*, register, slots)
+    if member.name.equals("*")
+    then writer."        mov {register} [{register}]{newline}"
+    else writer."        add {register} <offset of {member.name} in {member.of.type}>{newline}"
+  }
+}
+
 | C Backend  
 | Martinaise lowers the code to (unreadable) C code.
 | TODO: why C?
@@ -2721,7 +3036,7 @@ fun compile_call(
 
 fun mangle(name: Str): Str {
   var mangled = string_builder().&
-  mangled.write("mar_")
+  | mangled.write("mar_")
   for c in name do {
     if c.equals(#_) then { mangled.write("__") continue }
     if c.equals(#[) then { mangled.write("_of_") continue }
@@ -3154,31 +3469,54 @@ enum MemLayoutStructPart { padding: U64, field: MemLayoutField }
 struct MemLayoutField { name: Str, layout: MemLayout }
 struct MemLayoutVariant { name: Str, layout: MemLayout }
 
-fun mem_layout(type: Type, type_defs: Map[Type, MonoTypeDef]): MemLayout {
+fun mem_layout(type_defs: Map[Type, MonoTypeDef]): Map[Type, MemLayout] {
+  var layouts = map[Type, MemLayout]()
+  for def in type_defs do def.key.mem_layout(layouts.&, type_defs)
+  layouts
+}
+fun mem_layout(
+  type: Type, layouts: &Map[Type, MemLayout], type_defs: Map[Type, MonoTypeDef]
+): MemLayout {
+  if layouts.get_maybe(type) is some(layout) then return layout else {
+    var layout = type.calculate_mem_layout(layouts, type_defs)
+    layouts.put(type, layout)
+    layout
+  }
+}
+fun calculate_mem_layout(
+  type: Type, layouts: &Map[Type, MemLayout], type_defs: Map[Type, MonoTypeDef]
+): MemLayout {
   if type.name.equals("&")
   then return MemLayout { type, size = 8, alignment = 8, kind = MemLayoutKind.opaque }
+  calculate_mem_layout(type, type_defs.get(type), layouts, type_defs)
+}
+| We sometimes want to mem-layout anonymous structs, for example when arranging
+| the arguments of a function. Those anonymous types don't have corresponding
+| entries in the type-defs map, so this function directly accepts a type def
+| directly.
+fun calculate_mem_layout(
+  type: Type, def: MonoTypeDef,
+  layouts: &Map[Type, MemLayout], type_defs: Map[Type, MonoTypeDef]
+): MemLayout {
+  print_on_same_line("Memory layouting {type}")
 
-  switch type_defs.get(type)
-  case builtin_type {
-    for config in all_int_configs do
-      if type.equals(config.to_type())
-      then return MemLayout {
-        type,
-        size = config.bits.divide(8),
-        alignment = config.bits.divide(8),
-        kind = MemLayoutKind.opaque,
-      }
-    panic("unknown builtin type {type.name}")
+  switch def
+  case opaque(info) MemLayout {
+    type,
+    size = info.size,
+    alignment = info.alignment,
+    kind = MemLayoutKind.opaque,
   }
   case struct_(struct_) {
     | First, layout all the fields and determine this struct's alignment.
     var fields = vec[MemLayoutField]()
     var alignment = 1
     for field in struct_.fields do {
-      var layout = field.type.mem_layout(type_defs)
+      var layout = field.type.mem_layout(layouts, type_defs)
       alignment = max(alignment, layout.alignment)
       fields.&.push(MemLayoutField { name = field.name, layout })
     }
+    print_on_same_line("Memory layouting {type}")
 
     | Fields with a size that is a multiple of the alignment can all be put to
     | the beginning.
@@ -3231,7 +3569,7 @@ fun mem_layout(type: Type, type_defs: Map[Type, MonoTypeDef]): MemLayout {
     var alignment = 1
     var size = 0
     for variant in enum_.variants do {
-      var layout = variant.type.mem_layout(type_defs)
+      var layout = variant.type.mem_layout(layouts, type_defs)
       alignment = max(alignment, layout.alignment)
       size = max(size, layout.size)
       variants.&.push(MemLayoutVariant { name = variant.name, layout })
@@ -3244,6 +3582,9 @@ fun mem_layout(type: Type, type_defs: Map[Type, MonoTypeDef]): MemLayout {
 fun needed_for_multiple_of(number: U64, factor: U64): U64 {
   if number.modulo(factor).equals(0) then return 0
   factor.subtract(number.modulo(factor))
+}
+fun round_up_to_multiple_of(number: U64, factor: U64): U64 {
+  number.add(7).divide(8).multiply(8)
 }
 
 fun permutations(size: U64): Iter[Slice[U64], Permutations] {
@@ -3442,12 +3783,12 @@ fun write_n[W](writer: W, n: U64, str: Str) {
 | The command line interface which you use to interact with the Martinaise
 | compiler.
 
-enum Command { help, ast, mono, c, compile, run, watch }
+enum Command { help, ast, mono, asm, compile, run, watch }
 fun parse_command(command: Str): Maybe[Command] {
   if command.equals("help") then return some(Command.help)
   if command.equals("ast") then return some(Command.ast)
   if command.equals("mono") then return some(Command.mono)
-  if command.equals("c") then return some(Command.c)
+  if command.equals("asm") then return some(Command.asm)
   if command.equals("compile") then return some(Command.compile)
   if command.equals("run") then return some(Command.run)
   if command.equals("watch") then return some(Command.watch)
@@ -3461,7 +3802,7 @@ fun print_usage_info(out: File) {
     '  help     prints this help{newline}
     '  ast      shows the abstract syntax tree{newline}
     '  mono     shows the monomorphized code{newline}
-    '  c        compiles to C{newline}
+    '  asm      compiles to assembly{newline}
     '  compile  compiles to an executable{newline}
     '  run      compiles and runs{newline}
     '  watch    watches, compiles, and runs{newline}"
@@ -3488,18 +3829,22 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   | return true
   if command is mono then { println(mono) return true }
 
-  print_on_same_line("Compiling {file_path} to C")
-  var c = "{mono.as_c()}"
-  print_on_same_line("Compiled {file_path} to C. Enjoy!")
-  if command is c then {
+  print_on_same_line("Compiling {file_path} to assembly")
+  var asm = {
+    var code = string_builder().&
+    code.write_as_asm(mono)
+    code.to_str()
+  }
+  print_on_same_line("Compiled {file_path} to assembly. Enjoy!")
+  if command is asm then {
     var buffered = stdout.buffered_writer(1024).&
-    buffered.writeln(c)
+    buffered.writeln(asm)
     buffered.flush()
     return true
   }
 
   todo()
-  write_file("output.c", c.bytes())
+  write_file("output.s", asm.bytes())
   if command is compile then {
     return true
   }
