@@ -531,25 +531,22 @@ fun without_last[T](slice: Slice[T], amount: U64): Slice[T] {
   slice.subslice(0, slice.len.subtract(amount))
 }
 fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
-  if prefix.len.is_greater_than(slice.len) then return false
-  for i in 0.to(prefix.len) do
-    if not(slice.get(i).equals(prefix.get(i))) then return false
-  true
+  slice.len.is_at_least(prefix.len) orelse return false
+  slice.first(prefix.len).equals(prefix)
 }
 fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
-  if suffix.len.is_greater_than(slice.len) then return false
-  for i in 0.to(suffix.len) do
-    slice.get(slice.len.subtract(suffix.len).add(i)).equals(suffix.get(i))
-      orelse return false
-  true
+  slice.len.is_at_least(suffix.len) orelse return false
+  slice.last(suffix.len).equals(suffix)
 }
-fun trim_prefix[T](slice: &Slice[T], prefix: Slice[T]) {
-  assert(slice.starts_with(prefix), "trim_prefix doesn't match prefix")
-  slice.* = slice.without_first(prefix.len)
+fun trim_prefix[T](slice: &Slice[T], prefix: Slice[T]): Bool {
+  var matches = slice.starts_with(prefix)
+  if matches then slice.* = slice.without_first(prefix.len)
+  matches
 }
-fun trim_suffix[T](slice: &Slice[T], suffix: Slice[T]) {
-  assert(slice.ends_with(suffix), "trim_suffix doesn't match suffix")
-  slice.* = slice.without_last(suffix.len)
+fun trim_suffix[T](slice: &Slice[T], suffix: Slice[T]): Bool {
+  var matches = slice.ends_with(suffix)
+  if matches then slice.* = slice.without_last(suffix.len)
+  matches
 }
 
 fun sort[T](slice: &Slice[T]) {
