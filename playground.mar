@@ -116,8 +116,8 @@ struct ContinueScope { continues: Vec[U64] }
 |   using them and restore them before returning.
 
 
-| opaque U8 = 1 byte, 1 aligned
-| opaque U16 = 2 byte, 2 aligned
+| opaque U8 = 1 byte big, 1 byte aligned
+| opaque U16 = 2 bytes big, 2 bytes aligned
 
 
 fun asm_exit(status: U8): Never asm {
@@ -131,9 +131,10 @@ fun asm_exit(status: U8): Never asm {
 }
 
 fun asm_write(file: File, buffer: Slice[U8]) asm {
-  ;        0   4   8   12  20  24  32  40  48  56
-  ; stack: [callee][return][fd][buffer        ]
-  ;                            [data  ][len   ]
+  ; TODO: args are not layouted like this
+  ;        0   4   8   12  16  20  24  32
+  ; stack: [callee][fd][buffer        ]
+  ;                    [data  ][len   ]
   mov rax, 1          ; write syscall number
   mov rdi, [rsp + 8]  ; file descriptor
   mov rsi, [rsp + 12] ; buffer pointer
@@ -142,10 +143,10 @@ fun asm_write(file: File, buffer: Slice[U8]) asm {
 }
 
 fun asm_add(a: U64, b: U64): U64 asm {
-  ;        0   4   8   12  20  24  32  40  48
-  ; stack: [callee][return][a     ][b     ]
-  mov rbx, [rsp + 20]
-  add rbx, [rsp + 32]
+  ;        0   4   8   12  16  20  24
+  ; stack: [callee][a     ][b     ]
+  mov rbx, [rsp + 8]
+  add rbx, [rsp + 16]
   mov [rax], rbx
   ret
 }
@@ -160,7 +161,10 @@ fun main(): Never {
   | libc_write(2, #o.&.to_address(), 1)
   | libc_write(2, #!.&.to_address(), 1)
   | libc_write(2, newline.&.to_address(), 1)
+  loop {
+    var foo = mar_add(7, 35)
+  }
+  if Bool.true then var foo = 3
   | TODO: println("Hello, world!")
-  var foo = mar_add(7, 35)
   asm_exit(0:U8)
 }
