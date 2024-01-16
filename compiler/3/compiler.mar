@@ -67,8 +67,8 @@ fun write_ansi_escape_sequence[W](writer: W, sequence: Str) {
   writer.write(sequence)
 }
 fun print_on_same_line(message: Str) {
-  stderr.write_ansi_escape_sequence("[1A") | move cursor up one line
-  stderr.write_ansi_escape_sequence("[K")  | erase the current line
+  | stderr.write_ansi_escape_sequence("[1A") | move cursor up one line
+  | stderr.write_ansi_escape_sequence("[K")  | erase the current line
   eprintln(message)
 }
 
@@ -2887,7 +2887,7 @@ fun write_as_asm[W](writer: W, mono: Mono) {
       }
       eprintln(slot_offsets)
 
-      writer."{indent(labels)}add rsp, {locals_size}{newline}"
+      writer."{indent(labels)}sub rsp, {locals_size}{newline}"
       | for slot in slot_offsets do {
       |   var offset = slot.value
       |   var slot = slot.key
@@ -2939,13 +2939,24 @@ fun write_as_asm[W](writer: W, mono: Mono) {
             writer."{indent(labels)}mov [rbp + {to_offset.add(i.to_I64())}] [rsi + {i}]{newline}"
         }
         case call(call) {
-          writer."{indent(labels)}{call.to} = {call.fun_.mangle()}("
-          var first = true
-          for arg in call.args do {
-            if first then first = false else writer.", "
-            writer."{arg.as_c()}"
+          var args_layout = arg_layouts.get(call.fun_)
+          var arg_offsets = {
+            if args_layout.kind is struct_(s) then s else unreachable()
+          }.name_to_offset_map()
+          var args_size = args_layout.size.round_up_to_multiple_of(8)
+          writer."{indent(labels)}sub rsp, {args_size}{newline}"
+          for arg in call.args.iter().enumerate() do {
+            var size = layouts.get(arg.item.type).size
+            var offset_in_args = arg_offsets.get("arg_{arg.index}")
+
+            writer.save_address(arg.item, "rsi", slot_offsets)
+            for i in 0.to(size) do
+              writer."{indent(labels)}mov [rsp + {offset_in_args.add(i)}] [rsi + {i}]{newline}"
           }
-          writer.");{newline}"
+          writer."
+            '{indent(labels)}lea eax, [rdp {slot_offsets.get(call.to)}]{newline}
+            '{indent(labels)}call {call.fun_.mangle()}{newline}"
+          writer."{indent(labels)}add rsp, {args_size}{newline}"
         }
         case jump(jump) writer."{indent(labels)}jmp {jump.target}{newline}"
         case jump_if_variant(jump) {
