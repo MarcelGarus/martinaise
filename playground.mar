@@ -111,9 +111,7 @@ struct ContinueScope { continues: Vec[U64] }
 |   on the stack, probably owned by the parent function.
 |
 | - Registers  
-|   Calling a function doesn't change any register contents. If a function needs
-|   registers for some internal operations, it can push them to the stack before
-|   using them and restore them before returning.
+|   Calling a function may change any register contents.
 
 
 | opaque U8 = 1 byte big, 1 byte aligned
