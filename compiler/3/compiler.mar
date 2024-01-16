@@ -1314,7 +1314,7 @@ struct MonoJump { target: MonoLabel }
 struct MonoJumpIfVariant {
   condition: MonoExpr,
   variant: Str,
-  target: MonoLabel
+  target: MonoLabel,
 }
 struct MonoGetEnumValue { to: MonoSlotRef, of: MonoExpr, variant: Str }
 struct MonoRef { to: MonoSlotRef, of: MonoExpr }
@@ -2922,10 +2922,11 @@ fun write_as_asm[W](writer: W, mono: Mono) {
             writer."{indent(labels)}mov [rdi + {i}] [rsi + {i}]{newline}"
         }
         case set_enum(set) {
+          var type = body.slots.get(set.slot.index).type
           var variant = 0
-          if mono.type_defs.get(body.slots.get(set.slot.index).type) is enum_(enum_) then {
+          if mono.type_defs.get(type) is enum_(enum_) then {
             for v in enum_.variants.iter().enumerate() do
-            if v.item.name.equals(set.variant) then variant = v.index
+              if v.item.name.equals(set.variant) then variant = v.index
           } else panic("is not an enum")
 
           var to_offset = slot_offsets.get(set.slot)
@@ -2948,15 +2949,30 @@ fun write_as_asm[W](writer: W, mono: Mono) {
         }
         case jump(jump) writer."{indent(labels)}jmp {jump.target}{newline}"
         case jump_if_variant(jump) {
-          writer."{indent(labels)};if ({jump.condition.as_c()}.variant 
-              '== {jump.condition.type.mangle()}_dot_{jump.variant}) 
-            'goto {jump.target};{newline}"
+          var type = jump.condition.type
+          var variant_tag_offset = layouts.get(type).size.subtract(1)
+          var checked_tag = 0
+          if mono.type_defs.get(type) is enum_(enum_) then {
+            for v in enum_.variants.iter().enumerate() do
+              if v.item.name.equals(jump.variant) then checked_tag = v.index
+          } else panic("is not an enum")
+
+          writer.save_address(jump.condition, "rdi", slot_offsets)
           writer.
-            "{indent(labels)}cmp {jump.condition.as_c()}{newline}
+            "{indent(labels)}mov rdi, [rdi + {variant_tag_offset}]{newline}
+            '{indent(labels)}sub rdi, {checked_tag}{newline}
+            '{indent(labels)}cmp rdi{newline}
             '{indent(labels)}jz  {jump.target}{newline}"
         }
-        case get_enum_value(get)
-          writer."{indent(labels)}{get.to} = {get.of.as_c()}.as.{get.variant.mangle()};{newline}"
+        case get_enum_value(get) {
+          var variant_type = body.slots.get(get.to.index).type
+          var size = layouts.get(variant_type).size
+          var to_offset = slot_offsets.get(get.to)
+
+          writer.save_address(get.of, "rsi", slot_offsets)
+          for i in 0.to(size) do
+            writer."{indent(labels)}mov [rbp + {to_offset}] [rsi + {i}]{newline}"
+        }
         case return_(expr)
           writer.
             "{indent(labels)}; return {expr.as_c()};{newline}
@@ -3018,9 +3034,9 @@ fun save_address[W](
   switch expr.kind
   case nothing {} | you can read zero bytes from anywhere
   case never {} | you can read zero bytes from anywhere
-  case global(name) writer."        mov {register} <global address>" | TODO
+  case global(name) writer."        lea {register} <global address>" | TODO
   case slot(slot) writer."
-    '        mov {register} [rbp {slots.get(slot)}]{newline}"
+    '        lea {register} [rbp {slots.get(slot)}]{newline}"
   case member(member) {
     writer.save_address(member.of.*, register, slots)
     if member.name.equals("*")
