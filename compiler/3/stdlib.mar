@@ -43,7 +43,7 @@ fun write[W](writer: W, nothing: Nothing) { writer."nothing" }
 fun equals(a: Nothing, b: Nothing): Bool { true }
 fun ignore[T](value: T) {}
 
-| Never and Panics  
+| Never  
 | Never is a type with zero instances. If you write a function that accepts an
 | argument of Never, it can never be called (otherwise, the caller would have
 | a Never instance).
@@ -57,17 +57,6 @@ fun ignore[T](value: T) {}
 | Maybe[U64].some(todo())
 
 enum Never {}
-
-fun halt(): Never { loop {} }
-
-fun panic(message: Str): Never { stderr.writeln(message) exit(1) }
-fun panic(): Never { panic("panicked") }
-fun unreachable(): Never { panic("unreachable") }
-fun todo(): Never { panic("todo") }
-fun assert(condition: Bool) { assert(condition, "assert failed") }
-fun assert(condition: Bool, message: Str) {
-  if not(condition) then panic(message)
-}
 
 | Equality  
 | You should implement an equals(T, T): Bool function for types that can be
@@ -224,6 +213,18 @@ fun to_orelse[O, E](result: Result[O, E]): Orelse[O, E] {
   switch result
   case ok(o) Orelse[O, E].primary(o)
   case error(e) Orelse[O, E].secondary(e)
+}
+
+| Halting, Exiting, and Panicking  
+
+fun halt(): Never { loop {} }
+fun panic(message: Str): Never { stderr.writeln(message) exit(1) }
+fun panic(): Never { panic("panicked") }
+fun unreachable(): Never { panic("unreachable") }
+fun todo(): Never { panic("todo") }
+fun assert(condition: Bool) { assert(condition, "assert failed") }
+fun assert(condition: Bool, message: Str) {
+  if not(condition) then panic(message)
 }
 
 | Int  
