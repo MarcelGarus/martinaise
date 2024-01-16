@@ -2764,7 +2764,9 @@ fun write_as_asm[W](writer: W, mono: Mono) {
   }
 
 
-  writer."; This file is a compiled Martinaise file.{newline}{newline}"
+  writer."
+    '; This file is a compiled Martinaise file.{newline}
+    '; Compile: nasm -f elf64 foo.asm{newline}{newline}"
 
   | TODO: Globals
   | for global in mono.globals do {
@@ -2781,20 +2783,6 @@ fun write_as_asm[W](writer: W, mono: Mono) {
   | }
 
   | var rodata = vec[]()
-
-  writer."
-    '_memcpy:{newline}
-    '  ; DOES NOT FOLLOW THE MARTINAISE CALLING CONVENTION!{newline}
-    '  ; CORRPUTS ARGUMENTS!{newline}
-    '  ; - rdi = destination{newline}
-    '  ; - rsi = source{newline}
-    '  ; - r8 = amount{newline}
-    '  .loop cmp r8{newline}
-    '        jz  .end{newline}
-    '        mov [rdi] [rsi]{newline}
-    '        add rdi, 1{newline}
-    '        add rsi, 1{newline}
-    '  .end  ret{newline}{newline}"
 
   for fun_ in mono.funs do {
     var signature = fun_.key
@@ -2888,38 +2876,38 @@ fun write_as_asm[W](writer: W, mono: Mono) {
       eprintln(slot_offsets)
 
       writer."{indent(labels)}sub rsp, {locals_size}{newline}"
-      | for slot in slot_offsets do {
-      |   var offset = slot.value
-      |   var slot = slot.key
-      |   switch body.slots.get(slot.index).initial_value
-      |   case uninitialized {}
-      |   case arg {}
-      |   case int(int) writer."  mov [rbp + {offset}], {int}{newline}"
-      |   case str(str) {
-      |     writer.
-      |       "  mov rsp, rodata_constant ; TODO{newline}
-      |       '  mov [rsp + 8] {str.len()}{newline}"
-      |     | writer.'" {{slot_ref}}.{{mangle("chars")}}.{{mangle("data")}}.pointer = 
-      |     |   '({{mangle(type("Char"))}}*) ""'
-      |     | for char in str do writer."\x{char.byte.radix(16)}"
-      |     | writer.'""; 
-      |     |   '{{slot_ref}}.{{mangle("chars")}}.{{mangle("len")}}.value = 
-      |     |     '{{str.len()}};"'
-      |   }
-      | }
+      for slot in slot_offsets do {
+        var offset = slot.value
+        var slot = slot.key
+        switch body.slots.get(slot.index).initial_value
+        case uninitialized {}
+        case arg {}
+        case int(int) writer."
+          '          mov r8, {int}{newline}
+          '          mov [rbp {offset}], r8{newline}"
+        case str(str) {
+          writer.
+            "          mov rsp, <rodata_constant> ; TODO{newline}
+            '          mov [rsp + 8] {str.len()}{newline}"
+          | writer.'" {{slot_ref}}.{{mangle("chars")}}.{{mangle("data")}}.pointer = 
+          |   '({{mangle(type("Char"))}}*) ""'
+          | for char in str do writer."\x{char.byte.radix(16)}"
+          | writer.'""; 
+          |   '{{slot_ref}}.{{mangle("chars")}}.{{mangle("len")}}.value = 
+          |     '{{str.len()}};"'
+        }
+      }
 
-      labels.push(".body")
       for statement in body.statements do {
         if statement is label then {} else writer."{indent(labels)}; {statement}{newline}"
         
         switch statement
         case label(label) labels.push("{label}")
         case assign(assign) {
+          var size = layouts.get(assign.value.type).size
           writer.save_address(assign.to, "rdi", slot_offsets)
           writer.save_address(assign.value, "rsi", slot_offsets)
-          var size = layouts.get(assign.value.type).size
-          for i in 0.to(size) do
-            writer."{indent(labels)}mov [rdi + {i}] [rsi + {i}]{newline}"
+          writer.copy_memory("rdi", 0:I64, "rsi", 0:I64, size)
         }
         case set_enum(set) {
           var type = body.slots.get(set.slot.index).type
@@ -2933,10 +2921,11 @@ fun write_as_asm[W](writer: W, mono: Mono) {
           var payload_size = layouts.get(set.value.type).size
           var variant_tag_offset = to_offset.add(payload_size.to_I64())
 
-          writer."{indent(labels)}mov [rbp {variant_tag_offset}] {variant}{newline}"
+          writer."
+            '{indent(labels)}mov rax, {variant}{newline}
+            '{indent(labels)}mov [rbp {variant_tag_offset}], rax{newline}"
           writer.save_address(set.value, "rsi", slot_offsets)
-          for i in 0.to(payload_size) do
-            writer."{indent(labels)}mov [rbp + {to_offset.add(i.to_I64())}] [rsi + {i}]{newline}"
+          writer.copy_memory("rsi", 0:I64, "rdp", to_offset, payload_size)
         }
         case call(call) {
           var args_layout = arg_layouts.get(call.fun_)
@@ -2948,13 +2937,11 @@ fun write_as_asm[W](writer: W, mono: Mono) {
           for arg in call.args.iter().enumerate() do {
             var size = layouts.get(arg.item.type).size
             var offset_in_args = arg_offsets.get("arg_{arg.index}")
-
             writer.save_address(arg.item, "rsi", slot_offsets)
-            for i in 0.to(size) do
-              writer."{indent(labels)}mov [rsp + {offset_in_args.add(i)}] [rsi + {i}]{newline}"
+            writer.copy_memory("rsi", 0:I64, "rsp", offset_in_args.to_I64(), size)
           }
           writer."
-            '{indent(labels)}lea eax, [rdp {slot_offsets.get(call.to)}]{newline}
+            '{indent(labels)}lea eax, [rbp {slot_offsets.get(call.to)}]{newline}
             '{indent(labels)}call {call.fun_.mangle()}{newline}"
           writer."{indent(labels)}add rsp, {args_size}{newline}"
         }
@@ -2971,8 +2958,7 @@ fun write_as_asm[W](writer: W, mono: Mono) {
           writer.save_address(jump.condition, "rdi", slot_offsets)
           writer.
             "{indent(labels)}mov rdi, [rdi + {variant_tag_offset}]{newline}
-            '{indent(labels)}sub rdi, {checked_tag}{newline}
-            '{indent(labels)}cmp rdi{newline}
+            '{indent(labels)}cmp rdi, {checked_tag}{newline}
             '{indent(labels)}jz  {jump.target}{newline}"
         }
         case get_enum_value(get) {
@@ -2981,8 +2967,7 @@ fun write_as_asm[W](writer: W, mono: Mono) {
           var to_offset = slot_offsets.get(get.to)
 
           writer.save_address(get.of, "rsi", slot_offsets)
-          for i in 0.to(size) do
-            writer."{indent(labels)}mov [rbp + {to_offset}] [rsi + {i}]{newline}"
+          writer.copy_memory("rsi", 0:I64, "rdp", to_offset, size)
         }
         case return_(expr)
           writer.
@@ -3000,23 +2985,17 @@ fun write_as_asm[W](writer: W, mono: Mono) {
   }
 
   writer."
+    'global _start{newline}
     '_start:{newline}
     '  ; TODO: set up function{newline}"
   for global in mono.globals_init_order do
     writer."  global_{global} = _compute_global_{global}();{newline}"
-  writer.'"
-    '  mar_Str args_data[argc];{{newline}}
-    '  for (int i = 0; i < argc; i++) {{{newline}}
-    '    args_data[i].mar_chars.mar_data.pointer = (mar_Char*) argv[i];{{newline}}
-    '    int len = 0;{{newline}}
-    '    while (argv[i][len] != '\0') len++;{{newline}}
-    '    args_data[i].mar_chars.mar_len.value = len;{{newline}}
-    '  }{{newline}}
-    '  mar_Slice_of_Str_end_ args;{{newline}}
-    '  args.mar_data.pointer = args_data;{{newline}}
-    '  args.mar_len.value = argc;{{newline}}
-    '"'
-  writer."  {"main(Slice[Str])".mangle()}(args);{newline}}"
+  writer."
+    '  pop r8{newline}
+    '.args: ; TODO: forward args to main{newline}
+    '  push 0{newline}
+    '  push 0{newline}
+    '  call {"main(Slice[Str])".mangle()}"
 }
 
 fun indent(labels: &Vec[Str]): LabeledIndent {
@@ -3024,16 +3003,12 @@ fun indent(labels: &Vec[Str]): LabeledIndent {
 }
 struct LabeledIndent { labels: &Vec[Str] }
 fun write[W](writer: W, self: LabeledIndent) {
+  if self.labels.is_not_empty() then
+    for i in 0.to(self.labels.len.dec()) do
+      writer."  {self.labels.get(i)}:{newline}"
   if self.labels.is_empty()
-  then writer."        "
-  else if self.labels.len.equals(1)
-    then writer."  {self.labels.get(0).pad_right(5, # )} "
-    else {
-      writer." "
-      for label in self.labels do
-        writer." {label}:"
-      writer."{newline}        "
-    }
+  then writer."          "
+  else writer."  {"{self.labels.to_slice().last()}:".pad_right(7, # )} "
   self.labels.len = 0
 }
 
@@ -3045,15 +3020,25 @@ fun save_address[W](
   switch expr.kind
   case nothing {} | you can read zero bytes from anywhere
   case never {} | you can read zero bytes from anywhere
-  case global(name) writer."        lea {register} <global address>" | TODO
+  case global(name) writer."          lea {register}, <global address>" | TODO
   case slot(slot) writer."
-    '        lea {register} [rbp {slots.get(slot)}]{newline}"
+    '          lea {register}, [rbp {slots.get(slot)}]{newline}"
   case member(member) {
     writer.save_address(member.of.*, register, slots)
     if member.name.equals("*")
-    then writer."        mov {register} [{register}]{newline}"
-    else writer."        add {register} <offset of {member.name} in {member.of.type}>{newline}"
+    then writer."          mov {register}, [{register}]{newline}"
+    else writer."          add {register}, <offset of {member.name} in {member.of.type}>{newline}"
   }
+}
+
+fun copy_memory[W](
+  writer: W,
+  from_reg: Str, from_offset: I64, to_reg: Str, to_offset: I64, amount: U64,
+) {
+  for i in 0.to(amount) do
+    writer."
+      '          mov rax, [{from_reg} {from_offset.add(i.to_I64())}]{newline}
+      '          mov [{to_reg} {to_offset.add(i.to_I64())}], rax{newline}"
 }
 
 | C Backend  
