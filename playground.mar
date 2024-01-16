@@ -126,8 +126,6 @@ fun asm_exit(status: U8): Never asm {
   mov rax, 60        ; exit syscall number
   mov rdi, [rsp + 8] ; status TODO: is this correct? status is only a U8
   syscall
-  ; The syscall should never return, but for safety, we loop forever.
-  .halt: jmp .halt
 }
 
 fun asm_write(file: File, buffer: Slice[U8]) asm {
