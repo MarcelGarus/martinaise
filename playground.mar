@@ -118,16 +118,42 @@ struct ContinueScope { continues: Vec[U64] }
 | opaque U16 = 2 bytes big, 2 bytes aligned
 
 
-fun asm_exit(status: U8): Never asm {
-  ;        0   4   8   12
-  ; stack: [callee][st]
-  mov rax, 60        ; exit syscall number
-  mov rdi, [rsp + 8] ; status TODO: is this correct? status is only a U8
+fun syscall(number: U64, arg0: U64): U64 asm {
+  ;        0   4   8   12  16  20  24
+  ; stack: [callee][number][arg0  ]
+  mov r8, rax
+  mov rax, [rsp + 8]  ; syscall number
+  mov rdi, [rsp + 16] ; argument 0
   syscall
+  mov [r8], rax ; write return value
 }
 
-fun main(args: Slice[Str]): Never {
-  asm_exit(42:U8)
+fun syscall(number: U64, arg0: U64, arg1: U64): U64 asm {
+  ;        0   4   8   12  16  20  24  32  40
+  ; stack: [callee][number][arg0  ][arg1  ]
+  mov r8, rax
+  mov rax, [rsp + 8]  ; syscall number
+  mov rdi, [rsp + 16] ; argument 0
+  mov rsi, [rsp + 24] ; argument 1
+  syscall
+  mov [r8], rax ; write return value
+}
+
+fun syscall(number: U64, arg0: U64, arg1: U64, arg2: U64): U64 asm {
+  ;        0   4   8   12  16  20  24  32  40  48  56
+  ; stack: [callee][number][arg0  ][arg1  ][arg2  ]
+  mov r8, rax
+  mov rax, [rsp + 8]  ; syscall number
+  mov rdi, [rsp + 16] ; argument 0
+  mov rsi, [rsp + 24] ; argument 1
+  mov rdx, [rsp + 40] ; argument 2
+  syscall
+  mov [r8], rax
+}
+
+fun exit(status: U64): Never {
+  syscall(60, status)
+  halt()
 }
 
 fun asm_write(file: File, buffer: Slice[U8]) asm {
@@ -140,6 +166,16 @@ fun asm_write(file: File, buffer: Slice[U8]) asm {
   mov rsi, [rsp + 12] ; buffer pointer
   mov rdx, [rsp + 20] ; buffer len
   syscall
+}
+
+fun asm_write(file: File, char: Char) {
+  syscall(1, file.descriptor, char.&.to_address(), 1).ignore()
+}
+
+fun main(args: Slice[Str]): Never {
+  var stdout = File { descriptor = 1 }
+  stdout.asm_write(#H)
+  exit(42)
 }
 
 fun asm_add(a: U64, b: U64): U64 asm {
@@ -166,5 +202,5 @@ fun main(): Never {
   }
   if Bool.true then var foo = 3
   | TODO: println("Hello, world!")
-  asm_exit(0:U8)
+  exit(0)
 }
