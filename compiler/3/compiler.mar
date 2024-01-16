@@ -2766,7 +2766,9 @@ fun write_as_asm[W](writer: W, mono: Mono) {
 
   writer."
     '; This file is a compiled Martinaise file.{newline}
-    '; Compile: nasm -f elf64 foo.asm{newline}{newline}"
+    '; Compile: nasm -f elf64 file.s{newline}
+    '; Link:    ld file.o -o file{newline}
+    '; Run:     ./file{newline}{newline}"
 
   | TODO: Globals
   | for global in mono.globals do {
@@ -2905,9 +2907,9 @@ fun write_as_asm[W](writer: W, mono: Mono) {
         case label(label) labels.push("{label}")
         case assign(assign) {
           var size = layouts.get(assign.value.type).size
-          writer.save_address(assign.to, "rdi", slot_offsets)
-          writer.save_address(assign.value, "rsi", slot_offsets)
-          writer.copy_memory("rdi", 0:I64, "rsi", 0:I64, size)
+          writer.save_address(assign.value, "rsi", slot_offsets, layouts)
+          writer.save_address(assign.to, "rdi", slot_offsets, layouts)
+          writer.copy_memory("rsi", 0:I64, "rdi", 0:I64, size)
         }
         case set_enum(set) {
           var type = body.slots.get(set.slot.index).type
@@ -2924,7 +2926,7 @@ fun write_as_asm[W](writer: W, mono: Mono) {
           writer."
             '{indent(labels)}mov rax, {variant}{newline}
             '{indent(labels)}mov [rbp {variant_tag_offset}], rax{newline}"
-          writer.save_address(set.value, "rsi", slot_offsets)
+          writer.save_address(set.value, "rsi", slot_offsets, layouts)
           writer.copy_memory("rsi", 0:I64, "rdp", to_offset, payload_size)
         }
         case call(call) {
@@ -2937,7 +2939,7 @@ fun write_as_asm[W](writer: W, mono: Mono) {
           for arg in call.args.iter().enumerate() do {
             var size = layouts.get(arg.item.type).size
             var offset_in_args = arg_offsets.get("arg_{arg.index}")
-            writer.save_address(arg.item, "rsi", slot_offsets)
+            writer.save_address(arg.item, "rsi", slot_offsets, layouts)
             writer.copy_memory("rsi", 0:I64, "rsp", offset_in_args.to_I64(), size)
           }
           writer."
@@ -2955,7 +2957,7 @@ fun write_as_asm[W](writer: W, mono: Mono) {
               if v.item.name.equals(jump.variant) then checked_tag = v.index
           } else panic("is not an enum")
 
-          writer.save_address(jump.condition, "rdi", slot_offsets)
+          writer.save_address(jump.condition, "rdi", slot_offsets, layouts)
           writer.
             "{indent(labels)}mov rdi, [rdi + {variant_tag_offset}]{newline}
             '{indent(labels)}cmp rdi, {checked_tag}{newline}
@@ -2966,7 +2968,7 @@ fun write_as_asm[W](writer: W, mono: Mono) {
           var size = layouts.get(variant_type).size
           var to_offset = slot_offsets.get(get.to)
 
-          writer.save_address(get.of, "rsi", slot_offsets)
+          writer.save_address(get.of, "rsi", slot_offsets, layouts)
           writer.copy_memory("rsi", 0:I64, "rdp", to_offset, size)
         }
         case return_(expr)
@@ -3015,19 +3017,25 @@ fun write[W](writer: W, self: LabeledIndent) {
 | Saves the address of the expr in the register.
 fun save_address[W](
   writer: W, expr: MonoExpr, register: Str,
-  slots: Map[MonoSlotRef, I64],
+  slots: Map[MonoSlotRef, I64], layouts: Map[Type, MemLayout],
 ) {
   switch expr.kind
   case nothing {} | you can read zero bytes from anywhere
   case never {} | you can read zero bytes from anywhere
-  case global(name) writer."          lea {register}, <global address>" | TODO
+  case global(name) writer."          lea {register}, <global address> ; {expr}{newline}" | TODO
   case slot(slot) writer."
-    '          lea {register}, [rbp {slots.get(slot)}]{newline}"
+    '          lea {register}, [rbp {slots.get(slot)}] ; {expr}{newline}"
   case member(member) {
-    writer.save_address(member.of.*, register, slots)
+    writer.save_address(member.of.*, register, slots, layouts)
     if member.name.equals("*")
-    then writer."          mov {register}, [{register}]{newline}"
-    else writer."          add {register}, <offset of {member.name} in {member.of.type}>{newline}"
+    then writer."          mov {register}, [{register}] ; {expr}{newline}"
+    else {
+      var offset_in_struct =
+        switch layouts.get(member.of.type).kind
+        case struct_(s) s.name_to_offset_map().get(member.name)
+        default unreachable()
+      writer."          add {register}, {offset_in_struct} ; {expr}{newline}"
+    }
   }
 }
 
@@ -3037,8 +3045,8 @@ fun copy_memory[W](
 ) {
   for i in 0.to(amount) do
     writer."
-      '          mov rax, [{from_reg} {from_offset.add(i.to_I64())}]{newline}
-      '          mov [{to_reg} {to_offset.add(i.to_I64())}], rax{newline}"
+      '          mov al, [{from_reg} {from_offset.add(i.to_I64())}]{newline}
+      '          mov [{to_reg} {to_offset.add(i.to_I64())}], al{newline}"
 }
 
 | C Backend  
