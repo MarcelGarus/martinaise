@@ -373,10 +373,10 @@ fun max[T](a: T, b: T): T { if a.is_greater_than(b) then a else b }
 | These addresses don't have any information about what kind of object is stored
 | at the address.
 
-fun libc_malloc(size: U64): U64 { ... }
 fun size_of_type[T](): U64 { ... }
-fun to_address[T](ref: &T): U64 { ... }
-fun to_reference[T](address: U64): &T { ... }
+| fun libc_malloc(size: U64): U64 { ... }
+| fun to_address[T](ref: &T): U64 { ... }
+| fun to_reference[T](address: U64): &T { ... }
 
 fun malloc(size: U64): U64 {
   var address = libc_malloc(size)

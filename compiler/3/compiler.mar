@@ -1163,35 +1163,8 @@ fun parse(code: Str, stdlib_size: U64): Result[Ast, Str] {
     }))
 
     | Int stuff
-    for config in all_int_configs do {
-      var type = config.to_type()
-      defs.&.push(AstDef.builtin_type(type.name))
-
-      var two_args = vec(
-        AstFunArg { name = "a", type },
-        AstFunArg { name = "b", type },
-      )
-      defs.&.push_builtin_fun("add", two_args, type)
-      defs.&.push_builtin_fun("subtract", two_args, type)
-      defs.&.push_builtin_fun("multiply", two_args, type)
-      defs.&.push_builtin_fun("divide", two_args, type)
-      defs.&.push_builtin_fun("modulo", two_args, type)
-      defs.&.push_builtin_fun("compare_to", two_args, type("Ordering"))
-      defs.&.push_builtin_fun("shiftLeft", two_args, type)
-      defs.&.push_builtin_fun("shiftRight", two_args, type)
-      defs.&.push_builtin_fun("bitLength", two_args, type)
-      defs.&.push_builtin_fun("and", two_args, type)
-      defs.&.push_builtin_fun("or", two_args, type)
-      defs.&.push_builtin_fun("xor", two_args, type)
-
-      | Conversion function
-      for target_config in all_int_configs do
-        if config.not_equals(target_config) then {
-          var target_type = target_config.to_type()
-          defs.&.push_builtin_fun("to_{target_type}",
-            vec(AstFunArg { name = "i", type }), target_type)
-        }
-    }
+    for config in all_int_configs do
+      defs.&.push(AstDef.builtin_type(config.to_type().name))
 
     ok[Ast, Str](Ast { defs })
   }
@@ -2797,18 +2770,7 @@ fun write_as_asm[W](writer: W, mono: Mono) {
     switch fun_.kind
     case asm_(code) writer."{code}{newline}"
     case builtin {
-      if signature.starts_with("to_address")
-      then writer."
-        '  mar_U64 address;{newline}
-        '  address.value = (uint64_t) arg0.pointer;{newline}
-        '  return address;{newline}"
-      else if signature.starts_with("to_reference")
-      then writer."
-        '  {fun_.return_type.mangle()} ref;{newline}
-        '  ref.pointer = ({fun_.type_args.get(0).mangle()}*) arg0.value;
-          '{newline}
-        '  return ref;{newline}"
-      else if signature.starts_with("size_of_type")
+      if signature.starts_with("size_of_type")
       then writer."
         '  mar_U64 size;{newline}
         '  size.value = (uint64_t) sizeof({
