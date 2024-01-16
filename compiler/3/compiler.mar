@@ -2781,12 +2781,6 @@ fun write_as_asm[W](writer: W, mono: Mono) {
     case body(body) {
       var labels = vec[Str]().&
 
-      | The callee already packed the arguments on the stack.
-      | TODO: describe more about how this works
-      writer.
-        "{indent(labels)}push rbp{newline}
-        '{indent(labels)}mov rbp, rsp ; save pointer to this fun's stack frame start{newline}"
-
       var arg_offsets =
         if arg_layouts.get(signature).kind is struct_(fields)
         then fields.name_to_offset_map()
@@ -2811,24 +2805,27 @@ fun write_as_asm[W](writer: W, mono: Mono) {
       var locals_size = locals_layout.size.round_up_to_multiple_of(8)
 
       | Combine all slots – args and locals
-      var slot_offsets = map[MonoSlotRef, I64]() | relative to rbp
+      var slot_offsets = map[MonoSlotRef, U64]() | relative to rsp
       for slot in body.slots.iter().enumerate() do {
         var offset =
           if slot.item.initial_value is arg
-          then arg_offsets.get("arg_{slot.index}").add(16).to_I64() | callee's ip and rbp
-          else 0:I64.subtract(locals_size.to_I64())
-            .add(locals_offsets.get("local_{slot.index}").to_I64())
+          then locals_size
+            .add(16)  | caller's ip and return value
+            .add(arg_offsets.get("arg_{slot.index}"))
+          else locals_offsets.get("local_{slot.index}")
         slot_offsets.&.put(MonoSlotRef { index = slot.index }, offset)
       }
 
       | Print the layout
+      writer."{indent(labels)}sub rsp, {locals_size}{newline}"
       writer.
-        "{indent(labels)}; rbp: callee's rbp{newline}
-        '{indent(labels)}; +8: callee's ip{newline}"
+        "{indent(labels)}; rsp + {locals_size}: caller's ip{newline}
+        '{indent(labels)}; rsp + {locals_size.add(8)}: 
+          'address of where to put the return value{newline}"
       for slot in body.slots.iter().enumerate() do {
         var slot_ref = MonoSlotRef { index = slot.index }
         writer.
-          "{indent(labels)}; {slot_offsets.get(slot_ref)}: 
+          "{indent(labels)}; rsp + {slot_offsets.get(slot_ref)}: 
           '{slot_ref}: {slot.item.type} = {
             switch slot.item.initial_value
             case uninitialized "uninitialized"
@@ -2839,7 +2836,6 @@ fun write_as_asm[W](writer: W, mono: Mono) {
       }
       eprintln(slot_offsets)
 
-      writer."{indent(labels)}sub rsp, {locals_size}{newline}"
       for slot in slot_offsets do {
         var offset = slot.value
         var slot = slot.key
@@ -2848,10 +2844,10 @@ fun write_as_asm[W](writer: W, mono: Mono) {
         case arg {}
         case int(int) writer."
           '          mov r8, {int}{newline}
-          '          mov [rbp {offset}], r8{newline}"
+          '          mov [rsp + {offset}], r8{newline}"
         case str(str) {
           writer.
-            "          mov rsp, <rodata_constant> ; TODO{newline}
+            "          mov [rsp + {offset}], <rodata_constant> ; TODO{newline}
             '          mov [rsp + 8] {str.len()}{newline}"
           | writer.'" {{slot_ref}}.{{mangle("chars")}}.{{mangle("data")}}.pointer = 
           |   '({{mangle(type("Char"))}}*) ""'
@@ -2864,14 +2860,14 @@ fun write_as_asm[W](writer: W, mono: Mono) {
 
       for statement in body.statements do {
         if statement is label then {} else writer."{indent(labels)}; {statement}{newline}"
-        
+
         switch statement
         case label(label) labels.push("{label}")
         case assign(assign) {
           var size = layouts.get(assign.value.type).size
-          writer.save_address(assign.value, "rsi", slot_offsets, layouts)
-          writer.save_address(assign.to, "rdi", slot_offsets, layouts)
-          writer.copy_memory("rsi", 0:I64, "rdi", 0:I64, size)
+          writer.save_address(assign.value, "r8", 0, slot_offsets, layouts)
+          writer.save_address(assign.to, "r9", 0, slot_offsets, layouts)
+          writer.copy_memory("r8", 0, "r9", 0, size)
         }
         case set_enum(set) {
           var type = body.slots.get(set.slot.index).type
@@ -2883,13 +2879,13 @@ fun write_as_asm[W](writer: W, mono: Mono) {
 
           var to_offset = slot_offsets.get(set.slot)
           var payload_size = layouts.get(set.value.type).size
-          var variant_tag_offset = to_offset.add(payload_size.to_I64())
+          var variant_tag_offset = to_offset.add(payload_size)
 
           writer."
-            '{indent(labels)}mov rax, {variant}{newline}
-            '{indent(labels)}mov [rbp {variant_tag_offset}], rax{newline}"
-          writer.save_address(set.value, "rsi", slot_offsets, layouts)
-          writer.copy_memory("rsi", 0:I64, "rdp", to_offset, payload_size)
+            '{indent(labels)}mov r8, {variant}{newline}
+            '{indent(labels)}mov [rsp {variant_tag_offset}], r8{newline}"
+          writer.save_address(set.value, "r8", 0, slot_offsets, layouts)
+          writer.copy_memory("r8", 0, "rsp", to_offset, payload_size)
         }
         case call(call) {
           var args_layout = arg_layouts.get(call.fun_)
@@ -2897,17 +2893,20 @@ fun write_as_asm[W](writer: W, mono: Mono) {
             if args_layout.kind is struct_(s) then s else unreachable()
           }.name_to_offset_map()
           var args_size = args_layout.size.round_up_to_multiple_of(8)
+
           writer."{indent(labels)}sub rsp, {args_size}{newline}"
           for arg in call.args.iter().enumerate() do {
             var size = layouts.get(arg.item.type).size
             var offset_in_args = arg_offsets.get("arg_{arg.index}")
-            writer.save_address(arg.item, "rsi", slot_offsets, layouts)
-            writer.copy_memory("rsi", 0:I64, "rsp", offset_in_args.to_I64(), size)
+            writer.save_address(arg.item, "r8", args_size, slot_offsets, layouts)
+            writer.copy_memory("r8", 0, "rsp", offset_in_args, size)
           }
           writer."
-            '{indent(labels)}lea eax, [rbp {slot_offsets.get(call.to)}]{newline}
-            '{indent(labels)}call {call.fun_.mangle()}{newline}"
-          writer."{indent(labels)}add rsp, {args_size}{newline}"
+            '{indent(labels)}sub rsp, 8{newline}
+            '{indent(labels)}lea r8, [rsp + {args_size.add(8).add(slot_offsets.get(call.to))}]{newline}
+            '{indent(labels)}mov [rsp], r8{newline}
+            '{indent(labels)}call {call.fun_.mangle()}{newline}
+            '{indent(labels)}add rsp, {args_size.add(8)}{newline}"
         }
         case jump(jump) writer."{indent(labels)}jmp {jump.target}{newline}"
         case jump_if_variant(jump) {
@@ -2919,10 +2918,10 @@ fun write_as_asm[W](writer: W, mono: Mono) {
               if v.item.name.equals(jump.variant) then checked_tag = v.index
           } else panic("is not an enum")
 
-          writer.save_address(jump.condition, "rdi", slot_offsets, layouts)
+          writer.save_address(jump.condition, "r8", 0, slot_offsets, layouts)
           writer.
-            "{indent(labels)}mov rdi, [rdi + {variant_tag_offset}]{newline}
-            '{indent(labels)}cmp rdi, {checked_tag}{newline}
+            "{indent(labels)}mov r8, [r8 + {variant_tag_offset}]{newline}
+            '{indent(labels)}cmp r8, {checked_tag}{newline}
             '{indent(labels)}jz  {jump.target}{newline}"
         }
         case get_enum_value(get) {
@@ -2930,20 +2929,26 @@ fun write_as_asm[W](writer: W, mono: Mono) {
           var size = layouts.get(variant_type).size
           var to_offset = slot_offsets.get(get.to)
 
-          writer.save_address(get.of, "rsi", slot_offsets, layouts)
-          writer.copy_memory("rsi", 0:I64, "rdp", to_offset, size)
+          writer.save_address(get.of, "r8", 0, slot_offsets, layouts)
+          writer.copy_memory("r8", 0, "rsp", to_offset, size)
         }
-        case return_(expr)
-          writer.
-            "{indent(labels)}; return {expr.as_c()};{newline}
-            '{indent(labels)}jmp .end{newline}"
-        case ref(ref)
-          writer.write("{indent(labels)}{ref.to}.pointer = &{ref.of.as_c()};{newline}")
+        case return_(expr) {
+          var size = layouts.get(expr.type).size
+
+          writer.save_address(expr, "r8", 0, slot_offsets, layouts)
+          writer."{indent(labels)}lea r9, [rsp + 8]{newline}"
+          writer.copy_memory("r8", 0, "r9", 0, size)
+          writer."{indent(labels)}jmp .end{newline}"
+        }
+        case ref(ref) {
+          writer.save_address(ref.of, "r8", 0, slot_offsets, layouts)
+          writer."{indent(labels)}mov [rsp + {slot_offsets.get(ref.to)}], r8{newline}"
+        }
       }
       labels.push(".end")
-      writer.
-        "{indent(labels)}mov rsp, rbp{newline}
-        '{indent(labels)}pop rbp{newline}"
+      writer."
+        '{indent(labels)}add rsp, {locals_size}{newline}
+        '{indent(labels)}ret{newline}"
     }
     writer."{newline}"
   }
@@ -2957,6 +2962,7 @@ fun write_as_asm[W](writer: W, mono: Mono) {
   writer."
     '  pop r8{newline}
     '.args: ; TODO: forward args to main{newline}
+    '  push 0{newline}
     '  push 0{newline}
     '  push 0{newline}
     '  call {"main(Slice[Str])".mangle()}"
@@ -2978,17 +2984,17 @@ fun write[W](writer: W, self: LabeledIndent) {
 
 | Saves the address of the expr in the register.
 fun save_address[W](
-  writer: W, expr: MonoExpr, register: Str,
-  slots: Map[MonoSlotRef, I64], layouts: Map[Type, MemLayout],
+  writer: W, expr: MonoExpr, register: Str, locals_offset: U64,
+  slot_offsets: Map[MonoSlotRef, U64], layouts: Map[Type, MemLayout],
 ) {
   switch expr.kind
   case nothing {} | you can read zero bytes from anywhere
   case never {} | you can read zero bytes from anywhere
   case global(name) writer."          lea {register}, <global address> ; {expr}{newline}" | TODO
   case slot(slot) writer."
-    '          lea {register}, [rbp {slots.get(slot)}] ; {expr}{newline}"
+    '          lea {register}, [rsp + {locals_offset.add(slot_offsets.get(slot))}] ; {expr}{newline}"
   case member(member) {
-    writer.save_address(member.of.*, register, slots, layouts)
+    writer.save_address(member.of.*, register, locals_offset, slot_offsets, layouts)
     if member.name.equals("*")
     then writer."          mov {register}, [{register}] ; {expr}{newline}"
     else {
@@ -3003,12 +3009,12 @@ fun save_address[W](
 
 fun copy_memory[W](
   writer: W,
-  from_reg: Str, from_offset: I64, to_reg: Str, to_offset: I64, amount: U64,
+  from_reg: Str, from_offset: U64, to_reg: Str, to_offset: U64, amount: U64,
 ) {
   for i in 0.to(amount) do
     writer."
-      '          mov al, [{from_reg} {from_offset.add(i.to_I64())}]{newline}
-      '          mov [{to_reg} {to_offset.add(i.to_I64())}], al{newline}"
+      '          mov bl, [{from_reg} + {from_offset.add(i)}]{newline}
+      '          mov [{to_reg} + {to_offset.add(i)}], bl{newline}"
 }
 
 | C Backend  

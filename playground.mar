@@ -67,11 +67,18 @@ struct ContinueScope { continues: Vec[U64] }
 | Martinaise has its own calling convention. It is often less efficient than the
 | cdecl and RISC-V calling conventions, but way simpler.
 |
+| - Registers  
+|   Calling a function may change any register contents except the rsp (stack
+|   pointer register). This means that functions are free to use any registers
+|   they want for whatever purpose without first pushing contents onto the stack
+|   and restoring them later on.
+|
 | - Arguments  
 |   All arguments are passed on the stack. When a function starts executing, the
 |   last value on the stack is the callee (the call instruction automatically
-|   pushes it onto the stack). Below that are the arguments, layouted as if they
-|   were in an anonymous struct that is 8-byte aligned.
+|   pushes it onto the stack). Below that is an address that indicates where the
+|   return value should be saved to. Below that are the arguments, layed out as
+|   if they were in an anonymous struct that is 8-byte aligned.
 |
 |   Example: foo(a: U16, b: U32, c: U32, d: U8) is called. When layouting a
 |   struct containing a, b, c, and d its layout would look like this:
@@ -81,9 +88,9 @@ struct ContinueScope { continues: Vec[U64] }
 |   This value is padded to a multiple of 8 bytes, so at the beginning of the
 |   function execution, the stack looks like this:
 |
-|   [callee]bbbbccccaad.....[other stuff on the stack]
-|   ▏       ▏       ▏       ▏
-|   rsp    +8      +16     +24
+|   [callee][return]bbbbccccaad.....[other stuff on the stack]
+|   ▏       ▏       ▏       ▏       ▏
+|   rsp    +8      +16     +24     +32
 |
 |   More notes about this:
 |   - 1 character in this visualization represents one byte.
@@ -91,10 +98,10 @@ struct ContinueScope { continues: Vec[U64] }
 |     lower addresses.
 |   - The arguments all fulfill their alignment requirements.
 |   - The arguments can be accessed like this:
-|     - a: [rsp + 16]
-|     - b: [rsp + 8]
-|     - c: [rsp + 12]
-|     - d: [rsp + 18]
+|     - a: [rsp + 24]
+|     - b: [rsp + 16]
+|     - c: [rsp + 20]
+|     - d: [rsp + 26]
 |   - You can rely on the fact that all arguments with a size that is a multiple
 |     of the highest alignment (4) are at the beginning in the order they were
 |     declared (in this example, b and c). You should NOT depend on the order of
@@ -104,51 +111,46 @@ struct ContinueScope { continues: Vec[U64] }
 |     Instead, consider writing asm functions with arguments that are explicitly
 |     of the same length and wrapping them with nicer-typed functions when
 |     necessary.
-|
-| - Return value  
-|   The rax register contains a pointer to a memory region where the return
-|   value of the function should be stored. Typically, this region is somewhere
-|   on the stack, probably owned by the parent function.
-|
-| - Registers  
-|   Calling a function may change any register contents.
-
 
 | opaque U8 = 1 byte big, 1 byte aligned
 | opaque U16 = 2 bytes big, 2 bytes aligned
 
 
 fun syscall(number: U64, arg0: U64): U64 asm {
-  ;        0   4   8   12  16  20  24
-  ; stack: [callee][number][arg0  ]
-  mov r8, rax
-  mov rax, [rsp + 8]  ; syscall number
-  mov rdi, [rsp + 16] ; argument 0
+  ;        0       8       16      24      32
+  ; stack: [callee][return][number][arg0  ]
+  mov rax, [rsp + 16] ; syscall number
+  mov rdi, [rsp + 24] ; argument 0
   syscall
+  mov r8, [rsp + 8]
   mov [r8], rax ; write return value
+  ret
 }
 
 fun syscall(number: U64, arg0: U64, arg1: U64): U64 asm {
-  ;        0   4   8   12  16  20  24  32  40
-  ; stack: [callee][number][arg0  ][arg1  ]
-  mov r8, rax
-  mov rax, [rsp + 8]  ; syscall number
-  mov rdi, [rsp + 16] ; argument 0
-  mov rsi, [rsp + 24] ; argument 1
+  ;        0       8       16      24      32      40
+  ; stack: [callee][return][number][arg0  ][arg1  ]
+  mov rax, [rsp + 16] ; syscall number
+  mov rdi, [rsp + 24] ; argument 0
+  mov rsi, [rsp + 32] ; argument 1
   syscall
+  mov r8, [rsp + 8]
   mov [r8], rax ; write return value
+  ret
 }
 
 fun syscall(number: U64, arg0: U64, arg1: U64, arg2: U64): U64 asm {
-  ;        0   4   8   12  16  20  24  32  40  48  56
-  ; stack: [callee][number][arg0  ][arg1  ][arg2  ]
+  ;        0       8       16      24      32      40      48
+  ; stack: [callee][return][number][arg0  ][arg1  ][arg2  ]
   mov r8, rax
-  mov rax, [rsp + 8]  ; syscall number
-  mov rdi, [rsp + 16] ; argument 0
-  mov rsi, [rsp + 24] ; argument 1
+  mov rax, [rsp + 16] ; syscall number
+  mov rdi, [rsp + 24] ; argument 0
+  mov rsi, [rsp + 32] ; argument 1
   mov rdx, [rsp + 40] ; argument 2
   syscall
+  mov r8, [rsp + 8]
   mov [r8], rax
+  ret
 }
 
 fun exit(status: U64): Never {
@@ -156,34 +158,33 @@ fun exit(status: U64): Never {
   halt()
 }
 
-fun asm_write(file: File, buffer: Slice[U8]) asm {
-  ; TODO: args are not layouted like this
-  ;        0   4   8   12  16  20  24  32
-  ; stack: [callee][fd][buffer        ]
-  ;                    [data  ][len   ]
-  mov rax, 1          ; write syscall number
-  mov rdi, [rsp + 8]  ; file descriptor
-  mov rsi, [rsp + 12] ; buffer pointer
-  mov rdx, [rsp + 20] ; buffer len
-  syscall
-}
-
 fun asm_write(file: File, char: Char) {
   syscall(1, file.descriptor, char.&.to_address(), 1).ignore()
+}
+
+fun to_address[T](ref: &T): U64 asm {
+  ;        0       8       16      24
+  ; stack: [callee][return][ref   ]
+  mov r8, [rsp + 16]
+  mov r9, [rsp + 8]
+  mov [r9], r8
+  ret
 }
 
 fun main(args: Slice[Str]): Never {
   var stdout = File { descriptor = 1 }
   stdout.asm_write(#H)
+  stdout.asm_write(#w)
   exit(42)
 }
 
 fun asm_add(a: U64, b: U64): U64 asm {
-  ;        0   4   8   12  16  20  24
-  ; stack: [callee][a     ][b     ]
-  mov rbx, [rsp + 8]
-  add rbx, [rsp + 16]
-  mov [rax], rbx
+  ;        0       8       16      24      32
+  ; stack: [callee][return][a     ][b     ]
+  mov r8, [rsp + 16]
+  add r8, [rsp + 24]
+  mov r9, [rsp + 8]
+  mov [r9], r8
   ret
 }
 
