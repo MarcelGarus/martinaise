@@ -15,17 +15,19 @@
 | TODO: validate all signatures before lowering
 | TODO: allow types on vars
 | TODO: break and continue with targets
+| TODO: enforce that statement-like expressions evaluate to Nothing
 | TODO: add String type
 | TODO: enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
 | TODO: disallow _ in type args, structs, enums, and recursive functions
 | TODO: improve int parsing: be strict about whitespace, use :U8
-| TODO: unwrap
+| TODO: unwrap?
 | TODO: funs as values, function types, higher-order funs?
 | TODO: operators?
 | TODO: var bool = foo is some?
 | TODO: slice literals? array literals?
 | TODO: type aliases?
 | TODO: struct destructuring?
+| TODO: provide way to get memory layouts of types as runtime first-class values
 
 | Nothing (aka Unit or Void)  
 | Nothing is a type with only one instance. From an information theoretical
@@ -215,9 +217,155 @@ fun to_orelse[O, E](result: Result[O, E]): Orelse[O, E] {
   case error(e) Orelse[O, E].secondary(e)
 }
 
+| Assembly  
+| In the end, all Martinaise code is lowered to x86_64 NASM-style assembly. A
+| big downside of this is that Martinaise is not portable. An upside is that you
+| can easily switch back and forth between Martinaise and assembly. Using the
+| asm keyword, you can implement functions in assembly language. Because
+| Martinaise is so low-level, it also implements its own memory layout and
+| calling convention.
+|
+| Memory Layout  
+| The memory layout depends on the type:
+|
+| - Opaque types define exactly how they are aligned.
+| 
+|   opaque U8 = 1 byte big, 1 byte aligned
+|
+|  - Struct types have an alignment equal to the biggest alignment of their
+|   fields. All fields with a size that is a multiple of this alignment are
+|   moved to the front. All other fields are ordered in a way to minimize the
+|   overall size. You should not depend on the order of these other fields.
+|
+|  - Enum types contain the payload followed by a single byte indicating which
+|   variant is active. The size reserved for the payload is the biggest size of
+|   all the possible variant payloads.
+|
+| Here's an example of a more complex type:
+|
+| enum CType { char: U8, short: U16, int: U32, long: U64 }
+| struct Foo {
+|   value: U32,
+|   flup: CType,
+|   foo: &Foo,
+|   baz: Maybe[Maybe[Str]],
+|   blub: Map[Str, U64],
+| }
+|
+| ▏0      ▏8      ▏16     ▏24     ▏32     ▏40     ▏48     ▏56     ▏64
+| ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 65
+| Foo
+| foo     blub                    baz                 val…flup
+| ▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓..▓▓▓▓░░░░░░░░░
+| &Foo    Map[Str, U64]           Maybe[Maybe[Str]…│  U32 CType   │
+|         buckets         size    some─────────────┤      char────┤
+|         ░░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░│      ░.......│
+|         Slice[MapBucket…U64     Maybe[Str]      ││      …       │
+|         data    len             some────────────┤│      short───┤
+|         ░░░░░░░░▓▓▓▓▓▓▓▓        ░░░░░░░░░░░░░░░░││      ░░......│
+|         &MapBuc…U64             Str             ││      U…      │
+|                                 chars           ││      int─────┤
+|                                 ░░░░░░░░░░░░░░░░││      ░░░░....│
+|                                 Slice[Char]     ││      U32     │
+|                                 data    len     ││      long────┘
+|                                 ░░░░░░░░▓▓▓▓▓▓▓▓││      ░░░░░░░░
+|                                 &Char   U64     ││      U64
+|                                 none────────────┘│
+|                                 ................ │
+|                                 none─────────────┘
+|                                 .................
+|
+| Calling Convention  
+| Martinaise has its own calling convention. It is often less efficient than the
+| cdecl and RISC-V calling conventions, but way simpler.
+|
+| - Registers  
+|   Calling a function may change any register contents except the rsp (stack
+|   pointer register). This means that functions are free to use any registers
+|   they want for whatever purpose without first pushing contents onto the stack
+|   and restoring them later on.
+|
+| - Arguments  
+|   All arguments are passed on the stack. When a function starts executing, the
+|   last value on the stack is the callee (the call instruction automatically
+|   pushes it onto the stack). Below that is an address that indicates where the
+|   return value should be saved to. Below that are the arguments, layed out as
+|   if they were in an anonymous struct that is 8-byte aligned.
+|
+|   Example: foo(a: U16, b: U32, c: U32, d: U8) is called. When layouting a
+|   struct containing a, b, c, and d its layout would look like this:
+|
+|   bbbbccccaad
+|
+|   This value is padded to a multiple of 8 bytes, so at the beginning of the
+|   function execution, the stack looks like this:
+|
+|   [callee][return]bbbbccccaad.....[other stuff on the stack]
+|   ▏       ▏       ▏       ▏       ▏
+|   rsp    +8      +16     +24     +32
+|
+|   More notes about this:
+|   - 1 character in this visualization represents one byte.
+|   - The stack grows down to lower addresses, so the relevant parts are at the
+|     lower addresses.
+|   - The arguments all fulfill their alignment requirements.
+|   - The arguments can be accessed like this:
+|     - a: [rsp + 24]
+|     - b: [rsp + 16]
+|     - c: [rsp + 20]
+|     - d: [rsp + 26]
+|   - You can rely on the fact that all arguments with a size that is a multiple
+|     of the highest alignment (4) are at the beginning in the order they were
+|     declared (in this example, b and c). You should NOT depend on the order of
+|     the other fields. This restrictions effectively prohibits you from
+|     manually implementing asm functions that take multiple arguments with a
+|     size that is not a multiple of the biggest alignment (such as this foo).
+|     Instead, consider writing asm functions with arguments that are explicitly
+|     of the same length and wrapping them with nicer-typed functions when
+|     necessary.
+
+| Syscalls  
+
+fun syscall(number: U64, arg0: U64): U64 asm {
+  ;        0       8       16      24      32
+  ; stack: [callee][return][number][arg0  ]
+  mov rax, [rsp + 16] ; syscall number
+  mov rdi, [rsp + 24] ; argument 0
+  syscall
+  mov r8, [rsp + 8]
+  mov [r8], rax ; write return value
+  ret
+}
+
+fun syscall(number: U64, arg0: U64, arg1: U64): U64 asm {
+  ;        0       8       16      24      32      40
+  ; stack: [callee][return][number][arg0  ][arg1  ]
+  mov rax, [rsp + 16] ; syscall number
+  mov rdi, [rsp + 24] ; argument 0
+  mov rsi, [rsp + 32] ; argument 1
+  syscall
+  mov r8, [rsp + 8]
+  mov [r8], rax ; write return value
+  ret
+}
+
+fun syscall(number: U64, arg0: U64, arg1: U64, arg2: U64): U64 asm {
+  ;        0       8       16      24      32      40      48
+  ; stack: [callee][return][number][arg0  ][arg1  ][arg2  ]
+  mov rax, [rsp + 16] ; syscall number
+  mov rdi, [rsp + 24] ; argument 0
+  mov rsi, [rsp + 32] ; argument 1
+  mov rdx, [rsp + 40] ; argument 2
+  syscall
+  mov r8, [rsp + 8]
+  mov [r8], rax
+  ret
+}
+
 | Halting, Exiting, and Panicking  
 
 fun halt(): Never { loop {} }
+fun exit(status: U64): Never { 60.syscall(status) halt() }
 fun panic(message: Str): Never { stderr.writeln(message) exit(1) }
 fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
@@ -228,12 +376,10 @@ fun assert(condition: Bool, message: Str) {
 }
 
 | Int  
-| Integers are built into Martinaise. There are several types with different
-| signedness and bit amount available as {U, I} x {8, 16, 32, 64}. For example,
-| U64 is an unsigned integer of 64 bits.
+| There are several integer types with different signedness and bit amount.
 |
-| If you just with a number such as 3, it's a U64 by default. You can be
-| explicit about the type by using a prefix: 3:U8
+| If you just write a number such as 3 in the code, it's a U64 by default. You
+| can be explicit about the type by using a suffix: 3:U8
 |
 | All integers also support the following mathematical operations:
 | - add(Int, Int): Int
@@ -246,6 +392,34 @@ fun assert(condition: Bool, message: Str) {
 | - xor(Int, Int): Int
 | - compare_to(Int, Int): Ordering
 | - to_<OtherInt>(Int): OtherInt, e.g. to_U8() for non-U8 ints
+
+opaque U8  = 1 byte big,  1 byte aligned
+opaque U16 = 2 bytes big, 2 bytes aligned
+opaque U32 = 4 bytes big, 4 bytes aligned
+opaque U64 = 8 bytes big, 8 bytes aligned
+opaque I8  = 1 byte big,  1 byte aligned
+opaque I16 = 2 bytes big, 2 bytes aligned
+opaque I32 = 4 bytes big, 4 bytes aligned
+opaque I64 = 8 bytes big, 8 bytes aligned
+
+fun add(a: U64, b: U64): U64 asm {
+  ;        0       8       16      24      32
+  ; stack: [callee][return][a     ][b     ]
+  mov r8, [rsp + 16]
+  add r8, [rsp + 24]
+  mov r9, [rsp + 8]
+  mov [r9], r8
+  ret
+}
+fun subtract(a: U64, b: U64): U64 asm {
+  ;        0       8       16      24      32
+  ; stack: [callee][return][a     ][b     ]
+  mov r8, [rsp + 16]
+  sub r8, [rsp + 24]
+  mov r9, [rsp + 8]
+  mov [r9], r8
+  ret
+}
 
 fun inc(a: U8): U8 { a.add(1:U8) }
 fun inc(a: U16): U16 { a.add(1:U16) }

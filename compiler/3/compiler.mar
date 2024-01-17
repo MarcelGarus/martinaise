@@ -169,12 +169,16 @@ fun to_type(config: IntConfig): Type { type("{config}") }
 
 struct Ast { defs: Vec[AstDef] }
 enum AstDef {
-  builtin_type: Str, | not parsed from code
+  opaque_: AstOpaqueType,
   struct_: AstStruct,
   enum_: AstEnum,
   var_: AstVar, | same AstVar as in funs
   fun_: AstFun,
 }
+
+| Fundamental types such as U8, U16 etc. are defined as opaque types. You can
+| define your own opaque types as well.
+struct AstOpaqueType { name: Str, size: U64, alignment: U64 }
 
 struct AstStruct {
   name: Str,
@@ -254,11 +258,18 @@ fun write[W](writer: W, program: Ast) {
 }
 fun write[W](writer: W, def: AstDef) {
   switch def
-  case builtin_type(name) writer."builtin {name}"
+  case opaque_(o) writer.write(o)
   case struct_(s) writer.write(s)
   case enum_(e) writer.write(e)
   case var_(v) writer.write(v)
   case fun_(f) writer.write(f)
+}
+fun write[W](writer: W, opaque: AstOpaqueType) {
+  writer."opaque {opaque.name} = {opaque.size} {
+    if opaque.size.equals(1) then "byte" else "bytes"
+  } big, {opaque.alignment} {
+    if opaque.alignment.equals(1) then "byte" else "bytes"
+  } aligned"
 }
 fun write[W](writer: W, struct_: AstStruct) {
   writer."struct {struct_.name}{type_args(struct_.type_args)} "
@@ -372,7 +383,8 @@ fun signature(fun_: AstFun): AstSignature {
 struct AstSignature { def: AstDef }
 fun write[W](writer: W, signature: AstSignature) {
   switch signature.def
-  case builtin_type(name) writer."builtin {name}"
+  case opaque_(opaque_)
+    writer."opaque {opaque_.name}"
   case struct_(struct_)
     writer."struct {struct_.name}{type_args(struct_.type_args)}"
   case enum_(enum_) writer."enum {enum_.name}{type_args(enum_.type_args)}"
@@ -1078,6 +1090,34 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
   parsed(AstFun { name = fun_name, type_args, args, returns, kind })
 }
 
+fun parse_opaque(parser: &Parser): Result[Maybe[AstOpaqueType], Str] {
+  parser.consume_keyword("opaque") orelse return no_match[AstOpaqueType]()
+  var name = parser.parse_upper_name()
+    orelse return bad_input[AstOpaqueType]("Expected an uppercase name.")
+  parser.consume_prefix("=")
+    orelse return bad_input[AstOpaqueType]("Expected an equals sign.")
+  var size = parser.parse_bytes_amount("size")? orelse unreachable()
+  parser.consume_prefix("big")
+    orelse return bad_input[AstOpaqueType]('"Expected "big"."')
+  parser.consume_prefix(",")
+    orelse return bad_input[AstOpaqueType]("Expected comma.")
+  var alignment = parser.parse_bytes_amount("alignment")? orelse unreachable()
+  parser.consume_prefix("aligned")
+    orelse return bad_input[AstOpaqueType]('"Expected "aligned"."')
+  parsed(AstOpaqueType { name, size, alignment })
+}
+fun parse_bytes_amount(parser: &Parser, name: Str): Result[Maybe[U64], Str] {
+  parser.consume_whitespace()
+  var amount = parser.parse_digits(10)?
+    orelse return bad_input[U64]("Expected {name}.")
+  if amount.equals(1)
+  then parser.consume_prefix("byte")
+    orelse return bad_input[U64]('"Expected "byte"."')
+  else parser.consume_prefix("bytes")
+    orelse return bad_input[U64]('"Expected "bytes"."')
+  parsed(amount)
+}
+
 fun parse_struct(parser: &Parser): Result[Maybe[AstStruct], Str] {
   parser.consume_keyword("struct") orelse return no_match[AstStruct]()
   var name = parser.parse_upper_name()
@@ -1123,6 +1163,7 @@ fun parse_enum(parser: &Parser): Result[Maybe[AstEnum], Str] {
 }
 
 fun parse_def(parser: &Parser): Result[Maybe[AstDef], Str] {
+  if parser.parse_opaque()? is some(opq) then return parsed(AstDef.opaque_(opq))
   if parser.parse_struct()? is some(st) then return parsed(AstDef.struct_(st))
   if parser.parse_enum()? is some(enum_) then return parsed(AstDef.enum_(enum_))
   if parser.parse_var()? is some(var_) then return parsed(AstDef.var_(var_))
@@ -1161,10 +1202,6 @@ fun parse(code: Str, stdlib_size: U64): Result[Ast, Str] {
       type_args = vec("T"),
       fields = vec(AstStructField { name = "*", type = type("T") })
     }))
-
-    | Int stuff
-    for config in all_int_configs do
-      defs.&.push(AstDef.builtin_type(config.to_type().name))
 
     ok[Ast, Str](Ast { defs })
   }
@@ -1242,7 +1279,7 @@ struct Mono {
 }
 
 enum MonoTypeDef {
-  opaque: MonoOpaqueType,
+  opaque_: MonoOpaqueType,
   struct_: MonoStruct,
   enum_: MonoEnum,
 }
@@ -1649,12 +1686,6 @@ fun finish(solver: TypeSolver): Result[Map[Str, Type], Str] {
 | function is encountered recursively, only its signature is needed to figure
 | out how to use it.
 
-fun to_type_def(config: IntConfig): MonoTypeDef {
-  MonoTypeDef.opaque(MonoOpaqueType {
-    size = config.bits.divide(8), alignment = config.bits.divide(8)
-  })
-}
-
 fun monomorphize(ast: Ast): Result[Mono, Str] {
   var context = context()
   var mono = Mono {
@@ -1663,10 +1694,11 @@ fun monomorphize(ast: Ast): Result[Mono, Str] {
     globals_init_order = vec[Str](),
     funs = map[Str, MonoFun](),
   }
-  type("Never").monomorphize(map[Str, Type](), ast, mono.&)
-  type("Nothing").monomorphize(map[Str, Type](), ast, mono.&)
+  eprintln("Monoing ast")
+  type("Never").monomorphize(map[Str, Type](), ast, mono.&)?
+  type("Nothing").monomorphize(map[Str, Type](), ast, mono.&)?
   for config in all_int_configs do
-    mono.type_defs.&.put(config.to_type(), config.to_type_def())
+    config.to_type().monomorphize(map[Str, Type](), ast, mono.&)?
 
   var main =
     switch ast.lookup_fun("main",
@@ -1708,7 +1740,7 @@ fun monomorphize(ast: Ast): Result[Mono, Str] {
 
 fun name(def: AstDef): Str {
   switch def
-  case builtin_type(name) name
+  case opaque_(opaque) opaque.name
   case struct_(struct_) struct_.name
   case enum_(enum_) enum_.name
   case var_(var_) var_.name
@@ -1846,10 +1878,14 @@ fun monomorphize(
   if mono.type_defs.contains(type) then return ok[Type, Str](type)
   | TODO: explain
   mono.type_defs.&.put(type,
-    MonoTypeDef.opaque(MonoOpaqueType { size = 0, alignment = 0 }))
+    MonoTypeDef.opaque_(MonoOpaqueType { size = 0, alignment = 0 }))
+
+  eprintln("Monoing {type}")
 
   switch ast.lookup_type(type.name)?
-  case builtin_type unreachable()
+  case opaque_(opaque_) mono.type_defs.&.put(type, MonoTypeDef.opaque_(
+    MonoOpaqueType { size = opaque_.size, alignment = opaque_.alignment }
+  ))
   case var_ unreachable()
   case fun_ unreachable()
   case struct_(struct_) {
@@ -2320,7 +2356,7 @@ fun compile_in_current_scope(
           "You tried to access a field on {of.type}, but it's not a struct.
           '{newline}{
             switch self.mono.type_defs.get(of.type)
-            case opaque "opaque"
+            case opaque_ "opaque"
             case struct_ "struct"
             case enum_ "enum"
           }")
@@ -2703,37 +2739,6 @@ fun compile_call(
 | Memory Layout  
 | Finding efficient memory layouts for types is a bit tricky.
 |
-| enum CType { char: U8, short: U16, int: U32, long: U64 }
-| struct Foo {
-|   value: U32,
-|   flup: CType,
-|   foo: &Foo,
-|   baz: Maybe[Maybe[Str]],
-|   blub: Map[Str, U64],
-| }
-|
-| ▏0      ▏8      ▏16     ▏24     ▏32     ▏40     ▏48     ▏56     ▏64
-| ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 65
-| Foo
-| foo     blub                    baz                 val…flup
-| ▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓..▓▓▓▓░░░░░░░░░
-| &Foo    Map[Str, U64]           Maybe[Maybe[Str]…│  U32 CType   │
-|         buckets         size    some─────────────┤      char────┤
-|         ░░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░│      ░.......│
-|         Slice[MapBucket…U64     Maybe[Str]      ││      …       │
-|         data    len             some────────────┤│      short───┤
-|         ░░░░░░░░▓▓▓▓▓▓▓▓        ░░░░░░░░░░░░░░░░││      ░░......│
-|         &MapBuc…U64             Str             ││      U…      │
-|                                 chars           ││      int─────┤
-|                                 ░░░░░░░░░░░░░░░░││      ░░░░....│
-|                                 Slice[Char]     ││      U32     │
-|                                 data    len     ││      long────┘
-|                                 ░░░░░░░░▓▓▓▓▓▓▓▓││      ░░░░░░░░
-|                                 &Char   U64     ││      U64
-|                                 none────────────┘│
-|                                 ................ │
-|                                 none─────────────┘
-|                                 .................
 
 struct MemLayout {
   type: Type,
@@ -2778,7 +2783,7 @@ fun calculate_mem_layout(
   print_on_same_line("Memory layouting {type}")
 
   switch def
-  case opaque(info) MemLayout {
+  case opaque_(info) MemLayout {
     type,
     size = info.size,
     alignment = info.alignment,
@@ -2953,7 +2958,7 @@ fun write[W](writer: W, layout: MemLayout) {
 fun num_lines_when_printing(layout: MemLayout): U64 {
   if layout.size.equals(0) then return 0
   switch layout.kind
-  case opaque 2
+  case opaque_ 2
   case struct_(parts) {
     var max = 0
     for part in parts do
@@ -2985,7 +2990,7 @@ fun write(
   writer.last_shades.get_ref(line).* = shade
 
   switch layout.kind
-  case opaque
+  case opaque_
     writer.line(line.inc())."{format(layout.type).fit_to_size(layout.size)}"
   case struct_(parts) {
     writer.line(line.inc())."{format(layout.type).fit_to_size(layout.size)}"
@@ -3393,18 +3398,6 @@ fun mangle(type: Type): Str {
   var formatted = string_builder().&
   formatted.&.write(type)
   formatted.to_str().mangle()
-}
-
-    case return_(expr)
-      | If a Never is returned, the return is not reached anyway. If we emit it,
-      | C complains that Never doesn't match the function's return type.
-      if not(expr.type.is_never())
-      then writer."  return {expr.as_c()};{newline}"
-    case ref(ref)
-      writer.write("  {ref.to}.pointer = &{ref.of.as_c()};{newline}")
-  }
-
-  writer."}"
 }
 
 | File Watching  

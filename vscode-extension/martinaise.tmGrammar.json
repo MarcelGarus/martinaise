@@ -11,7 +11,7 @@
       "patterns": [
         {
           "name": "keyword",
-          "match": "\\b(fun|struct|enum|var)\\b"
+          "match": "\\b(fun|var|struct|enum|opaque|byte big|bytes big|byte aligned|bytes aligned)\\b"
         },
         {
           "name": "keyword.control",
@@ -149,7 +149,7 @@
         },
         {
           "name": "keyword.control",
-          "match": "\\b(add|cmp|jmp|jnz|mov|push|ret|sub|syscall)\\b"
+          "match": "\\b(add|cmp|jmp|jnz|lea|mov|push|ret|sub|syscall)\\b"
         },
         {
           "name": "variable",
