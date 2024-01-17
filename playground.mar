@@ -40,10 +40,6 @@ struct BreakScope {
 }
 struct ContinueScope { continues: Vec[U64] }
 
-| opaque U8 = 1 byte big, 1 byte aligned
-| opaque U16 = 2 bytes big, 2 bytes aligned
-
-
 fun asm_write(file: File, char: Char) {
   1.syscall(file.descriptor, char.&.to_address(), 1).ignore()
 }
@@ -59,7 +55,7 @@ fun to_address[T](ref: &T): U64 asm {
 
 fun main(args: Slice[Str]): Never {
   var stdout = File { descriptor = 1 }
-  stdout.asm_write(#H)
+  if 3.equals(3) then stdout.asm_write(#H)
   stdout.asm_write(#w)
   exit(add(8, 35))
 }

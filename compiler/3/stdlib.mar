@@ -402,9 +402,10 @@ opaque I16 = 2 bytes big, 2 bytes aligned
 opaque I32 = 4 bytes big, 4 bytes aligned
 opaque I64 = 8 bytes big, 8 bytes aligned
 
+| For functions accepting two U64s:
+|        0       8       16      24      32
+| stack: [callee][return][a     ][b     ]
 fun add(a: U64, b: U64): U64 asm {
-  ;        0       8       16      24      32
-  ; stack: [callee][return][a     ][b     ]
   mov r8, [rsp + 16]
   add r8, [rsp + 24]
   mov r9, [rsp + 8]
@@ -412,12 +413,48 @@ fun add(a: U64, b: U64): U64 asm {
   ret
 }
 fun subtract(a: U64, b: U64): U64 asm {
-  ;        0       8       16      24      32
-  ; stack: [callee][return][a     ][b     ]
   mov r8, [rsp + 16]
   sub r8, [rsp + 24]
   mov r9, [rsp + 8]
   mov [r9], r8
+  ret
+}
+fun multiply(a: U64, b: U64): U64 asm {
+  mov r8, [rsp + 16]
+  mul r8, [rsp + 24] ; TODO: doesn't work, result is double word
+  mov r9, [rsp + 8]
+  mov [r9], r8
+  ret
+}
+fun divide(a: U64, b: U64): U64 asm {
+  mov r8, [rsp + 16]
+  div r8, [rsp + 24] ; TODO: doesn't work like this
+  mov r9, [rsp + 8]
+  mov [r9], r8
+  ret
+}
+fun modulo(a: U64, b: U64): U64 asm {
+  ; TODO: implement
+  ;mov r8, [rsp + 16]
+  ;div r8, [rsp + 24]
+  ;mov r9, [rsp + 8]
+  ;mov [r9], r8
+  ret
+}
+fun compare_to(a: U64, b: U64): Ordering asm {
+  mov r9, [rsp + 8]
+  cmp [rsp + 16], [rsp + 24]
+  je .equal
+  jg .greater
+  ; less
+  mov [r9], 0 ; less
+  jmp .end
+.equal
+  mov [r9], 1 ; equal
+  jmp .end
+.greater
+  mov [r9], 2 ; greater
+.end
   ret
 }
 
