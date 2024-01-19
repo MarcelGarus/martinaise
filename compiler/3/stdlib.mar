@@ -327,37 +327,31 @@ fun to_orelse[O, E](result: Result[O, E]): Orelse[O, E] {
 | Syscalls  
 
 fun syscall(number: U64, arg0: U64): U64 asm {
-  ;        0       8       16      24      32
-  ; stack: [callee][return][number][arg0  ]
   mov rax, [rsp + 16] ; syscall number
-  mov rdi, [rsp + 24] ; argument 0
-  syscall
-  mov r8, [rsp + 8]
-  mov [r8], rax ; write return value
+  mov rdi, [rsp + 24] ; arg0
+  syscall             ; writes result into rax
+  mov r8, [rsp + 8]   ; return address
+  mov [r8], rax
   ret
 }
 
 fun syscall(number: U64, arg0: U64, arg1: U64): U64 asm {
-  ;        0       8       16      24      32      40
-  ; stack: [callee][return][number][arg0  ][arg1  ]
   mov rax, [rsp + 16] ; syscall number
-  mov rdi, [rsp + 24] ; argument 0
-  mov rsi, [rsp + 32] ; argument 1
-  syscall
-  mov r8, [rsp + 8]
-  mov [r8], rax ; write return value
+  mov rdi, [rsp + 24] ; arg0
+  mov rsi, [rsp + 32] ; arg1
+  syscall             ; writes result into rax
+  mov r8, [rsp + 8]   ; return address
+  mov [r8], rax
   ret
 }
 
 fun syscall(number: U64, arg0: U64, arg1: U64, arg2: U64): U64 asm {
-  ;        0       8       16      24      32      40      48
-  ; stack: [callee][return][number][arg0  ][arg1  ][arg2  ]
   mov rax, [rsp + 16] ; syscall number
-  mov rdi, [rsp + 24] ; argument 0
-  mov rsi, [rsp + 32] ; argument 1
-  mov rdx, [rsp + 40] ; argument 2
-  syscall
-  mov r8, [rsp + 8]
+  mov rdi, [rsp + 24] ; arg0
+  mov rsi, [rsp + 32] ; arg1
+  mov rdx, [rsp + 40] ; arg2
+  syscall             ; writes result into rax
+  mov r8, [rsp + 8]   ; return address
   mov [r8], rax
   ret
 }
@@ -365,7 +359,7 @@ fun syscall(number: U64, arg0: U64, arg1: U64, arg2: U64): U64 asm {
 | Halting, Exiting, and Panicking  
 
 fun halt(): Never { loop {} }
-fun exit(status: U64): Never { 60.syscall(status) halt() }
+fun exit(status: U8): Never { 60.syscall(status.to_U64()) halt() }
 fun panic(message: Str): Never { stderr.writeln(message) exit(1) }
 fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
@@ -386,6 +380,7 @@ fun assert(condition: Bool, message: Str) {
 | - subtract(Int, Int): Int
 | - multiply(Int, Int): Int
 | - divide(Int, Int): Int
+| - remainder(Int, Int): Int
 | - modulo(Int, Int): Int
 | - and(Int, Int): Int
 | - or(Int, Int): Int
@@ -402,45 +397,178 @@ opaque I16 = 2 bytes big, 2 bytes aligned
 opaque I32 = 4 bytes big, 4 bytes aligned
 opaque I64 = 8 bytes big, 8 bytes aligned
 
-| For functions accepting two U64s:
-|        0       8       16      24      32
-| stack: [callee][return][a     ][b     ]
+fun add(a: U8, b: U8): U8 asm {
+  mov r8b, [rsp + 16] ; a
+  add r8b, [rsp + 17] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8b
+  ret
+}
+fun add(a: U16, b: U16): U16 asm {
+  mov r8w, [rsp + 16] ; a
+  add r8w, [rsp + 18] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8w
+  ret
+}
+fun add(a: U32, b: U32): U32 asm {
+  mov r8d, [rsp + 16] ; a
+  add r8d, [rsp + 20] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
 fun add(a: U64, b: U64): U64 asm {
-  mov r8, [rsp + 16]
-  add r8, [rsp + 24]
-  mov r9, [rsp + 8]
+  mov r8, [rsp + 16] ; a
+  add r8, [rsp + 24] ; b
+  mov r9, [rsp + 8]  ; return address
   mov [r9], r8
+  ret
+}
+
+| TODO: is this guaranteed to underflow correctly?
+fun subtract(a: U8, b: U8): U8 asm {
+  mov r8b, [rsp + 16] ; a
+  sub r8b, [rsp + 17] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8b
+  ret
+}
+fun subtract(a: U16, b: U16): U16 asm {
+  mov r8w, [rsp + 16] ; a
+  sub r8w, [rsp + 18] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8w
+  ret
+}
+fun subtract(a: U32, b: U32): U32 asm {
+  mov r8d, [rsp + 16] ; a
+  sub r8d, [rsp + 20] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
   ret
 }
 fun subtract(a: U64, b: U64): U64 asm {
-  mov r8, [rsp + 16]
-  sub r8, [rsp + 24]
-  mov r9, [rsp + 8]
+  mov r8, [rsp + 16] ; a
+  sub r8, [rsp + 24] ; b
+  mov r9, [rsp + 8]  ; return address
   mov [r9], r8
+  ret
+}
+
+fun multiply(a: U8, b: U8): U8 asm {
+  mov al, [rsp + 16]  ; a
+  mov r8b, [rsp + 17] ; b
+  mul r8b             ; al * r8b = ax
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], al
+  ret
+}
+fun multiply(a: U16, b: U16): U16 asm {
+  mov ax, [rsp + 16]  ; a
+  mov r8w, [rsp + 18] ; b
+  mul r8w             ; ax * r8w = dx:ax
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], ax
+  ret
+}
+fun multiply(a: U32, b: U32): U32 asm {
+  mov eax, [rsp + 16] ; a
+  mov r8d, [rsp + 20] ; b
+  mul r8d             ; eax * r8d = edx:eax
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], eax
   ret
 }
 fun multiply(a: U64, b: U64): U64 asm {
-  mov r8, [rsp + 16]
-  mul r8, [rsp + 24] ; TODO: doesn't work, result is double word
-  mov r9, [rsp + 8]
-  mov [r9], r8
+  mov rax, [rsp + 16] ; a
+  mov r8, [rsp + 24]  ; b
+  mul r8              ; rax * r8 = rdx:rax
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], rax
+  ret
+}
+
+fun divide(a: U8, b: U8): U8 asm {
+  mov ah, 0           ; sign extension (always zero for unsigned ints)
+  mov al, [rsp + 16]  ; a
+  mov r8b, [rsp + 17] ; b
+  div r8b             ; ax / r8b = al, remainder ah
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], al
+  ret
+}
+fun divide(a: U16, b: U16): U16 asm {
+  mov dx, 0           ; sign extension (always zero for unsigned ints)
+  mov ax, [rsp + 16]  ; a
+  mov r8w, [rsp + 18] ; b
+  div r8w             ; dx:ax / r8w = ax, remainder dx
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], ax
+  ret
+}
+fun divide(a: U32, b: U32): U32 asm {
+  mov edx, 0          ; sign extension (always zero for unsigned ints)
+  mov eax, [rsp + 16] ; a
+  mov r8d, [rsp + 20] ; b
+  div r8d             ; edx:eax / r8d = eax, remainder edx
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], eax
   ret
 }
 fun divide(a: U64, b: U64): U64 asm {
-  mov r8, [rsp + 16]
-  div r8, [rsp + 24] ; TODO: doesn't work like this
-  mov r9, [rsp + 8]
-  mov [r9], r8
+  mov rdx, 0          ; sign extension (always zero for unsigned ints)
+  mov rax, [rsp + 16] ; a
+  mov r8, [rsp + 24]  ; b
+  div r8              ; rdx:rax / r8 = rax, remainder rdx
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], rax
   ret
 }
-fun modulo(a: U64, b: U64): U64 asm {
-  ; TODO: implement
-  ;mov r8, [rsp + 16]
-  ;div r8, [rsp + 24]
-  ;mov r9, [rsp + 8]
-  ;mov [r9], r8
+
+fun remainder(a: U8, b: U8): U8 asm {
+  mov ah, 0           ; sign extension (always zero for unsigned ints)
+  mov al, [rsp + 16]  ; a
+  mov r8b, [rsp + 17] ; b
+  div r8b             ; ax / r8b = al, remainder ah
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], ah
   ret
 }
+fun remainder(a: U16, b: U16): U16 asm {
+  mov dx, 0           ; sign extension (always zero for unsigned ints)
+  mov ax, [rsp + 16]  ; a
+  mov r8w, [rsp + 18] ; b
+  div r8w             ; dx:ax / r8w = ax, remainder dx
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], dx
+  ret
+}
+fun remainder(a: U32, b: U32): U32 asm {
+  mov edx, 0          ; sign extension (always zero for unsigned ints)
+  mov eax, [rsp + 16] ; a
+  mov r8d, [rsp + 20] ; b
+  div r8d             ; edx:eax / r8d = eax, remainder edx
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], edx
+  ret
+}
+fun remainder(a: U64, b: U64): U64 asm {
+  mov rdx, 0          ; sign extension (always zero for unsigned ints)
+  mov rax, [rsp + 16] ; a
+  mov r8, [rsp + 24]  ; b
+  div r8              ; rdx:rax / r8 = rax, remainder rdx
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], rdx
+  ret
+}
+
+| For unsigned integers, modulo is the same as remainder.
+fun modulo(a: U8, b: U8): U8 { a.remainder(b) }
+fun modulo(a: U16, b: U16): U16 { a.remainder(b) }
+fun modulo(a: U32, b: U32): U32 { a.remainder(b) }
+fun modulo(a: U64, b: U64): U64 { a.remainder(b) }
+
 fun compare_to(a: U64, b: U64): Ordering asm {
   mov r9, [rsp + 8]
   cmp [rsp + 16], [rsp + 24]
@@ -455,6 +583,85 @@ fun compare_to(a: U64, b: U64): Ordering asm {
 .greater
   mov [r9], 2 ; greater
 .end
+  ret
+}
+
+fun to_U16(n: U8): U16 asm {
+  mov r8, 0           ; sign extension (always zero for unsigned ints)
+  mov r8b, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8w
+  ret
+}
+fun to_U32(n: U8): U32 asm {
+  mov r8, 0           ; sign extension (always zero for unsigned ints)
+  mov r8b, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
+fun to_U64(n: U8): U64 asm {
+  mov r8, 0           ; sign extension (always zero for unsigned ints)
+  mov r8b, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8
+  ret
+}
+fun to_U8(n: U16): U8 asm {
+  mov r8w, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8b
+  ret
+}
+fun to_U32(n: U16): U32 asm {
+  mov r8, 0           ; sign extension (always zero for unsigned ints)
+  mov r8w, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
+fun to_U64(n: U16): U64 asm {
+  mov r8, 0           ; sign extension (always zero for unsigned ints)
+  mov r8w, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
+fun to_U8(n: U32): U8 asm {
+  mov r8d, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8b
+  ret
+}
+fun to_U16(n: U32): U16 asm {
+  mov r8d, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8w
+  ret
+}
+fun to_U64(n: U32): U64 asm {
+  mov r8, 0           ; sign extension (always zero for unsigned ints)
+  mov r8d, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8
+  ret
+}
+fun to_U8(n: U64): U8 asm {
+  mov r8, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8b
+  ret
+}
+fun to_U16(n: U64): U16 asm {
+  mov r8, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8w
+  ret
+}
+fun to_U32(n: U64): U32 asm {
+  mov r8, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
   ret
 }
 
