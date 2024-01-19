@@ -360,7 +360,7 @@ fun syscall(number: U64, arg0: U64, arg1: U64, arg2: U64): U64 asm {
 
 fun halt(): Never { loop {} }
 fun exit(status: U8): Never { 60.syscall(status.to_U64()) halt() }
-fun panic(message: Str): Never { stderr.writeln(message) exit(1) }
+fun panic(message: Str): Never { stderr.writeln(message) exit(1:U8) }
 fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
 fun todo(): Never { panic("todo") }
@@ -425,6 +425,34 @@ fun add(a: U64, b: U64): U64 asm {
   mov [r9], r8
   ret
 }
+fun add(a: I8, b: I8): I8 asm {
+  mov r8b, [rsp + 16] ; a
+  add r8b, [rsp + 17] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8b
+  ret
+}
+fun add(a: I16, b: I16): I16 asm {
+  mov r8w, [rsp + 16] ; a
+  add r8w, [rsp + 18] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8w
+  ret
+}
+fun add(a: I32, b: I32): I32 asm {
+  mov r8d, [rsp + 16] ; a
+  add r8d, [rsp + 20] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
+fun add(a: I64, b: I64): I64 asm {
+  mov r8, [rsp + 16] ; a
+  add r8, [rsp + 24] ; b
+  mov r9, [rsp + 8]  ; return address
+  mov [r9], r8
+  ret
+}
 
 | TODO: is this guaranteed to underflow correctly?
 fun subtract(a: U8, b: U8): U8 asm {
@@ -449,6 +477,34 @@ fun subtract(a: U32, b: U32): U32 asm {
   ret
 }
 fun subtract(a: U64, b: U64): U64 asm {
+  mov r8, [rsp + 16] ; a
+  sub r8, [rsp + 24] ; b
+  mov r9, [rsp + 8]  ; return address
+  mov [r9], r8
+  ret
+}
+fun subtract(a: I8, b: I8): I8 asm {
+  mov r8b, [rsp + 16] ; a
+  sub r8b, [rsp + 17] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8b
+  ret
+}
+fun subtract(a: I16, b: I16): I16 asm {
+  mov r8w, [rsp + 16] ; a
+  sub r8w, [rsp + 18] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8w
+  ret
+}
+fun subtract(a: I32, b: I32): I32 asm {
+  mov r8d, [rsp + 16] ; a
+  sub r8d, [rsp + 20] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
+fun subtract(a: I64, b: I64): I64 asm {
   mov r8, [rsp + 16] ; a
   sub r8, [rsp + 24] ; b
   mov r9, [rsp + 8]  ; return address
@@ -486,6 +542,28 @@ fun multiply(a: U64, b: U64): U64 asm {
   mul r8              ; rax * r8 = rdx:rax
   mov r9, [rsp + 8]   ; return address
   mov [r9], rax
+  ret
+}
+| TODO: fun multiply(a: I8, b: I8): I8 asm
+fun multiply(a: I16, b: I16): I16 asm {
+  mov r8w, [rsp + 16]  ; a
+  imul r8w, [rsp + 18] ; b
+  mov r9, [rsp + 8]    ; return address
+  mov [r9], r8w
+  ret
+}
+fun multiply(a: I32, b: I32): I32 asm {
+  mov r8d, [rsp + 16]  ; a
+  imul r8d, [rsp + 20] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
+fun multiply(a: I64, b: I64): I64 asm {
+  mov r8, [rsp + 16]  ; a
+  imul r8, [rsp + 24] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8
   ret
 }
 
