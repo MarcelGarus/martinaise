@@ -1491,10 +1491,10 @@ fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
 |
 | https://www.gnu.org/software/libc/manual/html_node/Opening-and-Closing-Files.html
 
-fun libc_open(filename: U64, flags: U64, mode: U64): U64 { ... }
-fun libc_read(file: U64, buf: U64, len: U64): U64 { ... }
-fun libc_write(file: U64, buf: U64, len: U64): U64 { ... }
-fun libc_close(file: U64): U8 { ... }
+| fun libc_open(filename: U64, flags: U64, mode: U64): U64 { ... }
+| fun libc_read(file: U64, buf: U64, len: U64): U64 { ... }
+| fun libc_write(file: U64, buf: U64, len: U64): U64 { ... }
+| fun libc_close(file: U64): U8 { ... }
 
 fun libc_open_flag_rdonly(): U64 { 8#0000 }
 fun libc_open_flag_wronly(): U64 { 8#0001 }
@@ -1568,12 +1568,12 @@ fun write_bytes(file: File, buffer: Slice[U8]) {
   loop {
     if buffer.is_empty() then break
     var written =
-      libc_write(file.descriptor, buffer.data.to_address(), buffer.len)
+      1.syscall(file.descriptor, buffer.data.to_address(), buffer.len)
     buffer = buffer.without_first(written)
   }
 }
 fun write_byte(file: File, byte: U8) {
-  libc_write(file.descriptor, byte.&.to_address(), 1).ignore()
+  1.syscall(file.descriptor, byte.&.to_address(), 1).ignore()
 }
 
 fun close(file: File) { libc_close(file.descriptor).ignore() }
