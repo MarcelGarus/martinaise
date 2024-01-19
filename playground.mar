@@ -40,18 +40,9 @@ struct BreakScope {
 }
 struct ContinueScope { continues: Vec[U64] }
 
-fun asm_write(file: File, char: Char) {
-  1.syscall(file.descriptor, char.&.to_address(), 1).ignore()
-}
-
-fun to_address[T](ref: &T): U64 asm {
-  ;        0       8       16      24
-  ; stack: [callee][return][ref   ]
-  mov r8, [rsp + 16]
-  mov r9, [rsp + 8]
-  mov [r9], r8
-  ret
-}
+| fun asm_write(file: File, char: Char) {
+|   1.syscall(file.descriptor, char.&.to_address(), 1).ignore()
+| }
 
 fun main(args: Slice[Str]): Never {
   var stdout = File { descriptor = 1 }

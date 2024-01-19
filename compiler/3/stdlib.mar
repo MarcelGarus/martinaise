@@ -869,8 +869,19 @@ fun max[T](a: T, b: T): T { if a.is_greater_than(b) then a else b }
 
 fun size_of_type[T](): U64 { ... }
 | fun libc_malloc(size: U64): U64 { ... }
-| fun to_address[T](ref: &T): U64 { ... }
-| fun to_reference[T](address: U64): &T { ... }
+
+fun to_address[T](ref: &T): U64 asm {
+  mov r8, [rsp + 16] ; ref
+  mov r9, [rsp + 8]  ; return address
+  mov [r9], r8
+  ret
+}
+fun to_reference[T](address: U64): &T asm {
+  mov r8, [rsp + 16] ; address
+  mov r9, [rsp + 8]  ; return address
+  mov [r9], r8
+  ret
+}
 
 fun malloc(size: U64): U64 {
   var address = libc_malloc(size)
