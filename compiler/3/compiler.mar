@@ -3369,10 +3369,21 @@ fun copy_memory[W](
   writer: W,
   from_reg: Str, from_offset: U64, to_reg: Str, to_offset: U64, amount: U64,
 ) {
-  for i in 0.to(amount) do
-    writer."
-      '          mov bl, [{from_reg} + {from_offset.add(i)}]{newline}
-      '          mov [{to_reg} + {to_offset.add(i)}], bl{newline}"
+  var i = 0
+  loop {
+    if i.is_at_least(amount) then break
+    if amount.subtract(i).is_at_least(8) then {
+      writer."
+        '          mov r8, [{from_reg} + {from_offset.add(i)}]{newline}
+        '          mov [{to_reg} + {to_offset.add(i)}], r8{newline}"
+      i = i.add(8)
+    } else {
+      writer."
+        '          mov r8b, [{from_reg} + {from_offset.add(i)}]{newline}
+        '          mov [{to_reg} + {to_offset.add(i)}], r8b{newline}"
+      i = i.inc()
+    }
+  }
 }
 
 fun mangle(name: Str): Str {
