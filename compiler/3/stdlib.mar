@@ -648,19 +648,16 @@ fun modulo(a: U32, b: U32): U32 { a.remainder(b) }
 fun modulo(a: U64, b: U64): U64 { a.remainder(b) }
 
 fun compare_to(a: U64, b: U64): Ordering asm {
-  mov r9, [rsp + 8]
-  cmp [rsp + 16], [rsp + 24]
-  je .equal
-  jg .greater
-  ; less
-  mov [r9], 0 ; less
-  jmp .end
-.equal
-  mov [r9], 1 ; equal
-  jmp .end
-.greater
-  mov [r9], 2 ; greater
-.end
+  mov r10, 0 ; less
+  mov r11, 1 ; equal
+  mov r12, 2 ; greater
+  mov r8, [rsp + 16]
+  cmp r8, [rsp + 24]
+  cmovb r9, r10 ; conditional move below -> less
+  cmove r9, r11 ; conditional move equal -> equal
+  cmova r9, r12 ; conditional move above -> greater
+  mov r8, [rsp + 8]
+  mov [r8], r9b
   ret
 }
 
