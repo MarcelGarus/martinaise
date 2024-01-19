@@ -3090,10 +3090,7 @@ fun write_as_asm[W](writer: W, mono: Mono) {
       type("arguments of {name}"), MonoTypeDef.struct_(arg_struct),
       layouts.&, mono.type_defs,
     ))
-
-    | writer."; Arg layout of {name}:{newline}{arg_layouts.get(name)}{newline}"
   }
-
 
   writer."
     '; This file is a compiled Martinaise file.{newline}
@@ -3101,21 +3098,41 @@ fun write_as_asm[W](writer: W, mono: Mono) {
     '; Link:    ld file.o -o file{newline}
     '; Run:     ./file{newline}{newline}"
 
-  | TODO: Globals
-  | for global in mono.globals do {
-  |   var name = global.key
-  |   var type = global.value.return_type
-  |   writer."{type.mangle()} global_{name};{newline}"
-  | }
-  | for global in mono.globals do {
-  |   var name = global.key
-  |   var value = global.value
-  |   var body = if value.kind is body(body) then body else unreachable()
-  |   writer."{value.return_type.mangle()} _compute_global_{name}() 
-  |     '{body.as_c()}{newline}"
-  | }
+  writer."
+    'section .bss ; uninitialized memory{newline}{newline}
+    '_globals:{newline}"
+  for global in mono.globals do
+    writer."  .{global.key} resb 
+      '{layouts.get(global.value.return_type).size}{newline}"
+  writer."{newline}"
 
-  | var rodata = vec[]()
+  writer."
+    'section .text ; executable code{newline}{newline}"
+
+  arg_layouts.&.put("_init_global", MemLayout {
+    type = type("Nothing"),
+    size = 0,
+    alignment = 1,
+    kind = MemLayoutKind.struct_(vec[MemLayoutStructPart]()),
+  })
+  for global in mono.globals do {
+    writer."_init_global_{global.key}:{newline}"
+    writer.write_body_as_asm(
+      "_init_global", global.value, mono, layouts, arg_layouts,
+    )
+    writer."{newline}"
+  }
+  writer."_init_globals:{newline}"
+  for global in mono.globals do
+    | The global init functions are guaranteed not to take any arguments. The
+    | stack only has to look like this: [caller][return]...
+    writer."
+      '  push _globals.{global.key}{newline}
+      '  call _init_global_{global.key}{newline}
+      '  pop r8{newline}"
+  writer."  ret{newline}{newline}"
+
+  | var string_literals = vec[]()
 
   for fun_ in mono.funs do {
     var signature = fun_.key
@@ -3124,206 +3141,215 @@ fun write_as_asm[W](writer: W, mono: Mono) {
     writer.
       "; {signature}{newline}
       '{signature.mangle()}:{newline}"
-
-    switch fun_.kind
-    case asm_(code) writer."{code}{newline}"
-    case builtin {
-      if signature.starts_with("size_of_type")
-      then writer."
-        '  mar_U64 size;{newline}
-        '  size.value = (uint64_t) sizeof({
-          fun_.type_args.get(0).mangle()});
-        '  return size;{newline}"
-      else panic("Unknown builtin fun {signature}")
-    }
-    case body(body) {
-      var labels = vec[Str]().&
-
-      var arg_offsets =
-        if arg_layouts.get(signature).kind is struct_(fields)
-        then fields.name_to_offset_map()
-        else unreachable()
-
-      | Layout locals
-      var locals_struct = MonoStruct { fields = vec[MonoStructField]() }
-      for slot in body.slots.iter().enumerate() do {
-        if slot.item.initial_value is arg then continue | already on the stack
-        locals_struct.fields.&.push(MonoStructField {
-          name = "local_{slot.index}", type = slot.item.type,
-        })
-      }
-      var locals_layout = calculate_mem_layout(
-        type("locals of {signature}"), MonoTypeDef.struct_(locals_struct),
-        layouts.&, mono.type_defs,
-      )
-      var locals_offsets =
-        if locals_layout.kind is struct_(fields)
-        then fields.name_to_offset_map()
-        else unreachable()
-      var locals_size = locals_layout.size.round_up_to_multiple_of(8)
-
-      | Combine all slots – args and locals
-      var slot_offsets = map[MonoSlotRef, U64]() | relative to rsp
-      for slot in body.slots.iter().enumerate() do {
-        var offset =
-          if slot.item.initial_value is arg
-          then locals_size
-            .add(16)  | caller's ip and return value
-            .add(arg_offsets.get("arg_{slot.index}"))
-          else locals_offsets.get("local_{slot.index}")
-        slot_offsets.&.put(MonoSlotRef { index = slot.index }, offset)
-      }
-
-      | Print the layout
-      writer."{indent(labels)}sub rsp, {locals_size}{newline}"
-      writer.
-        "{indent(labels)}; rsp + {locals_size}: caller's ip{newline}
-        '{indent(labels)}; rsp + {locals_size.add(8)}: 
-          'address of where to put the return value{newline}"
-      for slot in body.slots.iter().enumerate() do {
-        var slot_ref = MonoSlotRef { index = slot.index }
-        writer.
-          "{indent(labels)}; rsp + {slot_offsets.get(slot_ref)}: 
-          '{slot_ref}: {slot.item.type} = {
-            switch slot.item.initial_value
-            case uninitialized "uninitialized"
-            case arg(i) "arg_{i}"
-            case int(int) "{int}"
-            case str(str) '""{{str}}""'
-          }{newline}"
-      }
-      eprintln(slot_offsets)
-
-      for slot in slot_offsets do {
-        var offset = slot.value
-        var slot = slot.key
-        switch body.slots.get(slot.index).initial_value
-        case uninitialized {}
-        case arg {}
-        case int(int) writer."
-          '          mov r8, {int}{newline}
-          '          mov [rsp + {offset}], r8{newline}"
-        case str(str) {
-          writer.
-            "          mov [rsp + {offset}], <rodata_constant> ; TODO{newline}
-            '          mov [rsp + 8] {str.len()}{newline}"
-          | writer.'" {{slot_ref}}.{{mangle("chars")}}.{{mangle("data")}}.pointer = 
-          |   '({{mangle(type("Char"))}}*) ""'
-          | for char in str do writer."\x{char.byte.radix(16)}"
-          | writer.'""; 
-          |   '{{slot_ref}}.{{mangle("chars")}}.{{mangle("len")}}.value = 
-          |     '{{str.len()}};"'
-        }
-      }
-
-      for statement in body.statements do {
-        if statement is label then {} else writer."{indent(labels)}; {statement}{newline}"
-
-        switch statement
-        case label(label) labels.push("{label}")
-        case assign(assign) {
-          var size = layouts.get(assign.value.type).size
-          writer.save_address(assign.value, "r8", 0, slot_offsets, layouts)
-          writer.save_address(assign.to, "r9", 0, slot_offsets, layouts)
-          writer.copy_memory("r8", 0, "r9", 0, size)
-        }
-        case set_enum(set) {
-          var type = body.slots.get(set.slot.index).type
-          var variant = 0
-          if mono.type_defs.get(type) is enum_(enum_) then {
-            for v in enum_.variants.iter().enumerate() do
-              if v.item.name.equals(set.variant) then variant = v.index
-          } else panic("is not an enum")
-
-          var to_offset = slot_offsets.get(set.slot)
-          var payload_size = layouts.get(set.value.type).size
-          var variant_tag_offset = to_offset.add(payload_size)
-
-          writer."
-            '{indent(labels)}mov r8, {variant}{newline}
-            '{indent(labels)}mov [rsp {variant_tag_offset}], r8{newline}"
-          writer.save_address(set.value, "r8", 0, slot_offsets, layouts)
-          writer.copy_memory("r8", 0, "rsp", to_offset, payload_size)
-        }
-        case call(call) {
-          var args_layout = arg_layouts.get(call.fun_)
-          var arg_offsets = {
-            if args_layout.kind is struct_(s) then s else unreachable()
-          }.name_to_offset_map()
-          var args_size = args_layout.size.round_up_to_multiple_of(8)
-
-          writer."{indent(labels)}sub rsp, {args_size}{newline}"
-          for arg in call.args.iter().enumerate() do {
-            var size = layouts.get(arg.item.type).size
-            var offset_in_args = arg_offsets.get("arg_{arg.index}")
-            writer.save_address(arg.item, "r8", args_size, slot_offsets, layouts)
-            writer.copy_memory("r8", 0, "rsp", offset_in_args, size)
-          }
-          writer."
-            '{indent(labels)}sub rsp, 8{newline}
-            '{indent(labels)}lea r8, [rsp + {args_size.add(8).add(slot_offsets.get(call.to))}]{newline}
-            '{indent(labels)}mov [rsp], r8{newline}
-            '{indent(labels)}call {call.fun_.mangle()}{newline}
-            '{indent(labels)}add rsp, {args_size.add(8)}{newline}"
-        }
-        case jump(jump) writer."{indent(labels)}jmp {jump.target}{newline}"
-        case jump_if_variant(jump) {
-          var type = jump.condition.type
-          var variant_tag_offset = layouts.get(type).size.subtract(1)
-          var checked_tag = 0
-          if mono.type_defs.get(type) is enum_(enum_) then {
-            for v in enum_.variants.iter().enumerate() do
-              if v.item.name.equals(jump.variant) then checked_tag = v.index
-          } else panic("is not an enum")
-
-          writer.save_address(jump.condition, "r8", 0, slot_offsets, layouts)
-          writer.
-            "{indent(labels)}mov r8, [r8 + {variant_tag_offset}]{newline}
-            '{indent(labels)}cmp r8, {checked_tag}{newline}
-            '{indent(labels)}jz  {jump.target}{newline}"
-        }
-        case get_enum_value(get) {
-          var variant_type = body.slots.get(get.to.index).type
-          var size = layouts.get(variant_type).size
-          var to_offset = slot_offsets.get(get.to)
-
-          writer.save_address(get.of, "r8", 0, slot_offsets, layouts)
-          writer.copy_memory("r8", 0, "rsp", to_offset, size)
-        }
-        case return_(expr) {
-          var size = layouts.get(expr.type).size
-
-          writer.save_address(expr, "r8", 0, slot_offsets, layouts)
-          writer."{indent(labels)}lea r9, [rsp + 8]{newline}"
-          writer.copy_memory("r8", 0, "r9", 0, size)
-          writer."{indent(labels)}jmp .end{newline}"
-        }
-        case ref(ref) {
-          writer.save_address(ref.of, "r8", 0, slot_offsets, layouts)
-          writer."{indent(labels)}mov [rsp + {slot_offsets.get(ref.to)}], r8{newline}"
-        }
-      }
-      labels.push(".end")
-      writer."
-        '{indent(labels)}add rsp, {locals_size}{newline}
-        '{indent(labels)}ret{newline}"
-    }
+    writer.write_body_as_asm(signature, fun_, mono, layouts, arg_layouts)
     writer."{newline}"
   }
 
   writer."
     'global _start{newline}
     '_start:{newline}
-    '  ; TODO: set up function{newline}"
-  for global in mono.globals_init_order do
-    writer."  global_{global} = _compute_global_{global}();{newline}"
-  writer."
-    '  pop r8{newline}
+    '  call _init_globals{newline}
+    '  pop r8 ; num args{newline}
     '.args: ; TODO: forward args to main{newline}
     '  push 0{newline}
     '  push 0{newline}
     '  push 0{newline}
-    '  call {"main(Slice[Str])".mangle()}"
+    '  call {"main(Slice[Str])".mangle()}{newline}
+    '  ret"
+}
+
+fun write_body_as_asm[W](
+  writer: W, signature: Str, fun_: MonoFun,
+  mono: Mono, layouts: Map[Type, MemLayout], arg_layouts: Map[Str, MemLayout],
+) {
+  switch fun_.kind
+  case asm_(code) writer."{code}{newline}"
+  case builtin {
+    if signature.starts_with("size_of_type")
+    then writer."
+      '  mar_U64 size;{newline}
+      '  size.value = (uint64_t) sizeof({
+        fun_.type_args.get(0).mangle()});
+      '  return size;{newline}"
+    else panic("Unknown builtin fun {signature}")
+  }
+  case body(body) {
+    var labels = vec[Str]().&
+
+    var arg_offsets =
+      if arg_layouts.get(signature).kind is struct_(fields)
+      then fields.name_to_offset_map()
+      else unreachable()
+
+    | Layout locals
+    var locals_struct = MonoStruct { fields = vec[MonoStructField]() }
+    for slot in body.slots.iter().enumerate() do {
+      if slot.item.initial_value is arg then continue | already on the stack
+      locals_struct.fields.&.push(MonoStructField {
+        name = "local_{slot.index}", type = slot.item.type,
+      })
+    }
+    var locals_layout = calculate_mem_layout(
+      type("locals of {signature}"), MonoTypeDef.struct_(locals_struct),
+      layouts.&, mono.type_defs,
+    )
+    var locals_offsets =
+      if locals_layout.kind is struct_(fields)
+      then fields.name_to_offset_map()
+      else unreachable()
+    var locals_size = locals_layout.size.round_up_to_multiple_of(8)
+
+    | Combine all slots – args and locals
+    var slot_offsets = map[MonoSlotRef, U64]() | relative to rsp
+    for slot in body.slots.iter().enumerate() do {
+      var offset =
+        if slot.item.initial_value is arg
+        then locals_size
+          .add(16)  | caller's ip and return value
+          .add(arg_offsets.get("arg_{slot.index}"))
+        else locals_offsets.get("local_{slot.index}")
+      slot_offsets.&.put(MonoSlotRef { index = slot.index }, offset)
+    }
+
+    | Print the layout
+    writer."{indent(labels)}sub rsp, {locals_size}{newline}"
+    writer.
+      "{indent(labels)}; rsp + {locals_size}: caller's ip{newline}
+      '{indent(labels)}; rsp + {locals_size.add(8)}: 
+        'address of where to put the return value{newline}"
+    for slot in body.slots.iter().enumerate() do {
+      var slot_ref = MonoSlotRef { index = slot.index }
+      writer.
+        "{indent(labels)}; rsp + {slot_offsets.get(slot_ref)}: 
+        '{slot_ref}: {slot.item.type} = {
+          switch slot.item.initial_value
+          case uninitialized "uninitialized"
+          case arg(i) "arg_{i}"
+          case int(int) "{int}"
+          case str(str) '""{{str}}""'
+        }{newline}"
+    }
+    eprintln(slot_offsets)
+
+    for slot in slot_offsets do {
+      var offset = slot.value
+      var slot = slot.key
+      switch body.slots.get(slot.index).initial_value
+      case uninitialized {}
+      case arg {}
+      case int(int) {
+        writer."          mov r8, {int}{newline}"
+        var size = layouts.get(body.slots.get(slot.index).type).size
+        if size.equals(1) then writer."          mov [rsp + {offset}], r8b{newline}"
+        if size.equals(2) then writer."          mov [rsp + {offset}], r8w{newline}"
+        if size.equals(4) then writer."          mov [rsp + {offset}], r8d{newline}"
+        if size.equals(8) then writer."          mov [rsp + {offset}], r8{newline}"
+      }
+      case str(str) {
+        writer.
+          "          mov [rsp + {offset}], <rodata_constant> ; TODO{newline}
+          '          mov [rsp + 8] {str.len()}{newline}"
+        | writer.'" {{slot_ref}}.{{mangle("chars")}}.{{mangle("data")}}.pointer = 
+        |   '({{mangle(type("Char"))}}*) ""'
+        | for char in str do writer."\x{char.byte.radix(16)}"
+        | writer.'""; 
+        |   '{{slot_ref}}.{{mangle("chars")}}.{{mangle("len")}}.value = 
+        |     '{{str.len()}};"'
+      }
+    }
+
+    for statement in body.statements do {
+      if statement is label then {} else writer."{indent(labels)}; {statement}{newline}"
+
+      switch statement
+      case label(label) labels.push("{label}")
+      case assign(assign) {
+        var size = layouts.get(assign.value.type).size
+        writer.save_address(assign.value, "r8", 0, slot_offsets, layouts)
+        writer.save_address(assign.to, "r9", 0, slot_offsets, layouts)
+        writer.copy_memory("r8", 0, "r9", 0, size)
+      }
+      case set_enum(set) {
+        var type = body.slots.get(set.slot.index).type
+        var variant = 0
+        if mono.type_defs.get(type) is enum_(enum_) then {
+          for v in enum_.variants.iter().enumerate() do
+            if v.item.name.equals(set.variant) then variant = v.index
+        } else panic("is not an enum")
+
+        var to_offset = slot_offsets.get(set.slot)
+        var payload_size = layouts.get(set.value.type).size
+        var variant_tag_offset = to_offset.add(payload_size)
+
+        writer."
+          '{indent(labels)}mov r8, {variant}{newline}
+          '{indent(labels)}mov [rsp + {variant_tag_offset}], r8b{newline}"
+        writer.save_address(set.value, "r8", 0, slot_offsets, layouts)
+        writer.copy_memory("r8", 0, "rsp", to_offset, payload_size)
+      }
+      case call(call) {
+        var args_layout = arg_layouts.get(call.fun_)
+        var arg_offsets = {
+          if args_layout.kind is struct_(s) then s else unreachable()
+        }.name_to_offset_map()
+        var args_size = args_layout.size.round_up_to_multiple_of(8)
+
+        writer."{indent(labels)}sub rsp, {args_size}{newline}"
+        for arg in call.args.iter().enumerate() do {
+          var size = layouts.get(arg.item.type).size
+          var offset_in_args = arg_offsets.get("arg_{arg.index}")
+          writer.save_address(arg.item, "r8", args_size, slot_offsets, layouts)
+          writer.copy_memory("r8", 0, "rsp", offset_in_args, size)
+        }
+        writer."
+          '{indent(labels)}sub rsp, 8{newline}
+          '{indent(labels)}lea r8, [rsp + {args_size.add(8).add(slot_offsets.get(call.to))}]{newline}
+          '{indent(labels)}mov [rsp], r8{newline}
+          '{indent(labels)}call {call.fun_.mangle()}{newline}
+          '{indent(labels)}add rsp, {args_size.add(8)}{newline}"
+      }
+      case jump(jump) writer."{indent(labels)}jmp {jump.target}{newline}"
+      case jump_if_variant(jump) {
+        var type = jump.condition.type
+        var variant_tag_offset = layouts.get(type).size.subtract(1)
+        var checked_tag = 0
+        if mono.type_defs.get(type) is enum_(enum_) then {
+          for v in enum_.variants.iter().enumerate() do
+            if v.item.name.equals(jump.variant) then checked_tag = v.index
+        } else panic("is not an enum")
+
+        writer.save_address(jump.condition, "r8", 0, slot_offsets, layouts)
+        writer."
+          '{indent(labels)}mov r8b, [r8 + {variant_tag_offset}]{newline}
+          '{indent(labels)}cmp r8b, {checked_tag}{newline}
+          '{indent(labels)}je  {jump.target}{newline}"
+      }
+      case get_enum_value(get) {
+        var variant_type = body.slots.get(get.to.index).type
+        var size = layouts.get(variant_type).size
+        var to_offset = slot_offsets.get(get.to)
+
+        writer.save_address(get.of, "r8", 0, slot_offsets, layouts)
+        writer.copy_memory("r8", 0, "rsp", to_offset, size)
+      }
+      case return_(expr) {
+        var size = layouts.get(expr.type).size
+
+        writer.save_address(expr, "r8", 0, slot_offsets, layouts)
+        writer."{indent(labels)}mov r9, [rsp + {locals_size.add(8)}]{newline}"
+        writer.copy_memory("r8", 0, "r9", 0, size)
+        writer."{indent(labels)}jmp .end{newline}"
+      }
+      case ref(ref) {
+        writer.save_address(ref.of, "r8", 0, slot_offsets, layouts)
+        writer."{indent(labels)}mov [rsp + {slot_offsets.get(ref.to)}], r8{newline}"
+      }
+    }
+    labels.push(".end")
+    writer."
+      '{indent(labels)}add rsp, {locals_size}{newline}
+      '{indent(labels)}ret{newline}"
+  }
 }
 
 fun indent(labels: &Vec[Str]): LabeledIndent {
@@ -3348,7 +3374,7 @@ fun save_address[W](
   switch expr.kind
   case nothing {} | you can read zero bytes from anywhere
   case never {} | you can read zero bytes from anywhere
-  case global(name) writer."          lea {register}, <global address> ; {expr}{newline}" | TODO
+  case global(name) writer."          lea {register}, [_globals.{name}] ; {expr}{newline}" | TODO
   case slot(slot) writer."
     '          lea {register}, [rsp + {locals_offset.add(slot_offsets.get(slot))}] ; {expr}{newline}"
   case member(member) {
@@ -3374,13 +3400,13 @@ fun copy_memory[W](
     if i.is_at_least(amount) then break
     if amount.subtract(i).is_at_least(8) then {
       writer."
-        '          mov r8, [{from_reg} + {from_offset.add(i)}]{newline}
-        '          mov [{to_reg} + {to_offset.add(i)}], r8{newline}"
+        '          mov r15, [{from_reg} + {from_offset.add(i)}]{newline}
+        '          mov [{to_reg} + {to_offset.add(i)}], r15{newline}"
       i = i.add(8)
     } else {
       writer."
-        '          mov r8b, [{from_reg} + {from_offset.add(i)}]{newline}
-        '          mov [{to_reg} + {to_offset.add(i)}], r8b{newline}"
+        '          mov r15b, [{from_reg} + {from_offset.add(i)}]{newline}
+        '          mov [{to_reg} + {to_offset.add(i)}], r15b{newline}"
       i = i.inc()
     }
   }
