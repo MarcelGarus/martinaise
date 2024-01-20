@@ -2813,7 +2813,10 @@ fun calculate_mem_layout(
     | smallest overall size.
     var smallest_permutation = uninitialized_slice[U64](remaining_fields.len)
     var smallest_size_of_remaining = 999999999 | TODO
-    for permutation in permutations(remaining_fields.len) do {
+    for permutation in permutations(remaining_fields.len).enumerate() do {
+      | Only try the first 1000 permutations.
+      if permutation.index.is_at_least(1000) then break
+      var permutation = permutation.item
       var size = 0
       for field in permutation do {
         var field = remaining_fields.get(field)
@@ -3244,7 +3247,6 @@ fun write_body_as_asm[W](
           case str(str) '""{{str}}""'
         }{newline}"
     }
-    eprintln(slot_offsets)
 
     for slot in slot_offsets do {
       var offset = slot.value
