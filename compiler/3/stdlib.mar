@@ -756,6 +756,11 @@ fun dec(a: I8): I8 { a.subtract(1:I8) }
 fun dec(a: I16): I16 { a.subtract(1:I16) }
 fun dec(a: I32): I32 { a.subtract(1:I32) }
 fun dec(a: I64): I64 { a.subtract(1:I64) }
+
+fun round_up_to_multiple_of(number: U64, factor: U64): U64 {
+  number.add(factor.dec()).divide(factor).multiply(factor)
+}
+
 fun equals(a: U8, b: U8): Bool { a.compare_to(b).is_equal() }
 fun equals(a: U16, b: U16): Bool { a.compare_to(b).is_equal() }
 fun equals(a: U32, b: U32): Bool { a.compare_to(b).is_equal() }
@@ -868,6 +873,10 @@ fun max[T](a: T, b: T): T { if a.is_greater_than(b) then a else b }
 | at the address.
 
 fun size_of_type[T](): U64 { ... }
+fun alignment_of_type[T](): U64 { ... }
+fun stride_size_of_type[T](): U64 {
+  size_of_type[T]().round_up_to_multiple_of(alignment_of_type[T]())
+}
 | fun libc_malloc(size: U64): U64 { ... }
 
 fun to_address[T](ref: &T): U64 asm {
@@ -895,7 +904,7 @@ fun put_on_heap[T](value: T): &T {
   ref
 }
 fun add_offset[T](ref: &T, offset: U64): &T {
-  ref.to_address().add(offset.multiply(size_of_type[T]())).to_reference[T]()
+  ref.to_address().add(offset.multiply(stride_size_of_type[T]())).to_reference[T]()
 }
 fun swap[T](a: &T, b: &T) {
   var tmp = a.*
@@ -937,7 +946,7 @@ struct Slice[T] { data: &T, len: U64 }
 fun empty_slice[T](): Slice[T] { Slice { data = 0.to_reference[T](), len = 0 } }
 fun uninitialized_slice[T](len: U64): Slice[T] {
   if len.equals(0) then return empty_slice[T]()
-  var data = malloc(len.multiply(size_of_type[T]())).to_reference[T]()
+  var data = malloc(len.multiply(stride_size_of_type[T]())).to_reference[T]()
   Slice { data, len }
 }
 fun filled_slice[T](len: U64, fill: T): Slice[T] {

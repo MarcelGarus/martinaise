@@ -2862,11 +2862,10 @@ fun calculate_mem_layout(
 }
 
 fun needed_for_multiple_of(number: U64, factor: U64): U64 {
-  if number.modulo(factor).equals(0) then return 0
-  factor.subtract(number.modulo(factor))
+  number.round_up_to_multiple_of(factor).subtract(number)
 }
 fun round_up_to_multiple_of(number: U64, factor: U64): U64 {
-  number.add(7).divide(8).multiply(8)
+  number.add(factor.dec()).divide(factor).multiply(factor)
 }
 
 fun permutations(size: U64): Iter[Slice[U64], Permutations] {
@@ -3078,6 +3077,7 @@ fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, U64] {
 fun write_as_asm[W](writer: W, mono: Mono) {
   var layouts = mono.type_defs.mem_layout()
   var arg_layouts = map[Str, MemLayout]() | maps fun signature to arg struct mem layout
+  var string_literals = vec[Str]() | will be put into rodata section at the end
 
   for fun_ in mono.funs do {
     var name = fun_.key
@@ -3118,7 +3118,8 @@ fun write_as_asm[W](writer: W, mono: Mono) {
   for global in mono.globals do {
     writer."_init_global_{global.key}:{newline}"
     writer.write_body_as_asm(
-      "_init_global", global.value, mono, layouts, arg_layouts,
+      "_init_global", global.value, string_literals.&,
+      mono, layouts, arg_layouts,
     )
     writer."{newline}"
   }
@@ -3141,7 +3142,8 @@ fun write_as_asm[W](writer: W, mono: Mono) {
     writer.
       "; {signature}{newline}
       '{signature.mangle()}:{newline}"
-    writer.write_body_as_asm(signature, fun_, mono, layouts, arg_layouts)
+    writer.write_body_as_asm(
+      signature, fun_, string_literals.&, mono, layouts, arg_layouts)
     writer."{newline}"
   }
 
@@ -3155,11 +3157,18 @@ fun write_as_asm[W](writer: W, mono: Mono) {
     '  push 0{newline}
     '  push 0{newline}
     '  call {"main(Slice[Str])".mangle()}{newline}
-    '  ret"
+    '  ret{newline}{newline}"
+
+  writer."
+    'section .rodata{newline}"
+  for str in string_literals.iter().enumerate() do
+    writer."{newline}
+      '_str_{str.index}: db {comma_separated(str.item.bytes())}{newline}"
 }
 
 fun write_body_as_asm[W](
   writer: W, signature: Str, fun_: MonoFun,
+  string_literals: &Vec[Str],
   mono: Mono, layouts: Map[Type, MemLayout], arg_layouts: Map[Str, MemLayout],
 ) {
   switch fun_.kind
@@ -3167,10 +3176,16 @@ fun write_body_as_asm[W](
   case builtin {
     if signature.starts_with("size_of_type")
     then writer."
-      '  mar_U64 size;{newline}
-      '  size.value = (uint64_t) sizeof({
-        fun_.type_args.get(0).mangle()});
-      '  return size;{newline}"
+      '  mov r8, {layouts.get(fun_.type_args.get(0)).size}{newline}
+      '  mov r9, [rsp + 8]{newline}
+      '  mov [r9], r8{newline}
+      '  ret"
+    else if signature.starts_with("alignment_of_type")
+    then writer."
+      '  mov r8, {layouts.get(fun_.type_args.get(0)).alignment}{newline}
+      '  mov r9, [rsp + 8]{newline}
+      '  mov [r9], r8{newline}
+      '  ret"
     else panic("Unknown builtin fun {signature}")
   }
   case body(body) {
@@ -3246,15 +3261,13 @@ fun write_body_as_asm[W](
         if size.equals(8) then writer."          mov [rsp + {offset}], r8{newline}"
       }
       case str(str) {
-        writer.
-          "          mov [rsp + {offset}], <rodata_constant> ; TODO{newline}
-          '          mov [rsp + 8] {str.len()}{newline}"
-        | writer.'" {{slot_ref}}.{{mangle("chars")}}.{{mangle("data")}}.pointer = 
-        |   '({{mangle(type("Char"))}}*) ""'
-        | for char in str do writer."\x{char.byte.radix(16)}"
-        | writer.'""; 
-        |   '{{slot_ref}}.{{mangle("chars")}}.{{mangle("len")}}.value = 
-        |     '{{str.len()}};"'
+        var index = string_literals.len
+        string_literals.push(str)
+        writer."
+          '          mov r8, qword _str_{index}{newline}
+          '          mov [rsp + {offset}], r8{newline}
+          '          mov r8, {str.chars.len}{newline}
+          '          mov [rsp + {offset.add(8)}], r8{newline}"
       }
     }
 
