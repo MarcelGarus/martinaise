@@ -3367,7 +3367,7 @@ fun write_body_as_asm[W](
 
         var to_offset = slot_offsets.get(set.slot)
         var payload_size = layouts.get(set.value.type).size
-        var variant_tag_offset = to_offset.add(payload_size)
+        var variant_tag_offset = to_offset.add(layouts.get(type).size.dec())
 
         writer."
           '{indent(labels)}mov r8, {variant}{newline}
