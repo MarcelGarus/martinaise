@@ -3102,7 +3102,13 @@ fun write_as_asm[W](writer: W, mono: Mono) {
     '; Run:     ./file{newline}{newline}"
 
   writer."
-    'section .bss ; uninitialized memory{newline}{newline}
+    'section .bss ; uninitialized memory{newline}
+    '{newline}
+    '_heap:{newline}
+    '  align 8{newline}
+    '  .head: resb 8{newline}
+    '  .end: resb 8{newline}
+    '{newline}
     '_globals:{newline}"
   for global in mono.globals do
     writer."  .{global.key} resb 
@@ -3110,7 +3116,75 @@ fun write_as_asm[W](writer: W, mono: Mono) {
   writer."{newline}"
 
   writer."
-    'section .text ; executable code{newline}{newline}"
+    'section .text ; executable code{newline}
+    '{newline}
+    '_init_heap:{newline}
+    '  mov rax, 12 ; brk{newline}
+    '  mov rdi, 0  ; brk(0) returns the break (where the data segment ends){newline}
+    '  syscall{newline}
+    '  mov [_heap.head], rax{newline}
+    '  mov [_heap.end], rax{newline}
+    '  ret{newline}
+    '{newline}
+    '_malloc:{newline}
+    '    ; Does not follow the Martinaise calling convention. Expects the amount to{newline}
+    '    ; allocate in r8 and the alignment in r9. Returns the address in rax.{newline}
+    '    mov r10, [_heap.head] ; the address of the newly allocated memory{newline}
+    '    cmp r9, 8{newline}
+    '    je .round_up_to_multiple_of_8{newline}
+    '    cmp r9, 4{newline}
+    '    je .round_up_to_multiple_of_4{newline}
+    '    cmp r9, 2{newline}
+    '    je .round_up_to_multiple_of_2{newline}
+    '    cmp r9, 1{newline}
+    '    je .alloc{newline}
+    '    jmp .error ; alignment must be 1, 2, 4, or 8{newline}
+    '  .round_up_to_multiple_of_2:{newline}
+    '    add r10, 1{newline}
+    '    and r10, 0fffffffffffffffeH{newline}
+    '    jmp .alloc{newline}
+    '  .round_up_to_multiple_of_4:{newline}
+    '    add r10, 3{newline}
+    '    and r10, 0fffffffffffffffcH{newline}
+    '    jmp .alloc{newline}
+    '  .round_up_to_multiple_of_8:{newline}
+    '    add r10, 7{newline}
+    '    and r10, 0fffffffffffffff8H{newline}
+    '  .alloc:{newline}
+    '    ; r10 is now rounded up so that it matches the required alignment{newline}
+    '    ; find the end of the allocated data -> r11{newline}
+    '    mov r11, r10{newline}
+    '    add r11, r8{newline}
+    '    cmp r11, [_heap.end]{newline}
+    '    jge .realloc{newline}
+    '    mov [_heap.head], r11{newline}
+    '    mov rax, r10{newline}
+    '    ret{newline}
+    '  .realloc:{newline}
+    '    ; find the amount to allocate{newline}
+    '    mov r12, [_heap.end]{newline}
+    '  .find_new_brk:{newline}
+    '    add r12, 4096{newline}
+    '    cmp r12, r11{newline}
+    '    jl .find_new_brk{newline}
+    '  .found_new_brk:{newline}
+    '    push r10{newline}
+    '    push r11{newline}
+    '    mov rax, 12  ; brk{newline}
+    '    mov rdi, r12 ; brk(r12) moves the break to r12{newline}
+    '    syscall{newline}
+    '    pop r11{newline}
+    '    pop r10{newline}
+    '    cmp rax, r12{newline}
+    '    jl .error ; setting the brk failed{newline}
+    '    mov [_heap.head], r11{newline}
+    '    mov [_heap.end], rax{newline}
+    '    mov rax, r10{newline}
+    '    ret{newline}
+    '  .error:{newline}
+    '    mov rax, 0{newline}
+    '    ret{newline}
+    '{newline}"
 
   arg_layouts.&.put("_init_global", MemLayout {
     type = type("Nothing"),
@@ -3136,8 +3210,6 @@ fun write_as_asm[W](writer: W, mono: Mono) {
       '  pop r8{newline}"
   writer."  ret{newline}{newline}"
 
-  | var string_literals = vec[]()
-
   for fun_ in mono.funs do {
     var signature = fun_.key
     var fun_ = fun_.value
@@ -3153,6 +3225,7 @@ fun write_as_asm[W](writer: W, mono: Mono) {
   writer."
     'global _start{newline}
     '_start:{newline}
+    '  call _init_heap{newline}
     '  call _init_globals{newline}
     '  pop r8 ; num args{newline}
     '.args: ; TODO: forward args to main{newline}

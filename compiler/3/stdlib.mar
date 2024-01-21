@@ -375,6 +375,7 @@ fun assert(condition: Bool, message: Str) {
 | If you just write a number such as 3 in the code, it's a U64 by default. You
 | can be explicit about the type by using a suffix: 3:U8
 |
+| TODO: not all operations implemented for all integers
 | All integers also support the following mathematical operations:
 | - add(Int, Int): Int
 | - subtract(Int, Int): Int
@@ -647,6 +648,19 @@ fun modulo(a: U16, b: U16): U16 { a.remainder(b) }
 fun modulo(a: U32, b: U32): U32 { a.remainder(b) }
 fun modulo(a: U64, b: U64): U64 { a.remainder(b) }
 
+fun compare_to(a: U8, b: U8): Ordering asm {
+  mov r10, 0 ; less
+  mov r11, 1 ; equal
+  mov r12, 2 ; greater
+  mov r8b, [rsp + 16]
+  cmp r8b, [rsp + 17]
+  cmovb r9, r10 ; conditional move below -> less
+  cmove r9, r11 ; conditional move equal -> equal
+  cmova r9, r12 ; conditional move above -> greater
+  mov r8, [rsp + 8]
+  mov [r8], r9b
+  ret
+}
 fun compare_to(a: U64, b: U64): Ordering asm {
   mov r10, 0 ; less
   mov r11, 1 ; equal
@@ -877,7 +891,6 @@ fun alignment_of_type[T](): U64 { ... }
 fun stride_size_of_type[T](): U64 {
   size_of_type[T]().round_up_to_multiple_of(alignment_of_type[T]())
 }
-| fun libc_malloc(size: U64): U64 { ... }
 
 fun to_address[T](ref: &T): U64 asm {
   mov r8, [rsp + 16] ; ref
@@ -892,19 +905,31 @@ fun to_reference[T](address: U64): &T asm {
   ret
 }
 
-fun malloc(size: U64): U64 {
-  var address = libc_malloc(size)
+fun unchecked_raw_malloc(size: U64, alignment: U64): U64 asm {
+  mov r8, [rsp + 16] ; size
+  mov r9, [rsp + 24] ; alignment
+  call _malloc ; provided by the Martinaise runtime
+  mov r10, [rsp + 8]
+  mov [r10], rax
+  ret
+}
+fun malloc(size: U64, alignment: U64): U64 {
+  var address = unchecked_raw_malloc(size, alignment)
   if address.equals(0) then panic("out of memory")
   address
 }
-fun uninitialized[T](): &T { malloc(size_of_type[T]()).to_reference[T]() }
+fun uninitialized[T](): &T {
+  malloc(size_of_type[T](), alignment_of_type[T]()).to_reference[T]()
+}
 fun put_on_heap[T](value: T): &T {
   var ref = uninitialized[T]()
   ref.* = value
   ref
 }
 fun add_offset[T](ref: &T, offset: U64): &T {
-  ref.to_address().add(offset.multiply(stride_size_of_type[T]())).to_reference[T]()
+  ref.to_address()
+    .add(offset.multiply(stride_size_of_type[T]()))
+    .to_reference[T]()
 }
 fun swap[T](a: &T, b: &T) {
   var tmp = a.*
@@ -946,7 +971,10 @@ struct Slice[T] { data: &T, len: U64 }
 fun empty_slice[T](): Slice[T] { Slice { data = 0.to_reference[T](), len = 0 } }
 fun uninitialized_slice[T](len: U64): Slice[T] {
   if len.equals(0) then return empty_slice[T]()
-  var data = malloc(len.multiply(stride_size_of_type[T]())).to_reference[T]()
+  var data = malloc(
+    len.multiply(stride_size_of_type[T]()),
+    alignment_of_type[T](),
+  ).to_reference[T]()
   Slice { data, len }
 }
 fun filled_slice[T](len: U64, fill: T): Slice[T] {
