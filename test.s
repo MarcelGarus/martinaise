@@ -5,9 +5,47 @@ global _start
 
 section .text
 
+main:
+  ret
+
 _start:
     call _init_heap
     call _init_globals
+  .prep_args:
+    ; We need to put the args in a Slice[Str].
+    pop r8       ; num args
+    mov r9, rsp  ; cursor through the original c-style args
+    mov r10, r8  ; how much memory to reserve for the slice data
+    shl r10, 4   ; for each arg, there's a Str in the data (16 bytes)
+    sub rsp, r10 ; reserve the amount of data
+    mov r10, rsp ; cursor through the Martinaise-style args
+    mov r11, r9  ; end of the Martinaise-style args
+    mov r15, rsp ; start of the Martinaise-style args
+  .find_next_arg:
+    cmp r10, r11
+    je .call_main
+    mov r12, [r9] ; the start of the C-style string
+    mov r13, r12  ; cursor for finding the str length
+  .find_len:
+    mov r14b, [r13]
+    cmp r14, 0
+    je .add_arg
+    inc r13
+    jmp .find_len
+  .add_arg:
+    sub r13, r12       ; the str length
+    mov [r10], r12     ; the data: &Char of the str slice
+    mov [r10 + 8], r13 ; the len: U64 of the str slice
+    add r10, 16        ; advance cursor through Martinaise args
+    add r9, 8          ; advance cursor through C args
+    jmp .find_next_arg
+  .call_main:
+    sub rsp, 16       ; reserve memory for the surrounding slice
+    mov [rsp], r15    ; data: &Str of the args slice
+    mov [rsp + 8], r8 ; len: U64 of the args slice
+    push rsp          ; where to store the returned Never
+  call main
+
     mov r8, [_globals.num_hello]
   .loop:
     cmp r8, 0
