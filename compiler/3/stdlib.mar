@@ -326,6 +326,13 @@ fun to_orelse[O, E](result: Result[O, E]): Orelse[O, E] {
 
 | Syscalls  
 
+fun syscall(number: U64): U64 asm {
+  mov rax, [rsp + 16] ; syscall number
+  syscall             ; writes result into rax
+  mov r8, [rsp + 8]   ; return address
+  mov [r8], rax
+  ret
+}
 fun syscall(number: U64, arg0: U64): U64 asm {
   mov rax, [rsp + 16] ; syscall number
   mov rdi, [rsp + 24] ; arg0
@@ -334,7 +341,6 @@ fun syscall(number: U64, arg0: U64): U64 asm {
   mov [r8], rax
   ret
 }
-
 fun syscall(number: U64, arg0: U64, arg1: U64): U64 asm {
   mov rax, [rsp + 16] ; syscall number
   mov rdi, [rsp + 24] ; arg0
@@ -344,12 +350,51 @@ fun syscall(number: U64, arg0: U64, arg1: U64): U64 asm {
   mov [r8], rax
   ret
 }
-
 fun syscall(number: U64, arg0: U64, arg1: U64, arg2: U64): U64 asm {
   mov rax, [rsp + 16] ; syscall number
   mov rdi, [rsp + 24] ; arg0
   mov rsi, [rsp + 32] ; arg1
   mov rdx, [rsp + 40] ; arg2
+  syscall             ; writes result into rax
+  mov r8, [rsp + 8]   ; return address
+  mov [r8], rax
+  ret
+}
+fun syscall(number: U64, arg0: U64, arg1: U64, arg2: U64, arg3: U64): U64 asm {
+  mov rax, [rsp + 16] ; syscall number
+  mov rdi, [rsp + 24] ; arg0
+  mov rsi, [rsp + 32] ; arg1
+  mov rdx, [rsp + 40] ; arg2
+  mov rcx, [rsp + 48] ; arg3
+  syscall             ; writes result into rax
+  mov r8, [rsp + 8]   ; return address
+  mov [r8], rax
+  ret
+}
+fun syscall(
+  number: U64, arg0: U64, arg1: U64, arg2: U64, arg3: U64, arg4: U64,
+): U64 asm {
+  mov rax, [rsp + 16] ; syscall number
+  mov rdi, [rsp + 24] ; arg0
+  mov rsi, [rsp + 32] ; arg1
+  mov rdx, [rsp + 40] ; arg2
+  mov rcx, [rsp + 48] ; arg3
+  mov r8, [rsp + 56]  ; arg4
+  syscall             ; writes result into rax
+  mov r8, [rsp + 8]   ; return address
+  mov [r8], rax
+  ret
+}
+fun syscall(
+  number: U64, arg0: U64, arg1: U64, arg2: U64, arg3: U64, arg4: U64, arg5: U64,
+): U64 asm {
+  mov rax, [rsp + 16] ; syscall number
+  mov rdi, [rsp + 24] ; arg0
+  mov rsi, [rsp + 32] ; arg1
+  mov rdx, [rsp + 40] ; arg2
+  mov rcx, [rsp + 48] ; arg3
+  mov r8, [rsp + 56]  ; arg4
+  mov r9, [rsp + 64]  ; arg5
   syscall             ; writes result into rax
   mov r8, [rsp + 8]   ; return address
   mov [r8], rax
@@ -2116,7 +2161,60 @@ fun min[T](slice: Set[T]): Maybe[T] {
 
 | TODO: segment tree, treap
 
+| Telling the Time  
+
 fun seconds_since_unix_epoch(): Result[U64, Str] {
   var result = 201.syscall(0).error_if_minus_one("couldn't get time")?
   ok[U64, Str](result)
+}
+
+| Executing subprocesses  
+
+struct Pid { value: U64 }
+enum Forked {
+  child,       | We are the child process.
+  parent: Pid, | We are the parent process, child has the given PID.
+}
+
+fun write[W](writer: W, pid: Pid) { writer."PID({pid.value})" }
+
+| Forks the process. In the child process, returns Forked.child. In the parent
+| process, returns Forked.parent(child_pid). You should wait for the child in
+| the parent process. If you don't (you exit the parent process before waiting
+| on the child process), the child process enters a zombie mode and resources
+| are not freed.
+fun fork(): Forked {
+  var pid = 57.syscall()
+  if pid.equals(0) then Forked.child else Forked.parent(Pid { value = pid })
+}
+
+| Performs a wait4 syscall, which performs a superset of what waitpid does.
+|
+| The PID can be one of these:
+| < -1: wait for any child process whose process group ID is equal to the
+|       absolute value of the PID
+|   -1: wait for any child process
+|    0: wait for any child process whose process group ID is equal to that of
+|       the calling process at the time of the call
+|  > 0: wait for the child whose PID is equal to the value of the given PID
+|
+| https://man7.org/linux/man-pages/man2/wait4.2.html
+| https://man7.org/linux/man-pages/man2/waitid.2.html
+fun raw_wait4(pid: U64) { 61.syscall(pid, 0, 0, 0).ignore() }
+fun wait(pid: Pid) { raw_wait4(pid.value) }
+
+fun exec(command: Str, args: Slice[Str]): Never {
+  var command = command.to_os_str().address.to_U64()
+  | The exec syscall expects the arguments to be arranged like this:
+  | [ptr to str][ptr to str][0         ]
+  var os_args = malloc(args.len.inc().multiply(8), 8).to_reference[U64]()
+  for arg in args.iter().enumerate() do
+    os_args.add_stride_offset(arg.index).* =
+      arg.item.to_os_str().address.to_U64()
+  59.syscall(command, os_args.to_address().to_U64(), 0.&.to_address().to_U64())
+  panic("exec didn't work")
+}
+
+fun run(command: Str, args: Slice[Str]) {
+  switch fork() case child exec(command, args) case parent(child) child.wait()
 }
