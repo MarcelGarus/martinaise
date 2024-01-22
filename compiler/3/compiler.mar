@@ -22,20 +22,19 @@
 | Rough overview  
 | Like many compilers, the Martinaise compiler works in stages:
 | 
-| ┌──────┐ parsing ┌─────┐ monomorphization ┌──────┐ lowering ┌───┐ gcc ┌─────┐
-| │ Code │ ──────> │ AST │ ───────────────> │ Mono | ───────> │ C │ ──> │ Exe |
-| └──────┘         └─────┘                  └──────┘          └───┘     └─────┘
+|         parsing                   lowering                   ld
+| ┌──────┐      ┌─────┐      ┌──────┐      ┌────┐      ┌────┐      ┌─────┐
+| │ .mar │ ───> │ Ast │ ───> │ Mono | ───> │ .s │ ───> │ .o | ───> │ exe |
+| └──────┘      └─────┘      └──────┘      └────┘      └────┘      └─────┘
+|                 monomorphization                nasm
 |
-| - Code: It starts with source code, read as a string.
-| - AST (Abstract Syntax Tree): The source code is parsed into a tree that
-|   roughly corresponds to the code. Some language features are already broken
-|   down into other ones. For example, an if becomes a switch.
-| - Mono (Monomorphized Tree): When functions get used, for each combination of
-|   type arguments, a new version of the function is compiled. In the Mono
-|   stage, all functions only take concrete types – there is no generic code
-|   anymore.
-| - C: Just plain C code.
-| - Exe: The executable produced by GCC.
+| - .mar: Source code, read as a string.
+| - Ast:  abstract syntax tree, roughly corresponding to the code
+| - Mono: monomorphized tree, containing only functions compiled for a
+|         concrete combination of type arguments
+| - .s:   x86_64 Assembly
+| - .o:   compiled object file
+| - exe:  linked executable
 |
 | Glossary  
 | I'm not generally a fan of abbreviations, but for concepts that pop up all
