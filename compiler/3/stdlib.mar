@@ -3,23 +3,19 @@
 | advent of code. Making a language that is widely-used is _not_ the goal.
 | Instead, this is a fun, recreational project.
 |
-| The language is quite small, so it doesn't have many built-in types and
-| functions. Apart from integers as well as mathematical functions for them, it
-| only provides very slim wrappers around some libc functions.
-| Everything else is defined in Martinaise code, even very basic things like
-| Bool. The compiler relies on some of these definitions, so be careful when
-| deleting code in this file.
+| The language is quite small, so it only has a handful of builtin functions.
+| Most of the functionality is defined in Martinaise code, even basic things
+| like Bool or integers. The compiler relies on some of these definitions, so be
+| careful when deleting code in this file.
 
 | Language todos  
-| TODO: change libc wrappers to use I32 for ints
 | TODO: validate all signatures before lowering
 | TODO: allow types on vars
 | TODO: break and continue with targets
 | TODO: enforce that statement-like expressions evaluate to Nothing
-| TODO: add String type
 | TODO: enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
 | TODO: disallow _ in type args, structs, enums, and recursive functions
-| TODO: improve int parsing: be strict about whitespace, use :U8
+| TODO: improve int parsing: be strict about whitespace
 | TODO: unwrap?
 | TODO: funs as values, function types, higher-order funs?
 | TODO: operators?
@@ -28,6 +24,8 @@
 | TODO: type aliases?
 | TODO: struct destructuring?
 | TODO: provide way to get memory layouts of types as runtime first-class values
+| TODO: breakpoint
+| TODO: stack traces
 
 | Nothing (aka Unit or Void)  
 | Nothing is a type with only one instance. From an information theoretical
@@ -101,6 +99,8 @@ fun is_not_empty[T](container: T): Bool { not(container.is_empty()) }
 | existing. Please don't remove it. And pretty please don't reassign the global
 | true and false variables.
 
+| The variants ordered this way so that true is represented as a 1 in the
+| assembly.
 enum Bool { false, true }
 
 var true = Bool.true
@@ -108,7 +108,7 @@ var false = Bool.false
 
 fun equals(a: Bool, b: Bool): Bool { if a then b else not(b) }
 fun not(a: Bool): Bool { if a then false else true }
-fun and(a: Bool, b: Bool): Bool { if a then b else a }
+fun and(a: Bool, b: Bool): Bool { if a then b else false }
 fun or(a: Bool, b: Bool): Bool { if a then true else b }
 fun xor(a: Bool, b: Bool): Bool { if a then not(b) else b }
 fun implies(a: Bool, b: Bool): Bool { if a then b else true }
@@ -129,7 +129,7 @@ fun none[T](): Maybe[T] { Maybe[T].none }
 
 fun unwrap[T](maybe: Maybe[T], message: Str): T { maybe orelse panic(message) }
 fun unwrap[T](maybe: Maybe[T]): T { maybe.unwrap("called none.unwrap") }
-fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { inner orelse none[T]() }
+fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { maybe orelse none[T]() }
 fun is_some[T](maybe: Maybe[T]): Bool { if maybe is some then true else false }
 fun is_none[T](maybe: Maybe[T]): Bool { if maybe is none then true else false }
 
@@ -160,7 +160,7 @@ fun ok[O, E](o: O): Result[O, E] { Result[O, E].ok(o) }
 fun error[O, E](e: E): Result[O, E] { Result[O, E].error(e) }
 
 fun unwrap[O, E](result: Result[O, E]): O {
-  switch result case ok(o) o case error(e) panic("called error.unwrap")
+  switch result case ok(o) o case error(e) panic("called error.unwrap: {e}")
 }
 
 fun write[W, O, E](writer: W, result: Result[O, E]) {
@@ -891,58 +891,28 @@ fun stride_size_of_type[T](): U64 {
   size_of_type[T]().round_up_to_multiple_of(alignment_of_type[T]())
 }
 
-| References  
+| References & Addresses  
 | Martinaise supports references: &T is a reference to a T. You can get a
 | reference to a value using the expr.& syntax. You can follow a reference
 | using the expr.* syntax.
-| The builtin libc functions work with addresses (U64) instead of references.
-| These addresses don't have any information about what kind of object is stored
-| at the address.
+| Addresses are like references, but they don't have any information about what
+| kind of object is stored at the address.
 
-fun to_address[T](ref: &T): U64 asm {
+opaque Address = 8 bytes big, 8 bytes aligned
+
+fun to_address[T](ref: &T): Address asm {
   mov r8, [rsp + 16] ; ref
   mov r9, [rsp + 8]  ; return address
   mov [r9], r8
   ret
 }
-fun to_reference[T](address: U64): &T asm {
+fun to_reference[T](address: Address): &T asm {
   mov r8, [rsp + 16] ; address
   mov r9, [rsp + 8]  ; return address
   mov [r9], r8
   ret
 }
 
-fun unchecked_raw_malloc(size: U64, alignment: U64): U64 asm {
-  mov r8, [rsp + 16] ; size
-  mov r9, [rsp + 24] ; alignment
-  call _malloc ; provided by the Martinaise runtime
-  mov r10, [rsp + 8]
-  mov [r10], rax
-  ret
-}
-fun malloc(size: U64, alignment: U64): U64 {
-  var address = unchecked_raw_malloc(size, alignment)
-  if address.equals(0) then panic("out of memory")
-  address
-}
-fun uninitialized[T](): &T {
-  malloc(size_of_type[T](), alignment_of_type[T]()).to_reference[T]()
-}
-fun put_on_heap[T](value: T): &T {
-  var ref = uninitialized[T]()
-  ref.* = value
-  ref
-}
-fun add_offset[T](ref: &T, offset: U64): &T {
-  ref.to_address()
-    .add(offset.multiply(stride_size_of_type[T]()))
-    .to_reference[T]()
-}
-fun swap[T](a: &T, b: &T) {
-  var tmp = a.*
-  a.* = b.*
-  b.* = tmp
-}
 | Casts an A to a B by reinterpreting the memory of A. This is very unsafe, so
 | only use it if you know what you're doing.
 fun cast[A, B](a: A): B {
@@ -954,15 +924,76 @@ fun cast[A, B](a: A): B {
   a.&.to_address().to_reference[B]().*
 }
 
-fun write_address[W](writer: W, address: U64) {
+fun to_U64(address: Address): U64 { address.cast[Address, U64]() }
+fun to_address(number: U64): Address { number.cast[U64, Address]() }
+
+var null = 0.to_address() | Million dollar mistake?
+
+fun equals(a: Address, b: Address): Bool { a.to_U64().equals(b.to_U64()) }
+
+fun write[W](writer: W, address: Address) {
   | max U64 is 18_446_744_073_709_551_615
   var divisor = 1_152_921_504_606_846_976 | 16 ^ something
+  var address = address.to_U64()
   writer."0x"
   loop {
     writer.write(address.divide(divisor).modulo(16).to_U8().digit_to_char())
     if divisor.equals(1) then break
     divisor = divisor.divide(16)
   }
+}
+
+fun swap[T](a: &T, b: &T) {
+  var tmp = a.*
+  a.* = b.*
+  b.* = tmp
+}
+
+| Assuming multiple instances of T are saved in memory right next to each other,
+| at an offset of their stride size, return a reference to the item at the
+| offset.
+fun add_stride_offset[T](ref: &T, offset: U64): &T {
+  ref.to_address()
+    .to_U64()
+    .add(offset.multiply(stride_size_of_type[T]()))
+    .to_address()
+    .to_reference[T]()
+}
+
+| Heap & Memory Allocations  
+| Sometimes you need to allocate memory on the heap – for example, if you want
+| to return a value from a function, but you don't know its size before calling
+| it.
+| For those cases, Martinaise has a built-in heap. It's uses very basic bump
+| allocation: It keeps a simple pointer to the end of the heap and increases it
+| each time new memory is allocated.
+| Memory in Martinaise can never be freed. Because Martinaise targets only
+| short-lived puzzle-solving programs, we let the operating system free all
+| memory at once when the program ends. That simplifies things for Martinaise
+| code and generally leads to better runtime performance.
+
+fun unchecked_malloc(size: U64, alignment: U64): Address asm {
+  ; There's a  built-in _malloc function that accepts the size to allocate in r8
+  ; and the alignment in r9.
+  mov r8, [rsp + 16] ; size
+  mov r9, [rsp + 24] ; alignment
+  call _malloc ; provided by the Martinaise runtime
+  mov r10, [rsp + 8]
+  mov [r10], rax
+  ret
+}
+fun malloc(size: U64, alignment: U64): Address {
+  var address = unchecked_malloc(size, alignment)
+  if address.equals(null) then panic("out of memory")
+  address
+}
+fun uninitialized[T](): &T {
+  malloc(size_of_type[T](), alignment_of_type[T]()).to_reference[T]()
+}
+fun put_on_heap[T](value: T): &T {
+  var ref = uninitialized[T]()
+  ref.* = value
+  ref
 }
 
 | Slice  
@@ -975,7 +1006,12 @@ fun write_address[W](writer: W, address: U64) {
 
 struct Slice[T] { data: &T, len: U64 }
 
-fun empty_slice[T](): Slice[T] { Slice { data = 0.to_reference[T](), len = 0 } }
+fun empty_slice[T](): Slice[T] {
+  | Storing a reference that is effectively a null pointer is an antipattern.
+  | Here, we still do that because storing a Maybe[&T] would make the Slice type
+  | bigger. If the len is 0, we know not to follow the data reference.
+  Slice { data = null.to_reference[T](), len = 0 }
+}
 fun uninitialized_slice[T](len: U64): Slice[T] {
   if len.equals(0) then return empty_slice[T]()
   var data = malloc(
@@ -994,7 +1030,7 @@ fun is_empty[T](slice: Slice[T]): Bool { slice.len.equals(0) }
 fun get[T](slice: Slice[T], index: U64): T { slice.get_ref(index).* }
 fun get_ref[T](slice: Slice[T], index: U64): &T {
   0.to(slice.len).contains(index) orelse panic("index out of bounds")
-  slice.data.add_offset(index)
+  slice.data.add_stride_offset(index)
 }
 
 fun compare_to[T](a: Slice[T], b: Slice[T]): Ordering {
@@ -1051,7 +1087,7 @@ fun copy_to[T](from: Slice[T], to: Slice[T]) {
 }
 fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
   assert(to.is_at_most(slice.len), "subslice needs to be inside original slice")
-  Slice { data = slice.data.add_offset(from), len = to.subtract(from) }
+  Slice { data = slice.data.add_stride_offset(from), len = to.subtract(from) }
 }
 fun first[T](slice: Slice[T]): T {
   assert(slice.is_not_empty(), "first only works on non-empty slices")
@@ -1612,12 +1648,12 @@ fun write_bytes(file: File, buffer: Slice[U8]) {
   loop {
     if buffer.is_empty() then break
     var written =
-      1.syscall(file.descriptor, buffer.data.to_address(), buffer.len)
+      1.syscall(file.descriptor, buffer.data.to_address().to_U64(), buffer.len)
     buffer = buffer.without_first(written)
   }
 }
 fun write_byte(file: File, byte: U8) {
-  1.syscall(file.descriptor, byte.&.to_address(), 1).ignore()
+  1.syscall(file.descriptor, byte.&.to_address().to_U64(), 1).ignore()
 }
 
 fun close(file: File) { libc_close(file.descriptor).ignore() }
