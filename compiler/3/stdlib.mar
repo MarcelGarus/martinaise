@@ -878,19 +878,26 @@ fun is_at_most[T](a: T, b: T): Bool { a.compare_to(b).is_less_or_equal() }
 fun min[T](a: T, b: T): T { if a.is_less_than(b) then a else b }
 fun max[T](a: T, b: T): T { if a.is_greater_than(b) then a else b }
 
-| Memory  
+| Type Information  
+| Using some builtin functions that only take type arguments (no value
+| arguments), you can use information about types at runtime.
+
+fun size_of_type[T](): U64 { ... }
+fun alignment_of_type[T](): U64 { ... } | chaotic
+
+| The size you need to use if you want to store multiple instances of the type
+| after each other in memory.
+fun stride_size_of_type[T](): U64 {
+  size_of_type[T]().round_up_to_multiple_of(alignment_of_type[T]())
+}
+
+| References  
 | Martinaise supports references: &T is a reference to a T. You can get a
 | reference to a value using the expr.& syntax. You can follow a reference
 | using the expr.* syntax.
 | The builtin libc functions work with addresses (U64) instead of references.
 | These addresses don't have any information about what kind of object is stored
 | at the address.
-
-fun size_of_type[T](): U64 { ... }
-fun alignment_of_type[T](): U64 { ... }
-fun stride_size_of_type[T](): U64 {
-  size_of_type[T]().round_up_to_multiple_of(alignment_of_type[T]())
-}
 
 fun to_address[T](ref: &T): U64 asm {
   mov r8, [rsp + 16] ; ref
