@@ -102,26 +102,16 @@ _malloc:
     ; allocate in r8 and the alignment in r9. Returns the address in rax.
     mov r10, [_heap.head] ; the address of the newly allocated memory
     cmp r9, 8
-    je .round_up_to_multiple_of_8
-    cmp r9, 4
-    je .round_up_to_multiple_of_4
-    cmp r9, 2
-    je .round_up_to_multiple_of_2
-    cmp r9, 1
-    je .alloc
-    jmp .error ; alignment must be 1, 2, 4, or 8
-  .round_up_to_multiple_of_2:
-    add r10, 1
-    and r10, 0fffffffffffffffeH
-    jmp .alloc
-  .round_up_to_multiple_of_4:
-    add r10, 3
-    and r10, 0fffffffffffffffcH
-    jmp .alloc
-  .round_up_to_multiple_of_8:
-    add r10, 7
-    and r10, 0fffffffffffffff8H
-  .alloc:
+    jg .error ; alignment must be <= 8
+    popcnt r11, r9
+    cmp r11, 1
+    jne .error  ; alignment must be 1, 2, 4, or 8
+    ; rounding up to alignment means r10 = (r10 + (r9 - 1)) & bitmask for lower
+    ; for example, for alignment 4: r10 = (r10 + 3) & ...1111100
+    add r10, r9
+    dec r10
+    neg r9 ; make r9 a bitmask; ...1111 or ...1110 or ...1100 or ...1000
+    and r10, r9
     ; r10 is now rounded up so that it matches the required alignment
     ; find the end of the allocated data -> r11
     mov r11, r10
