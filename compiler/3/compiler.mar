@@ -3131,26 +3131,16 @@ fun write_as_asm[W](writer: W, mono: Mono) {
     '    ; allocate in r8 and the alignment in r9. Returns the address in rax.{newline}
     '    mov r10, [_heap.head] ; the address of the newly allocated memory{newline}
     '    cmp r9, 8{newline}
-    '    je .round_up_to_multiple_of_8{newline}
-    '    cmp r9, 4{newline}
-    '    je .round_up_to_multiple_of_4{newline}
-    '    cmp r9, 2{newline}
-    '    je .round_up_to_multiple_of_2{newline}
-    '    cmp r9, 1{newline}
-    '    je .alloc{newline}
-    '    jmp .error ; alignment must be 1, 2, 4, or 8{newline}
-    '  .round_up_to_multiple_of_2:{newline}
-    '    add r10, 1{newline}
-    '    and r10, 0fffffffffffffffeH{newline}
-    '    jmp .alloc{newline}
-    '  .round_up_to_multiple_of_4:{newline}
-    '    add r10, 3{newline}
-    '    and r10, 0fffffffffffffffcH{newline}
-    '    jmp .alloc{newline}
-    '  .round_up_to_multiple_of_8:{newline}
-    '    add r10, 7{newline}
-    '    and r10, 0fffffffffffffff8H{newline}
-    '  .alloc:{newline}
+    '    jg .error ; alignment must be <= 8
+    '    popcnt r11, r9
+    '    cmp r11, 1
+    '    jne .error  ; alignment must be 1, 2, 4, or 8
+    '    ; rounding up to alignment means r10 = (r10 + (r9 - 1)) & bitmask for lower
+    '    ; for example, for alignment 4: r10 = (r10 + 3) & ...1111100
+    '    add r10, r9
+    '    dec r10
+    '    neg r9 ; make r9 a bitmask; ...1111 or ...1110 or ...1100 or ...1000
+    '    and r10, r9
     '    ; r10 is now rounded up so that it matches the required alignment{newline}
     '    ; find the end of the allocated data -> r11{newline}
     '    mov r11, r10{newline}
