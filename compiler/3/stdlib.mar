@@ -356,6 +356,19 @@ fun syscall(number: U64, arg0: U64, arg1: U64, arg2: U64): U64 asm {
   ret
 }
 
+| Many syscalls return 0 or -1 if an operation didn't work. Here's a helper for
+| dealing with that.
+fun error_if_zero(value: U64, message: Str): Result[U64, Str] {
+  if value.cast[U64, I64]().equals(0:I64)
+  then error[U64, Str](message)
+  else ok[U64, Str](value)
+}
+fun error_if_minus_one(value: U64, message: Str): Result[U64, Str] {
+  if value.cast[U64, I64]().equals(0:I64.subtract(1:I64))
+  then error[U64, Str](message)
+  else ok[U64, Str](value)
+}
+
 | Halting, Exiting, and Panicking  
 
 fun halt(): Never { loop {} }
@@ -1567,7 +1580,6 @@ fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
 |   str.* = str.substr(prefix.len)
 | }
 
-
 | Files, Input & Output  
 | In C, a common way to work with files is with fopen, fclose, and similar
 | functions, which work with FILE* pointers. The FILE struct internally contains
@@ -1650,36 +1662,30 @@ fun to_os_flags(flags: Set[OpenFileFlag]): U64 {
 
 fun create_file(filename: Str, mode: U64): Result[File, Str] {
   var descriptor = 85.syscall(filename.to_os_str().address.to_U64(), mode)
-  if descriptor.equals(0)
-  then error[File, Str]("couldn't create file {filename.to_str()}")
-  else ok[File, Str](File { descriptor })
+    .error_if_zero("couldn't create file {filename}")?
+  ok[File, Str](File { descriptor })
 }
 
 fun open_file(
   filename: Str, flags: Set[OpenFileFlag], mode: U64
 ): Result[File, Str] {
-  var descriptor = 2.syscall(
-    filename.to_os_str().address.to_U64(), flags.to_os_flags(),
-  )
-  if descriptor.equals(0)
-  then error[File, Str]("couldn't open file {filename}")
-  else ok[File, Str](File { descriptor })
+  var descriptor =
+    2.syscall(filename.to_os_str().address.to_U64(), flags.to_os_flags())
+    .error_if_zero("couldn't open file {filename}")?
+  ok[File, Str](File { descriptor })
 }
 
 fun read(file: File, buffer: Slice[U8]): Result[U64, Str] {
-  var bytes_read = 0.syscall(
-    file.descriptor, buffer.data.to_address().to_U64(), buffer.len,
-  )
-  if bytes_read.cast[U64, I64]().is_less_than(0:I64)
-  then error[U64, Str]("couldn't read from file")
-  else ok[U64, Str](bytes_read)
+  var bytes_read =
+    0.syscall(file.descriptor, buffer.data.to_address().to_U64(), buffer.len)
+    .error_if_minus_one("couldn't read from file")?
+  ok[U64, Str](bytes_read)
 }
 fun read_byte(file: File): Result[Maybe[U8], Str] {
   var c = 0:U8
   var bytes_read = 0.syscall(file.descriptor, c.&.to_address().to_U64(), 1)
-  if bytes_read.cast[U64, I64]().is_less_than(0:I64)
-  then error[Maybe[U8], Str]("couldn't read from file")
-  else if bytes_read.equals(0) then ok[Maybe[U8], Str](none[U8]())
+    .error_if_minus_one("couldn't read from file")?
+  if bytes_read.equals(0) then ok[Maybe[U8], Str](none[U8]())
   else ok[Maybe[U8], Str](some(c))
 }
 
@@ -2109,3 +2115,8 @@ fun min[T](slice: Set[T]): Maybe[T] {
 }
 
 | TODO: segment tree, treap
+
+fun seconds_since_unix_epoch(): Result[U64, Str] {
+  var result = 201.syscall(0).error_if_minus_one("couldn't get time")?
+  ok[U64, Str](result)
+}
