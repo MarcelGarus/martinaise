@@ -648,6 +648,30 @@ fun modulo(a: U16, b: U16): U16 { a.remainder(b) }
 fun modulo(a: U32, b: U32): U32 { a.remainder(b) }
 fun modulo(a: U64, b: U64): U64 { a.remainder(b) }
 
+fun and(a: U64, b: U64): U64 asm {
+  mov r8, [rsp + 16] ; a
+  and r8, [rsp + 32] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8
+  ret
+}
+
+fun or(a: U64, b: U64): U64 asm {
+  mov r8, [rsp + 16] ; a
+  or r8, [rsp + 32] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8
+  ret
+}
+
+fun xor(a: U64, b: U64): U64 asm {
+  mov r8, [rsp + 16] ; a
+  xor r8, [rsp + 32] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8
+  ret
+}
+
 fun compare_to(a: U8, b: U8): Ordering asm {
   mov r10, 0 ; less
   mov r11, 1 ; equal
@@ -670,6 +694,19 @@ fun compare_to(a: U64, b: U64): Ordering asm {
   cmovb r9, r10 ; conditional move below -> less
   cmove r9, r11 ; conditional move equal -> equal
   cmova r9, r12 ; conditional move above -> greater
+  mov r8, [rsp + 8]
+  mov [r8], r9b
+  ret
+}
+fun compare_to(a: I64, b: I64): Ordering asm {
+  mov r10, 0 ; less
+  mov r11, 1 ; equal
+  mov r12, 2 ; greater
+  mov r8, [rsp + 16]
+  cmp r8, [rsp + 24]
+  cmovl r9, r10 ; conditional move less -> less
+  cmove r9, r11 ; conditional move equal -> equal
+  cmovg r9, r12 ; conditional move greater -> greater
   mov r8, [rsp + 8]
   mov [r8], r9b
   ret
@@ -1164,6 +1201,9 @@ struct Char { byte: U8 }
 struct Str { data: &Char, len: U64 }
 struct OsStr { address: Address } | null-terminated
 
+var newline = 10:U8.to_char()
+var tab = 9:U8.to_char()
+
 fun to_char(byte: U8): Char { Char { byte } }
 
 fun to_str(chars: Slice[Char]): Str { chars.cast[Slice[Char], Str]() }
@@ -1575,14 +1615,9 @@ fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
 | fun libc_write(file: U64, buf: U64, len: U64): U64 { ... }
 | fun libc_close(file: U64): U8 { ... }
 
-fun libc_open_flag_rdonly(): U64 { 8#0000 }
-fun libc_open_flag_wronly(): U64 { 8#0001 }
-fun libc_open_flag_rdwr(): U64   { 8#0002 }
-fun libc_open_flag_create(): U64 { 8#0100 }
-fun libc_open_flag_trunc(): U64  { 8#1000 }
-fun libc_open_flag_append(): U64 { 8#2000 }
-
 struct File { descriptor: U64 }
+
+| TODO: create Mode struct
 
 enum OpenFileFlag { read, write, create, truncate, append }
 fun hash(hasher: &Hasher, flag: OpenFileFlag) {
@@ -1604,86 +1639,123 @@ fun equals(a: OpenFileFlag, b: OpenFileFlag): Bool {
   case append if b is append then true else false
 }
 
+fun to_os_flags(flags: Set[OpenFileFlag]): U64 {
+  var flag_rdonly = 8#0000
+  var flag_wronly = 8#0001
+  var flag_rdwr   = 8#0002
+  var flag_create = 8#0100
+  var flag_trunc  = 8#1000
+  var flag_append = 8#2000
+
+  var res = 0
+  res = res.or(
+    if flags.contains(OpenFileFlag.read)
+    then if flags.contains(OpenFileFlag.write) then flag_rdwr else flag_rdonly
+    else {
+      flags.contains(OpenFileFlag.write) orelse panic("must read or write")
+      flag_wronly
+    }
+  )
+  if flags.contains(OpenFileFlag.create)   then res = res.or(flag_create)
+  if flags.contains(OpenFileFlag.truncate) then res = res.or(flag_trunc)
+  if flags.contains(OpenFileFlag.append)   then res = res.or(flag_append)
+  res
+}
+
+fun create_file(filename: Str, mode: U64): Result[File, Str] {
+  var descriptor = 85.syscall(filename.to_os_str().address.to_U64(), mode)
+  if descriptor.equals(0)
+  then error[File, Str]("couldn't create file {filename.to_str()}")
+  else ok[File, Str](File { descriptor })
+}
+
 fun open_file(
   filename: Str, flags: Set[OpenFileFlag], mode: U64
-): Maybe[File] {
-  var os_flags = 0
-  os_flags = os_flags.or(
-    if flags.contains(OpenFileFlag.read) then
-      if flags.contains(OpenFileFlag.write)
-      then libc_open_flag_rdwr()
-      else libc_open_flag_rdonly()
-    else
-      if flags.contains(OpenFileFlag.write)
-      then libc_open_flag_wronly()
-      else panic("must read or write")
+): Result[File, Str] {
+  var descriptor = 2.syscall(
+    filename.to_os_str().address.to_U64(), flags.to_os_flags(),
   )
-  if flags.contains(OpenFileFlag.create)
-  then os_flags = os_flags.or(libc_open_flag_create())
-  if flags.contains(OpenFileFlag.truncate)
-  then os_flags = os_flags.or(libc_open_flag_trunc())
-  if flags.contains(OpenFileFlag.append)
-  then os_flags = os_flags.or(libc_open_flag_append())
-
-  var fd = libc_open(
-    filename.to_os_str().address,
-    os_flags,
-    mode,
-  )
-  if fd.equals(0) then none[File]() else some(File { descriptor = fd })
+  if descriptor.equals(0)
+  then error[File, Str]("couldn't open file {filename}")
+  else ok[File, Str](File { descriptor })
 }
 
-fun read(file: File, buffer: Slice[U8]): U64 {
-  libc_read(file.descriptor, buffer.data.to_address(), buffer.len)
+fun read(file: File, buffer: Slice[U8]): Result[U64, Str] {
+  var bytes_read = 0.syscall(
+    file.descriptor, buffer.data.to_address().to_U64(), buffer.len,
+  )
+  if bytes_read.cast[U64, I64]().is_less_than(0:I64)
+  then error[U64, Str]("couldn't read from file")
+  else ok[U64, Str](bytes_read)
 }
-fun read_byte(file: File): Maybe[U8] {
+fun read_byte(file: File): Result[Maybe[U8], Str] {
   var c = 0:U8
-  if libc_read(file.descriptor, c.&.to_address(), 1).equals(0)
-  then none[U8]()
-  else some(c)
+  var bytes_read = 0.syscall(file.descriptor, c.&.to_address().to_U64(), 1)
+  if bytes_read.cast[U64, I64]().is_less_than(0:I64)
+  then error[Maybe[U8], Str]("couldn't read from file")
+  else if bytes_read.equals(0) then ok[Maybe[U8], Str](none[U8]())
+  else ok[Maybe[U8], Str](some(c))
 }
 
-fun write_bytes(file: File, buffer: Slice[U8]) {
+fun write_bytes_safe(file: File, buffer: Slice[U8]): Result[Nothing, Str] {
   loop {
     if buffer.is_empty() then break
-    var written =
-      1.syscall(file.descriptor, buffer.data.to_address().to_U64(), buffer.len)
-    buffer = buffer.without_first(written)
+    var bytes_written = 1.syscall(
+      file.descriptor, buffer.data.to_address().to_U64(), buffer.len,
+    )
+    if bytes_written.cast[U64, I64]().is_at_most(0:I64)
+    then return error[Nothing, Str]("couldn't write to file")
+    buffer = buffer.without_first(bytes_written)
   }
+  ok[Nothing, Str]({})
+}
+fun write_byte_safe(file: File, byte: U8): Result[Nothing, Str] {
+  var bytes_written = 1.syscall(
+    file.descriptor, byte.&.to_address().to_U64(), 1,
+  )
+  if bytes_written.cast[U64, I64]().is_at_most(0:I64)
+  then error[Nothing, Str]("couldn't write to file")
+  else ok[Nothing, Str]({})
+}
+fun write_bytes(file: File, buffer: Slice[U8]) {
+  file.write_bytes_safe(buffer) orelse(e) panic(e)
 }
 fun write_byte(file: File, byte: U8) {
-  1.syscall(file.descriptor, byte.&.to_address().to_U64(), 1).ignore()
+  file.write_byte_safe(byte) orelse(e) panic(e)
 }
 
-fun close(file: File) { libc_close(file.descriptor).ignore() }
+fun close(file: File): Result[Nothing, Str] {
+  var returned = 3.syscall(file.descriptor)
+  if returned.cast[U64, I64]().is_less_than(0:I64)
+  then error[Nothing, Str]("couldn't close file")
+  else ok[Nothing, Str]({})
+}
 
-fun read_file(name: Str): Slice[U8] {
-  var file = open_file(name, vec(OpenFileFlag.read).to_set(), 0)
-    orelse panic("unable to open file")
+fun read_file(name: Str): Result[Slice[U8], Str] {
+  var file = open_file(name, vec(OpenFileFlag.read).to_set(), 0)?
   var content = vec[U8]()
   loop {
-    var byte = file.read_byte() orelse break
+    var byte = file.read_byte()? orelse break
     content.&.push(byte)
   }
-  file.close()
-  content.to_slice()
+  file.close()?
+  ok[Slice[U8], Str](content.to_slice())
 }
-fun write_file(name: Str, content: Slice[U8]) {
+fun write_file(name: Str, content: Slice[U8]): Result[Nothing, Str] {
   var file = open_file(
     name,
     vec(OpenFileFlag.write, OpenFileFlag.create, OpenFileFlag.truncate)
       .to_set(),
     8#666 | read and write access for everyone
-  ) orelse panic("unable to open file")
-  for byte in content do file.write_byte(byte)
-  file.close()
+  )?
+  for byte in content do file.write_byte(byte)?
+  file.close()?
 }
 
 | Printing  
 | You should implement a write[Writer](Writer, T) function for types that can be
 | printed. Writers are anything that has a write_byte(Writer, U8) function and a
 | write_bytes(Writer, Slice[U8]) function.
-| TODO: Use libc_write function more efficiently (not 1 byte per syscall)
 
 var stdin = File { descriptor = 0 }
 var stdout = File { descriptor = 1 }
@@ -1713,9 +1785,6 @@ fun println[T](value: T) { print(value) println() }
 fun eprint[T](value: T) { stderr.write(value) }
 fun eprintln() { eprint(newline) }
 fun eprintln[T](value: T) { eprint(value) eprintln() }
-
-var newline = 10:U8.to_char()
-var tab = 9:U8.to_char()
 
 fun buffered_writer[W](writer: W, capacity: U64): BufferedWriter[W] {
   assert(capacity.is_greater_than(0))
