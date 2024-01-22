@@ -3227,11 +3227,39 @@ fun write_as_asm[W](writer: W, mono: Mono) {
     '_start:{newline}
     '  call _init_heap{newline}
     '  call _init_globals{newline}
-    '  pop r8 ; num args{newline}
-    '.args: ; TODO: forward args to main{newline}
-    '  push 0{newline}
-    '  push 0{newline}
-    '  push 0{newline}
+    '.prep_args:{newline}
+    '  ; We need to put the args in a Slice[Str].{newline}
+    '  pop r8       ; num args{newline}
+    '  mov r9, rsp  ; cursor through the original c-style args{newline}
+    '  mov r10, r8  ; how much memory to reserve for the slice data{newline}
+    '  shl r10, 4   ; for each arg, there's a Str in the data (16 bytes){newline}
+    '  sub rsp, r10 ; reserve the amount of data{newline}
+    '  mov r10, rsp ; cursor through the Martinaise-style args{newline}
+    '  mov r11, r9  ; end of the Martinaise-style args{newline}
+    '  mov r15, rsp ; start of the Martinaise-style args{newline}
+    '.find_next_arg:{newline}
+    '  cmp r10, r11{newline}
+    '  je .call_main{newline}
+    '  mov r12, [r9] ; the start of the C-style string{newline}
+    '  mov r13, r12  ; cursor for finding the str length{newline}
+    '.find_len:{newline}
+    '  mov r14b, [r13]{newline}
+    '  cmp r14, 0{newline}
+    '  je .add_arg{newline}
+    '  inc r13{newline}
+    '  jmp .find_len{newline}
+    '.add_arg:{newline}
+    '  sub r13, r12       ; the str length{newline}
+    '  mov [r10], r12     ; the data: &Char of the str slice{newline}
+    '  mov [r10 + 8], r13 ; the len: U64 of the str slice{newline}
+    '  add r10, 16        ; advance cursor through Martinaise args{newline}
+    '  add r9, 8          ; advance cursor through C args{newline}
+    '  jmp .find_next_arg{newline}
+    '.call_main:{newline}
+    '  sub rsp, 16       ; reserve memory for the surrounding slice{newline}
+    '  mov [rsp], r15    ; data: &Str of the args slice{newline}
+    '  mov [rsp + 8], r8 ; len: U64 of the args slice{newline}
+    '  push rsp          ; where to store the returned Never{newline}
     '  call {"main(Slice[Str])".mangle()}{newline}
     '  ret{newline}{newline}"
 
