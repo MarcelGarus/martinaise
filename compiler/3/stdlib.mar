@@ -1161,32 +1161,31 @@ fun sort[T](slice: &Slice[T]) {
 | on it. It's null-terminated.
 
 struct Char { byte: U8 }
-struct Str { chars: Slice[Char] }
-struct OsStr { address: U64 } | null-terminated
+struct Str { data: &Char, len: U64 }
+struct OsStr { address: Address } | null-terminated
 
 fun to_char(byte: U8): Char { Char { byte } }
 
-fun to_str(chars: Slice[Char]): Str { Str { chars } }
-fun to_str(bytes: Slice[U8]): Str {
-  Str { chars = bytes.cast[Slice[U8], Slice[Char]]() }
-}
-fun to_str(chars: Vec[Char]): Str { Str { chars = chars.to_slice() } }
-fun bytes(str: Str): Slice[U8] { str.chars.cast[Slice[Char], Slice[U8]]() }
+fun to_str(chars: Slice[Char]): Str { chars.cast[Slice[Char], Str]() }
+fun to_str(bytes: Slice[U8]): Str { bytes.cast[Slice[U8], Str]() }
+fun to_str(chars: Vec[Char]): Str { chars.to_slice().to_str() }
+fun chars(str: Str): Slice[U8] { str.cast[Str, Slice[Chars]]() }
+fun bytes(str: Str): Slice[U8] { str.cast[Str, Slice[U8]]() }
 
 fun to_os_str(str: Str): OsStr {
   | make it null-terminated
-  var bytes = uninitialized_slice[U8](str.len().inc())
-  str.bytes().copy_to(bytes.subslice(0, str.len()))
-  bytes.get_ref(str.len()).* = 0:U8
+  var bytes = uninitialized_slice[U8](str.len.inc())
+  str.bytes().copy_to(bytes.subslice(0, str.len))
+  bytes.get_ref(str.len).* = 0:U8
   OsStr { address = bytes.data.to_address() }
 }
 fun to_str(str: OsStr): Str {
   var len = 0
   loop
-    if str.address.to_reference[U8]().add_offset(len).*.equals(0)
+    if str.address.to_reference[U8]().add_stride_offset(len).equals(0)
     then break
     else len = len.inc()
-  Str { chars = Slice { data = str.address.to_reference[Char](), len } }
+  Slice { data = str.address.to_reference[Char](), len }.to_str()
 }
 
 fun parse_digit(char: Char): U8 {
@@ -1221,30 +1220,30 @@ fun truncate_to_len(builder: &StringBuilder, len: U64) {
   builder.chars.len = len
 }
 fun to_str(builder: StringBuilder): Str {
-  Str { chars = builder.chars.to_slice() }
+  builder.chars.to_slice().to_str()
 }
 
 fun len(str: Str): U64 { str.chars.len }
-fun is_empty(str: Str): Bool { str.len().equals(0) }
+fun is_empty(str: Str): Bool { str.len.equals(0) }
 fun get(str: Str, index: U64): Char { str.get_ref(index).* }
 fun get_ref(str: Str, index: U64): &Char {
-  0.to(str.len()).contains(index) orelse panic("index out of bounds")
+  0.to(str.len).contains(index) orelse panic("index out of bounds")
   str.chars.get_ref(index)
 }
 
 fun compare_to(a: Str, b: Str): Ordering {
   var i = 0
   loop {
-    if i.equals(a.len()).and(i.equals(b.len())) then return Ordering.equal
-    if i.equals(a.len()) then return Ordering.less
-    if i.equals(b.len()) then return Ordering.greater
+    if i.equals(a.len).and(i.equals(b.len)) then return Ordering.equal
+    if i.equals(a.len) then return Ordering.less
+    if i.equals(b.len) then return Ordering.greater
     var ord = a.get(i).compare_to(b.get(i))
-    if not(ord.is_equal()) then return ord
+    ord.is_equal() orelse return ord
     i = i.inc()
   }
 }
 fun equals(a: Str, b: Str): Bool {
-  if a.len().equals(b.len()) then compare_to(a, b).is_equal() else false
+  if a.len.equals(b.len) then compare_to(a, b).is_equal() else false
 }
 fun hash(hasher: &Hasher, str: Str) { hasher.hash(str.chars) }
 fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }
@@ -1254,7 +1253,7 @@ fun iter(str: Str): Iter[Char, _] {
 }
 struct StrIter { str: Str, index: U64 }
 fun next(iter: &StrIter): Maybe[Char] {
-  if iter.index.is_less_than(iter.str.len())
+  if iter.index.is_less_than(iter.str.len)
   then {
     var char = iter.str.chars.get(iter.index)
     iter.index = iter.index.inc()
@@ -1264,7 +1263,7 @@ fun next(iter: &StrIter): Maybe[Char] {
 }
 
 fun substr(str: Str, from: U64, to: U64): Str {
-  to.is_at_most(str.len())
+  to.is_at_most(str.len)
     orelse panic("substr needs to be inside original str")
   Str { chars = str.chars.subslice(from, to) }
 }
@@ -1273,24 +1272,24 @@ fun first(str: Str): Char {
   str.get(0)
 }
 fun first(str: Str, amount: U64): Str {
-  assert(amount.is_at_most(str.len()), "first amount too big")
+  assert(amount.is_at_most(str.len), "first amount too big")
   str.substr(0, amount)
 }
 fun last(str: Str): T {
   assert(str.is_not_empty(), "last only works on non-empty strs")
-  str.get(str.len().dec())
+  str.get(str.len.dec())
 }
 fun last(str: Str, amount: U64): Str {
-  assert(amount.is_at_most(str.len()), "last amount too big")
-  str.substr(str.len().subtract(amount), str.len())
+  assert(amount.is_at_most(str.len), "last amount too big")
+  str.substr(str.len.subtract(amount), str.len)
 }
 fun without_first(str: Str, amount: U64): Str {
-  assert(amount.is_at_most(str.len()), "without_first amount too big")
-  str.substr(amount, str.len())
+  assert(amount.is_at_most(str.len), "without_first amount too big")
+  str.substr(amount, str.len)
 }
 fun without_last(str: Str, amount: U64): Str {
-  assert(amount.is_at_most(str.len()), "without_last amount too big")
-  str.substr(0, str.len().subtract(amount))
+  assert(amount.is_at_most(str.len), "without_last amount too big")
+  str.substr(0, str.len.subtract(amount))
 }
 fun starts_with(str: Str, prefix: Str): Bool {
   str.chars.starts_with(prefix.chars)
@@ -1300,11 +1299,11 @@ fun ends_with(str: Str, suffix: Str): Bool {
 }
 fun trim_prefix(str: &Str, prefix: Str) {
   assert(str.starts_with(prefix), "trim_prefix doesn't match prefix")
-  str.* = str.without_first(prefix.len())
+  str.* = str.without_first(prefix.len)
 }
 fun trim_suffix(str: &Str, suffix: Str) {
   assert(str.ends_with(suffix), "trim_suffix doesn't match suffix")
-  str.* = str.without_last(suffix.len())
+  str.* = str.without_last(suffix.len)
 }
 fun split(str: Str, separator: Str): Slice[Str] {
   var parts = vec[Str]()
@@ -1315,7 +1314,7 @@ fun lines(slice: Str): Slice[Str] { slice.split("{newline}") }
 fun pad_right(str: Str, len: U64, char: Char): Str {
   var string = string_builder().&
   string.write(str)
-  loop if string.len().is_less_than(len) then string.write(char) else break
+  loop if string.len.is_less_than(len) then string.write(char) else break
   string.to_str()
 }
 
