@@ -1578,46 +1578,20 @@ fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
 | API type-safe, Martinaise has it's own wrapper around a file descriptor, the
 | File type.
 |
-| For future-me reading through the code here, some general notes on files:
-|
-| The open function takes a filename, flags, and a mode. There are several kinds
-| of flags:
-| - File access mode flags
-|   - RDONLY: Open for read only.
-|   - WRONLY: Open for write only.
-|   - RDWR: Open for both reading and writing.
-| - Open-time flags
-|   - CREAT: The file will be created if it doesn't already exist. Uses the mode
-|     for specifying file permissions.
-|   - TRUNC: Truncates the file to zero length after opening.
-|   - ...
-| - I/O operating modes
-|   - APPEND: Every write on that file descriptor will append to the end of the
-|     file, regardless of the current file position.
-|   - FSYNC: Each write call will make sure data is reliably stored on disk
-|     before returning.
-|   - ...
-| The mode is only used when creating a file. It uses the same format for file
-| permissions as chmod (0o666 means read and write access for everyone).
-|
 | Files can also be opened in an asynchronous mode where you can poll the
 | operating system for reads and writes. But then you have to maintain an event
 | loop yourself and everything gets much more complicated. Here, I only use the
 | blocking version.
+| 
+| The mode below refers to the access bits that you see with `ls -l`. 8#666 is
+| read and write access for everyone.
 |
 | The flag constants are taken from the Zig implementation. The open-time flags
 | and I/O operating modes flags are specific to x86.
 |
 | https://www.gnu.org/software/libc/manual/html_node/Opening-and-Closing-Files.html
 
-| fun libc_open(filename: U64, flags: U64, mode: U64): U64 { ... }
-| fun libc_read(file: U64, buf: U64, len: U64): U64 { ... }
-| fun libc_write(file: U64, buf: U64, len: U64): U64 { ... }
-| fun libc_close(file: U64): U8 { ... }
-
 struct File { descriptor: U64 }
-
-| TODO: create Mode struct
 
 enum OpenFileFlag { read, write, create, truncate, append }
 fun hash(hasher: &Hasher, flag: OpenFileFlag) {
@@ -1638,7 +1612,6 @@ fun equals(a: OpenFileFlag, b: OpenFileFlag): Bool {
   case truncate if b is truncate then true else false
   case append if b is append then true else false
 }
-
 fun to_os_flags(flags: Set[OpenFileFlag]): U64 {
   var flag_rdonly = 8#0000
   var flag_wronly = 8#0001
@@ -1648,6 +1621,10 @@ fun to_os_flags(flags: Set[OpenFileFlag]): U64 {
   var flag_append = 8#2000
 
   var res = 0
+  | "The argument flags must include one of the following access modes:
+  |  O_RDONLY, O_WRONLY, or O_RDWR. These request opening the file read-only,
+  |  write-only, or read/write, respectively."
+  | https://man7.org/linux/man-pages/man2/open.2.html
   res = res.or(
     if flags.contains(OpenFileFlag.read)
     then if flags.contains(OpenFileFlag.write) then flag_rdwr else flag_rdonly
@@ -1656,6 +1633,15 @@ fun to_os_flags(flags: Set[OpenFileFlag]): U64 {
       flag_wronly
     }
   )
+  | "In addition, zero or more file creation flags and file status flags can be
+  |  bitwise ORed in flags. The file creation flags are O_CLOEXEC, O_CREATE,
+  |  O_DIRECTORY, O_EXCL, O_NOCTTY, O_NOFOLLOW, O_TMPFILE, and O_TRUNC. The file
+  |  status flags are all of the remaining flags listed below. The distinction
+  |  between these two groups of flags is that the file creation flags affect
+  |  the semantics of the open operation itself, while the file status flags
+  |  affect the semantics of subsequent I/O operations."
+  | https://man7.org/linux/man-pages/man2/open.2.html
+  | TODO: support more flags
   if flags.contains(OpenFileFlag.create)   then res = res.or(flag_create)
   if flags.contains(OpenFileFlag.truncate) then res = res.or(flag_trunc)
   if flags.contains(OpenFileFlag.append)   then res = res.or(flag_append)
