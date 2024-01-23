@@ -1131,9 +1131,18 @@ fun filled_slice[T](len: U64, fill: T): Slice[T] {
 
 fun is_empty[T](slice: Slice[T]): Bool { slice.len == 0 }
 fun get[T](slice: Slice[T], index: U64): T { slice.get_ref(index).* }
+fun get_maybe[T](slice: Slice[T], index: U64): Maybe[T] {
+  switch slice.get_maybe_ref(index)
+  case some(item) some(item.*)
+  case none none[T]()
+}
 fun get_ref[T](slice: Slice[T], index: U64): &T {
-  {0..slice.len}.contains(index) orelse panic("index out of bounds")
-  slice.data.add_stride_offset(index)
+  slice.get_maybe_ref(index).unwrap("index out of bounds")
+}
+fun get_maybe_ref[T](slice: Slice[T], index: U64): Maybe[&T] {
+  if {0..slice.len}.contains(index)
+  then some(slice.data.add_stride_offset(index))
+  else none[&T]()
 }
 
 fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
@@ -1929,7 +1938,13 @@ fun pop[T](vec: &Vec[T]): T {
   vec.data.get(vec.len)
 }
 fun get[T](vec: Vec[T], index: U64): T { vec.data.get(index) }
+fun get_maybe[T](vec: Vec[T], index: U64): Maybe[T] {
+  vec.data.get_maybe(index)
+}
 fun get_ref[T](vec: Vec[T], index: U64): &T { vec.data.get_ref(index) }
+fun get_maybe_ref[T](vec: Vec[T], index: U64): Maybe[&T] {
+  vec.data.get_maybe_ref(index)
+}
 fun is_empty[T](vec: Vec[T]): Bool { vec.len == 0 }
 fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0, vec.len) }
 
