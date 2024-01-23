@@ -1,20 +1,19 @@
-fun foo() {
-  var a = 3
-  var b = some(4)
-  | if b is some(c) breakpoint
-}
-
-fun %!~@^\`/&*+$-<>=(a: U64, b: U64): U64 { 42 }
-
-fun print_name[T]() {
-  println(type[T]())
-}
-
 fun main(args: Slice[Str]): Never {
-  println(3 + 4)
-  println(1 + 2 %!~@^\`/&*+$-<>= 8)
+  println(2 + 3 + 4)
 
-  println(vec(1, 2, 3))
-  print_name[Slice[Str]]()
+  if 1 < 2 then println("Whoa")
+
+  for i in 0..5 do println("Hello, {i}!")
+
+  println(3 %!~@^\`/&*+$-<>=. 4)
+
+  print_name[Slice[U8]]()
+
   exit(0:U8)
 }
+
+fun %!~@^\`/&*+$-<>=.(a: U64, b: U64): U64 { 42 }
+
+fun ===[T](a: T, b: T): Never { panic("JS is a horrible language") }
+
+fun print_name[T]() { println(type[T]()) }
