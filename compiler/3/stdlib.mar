@@ -18,7 +18,6 @@
 | TODO: improve int parsing: be strict about whitespace
 | TODO: unwrap?
 | TODO: funs as values, function types, higher-order funs?
-| TODO: operators
 | TODO: var bool = foo is some?
 | TODO: slice literals? array literals?
 | TODO: type aliases?
@@ -41,7 +40,7 @@
 struct Nothing {}
 
 fun write[W](writer: W, nothing: Nothing) { writer."nothing" }
-fun equals(a: Nothing, b: Nothing): Bool { true }
+fun ==(a: Nothing, b: Nothing): Bool { true }
 fun ignore[T](value: T) {}
 
 | Never  
@@ -60,10 +59,10 @@ fun ignore[T](value: T) {}
 enum Never {}
 
 | Equality  
-| You should implement an equals(T, T): Bool function for types that can be
-| compared for equality.
+| You should implement an ==(T, T): Bool function for types that can be compared
+| for equality.
 
-fun not_equals[T](a: T, b: T): Bool { not(a.equals(b)) }
+fun !=[T](a: T, b: T): Bool { not(a == b) }
 
 | Hashing  
 | You should implement a hash(&Hasher, T) function for types that can be hashed.
@@ -78,9 +77,7 @@ fun hash[T](value: T): U64 {
 }
 
 struct Hasher { state: U64 }
-fun hash(hasher: &Hasher, val: U64) {
-  hasher.state = hasher.state.multiply(33).add(val)
-}
+fun hash(hasher: &Hasher, val: U64) { hasher.state = hasher.state * 33 + val }
 fun hash_all[I](hasher: &Hasher, iter: I) {
   for item in iter do hasher.hash(item)
 }
@@ -107,10 +104,10 @@ enum Bool { false, true }
 var true = Bool.true
 var false = Bool.false
 
-fun equals(a: Bool, b: Bool): Bool { if a then b else not(b) }
+fun ==(a: Bool, b: Bool): Bool { if a then b else not(b) }
 fun not(a: Bool): Bool { if a then false else true }
-fun and(a: Bool, b: Bool): Bool { if a then b else false }
-fun or(a: Bool, b: Bool): Bool { if a then true else b }
+fun &(a: Bool, b: Bool): Bool { if a then b else false }
+fun /(a: Bool, b: Bool): Bool { if a then true else b }
 fun xor(a: Bool, b: Bool): Bool { if a then not(b) else b }
 fun implies(a: Bool, b: Bool): Bool { if a then b else true }
 
@@ -139,9 +136,9 @@ fun write[W, T](writer: W, maybe: Maybe[T]) {
   case some(val) writer."some({val})"
   case none writer."none"
 }
-fun equals[T](a: Maybe[T], b: Maybe[T]): Bool {
+fun ==[T](a: Maybe[T], b: Maybe[T]): Bool {
   switch a
-  case some(aa) { switch b case some(bb) aa.equals(bb) case none false }
+  case some(aa) { switch b case some(bb) aa == bb case none false }
   case none b.is_none()
 }
 fun hash[T](hasher: &Hasher, value: Maybe[T]) {
@@ -169,10 +166,10 @@ fun write[W, O, E](writer: W, result: Result[O, E]) {
   case ok(o) writer."ok({o})"
   case error(e) writer."error({e})"
 }
-fun equals[O, E](a: Result[O, E], b: Result[O, E]): Bool {
+fun ==[O, E](a: Result[O, E], b: Result[O, E]): Bool {
   switch a
-  case ok(ao) { switch b case ok(bo) ao.equals(bo) case error false }
-  case error(ae) { switch b case error(be) ae.equals(be) case ok false }
+  case ok(ao) { switch b case ok(bo) ao == bo case error false }
+  case error(ae) { switch b case error(be) ae == be case ok false }
 }
 fun hash[O, E](hasher: &Hasher, result: Result[O, E]) {
   switch result
@@ -405,12 +402,12 @@ fun syscall(
 | Many syscalls return 0 or -1 if an operation didn't work. Here's a helper for
 | dealing with that.
 fun error_if_zero(value: U64, message: Str): Result[U64, Str] {
-  if value.cast[U64, I64]().equals(0:I64)
+  if value.cast[U64, I64]() == 0:I64
   then error[U64, Str](message)
   else ok[U64, Str](value)
 }
 fun error_if_minus_one(value: U64, message: Str): Result[U64, Str] {
-  if value.cast[U64, I64]().equals(0:I64.subtract(1:I64))
+  if value.cast[U64, I64]() == {0:I64 - 1:I64} | TODO: add a minus method
   then error[U64, Str](message)
   else ok[U64, Str](value)
 }
@@ -424,9 +421,7 @@ fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
 fun todo(): Never { panic("todo") }
 fun assert(condition: Bool) { assert(condition, "assert failed") }
-fun assert(condition: Bool, message: Str) {
-  if not(condition) then panic(message)
-}
+fun assert(condition: Bool, message: Str) { condition orelse panic(message) }
 
 | Int  
 | There are several integer types with different signedness and bit amount.
@@ -436,16 +431,16 @@ fun assert(condition: Bool, message: Str) {
 |
 | TODO: not all operations implemented for all integers
 | All integers also support the following mathematical operations:
-| - add(Int, Int): Int
-| - subtract(Int, Int): Int
-| - multiply(Int, Int): Int
-| - divide(Int, Int): Int
+| - +(Int, Int): Int
+| - -(Int, Int): Int
+| - *(Int, Int): Int
+| - /(Int, Int): Int
 | - remainder(Int, Int): Int
 | - modulo(Int, Int): Int
 | - and(Int, Int): Int
 | - or(Int, Int): Int
 | - xor(Int, Int): Int
-| - compare_to(Int, Int): Ordering
+| - <=>(Int, Int): Ordering
 | - to_<OtherInt>(Int): OtherInt, e.g. to_U8() for non-U8 ints
 
 opaque U8  = 1 byte big,  1 byte aligned
@@ -457,56 +452,56 @@ opaque I16 = 2 bytes big, 2 bytes aligned
 opaque I32 = 4 bytes big, 4 bytes aligned
 opaque I64 = 8 bytes big, 8 bytes aligned
 
-fun add(a: U8, b: U8): U8 asm {
+fun +(a: U8, b: U8): U8 asm {
   mov r8b, [rsp + 16] ; a
   add r8b, [rsp + 17] ; b
   mov r9, [rsp + 8]   ; return address
   mov [r9], r8b
   ret
 }
-fun add(a: U16, b: U16): U16 asm {
+fun +(a: U16, b: U16): U16 asm {
   mov r8w, [rsp + 16] ; a
   add r8w, [rsp + 18] ; b
   mov r9, [rsp + 8]   ; return address
   mov [r9], r8w
   ret
 }
-fun add(a: U32, b: U32): U32 asm {
+fun +(a: U32, b: U32): U32 asm {
   mov r8d, [rsp + 16] ; a
   add r8d, [rsp + 20] ; b
   mov r9, [rsp + 8]   ; return address
   mov [r9], r8d
   ret
 }
-fun add(a: U64, b: U64): U64 asm {
+fun +(a: U64, b: U64): U64 asm {
   mov r8, [rsp + 16] ; a
   add r8, [rsp + 24] ; b
   mov r9, [rsp + 8]  ; return address
   mov [r9], r8
   ret
 }
-fun add(a: I8, b: I8): I8 asm {
+fun +(a: I8, b: I8): I8 asm {
   mov r8b, [rsp + 16] ; a
   add r8b, [rsp + 17] ; b
   mov r9, [rsp + 8]   ; return address
   mov [r9], r8b
   ret
 }
-fun add(a: I16, b: I16): I16 asm {
+fun +(a: I16, b: I16): I16 asm {
   mov r8w, [rsp + 16] ; a
   add r8w, [rsp + 18] ; b
   mov r9, [rsp + 8]   ; return address
   mov [r9], r8w
   ret
 }
-fun add(a: I32, b: I32): I32 asm {
+fun +(a: I32, b: I32): I32 asm {
   mov r8d, [rsp + 16] ; a
   add r8d, [rsp + 20] ; b
   mov r9, [rsp + 8]   ; return address
   mov [r9], r8d
   ret
 }
-fun add(a: I64, b: I64): I64 asm {
+fun +(a: I64, b: I64): I64 asm {
   mov r8, [rsp + 16] ; a
   add r8, [rsp + 24] ; b
   mov r9, [rsp + 8]  ; return address
@@ -515,56 +510,56 @@ fun add(a: I64, b: I64): I64 asm {
 }
 
 | TODO: is this guaranteed to underflow correctly?
-fun subtract(a: U8, b: U8): U8 asm {
+fun -(a: U8, b: U8): U8 asm {
   mov r8b, [rsp + 16] ; a
   sub r8b, [rsp + 17] ; b
   mov r9, [rsp + 8]   ; return address
   mov [r9], r8b
   ret
 }
-fun subtract(a: U16, b: U16): U16 asm {
+fun -(a: U16, b: U16): U16 asm {
   mov r8w, [rsp + 16] ; a
   sub r8w, [rsp + 18] ; b
   mov r9, [rsp + 8]   ; return address
   mov [r9], r8w
   ret
 }
-fun subtract(a: U32, b: U32): U32 asm {
+fun -(a: U32, b: U32): U32 asm {
   mov r8d, [rsp + 16] ; a
   sub r8d, [rsp + 20] ; b
   mov r9, [rsp + 8]   ; return address
   mov [r9], r8d
   ret
 }
-fun subtract(a: U64, b: U64): U64 asm {
+fun -(a: U64, b: U64): U64 asm {
   mov r8, [rsp + 16] ; a
   sub r8, [rsp + 24] ; b
   mov r9, [rsp + 8]  ; return address
   mov [r9], r8
   ret
 }
-fun subtract(a: I8, b: I8): I8 asm {
+fun -(a: I8, b: I8): I8 asm {
   mov r8b, [rsp + 16] ; a
   sub r8b, [rsp + 17] ; b
   mov r9, [rsp + 8]   ; return address
   mov [r9], r8b
   ret
 }
-fun subtract(a: I16, b: I16): I16 asm {
+fun -(a: I16, b: I16): I16 asm {
   mov r8w, [rsp + 16] ; a
   sub r8w, [rsp + 18] ; b
   mov r9, [rsp + 8]   ; return address
   mov [r9], r8w
   ret
 }
-fun subtract(a: I32, b: I32): I32 asm {
+fun -(a: I32, b: I32): I32 asm {
   mov r8d, [rsp + 16] ; a
   sub r8d, [rsp + 20] ; b
   mov r9, [rsp + 8]   ; return address
   mov [r9], r8d
   ret
 }
-fun subtract(a: I64, b: I64): I64 asm {
+fun -(a: I64, b: I64): I64 asm {
   mov r8, [rsp + 16] ; a
   sub r8, [rsp + 24] ; b
   mov r9, [rsp + 8]  ; return address
@@ -572,7 +567,7 @@ fun subtract(a: I64, b: I64): I64 asm {
   ret
 }
 
-fun multiply(a: U8, b: U8): U8 asm {
+fun *(a: U8, b: U8): U8 asm {
   mov al, [rsp + 16]  ; a
   mov r8b, [rsp + 17] ; b
   mul r8b             ; al * r8b = ax
@@ -580,7 +575,7 @@ fun multiply(a: U8, b: U8): U8 asm {
   mov [r9], al
   ret
 }
-fun multiply(a: U16, b: U16): U16 asm {
+fun *(a: U16, b: U16): U16 asm {
   mov ax, [rsp + 16]  ; a
   mov r8w, [rsp + 18] ; b
   mul r8w             ; ax * r8w = dx:ax
@@ -588,7 +583,7 @@ fun multiply(a: U16, b: U16): U16 asm {
   mov [r9], ax
   ret
 }
-fun multiply(a: U32, b: U32): U32 asm {
+fun *(a: U32, b: U32): U32 asm {
   mov eax, [rsp + 16] ; a
   mov r8d, [rsp + 20] ; b
   mul r8d             ; eax * r8d = edx:eax
@@ -596,7 +591,7 @@ fun multiply(a: U32, b: U32): U32 asm {
   mov [r9], eax
   ret
 }
-fun multiply(a: U64, b: U64): U64 asm {
+fun *(a: U64, b: U64): U64 asm {
   mov rax, [rsp + 16] ; a
   mov r8, [rsp + 24]  ; b
   mul r8              ; rax * r8 = rdx:rax
@@ -604,22 +599,22 @@ fun multiply(a: U64, b: U64): U64 asm {
   mov [r9], rax
   ret
 }
-| TODO: fun multiply(a: I8, b: I8): I8 asm
-fun multiply(a: I16, b: I16): I16 asm {
+| TODO: fun *(a: I8, b: I8): I8 asm
+fun *(a: I16, b: I16): I16 asm {
   mov r8w, [rsp + 16]  ; a
   imul r8w, [rsp + 18] ; b
   mov r9, [rsp + 8]    ; return address
   mov [r9], r8w
   ret
 }
-fun multiply(a: I32, b: I32): I32 asm {
+fun *(a: I32, b: I32): I32 asm {
   mov r8d, [rsp + 16]  ; a
   imul r8d, [rsp + 20] ; b
   mov r9, [rsp + 8]   ; return address
   mov [r9], r8d
   ret
 }
-fun multiply(a: I64, b: I64): I64 asm {
+fun *(a: I64, b: I64): I64 asm {
   mov r8, [rsp + 16]  ; a
   imul r8, [rsp + 24] ; b
   mov r9, [rsp + 8]   ; return address
@@ -627,7 +622,7 @@ fun multiply(a: I64, b: I64): I64 asm {
   ret
 }
 
-fun divide(a: U8, b: U8): U8 asm {
+fun /(a: U8, b: U8): U8 asm {
   mov ah, 0           ; sign extension (always zero for unsigned ints)
   mov al, [rsp + 16]  ; a
   mov r8b, [rsp + 17] ; b
@@ -636,7 +631,7 @@ fun divide(a: U8, b: U8): U8 asm {
   mov [r9], al
   ret
 }
-fun divide(a: U16, b: U16): U16 asm {
+fun /(a: U16, b: U16): U16 asm {
   mov dx, 0           ; sign extension (always zero for unsigned ints)
   mov ax, [rsp + 16]  ; a
   mov r8w, [rsp + 18] ; b
@@ -645,7 +640,7 @@ fun divide(a: U16, b: U16): U16 asm {
   mov [r9], ax
   ret
 }
-fun divide(a: U32, b: U32): U32 asm {
+fun /(a: U32, b: U32): U32 asm {
   mov edx, 0          ; sign extension (always zero for unsigned ints)
   mov eax, [rsp + 16] ; a
   mov r8d, [rsp + 20] ; b
@@ -654,7 +649,7 @@ fun divide(a: U32, b: U32): U32 asm {
   mov [r9], eax
   ret
 }
-fun divide(a: U64, b: U64): U64 asm {
+fun /(a: U64, b: U64): U64 asm {
   mov rdx, 0          ; sign extension (always zero for unsigned ints)
   mov rax, [rsp + 16] ; a
   mov r8, [rsp + 24]  ; b
@@ -731,7 +726,7 @@ fun xor(a: U64, b: U64): U64 asm {
   ret
 }
 
-fun compare_to(a: U8, b: U8): Ordering asm {
+fun <=>(a: U8, b: U8): Ordering asm {
   mov r10, 0 ; less
   mov r11, 1 ; equal
   mov r12, 2 ; greater
@@ -744,7 +739,7 @@ fun compare_to(a: U8, b: U8): Ordering asm {
   mov [r8], r9b
   ret
 }
-fun compare_to(a: U64, b: U64): Ordering asm {
+fun <=>(a: U64, b: U64): Ordering asm {
   mov r10, 0 ; less
   mov r11, 1 ; equal
   mov r12, 2 ; greater
@@ -757,7 +752,7 @@ fun compare_to(a: U64, b: U64): Ordering asm {
   mov [r8], r9b
   ret
 }
-fun compare_to(a: I64, b: I64): Ordering asm {
+fun <=>(a: I64, b: I64): Ordering asm {
   mov r10, 0 ; less
   mov r11, 1 ; equal
   mov r12, 2 ; greater
@@ -850,50 +845,50 @@ fun to_U32(n: U64): U32 asm {
   ret
 }
 
-fun inc(a: U8): U8 { a.add(1:U8) }
-fun inc(a: U16): U16 { a.add(1:U16) }
-fun inc(a: U32): U32 { a.add(1:U32) }
-fun inc(a: U64): U64 { a.add(1:U64) }
-fun inc(a: I8): I8 { a.add(1:I8) }
-fun inc(a: I16): I16 { a.add(1:I16) }
-fun inc(a: I32): I32 { a.add(1:I32) }
-fun inc(a: I64): I64 { a.add(1:I64) }
-fun dec(a: U8): U8 { a.subtract(1:U8) }
-fun dec(a: U16): U16 { a.subtract(1:U16) }
-fun dec(a: U32): U32 { a.subtract(1:U32) }
-fun dec(a: U64): U64 { a.subtract(1:U64) }
-fun dec(a: I8): I8 { a.subtract(1:I8) }
-fun dec(a: I16): I16 { a.subtract(1:I16) }
-fun dec(a: I32): I32 { a.subtract(1:I32) }
-fun dec(a: I64): I64 { a.subtract(1:I64) }
+fun inc(a: U8): U8   { a + 1:U8 }
+fun inc(a: U16): U16 { a + 1:U16 }
+fun inc(a: U32): U32 { a + 1:U32 }
+fun inc(a: U64): U64 { a + 1:U64 }
+fun inc(a: I8): I8   { a + 1:I8 }
+fun inc(a: I16): I16 { a + 1:I16 }
+fun inc(a: I32): I32 { a + 1:I32 }
+fun inc(a: I64): I64 { a + 1:I64 }
+fun dec(a: U8): U8   { a - 1:U8 }
+fun dec(a: U16): U16 { a - 1:U16 }
+fun dec(a: U32): U32 { a - 1:U32 }
+fun dec(a: U64): U64 { a - 1:U64 }
+fun dec(a: I8): I8   { a - 1:I8 }
+fun dec(a: I16): I16 { a - 1:I16 }
+fun dec(a: I32): I32 { a - 1:I32 }
+fun dec(a: I64): I64 { a - 1:I64 }
 
 fun round_up_to_multiple_of(number: U64, factor: U64): U64 {
-  number.add(factor.dec()).divide(factor).multiply(factor)
+  {number + factor.dec()} / factor * factor
 }
 
-fun equals(a: U8, b: U8): Bool { a.compare_to(b).is_equal() }
-fun equals(a: U16, b: U16): Bool { a.compare_to(b).is_equal() }
-fun equals(a: U32, b: U32): Bool { a.compare_to(b).is_equal() }
-fun equals(a: U64, b: U64): Bool { a.compare_to(b).is_equal() }
-fun equals(a: I8, b: I8): Bool { a.compare_to(b).is_equal() }
-fun equals(a: I16, b: I16): Bool { a.compare_to(b).is_equal() }
-fun equals(a: I32, b: I32): Bool { a.compare_to(b).is_equal() }
-fun equals(a: I64, b: I64): Bool { a.compare_to(b).is_equal() }
-fun hash(hasher: &Hasher, int: U8) { hasher.hash(int.to_U64()) }
+fun ==(a: U8, b: U8): Bool   { if a <=> b is equal then true else false }
+fun ==(a: U16, b: U16): Bool { if a <=> b is equal then true else false }
+fun ==(a: U32, b: U32): Bool { if a <=> b is equal then true else false }
+fun ==(a: U64, b: U64): Bool { if a <=> b is equal then true else false }
+fun ==(a: I8, b: I8): Bool   { if a <=> b is equal then true else false }
+fun ==(a: I16, b: I16): Bool { if a <=> b is equal then true else false }
+fun ==(a: I32, b: I32): Bool { if a <=> b is equal then true else false }
+fun ==(a: I64, b: I64): Bool { if a <=> b is equal then true else false }
+fun hash(hasher: &Hasher, int: U8)  { hasher.hash(int.to_U64()) }
 fun hash(hasher: &Hasher, int: U16) { hasher.hash(int.to_U64()) }
 fun hash(hasher: &Hasher, int: U32) { hasher.hash(int.to_U64()) }
-fun hash(hasher: &Hasher, int: I8) { hasher.hash(int.to_U64()) }
+fun hash(hasher: &Hasher, int: I8)  { hasher.hash(int.to_U64()) }
 fun hash(hasher: &Hasher, int: I16) { hasher.hash(int.to_U64()) }
 fun hash(hasher: &Hasher, int: I32) { hasher.hash(int.to_U64()) }
 fun hash(hasher: &Hasher, int: I64) { hasher.hash(int.to_U64()) }
 
-fun write[W](writer: W, int: U8) { writer.write(radix(int, 10)) }
+fun write[W](writer: W, int: U8)  { writer.write(radix(int, 10)) }
 fun write[W](writer: W, int: U16) { writer.write(radix(int, 10)) }
 fun write[W](writer: W, int: U32) { writer.write(radix(int, 10)) }
 fun write[W](writer: W, int: U64) { writer.write(radix(int, 10)) }
 fun write[W](writer: W, int: I64) {
-  if int.is_less_than(0:I64)
-  then writer."-{0:I64.subtract(int).to_U64()}"
+  if int < 0:I64
+  then writer."-{ {0:I64 - int}.to_U64()}" | TODO: minus
   else writer."+{radix(int.to_U64(), 10)}"
 }
 fun radix(int: U64, radix: U64): RadixFormat { RadixFormat { radix, int } }
@@ -904,59 +899,44 @@ struct RadixFormat { radix: U64, int: U64 }
 fun write[W](writer: W, format: RadixFormat) {
   var divisor = 1
   loop {
-    if format.int.divide(divisor).is_less_than(format.radix) then break
-    divisor = divisor.multiply(format.radix)
+    if format.int / divisor < format.radix then break
+    divisor = divisor * format.radix
   }
   loop {
     writer.write(
-      format.int.divide(divisor).modulo(format.radix).to_U8().digit_to_char())
-    if divisor.equals(1) then break
-    divisor = divisor.divide(format.radix)
+      {format.int / divisor}.modulo(format.radix).to_U8().digit_to_char())
+    if divisor == 1 then break
+    divisor = divisor / format.radix
   }
 }
 fun digit_to_char(digit: U8): Char {
-  if digit.is_greater_than(9:U8)
-  then digit.subtract(10:U8).add(#a.byte).to_char()
-  else digit.add(#0.byte).to_char()
+  if digit > 9:U8
+  then {digit - 10:U8 + #a.byte}.to_char()
+  else {digit + #0.byte}.to_char()
 }
 fun parse_U64(str: Str): U64 {
   var num = 0
   for char in str do {
     if not(#0.until(#9).contains(char))
     then panic("non-digit in supposed number")
-    num = num.multiply(10).add(char.subtract(#0).to_U64())
+    num = num * 10 + {char - #0}.to_U64()
   }
   num
 }
 
 | Comparisons  
-| You should implement a compare_to(T, T): Ordering function for types that can
-| be compared. This allows you to use functions such as is_at_least or min.
+| You should implement the spaceship operator <=>(T, T): Ordering for types that
+| can be compared. This allows you to use operators such as <= or functions such
+| as min.
 
 enum Ordering { less, equal, greater }
 
-fun is_less(ord: Ordering): Bool {
-  switch ord case less true case equal false case greater false
-}
-fun is_equal(ord: Ordering): Bool {
-  switch ord case less false case equal true case greater false
-}
-fun is_greater(ord: Ordering): Bool {
-  switch ord case less false case equal false case greater true
-}
-fun is_less_or_equal(ord: Ordering): Bool {
-  switch ord case less true case equal true case greater false
-}
-fun is_greater_or_equal(ord: Ordering): Bool {
-  switch ord case less false case equal true case greater true
-}
-fun equals(a: Ordering, b: Ordering): Bool {
+fun ==(a: Ordering, b: Ordering): Bool {
   switch a
   case less b.is_less()
   case equal b.is_equal()
   case greater b.is_greater()
 }
-
 fun hash(hasher: &Hasher, ord: Ordering) {
   hasher.hash(switch ord case less #l case equal #e case greater #g)
 }
@@ -966,13 +946,13 @@ fun write[W](writer: W, ord: Ordering) {
   )
 }
 
-fun is_less_than[T](a: T, b: T): Bool { a.compare_to(b).is_less() }
-fun is_greater_than[T](a: T, b: T): Bool { a.compare_to(b).is_greater() }
-fun is_at_least[T](a: T, b: T): Bool { a.compare_to(b).is_greater_or_equal() }
-fun is_at_most[T](a: T, b: T): Bool { a.compare_to(b).is_less_or_equal() }
+fun <[T](a: T, b: T): Bool { switch a <=> b case less true default false }
+fun >[T](a: T, b: T): Bool { switch a <=> b case greater true default false }
+fun >=[T](a: T, b: T): Bool { switch a <=> b case less false default true }
+fun <=[T](a: T, b: T): Bool { switch a <=> b case greater false default true }
 
-fun min[T](a: T, b: T): T { if a.is_less_than(b) then a else b }
-fun max[T](a: T, b: T): T { if a.is_greater_than(b) then a else b }
+fun min[T](a: T, b: T): T { if a < b then a else b }
+fun max[T](a: T, b: T): T { if a > b then a else b }
 
 | Type Information  
 | Using some builtin functions that only take type arguments (no value
@@ -994,10 +974,10 @@ struct Type { name: Str, args: Vec[Type] }
 
 fun type(name: Str): Type { type(name, vec[Type]()) }
 fun type(name: Str, args: Vec[Type]): Type { Type { name, args } }
-fun is_never(type: Type): Bool { type.equals(type("Never")) }
+fun is_never(type: Type): Bool { type == type("Never") }
 
 fun write[W](writer: W, type: Type) {
-  if type.name.equals("&")
+  if type.name == "&"
   then writer."&{type.args.get(0)}"
   else writer."{type.name}{type_args(type.args)}"
 }
@@ -1008,11 +988,11 @@ fun write[W, T](writer: W, type_args: TypeArgsFormat[T]) {
   then writer."[{comma_separated(type_args.args)}]"
 }
 
-fun equals(a: Type, b: Type): Bool {
-  a.name.equals(b.name) orelse return false
-  a.args.len.equals(b.args.len) orelse return false
+fun ==(a: Type, b: Type): Bool {
+  a.name == b.name orelse return false
+  a.args.len == b.args.len orelse return false
   for zip in zip(a.args.iter(), b.args.iter()) do
-    zip.a.equals(zip.b) orelse return false
+    zip.a == zip.b orelse return false
   true
 }
 fun hash(hasher: &Hasher, type: Type) {
@@ -1047,7 +1027,7 @@ fun to_reference[T](address: Address): &T asm {
 fun cast[A, B](a: A): B {
   | at least a small sanity check
   assert(
-    size_of[A]().equals(size_of[B]()), "cast between types of different sizes",
+    size_of[A]() == size_of[B](), "cast between types of different sizes",
   )
   a.&.to_address().to_reference[B]().*
 }
@@ -1057,7 +1037,7 @@ fun to_address(number: U64): Address { number.cast[U64, Address]() }
 
 var null = 0.to_address() | Million dollar mistake?
 
-fun equals(a: Address, b: Address): Bool { a.to_U64().equals(b.to_U64()) }
+fun ==(a: Address, b: Address): Bool { a.to_U64() == b.to_U64() }
 
 fun write[W](writer: W, address: Address) {
   | max U64 is 18_446_744_073_709_551_615
@@ -1065,9 +1045,9 @@ fun write[W](writer: W, address: Address) {
   var address = address.to_U64()
   writer."0x"
   loop {
-    writer.write(address.divide(divisor).modulo(16).to_U8().digit_to_char())
-    if divisor.equals(1) then break
-    divisor = divisor.divide(16)
+    writer.write({address / divisor}.modulo(16).to_U8().digit_to_char())
+    if divisor == 1 then break
+    divisor = divisor / 16
   }
 }
 
@@ -1081,8 +1061,7 @@ fun swap[T](a: &T, b: &T) {
 | at an offset of their stride size, return a reference to the item at the
 | offset.
 fun add_stride_offset[T](ref: &T, offset: U64): &T {
-  ref.to_address().to_U64()
-    .add(offset.multiply(stride_size_of[T]()))
+  {ref.to_address().to_U64() + {stride_size_of[T]() * offset}}
     .to_address().to_reference[T]()
 }
 
@@ -1110,7 +1089,7 @@ fun unchecked_malloc(size: U64, alignment: U64): Address asm {
 }
 fun malloc(size: U64, alignment: U64): Address {
   var address = unchecked_malloc(size, alignment)
-  if address.equals(null) then panic("out of memory")
+  if address == null then panic("out of memory")
   address
 }
 fun uninitialized[T](): &T {
@@ -1139,8 +1118,8 @@ fun empty_slice[T](): Slice[T] {
   Slice { data = null.to_reference[T](), len = 0 }
 }
 fun uninitialized_slice[T](len: U64): Slice[T] {
-  if len.equals(0) then return empty_slice[T]()
-  var data = malloc(len.multiply(stride_size_of[T]()), alignment_of[T]())
+  if len == 0 then return empty_slice[T]()
+  var data = malloc(len * stride_size_of[T](), alignment_of[T]())
     .to_reference[T]()
   Slice { data, len }
 }
@@ -1150,28 +1129,28 @@ fun filled_slice[T](len: U64, fill: T): Slice[T] {
   slice
 }
 
-fun is_empty[T](slice: Slice[T]): Bool { slice.len.equals(0) }
+fun is_empty[T](slice: Slice[T]): Bool { slice.len == 0 }
 fun get[T](slice: Slice[T], index: U64): T { slice.get_ref(index).* }
 fun get_ref[T](slice: Slice[T], index: U64): &T {
   0.to(slice.len).contains(index) orelse panic("index out of bounds")
   slice.data.add_stride_offset(index)
 }
 
-fun compare_to[T](a: Slice[T], b: Slice[T]): Ordering {
+fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
   var i = 0
   loop {
-    if i.equals(a.len).and(i.equals(b.len)) then return Ordering.equal
-    if i.equals(a.len) then return Ordering.less
-    if i.equals(b.len) then return Ordering.greater
-    var ord = a.get(i).compare_to(b.get(i))
-    if not(ord.is_equal()) then return ord
+    if {i == a.len} & {i == b.len} then return Ordering.equal
+    if i == a.len then return Ordering.less
+    if i == b.len then return Ordering.greater
+    var ord = a.get(i) <=> b.get(i)
+    if ord is equal then {} default return ord
     i = i.inc()
   }
 }
-fun equals[T](a: Slice[T], b: Slice[T]): Bool {
-  a.len.equals(b.len) orelse return false
-  | TODO: support types that only have equals, not compare_to
-  compare_to(a, b).is_equal()
+fun ==[T](a: Slice[T], b: Slice[T]): Bool {
+  a.len == b.len orelse return false
+  | TODO: support types that only have ==, not <=>
+  if a <=> b is equal then true else false
 }
 fun hash[T](hasher: &Hasher, slice: Slice[T]) { hasher.hash_all(slice) }
 fun write[W, T](writer: W, slice: Slice[T]) {
@@ -1184,10 +1163,10 @@ fun iter[T](slice: Slice[T]): Iter[T, _] {
 struct SliceIter[T] { slice: Slice[T], index: U64 }
 fun next[T](iter: &SliceIter[T]): Maybe[T] {
   var item =
-    if iter.index.is_less_than(iter.slice.len)
+    if iter.index < iter.slice.len
     then some(iter.slice.get(iter.index))
     else none[T]()
-  iter.index = iter.index.add(1)
+  iter.index = iter.index + 1
   item
 }
 
@@ -1199,26 +1178,26 @@ struct SliceRevIter[T] {
   index: U64, | last yielded item
 }
 fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
-  if iter.index.is_greater_than(0) then {
-    iter.index = iter.index.subtract(1)
+  if iter.index > 0 then {
+    iter.index = iter.index - 1
     some[T](iter.slice.get(iter.index))
   } else none[T]()
 }
 
 fun copy_to[T](from: Slice[T], to: Slice[T]) {
-  assert(from.len.equals(to.len), "copy_to slice lens don't match")
+  assert(from.len == to.len, "copy_to slice lens don't match")
   for i in 0.to(from.len) do to.get_ref(i).* = from.get(i)
 }
 fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
-  assert(to.is_at_most(slice.len), "subslice needs to be inside original slice")
-  Slice { data = slice.data.add_stride_offset(from), len = to.subtract(from) }
+  assert(to <= slice.len, "subslice needs to be inside original slice")
+  Slice { data = slice.data.add_stride_offset(from), len = to - from }
 }
 fun first[T](slice: Slice[T]): T {
   assert(slice.is_not_empty(), "first only works on non-empty slices")
   slice.get(0)
 }
 fun first[T](slice: Slice[T], amount: U64): Slice[T] {
-  assert(amount.is_at_most(slice.len), "first amount too big")
+  assert(amount <= slice.len, "first amount too big")
   slice.subslice(0, amount)
 }
 fun last[T](slice: Slice[T]): T {
@@ -1226,24 +1205,24 @@ fun last[T](slice: Slice[T]): T {
   slice.get(slice.len.dec())
 }
 fun last[T](slice: Slice[T], amount: U64): Slice[T] {
-  assert(amount.is_at_most(slice.len), "last amount too big")
-  slice.subslice(slice.len.subtract(amount), slice.len)
+  assert(amount <= slice.len, "last amount too big")
+  slice.subslice(slice.len - amount, slice.len)
 }
 fun without_first[T](slice: Slice[T], amount: U64): Slice[T] {
-  assert(amount.is_at_most(slice.len), "without_first amount too big")
+  assert(amount <= slice.len, "without_first amount too big")
   slice.subslice(amount, slice.len)
 }
 fun without_last[T](slice: Slice[T], amount: U64): Slice[T] {
-  assert(amount.is_at_most(slice.len), "without_last amount too big")
-  slice.subslice(0, slice.len.subtract(amount))
+  assert(amount <= slice.len, "without_last amount too big")
+  slice.subslice(0, slice.len - amount)
 }
 fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
-  slice.len.is_at_least(prefix.len) orelse return false
-  slice.first(prefix.len).equals(prefix)
+  slice.len >= prefix.len orelse return false
+  slice.first(prefix.len) == prefix
 }
 fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
-  slice.len.is_at_least(suffix.len) orelse return false
-  slice.last(suffix.len).equals(suffix)
+  slice.len >= suffix.len orelse return false
+  slice.last(suffix.len) == suffix
 }
 fun trim_prefix[T](slice: &Slice[T], prefix: Slice[T]): Bool {
   var matches = slice.starts_with(prefix)
@@ -1258,11 +1237,11 @@ fun trim_suffix[T](slice: &Slice[T], suffix: Slice[T]): Bool {
 
 fun sort[T](slice: &Slice[T]) {
   | quick sort
-  if slice.len.is_at_most(1) then return {}
+  if slice.len <= 1 then return {}
   var pivot = slice.get(slice.len.dec())
   var i = 0
   for j in 0.to(slice.len) do
-    if slice.get(j).is_less_than(pivot) then {
+    if slice.get(j) < pivot then {
       i = i.inc()
       swap(slice.get_ref(i.dec()), slice.get_ref(j))
     }
@@ -1309,29 +1288,27 @@ fun to_os_str(str: Str): OsStr {
 fun to_str(str: OsStr): Str {
   var len = 0
   loop
-    if str.address.to_reference[U8]().add_stride_offset(len).equals(0)
+    if str.address.to_reference[U8]().add_stride_offset(len) == 0
     then break
     else len = len.inc()
   Slice { data = str.address.to_reference[Char](), len }.to_str()
 }
 
 fun parse_digit(char: Char): U8 {
-  if #0.to(#9).contains(char.byte) then return char.byte.subtract(#0.byte)
-  if #a.to(#z).contains(char.byte) then return char.byte.subtract(#a.byte).add(16)
-  if #A.to(#Z).contains(char.byte) then return char.byte.subtract(#A.byte).add(16)
+  if #0.to(#9).contains(char.byte) then return char.byte - #0.byte
+  if #a.to(#z).contains(char.byte) then return char.byte - #a.byte + 16
+  if #A.to(#Z).contains(char.byte) then return char.byte - #A.byte + 16
   panic("not a digit")
 }
-fun compare_to(a: Char, b: Char): Ordering { a.byte.compare_to(b.byte) }
-fun equals(a: Char, b: Char): Bool { a.byte.equals(b.byte) }
+fun <=>(a: Char, b: Char): Ordering { a.byte <=> b.byte }
+fun ==(a: Char, b: Char): Bool { a.byte == b.byte }
 fun hash(hasher: &Hasher, char: Char) { hasher.hash(char.byte) }
 fun write[W](writer: W, char: Char) { writer.write_byte(char.byte) }
 fun inc(char: Char): Char { Char { byte = char.byte.inc() } }
 fun dec(char: Char): Char { Char { byte = char.byte.dec() } }
-fun add(char: Char, delta: U8): Char { Char { byte = char.byte.add(delta) } }
-fun subtract(char: Char, delta: U8): Char {
-  Char { byte = char.byte.subtract(delta) }
-}
-fun subtract(char: Char, other: Char): U8 { char.byte.subtract(other.byte) }
+fun +(char: Char, delta: U8): Char { Char { byte = char.byte + delta } }
+fun -(char: Char, delta: U8): Char { Char { byte = char.byte - delta } }
+fun -(char: Char, other: Char): U8 { char.byte - other.byte }
 
 fun string_builder(): StringBuilder { StringBuilder { chars = vec[Char]() } }
 struct StringBuilder { chars: Vec[Char] }
@@ -1343,7 +1320,7 @@ fun write_bytes(builder: &StringBuilder, bytes: Slice[U8]) {
 }
 fun len(builder: StringBuilder): U64 { builder.chars.len }
 fun truncate_to_len(builder: &StringBuilder, len: U64) {
-  assert(len.is_at_most(builder.chars.len))
+  assert(len <= builder.chars.len)
   builder.chars.len = len
 }
 fun to_str(builder: StringBuilder): Str {
@@ -1351,26 +1328,27 @@ fun to_str(builder: StringBuilder): Str {
 }
 
 fun len(str: Str): U64 { str.chars.len }
-fun is_empty(str: Str): Bool { str.len.equals(0) }
+fun is_empty(str: Str): Bool { str.len == 0 }
 fun get(str: Str, index: U64): Char { str.get_ref(index).* }
 fun get_ref(str: Str, index: U64): &Char {
   0.to(str.len).contains(index) orelse panic("index out of bounds")
   str.chars().get_ref(index)
 }
 
-fun compare_to(a: Str, b: Str): Ordering {
+fun <=>(a: Str, b: Str): Ordering {
   var i = 0
   loop {
-    if i.equals(a.len).and(i.equals(b.len)) then return Ordering.equal
-    if i.equals(a.len) then return Ordering.less
-    if i.equals(b.len) then return Ordering.greater
-    var ord = a.get(i).compare_to(b.get(i))
-    ord.is_equal() orelse return ord
+    if {i == a.len} & {i == b.len} then return Ordering.equal
+    if i == a.len then return Ordering.less
+    if i == b.len then return Ordering.greater
+    var ord = a.get(i) <=> b.get(i)
+    if ord is equal then {} else return ord
     i = i.inc()
   }
 }
-fun equals(a: Str, b: Str): Bool {
-  if a.len.equals(b.len) then compare_to(a, b).is_equal() else false
+fun ==(a: Str, b: Str): Bool {
+  a.len == b.len orelse return false
+  if a <=> b is equal then true else false
 }
 fun hash(hasher: &Hasher, str: Str) { hasher.hash(str.chars) }
 fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }
@@ -1380,7 +1358,7 @@ fun iter(str: Str): Iter[Char, _] {
 }
 struct StrIter { str: Str, index: U64 }
 fun next(iter: &StrIter): Maybe[Char] {
-  if iter.index.is_less_than(iter.str.len)
+  if iter.index < iter.str.len
   then {
     var char = iter.str.chars.get(iter.index)
     iter.index = iter.index.inc()
@@ -1390,8 +1368,7 @@ fun next(iter: &StrIter): Maybe[Char] {
 }
 
 fun substr(str: Str, from: U64, to: U64): Str {
-  to.is_at_most(str.len)
-    orelse panic("substr needs to be inside original str")
+  to <= str.len orelse panic("substr needs to be inside original str")
   Str { chars = str.chars.subslice(from, to) }
 }
 fun first(str: Str): Char {
@@ -1399,7 +1376,7 @@ fun first(str: Str): Char {
   str.get(0)
 }
 fun first(str: Str, amount: U64): Str {
-  assert(amount.is_at_most(str.len), "first amount too big")
+  assert(amount <= str.len, "first amount too big")
   str.substr(0, amount)
 }
 fun last(str: Str): T {
@@ -1407,16 +1384,16 @@ fun last(str: Str): T {
   str.get(str.len.dec())
 }
 fun last(str: Str, amount: U64): Str {
-  assert(amount.is_at_most(str.len), "last amount too big")
-  str.substr(str.len.subtract(amount), str.len)
+  assert(amount <= str.len, "last amount too big")
+  str.substr(str.len - amount, str.len)
 }
 fun without_first(str: Str, amount: U64): Str {
-  assert(amount.is_at_most(str.len), "without_first amount too big")
+  assert(amount <= str.len, "without_first amount too big")
   str.substr(amount, str.len)
 }
 fun without_last(str: Str, amount: U64): Str {
-  assert(amount.is_at_most(str.len), "without_last amount too big")
-  str.substr(0, str.len.subtract(amount))
+  assert(amount <= str.len, "without_last amount too big")
+  str.substr(0, str.len - amount)
 }
 fun starts_with(str: Str, prefix: Str): Bool {
   str.chars.starts_with(prefix.chars)
@@ -1441,7 +1418,7 @@ fun lines(slice: Str): Slice[Str] { slice.split("{newline}") }
 fun pad_right(str: Str, len: U64, char: Char): Str {
   var string = string_builder().&
   string.write(str)
-  loop if string.len.is_less_than(len) then string.write(char) else break
+  loop if string.len < len then string.write(char) else break
   string.to_str()
 }
 
@@ -1453,13 +1430,13 @@ struct Range[T] { start: T, end: T }
 fun to[T](start: T, end: T): Range[T] { Range { start, end } }
 fun until[T](start: T, end: T): Range[T] { Range { start, end = end.inc() } }
 fun range_by[T](start: T, len: T): Range[T] {
-  Range { start, end = start.add(len) }
+  Range { start, end = start + len }
 }
 
 fun contains[T](range: Range[T], value: T): Bool {
-  value.is_at_least(range.start).and(value.is_less_than(range.end))
+  {value >= range.start} & {value < range.end}
 }
-fun is_empty[T](range: Range[T]): Bool { range.start.is_at_least(range.end) }
+fun is_empty[T](range: Range[T]): Bool { range.start >= range.end }
 
 fun iter[T](range: Range[T]): Iter[T, _] {
   RangeIter { rest = range }.wrap_in_iter[T, RangeIter[T]]()
@@ -1517,7 +1494,7 @@ struct Iter[T, I] { inner: I }
 
 fun wrap_in_iter[T, I](inner: I): Iter[T, I] {
   | TODO: typecheck once you can write types on vars
-  | if false() then var t: Maybe[T] = inner.next()
+  | if false then var t: Maybe[T] = inner.next()
   Iter[T, I] { inner }
 }
 fun iter[T, I](iter: Iter[T, I]): Iter[T, I] { iter }
@@ -1546,7 +1523,7 @@ fun take[T, I](iter: Iter[T, I]): Iter[T, _] {
 }
 struct TakeIter[T, I] { inner: I, amount: U64 }
 fun next[T, I](iter: &TakeIter[T, I]): Maybe[T] {
-  if iter.amount.is_greater_than(0)
+  if iter.amount > 0
   then {
     iter.amount = iter.amount.dec()
     iter.inner.&.next()
@@ -1604,8 +1581,7 @@ fun get_maybe[T, I](iter: &Iter[T, I], index: U64): Maybe[T] {
 
 | Finds the needle in the iter, returning its position.
 fun find[T, I](iter: &Iter[T, I], needle: T): Maybe[U64] {
-  for en in iter.enumerated() do
-    if en.item.equals(needle) then return some(en.index)
+  for en in iter.enumerated() do if en.item == needle then return some(en.index)
   none[U64]()
 }
 
@@ -1620,7 +1596,7 @@ fun next[T, I](self: &SplitIter[T, I]): Maybe[Slice[T]] {
   loop
     switch self.inner.&.next()
     case none
-      if current.len.is_greater_than(0)
+      if current.len > 0
       then return some(current.to_slice())
       else return none[Slice[T]]()
     case some(item) {
@@ -1638,7 +1614,7 @@ fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
 | fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
 |   if prefix.len.is_greater_than(slice.len) then return false
 |   for i in 0.to(prefix.len) do
-|     if not(slice.get(i).equals(prefix.get(i))) then return false
+|     if slice.get(i) != prefix.get(i) then return false
 |   true
 | }
 
@@ -1690,7 +1666,7 @@ fun hash(hasher: &Hasher, flag: OpenFileFlag) {
     case append 4
   )
 }
-fun equals(a: OpenFileFlag, b: OpenFileFlag): Bool {
+fun ==(a: OpenFileFlag, b: OpenFileFlag): Bool {
   switch a
   case read if b is read then true else false
   case write if b is write then true else false
@@ -1759,7 +1735,7 @@ fun read_byte(file: File): Result[Maybe[U8], Str] {
   var c = 0:U8
   var bytes_read = 0.syscall(file.descriptor, c.&.to_address().to_U64(), 1)
     .error_if_minus_one("couldn't read from file")?
-  if bytes_read.equals(0) then ok[Maybe[U8], Str](none[U8]())
+  if bytes_read == 0 then ok[Maybe[U8], Str](none[U8]())
   else ok[Maybe[U8], Str](some(c))
 }
 
@@ -1769,7 +1745,7 @@ fun write_bytes_safe(file: File, buffer: Slice[U8]): Result[Nothing, Str] {
     var bytes_written = 1.syscall(
       file.descriptor, buffer.data.to_address().to_U64(), buffer.len,
     )
-    if bytes_written.cast[U64, I64]().is_at_most(0:I64)
+    if bytes_written.cast[U64, I64]() <= 0:I64
     then return error[Nothing, Str]("couldn't write to file")
     buffer = buffer.without_first(bytes_written)
   }
@@ -1779,7 +1755,7 @@ fun write_byte_safe(file: File, byte: U8): Result[Nothing, Str] {
   var bytes_written = 1.syscall(
     file.descriptor, byte.&.to_address().to_U64(), 1,
   )
-  if bytes_written.cast[U64, I64]().is_at_most(0:I64)
+  if bytes_written.cast[U64, I64]() <= 0:I64
   then error[Nothing, Str]("couldn't write to file")
   else ok[Nothing, Str]({})
 }
@@ -1792,7 +1768,7 @@ fun write_byte(file: File, byte: U8) {
 
 fun close(file: File): Result[Nothing, Str] {
   var returned = 3.syscall(file.descriptor)
-  if returned.cast[U64, I64]().is_less_than(0:I64)
+  if returned.cast[U64, I64]() < 0:I64
   then error[Nothing, Str]("couldn't close file")
   else ok[Nothing, Str]({})
 }
@@ -1853,7 +1829,7 @@ fun eprintln() { eprint(newline) }
 fun eprintln[T](value: T) { eprint(value) eprintln() }
 
 fun buffered_writer[W](writer: W, capacity: U64): BufferedWriter[W] {
-  assert(capacity.is_greater_than(0))
+  assert(capacity > 0)
   BufferedWriter {
     buffer = filled_slice(capacity, 0:U8), len = 0, inner = writer
   }
@@ -1864,19 +1840,19 @@ fun flush[W](self: &BufferedWriter[W]) {
   self.len = 0
 }
 fun amount_free[W](self: BufferedWriter[W]): U64 {
-  self.buffer.len.subtract(self.len)
+  self.buffer.len - self.len
 }
 fun write_byte[W](self: &BufferedWriter[W], byte: U8) {
-  if self.amount_free().equals(0) then self.flush()
+  if self.amount_free() == 0 then self.flush()
   self.buffer.get_ref(self.len).* = byte
   self.len = self.len.inc()
 }
 fun write_bytes[W](self: &BufferedWriter[W], bytes: Slice[U8]) {
-  if bytes.len.is_at_most(self.amount_free())
+  if bytes.len <= self.amount_free()
   then for byte in bytes do self.write_byte(byte)
   else {
     self.flush()
-    if bytes.len.is_at_most(self.amount_free())
+    if bytes.len <= self.amount_free()
     then for byte in bytes do self.write_byte(byte)
     else self.inner.write_bytes(bytes)
   }
@@ -1934,29 +1910,29 @@ fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T): Vec[T] {
 }
 
 fun push[T](vec: &Vec[T], item: T) {
-  if vec.data.len.equals(0) then vec.data = uninitialized_slice[T](8)
-  if vec.data.len.equals(vec.len) then {
-    var new_data = uninitialized_slice[T](vec.data.len.multiply(2))
+  if vec.data.len == 0 then vec.data = uninitialized_slice[T](8)
+  if vec.data.len == vec.len then {
+    var new_data = uninitialized_slice[T](2 * vec.data.len)
     vec.data.copy_to(new_data.subslice(0, vec.data.len))
     vec.data = new_data
   }
   vec.data.get_ref(vec.len).* = item
-  vec.len = vec.len.add(1)
+  vec.len = vec.len + 1
 }
 fun push_all[T](vec: &Vec[T], items: Slice[T]) {
   for item in items do vec.push(item)
 }
 fun pop[T](vec: &Vec[T]): T {
-  if vec.len.equals(0) then panic("called pop on empty Vec")
+  if vec.len == 0 then panic("called pop on empty Vec")
   vec.len = vec.len.dec()
   vec.data.get(vec.len)
 }
 fun get[T](vec: Vec[T], index: U64): T { vec.data.get(index) }
 fun get_ref[T](vec: Vec[T], index: U64): &T { vec.data.get_ref(index) }
-fun is_empty[T](vec: Vec[T]): Bool { vec.len.equals(0) }
+fun is_empty[T](vec: Vec[T]): Bool { vec.len == 0 }
 fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0, vec.len) }
 
-fun equals[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice().equals(b.to_slice()) }
+fun ==[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice() == b.to_slice() }
 fun iter[T](vec: Vec[T]): Iter[T, _] { vec.to_slice().iter() }
 fun write[W, T](writer: W, vec: Vec[T]) { writer.write(vec.to_slice()) }
 
@@ -1972,13 +1948,13 @@ fun push[T](stack: &Stack[T], item: T) { stack.vec.&.push(item) }
 fun pop[T](stack: &Stack[T]): T { stack.vec.&.pop() }
 fun top[T](stack: Stack[T]): T { stack.top(0) }
 fun top[T](stack: Stack[T], n: U64): T {
-  stack.vec.get(stack.vec.len.subtract(1).subtract(n))
+  stack.vec.get(stack.vec.len - n - 1)
 }
 fun top_ref[T](stack: Stack[T]): &T { stack.top_ref(0) }
 fun top_ref[T](stack: Stack[T], n: U64): &T {
-  stack.vec.get_ref(stack.vec.len.subtract(1).subtract(n))
+  stack.vec.get_ref(stack.vec.len - n - 1)
 }
-fun equals[T](a: Stack[T], b: Stack[T]): Bool { a.vec.equals(b.vec) }
+fun ==[T](a: Stack[T], b: Stack[T]): Bool { a.vec == b.vec }
 fun write[W, T](writer: W, stack: Stack[T]) { writer.write(stack.vec) }
 
 | Deque  
@@ -1995,13 +1971,13 @@ fun deque[T](): Deque[T] {
   Deque { data = uninitialized_slice[T](8), start = 0, end = 0 }
 }
 fun len[T](deque: Deque[T]): U64 {
-  if deque.end.is_at_least(deque.start)
-  then deque.end.subtract(deque.start)
-  else deque.start.add(deque.data.len).subtract(deque.end)
+  if deque.end >= deque.start
+  then deque.end - deque.start
+  else deque.start + deque.data.len - deque.end
 }
-fun is_empty[T](deque: Deque[T]): Bool { deque.len().equals(0) }
+fun is_empty[T](deque: Deque[T]): Bool { deque.len() == 0 }
 fun reserve[T](deque: &Deque[T], size: U64) {
-  if deque.data.len.is_at_least(size) then return
+  if deque.data.len >= size then return
   var slices = deque.to_slices()
   var total_len = deque.len()
   deque.data = uninitialized_slice[T](size)
@@ -2011,9 +1987,9 @@ fun reserve[T](deque: &Deque[T], size: U64) {
   deque.end = total_len
 }
 fun push_front[T](deque: &Deque[T], item: T) {
-  if deque.data.len.equals(deque.len().dec())
-  then deque.reserve(deque.data.len.multiply(2))
-  deque.start = if deque.start.equals(0)
+  if deque.data.len == deque.len().dec()
+  then deque.reserve(deque.data.len * 2)
+  deque.start = if deque.start == 0
     then deque.data.len
     else deque.start.dec()
   deque.data.get_ref(deque.start).* = item
@@ -2025,39 +2001,39 @@ fun pop_front[T](deque: &Deque[T]): T {
   item
 }
 fun push_back[T](deque: &Deque[T], item: T) {
-  if deque.data.len.equals(deque.len().dec())
-  then deque.reserve(deque.data.len.multiply(2))
+  if deque.data.len == deque.len().dec()
+  then deque.reserve(deque.data.len * 2)
   deque.data.get_ref(deque.end).* = item
   deque.end = deque.end.inc().modulo(deque.data.len)
 }
 fun pop_back[T](deque: &Deque[T]): T {
   if deque.is_empty() then panic("pop_back on empty deque")
-  deque.end = if deque.end.equals(0)
+  deque.end = if deque.end == 0
     then deque.data.len
     else deque.end.dec()
   deque.data.get(deque.end)
 }
 fun get[T](deque: Deque[T], index: U64): T { deque.get_ref(index).* }
 fun get_ref[T](deque: Deque[T], index: U64): &T {
-  deque.data.get_ref(index.add(deque.start).modulo(deque.data.len))
+  deque.data.get_ref({index + deque.start}.modulo(deque.data.len))
 }
 fun to_slices[T](deque: Deque[T]): Tuple[Slice[T], Slice[T]] {
-  if deque.end.is_at_least(deque.start)
+  if deque.end >= deque.start
   then tuple(deque.data.subslice(deque.start, deque.end), empty_slice[T]())
   else tuple(
     deque.data.subslice(deque.start, deque.data.len),
     deque.data.subslice(0, deque.start)
   )
 }
-fun equals[T](a: Deque[T], b: Deque[T]): Bool {
-  a.len().equals(b.len()) orelse return false
-  for i in 0.to(a.len()) do a.get(i).equals(b.get(i)) orelse return false
+fun ==[T](a: Deque[T], b: Deque[T]): Bool {
+  a.len() == b.len() orelse return false
+  for i in 0.to(a.len()) do a.get(i) == b.get(i) orelse return false
   true
 }
 
 | Map   
 | Stores key-value-pairs for efficient lookup. The key has to support hash and
-| equals.
+| ==.
 
 struct Map[K, V] { buckets: Slice[MapBucket[K, V]], size: U64 }
 enum MapBucket[K, V] { empty, filled: MapEntry[K, V] }
@@ -2067,16 +2043,13 @@ fun map[K, V](): Map[K, V] {
   Map { buckets = filled_slice(8, MapBucket[K, V].empty), size = 0 }
 }
 
-fun is_empty[K, V](map: Map[K, V]): Bool { map.size.equals(0) }
+fun is_empty[K, V](map: Map[K, V]): Bool { map.size == 0 }
 fun put[K, V](map: &Map[K, V], key: K, value: V) {
-  var fill_percentage = 100.multiply(map.size).divide(map.buckets.len)
-  if fill_percentage.is_at_least(60) then {
+  var fill_percentage = 100 * map.size / map.buckets.len
+  if fill_percentage >= 60 then {
     var old_buckets = map.buckets
     map.* = Map {
-      buckets = filled_slice(
-        map.buckets.len.multiply(2),
-        MapBucket[K, V].empty
-      ),
+      buckets = filled_slice(map.buckets.len * 2, MapBucket[K, V].empty),
       size = 0,
     }
     for bucket in old_buckets do
@@ -2095,7 +2068,7 @@ fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
       break
     }
     case filled(entry)
-      if entry.key.equals(key) then {
+      if entry.key == key then {
         bucket.* = MapBucket.filled(MapEntry { key, value })
         break
       } else i = i.inc().modulo(map.buckets.len)
@@ -2111,7 +2084,7 @@ fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
     switch bucket
     case empty return none[V]()
     case filled(entry)
-      if entry.key.equals(key)
+      if entry.key == key
       then return some(entry.value)
       else i = i.inc().modulo(map.buckets.len)
   }
@@ -2132,10 +2105,10 @@ fun iter[K, V](map: Map[K, V]): Iter[MapEntry[K, V], _] {
 struct MapIter[K, V] { buckets: Slice[MapBucket[K, V]], index: U64 }
 fun next[K, V](map: &MapIter[K, V]): Maybe[MapEntry[K, V]] {
   loop {
-    if map.index.is_at_least(map.buckets.len)
+    if map.index >= map.buckets.len
     then return none[MapEntry[K, V]]()
-    map.index = map.index.add(1)
-    if map.buckets.get(map.index.subtract(1)) is filled(entry)
+    map.index = map.index + 1
+    if map.buckets.get(map.index - 1) is filled(entry)
     then return some(entry)
   }
 }
@@ -2151,7 +2124,7 @@ fun to_set[T](vec: Vec[T]): Set[T] {
   set
 }
 
-fun is_empty[T](set: Set[T]): Bool { set.map.size.equals(0) }
+fun is_empty[T](set: Set[T]): Bool { set.map.size == 0 }
 fun put[T](set: &Set[T], value: T) { set.map.&.put(value, {}) }
 fun contains[T](set: Set[T], value: T): Bool { set.map.contains(value) }
 
@@ -2172,9 +2145,9 @@ fun iter[T](set: Set[T]): Iter[T, _] {
 struct SetIter[T] { buckets: Slice[MapBucket[T, Nothing]], index: U64 }
 fun next[T](set: &SetIter[T]): Maybe[T] {
   loop {
-    if set.index.is_at_least(set.buckets.len) then return none[T]()
-    set.index = set.index.add(1)
-    if set.buckets.get(set.index.subtract(1)) is filled(entry)
+    if set.index >= set.buckets.len then return none[T]()
+    set.index = set.index + 1
+    if set.buckets.get(set.index - 1) is filled(entry)
     then return some(entry.key)
   }
 }
@@ -2214,7 +2187,7 @@ fun write[W](writer: W, pid: Pid) { writer."PID({pid.value})" }
 | are not freed.
 fun fork(): Forked {
   var pid = 57.syscall()
-  if pid.equals(0) then Forked.child else Forked.parent(Pid { value = pid })
+  if pid == 0 then Forked.child else Forked.parent(Pid { value = pid })
 }
 
 | Performs a wait4 syscall, which performs a superset of what waitpid does.
@@ -2236,7 +2209,7 @@ fun exec(command: Str, args: Slice[Str]): Never {
   var command = command.to_os_str().address.to_U64()
   | The exec syscall expects the arguments to be arranged like this:
   | [ptr to str][ptr to str][0         ]
-  var os_args = malloc(args.len.inc().multiply(8), 8).to_reference[U64]()
+  var os_args = malloc(args.len.inc() * 8, 8).to_reference[U64]()
   for arg in args.iter().enumerate() do
     os_args.add_stride_offset(arg.index).* =
       arg.item.to_os_str().address.to_U64()
