@@ -9,8 +9,8 @@
 | careful when deleting code in this file.
 
 | Language todos  
-| TODO: validate all signatures before lowering
 | TODO: allow types on vars
+| TODO: support getting reference to enum paylaod
 | TODO: break and continue with targets
 | TODO: enforce that statement-like expressions evaluate to Nothing
 | TODO: enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
@@ -18,7 +18,7 @@
 | TODO: improve int parsing: be strict about whitespace
 | TODO: unwrap?
 | TODO: funs as values, function types, higher-order funs?
-| TODO: operators?
+| TODO: operators
 | TODO: var bool = foo is some?
 | TODO: slice literals? array literals?
 | TODO: type aliases?

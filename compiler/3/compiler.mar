@@ -393,6 +393,27 @@ fun write[W](writer: W, signature: AstSignature) {
     ."fun {fun_.name}{type_args(fun_.type_args)}({comma_separated(fun_.args)})"
 }
 
+| A signature that doesn't print argument names, only types.
+fun stripped_signature(fun_: AstFun): StrippedFunSignature {
+  var type_args = vec[Type]()
+  for arg in fun_.type_args do type_args.&.push(type(arg))
+  var arg_types = vec[Type]()
+  for arg in fun_.args do arg_types.&.push(arg.type)
+  signature(fun_.name, some(type_args), arg_types)
+}
+fun signature(
+  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type]
+): StrippedFunSignature { StrippedFunSignature { name, type_args, arg_types } }
+struct StrippedFunSignature {
+  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type]
+}
+fun write[W](writer: W, signature: StrippedFunSignature) {
+  writer."{signature.name}"
+  if signature.type_args is some(type_args_)
+  then writer.write(type_args(type_args_))
+  writer."({comma_separated(signature.arg_types)})"
+}
+
 | Parsing  
 | Unlike the parser in Candy (github.com/candy-lang/candy), the Martinaise
 | parser favors simplicity over robustness. The first time it encounters an
@@ -1671,19 +1692,6 @@ fun write[W](writer: W, expr: MonoExpr) {
   case never writer."_never"
 }
 
-fun signature(
-  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type]
-): Signature { Signature { name, type_args, arg_types } }
-struct Signature {
-  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type]
-}
-fun write[W](writer: W, signature: Signature) {
-  writer."{signature.name}"
-  if signature.type_args is some(type_args_)
-  then writer.write(type_args(type_args_))
-  writer."({comma_separated(signature.arg_types)})"
-}
-
 fun push(
   slots: &Vec[MonoSlot], type: Type, initial_value: MonoSlotValue,
 ): MonoSlotRef {
@@ -1732,6 +1740,231 @@ fun expr(slot: MonoSlotRef, self: CompileFun): MonoExpr {
   slot.expr(self.slots.get(slot.index).type)
 }
 
+| Preparing the Ast  
+| When compiling function bodies during monomorphization, we need to find
+| matching functions in the Ast. Doing that on the raw Ast works, but is
+| inefficient. For example, when we see a call of the form foo(U8), we can walk
+| all definitions in the Ast and look for matching ones. Walking the entire Ast
+| all the time is inefficient, so we sort the definitions by their kind and
+| name.
+| This is also an opportunity to validate the general signatures of definitions
+| – in the first revisions of Martinaise, you could define a function foo(Foo),
+| even if no Foo type exists. The function would simply match no call, so
+| everything's fine. This practice is almost always not the intended behavior.
+
+| Some values needed throughout the entire monomorphization. We pack them up
+| here so they can be passed around easily by the monomorphizing functions.
+| TODO: Store a Map from name to asts instead of the raw ast.
+| TODO: maybe also split the ast into types, funs, and vars
+struct Monoing {
+  context: &Context,
+  ast_types: Map[Str, AstType],
+  ast_globals: Map[Str, AstVar],
+  ast_funs: Map[Str, Vec[AstFun]],
+  mono: &Mono, | will be filled during monomorphization output
+}
+enum AstType { opaque_: AstOpaqueType, struct_: AstStruct, enum_: AstEnum }
+
+fun prepare_monoing(ast: Ast): Result[Monoing, Str] {
+  var types = map[Str, AstType]()
+  var globals = map[Str, AstVar]()
+  var funs = map[Str, Vec[AstFun]]()
+
+  for def in ast.defs do {
+    switch def
+    case opaque_(opaque_) {
+      if types.contains(opaque_.name) then return error[Monoing, Str]('"
+        'Multiple types are named "{{opaque_.name}}". 
+        'Type names have to be unique."')
+      types.&.put(opaque_.name, AstType.opaque_(opaque_))
+    }
+    case struct_(struct_) {
+      if types.contains(struct_.name) then return error[Monoing, Str]('"
+        'Multiple types are named "{{struct_.name}}". 
+        'Type names have to be unique."')
+      types.&.put(struct_.name, AstType.struct_(struct_))
+    }
+    case enum_(enum_) {
+      if types.contains(enum_.name) then return error[Monoing, Str]('"
+        'Multiple types are named "{{enum_.name}}". 
+        'Type names have to be unique."')
+      types.&.put(enum_.name, AstType.enum_(enum_))
+    }
+    case var_(global) {
+      if globals.contains(global.name) then return error[Monoing, Str]('"
+        'Multiple global vars are named "{{global.name}}". 
+        'Names of globals have to be unique."')
+      globals.&.put(global.name, global)
+    }
+    case fun_(fun_)
+      if funs.contains(fun_.name)
+      then {
+        | TODO: update once there exists Map.get_ref
+        var overloads = funs.get(fun_.name)
+        overloads.&.push(fun_)
+        funs.&.put(fun_.name, overloads)
+      }
+      else funs.&.put(fun_.name, vec(fun_))
+  }
+
+  for type in types do
+    switch type.value
+    case opaque_ {}
+    case struct_(struct_) {
+      for arg in struct_.type_args do
+        if arg.exists(types, vec[Str]())
+        then return error[Monoing, Str]("
+          '{struct_.name} defines a type argument {arg}, but {arg} is also a
+          'fully defined type.")
+      for field in struct_.fields do
+        field.type.exists(types, struct_.type_args)
+          orelse(type) return error[Monoing, Str]("
+            '{struct_.name} refers to type {type}, but that doesn't exist.")
+    }
+    case enum_(enum_) {
+      for arg in enum_.type_args do
+        if arg.exists(types, vec[Str]())
+        then return error[Monoing, Str]("
+          '{enum_.name} defines a type argument {arg}, but {arg} is also a fully
+          'defined type.")
+      for variant in enum_.variants do
+        variant.type.exists(types, enum_.type_args)
+          orelse(type) return error[Monoing, Str]("
+            '{enum_.name} refers to type {type}, but that doesn't exist.")
+    }
+
+  for funs in funs do
+    for fun_ in funs.value do {
+      for arg in fun_.type_args do
+        if arg.exists(types, vec[Str]())
+        then return error[Monoing, Str]("
+          '{fun_.name} defines a type argument {arg}, but {arg} is also a fully
+          'defined type.")
+      for arg in fun_.args do
+        arg.type.exists(types, fun_.type_args)
+          orelse(type) return error[Monoing, Str]("
+            '{fun_.name} refers to type {type}, but that doesn't exist.")
+    }
+
+  var context = context()
+  var mono = Mono {
+    type_defs = map[Type, MonoTypeDef](),
+    layouts = map[Type, MemLayout](),
+    globals = map[Str, MonoFun](),
+    globals_init_order = vec[Str](),
+    funs = map[Str, MonoFun](),
+  }
+  ok[Monoing, Str](Monoing {
+    context = context.put_on_heap(),
+    ast_types = types,
+    ast_globals = globals,
+    ast_funs = funs,
+    mono = mono.put_on_heap(),
+  })
+}
+
+| Checks if the type exists.
+fun exists(
+  type: Type, types: Map[Str, AstType], extra: Vec[Str],
+): Result[Nothing, Str] {
+  if not(type.name.exists(types, extra))
+  then return error[Nothing, Str](type.name)
+  for arg in type.args do arg.exists(types, extra)?
+  ok[Nothing, Str]({})
+}
+fun exists(type: Str, types: Map[Str, AstType], extra: Vec[Str]): Bool {
+  if types.contains(type) then true else {
+    for extra in extra do if extra.equals(type) then return true
+    false
+  }
+}
+
+| Looks up the type with the given name. Type names have to be unique.
+fun lookup_type(monoing: Monoing, name: Str): Result[AstType, Str] {
+  var match = monoing.ast_types.get_maybe(name)
+    orelse return error[AstType, Str]('"There is no type named "{{name}}"."')
+  ok[AstType, Str](match)
+}
+
+| Looks up the global variable with the given name. Names of global variables
+| have to be unique.
+fun lookup_global(monoing: Monoing, name: Str): Maybe[AstVar] {
+  some(monoing.ast_globals.get_maybe(name) orelse return none[AstVar]())
+}
+
+| Looks up the function with the given name, the given number of type args
+| (none means they are inferred) and the args of the given types.
+struct LookupFunSolution { fun_: AstFun, type_env: Map[Str, Type] }
+fun lookup_fun(
+  monoing: Monoing,
+  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type],
+): Result[LookupFunSolution, Str] {
+  var name_matches = monoing.ast_funs.get_maybe(name)
+    orelse return error[LookupFunSolution, Str]('"
+      'There are no defintions named "{{name}}"."')
+
+  var full_matches = vec[LookupFunSolution]()
+  for fun_ in name_matches do {
+    var solver = create_type_solver(fun_.type_args)
+    if type_args is some(type_args_) then {
+      if type_args_.len.not_equals(fun_.type_args.len) then continue
+      for i in 0.to(type_args_.len) do
+        solver.&.unify(type(fun_.type_args.get(i)), type_args_.get(i))?.assert()
+    }
+    if arg_types.len.not_equals(fun_.args.len) then continue
+    var matches = true
+    for i in 0.to(arg_types.len) do
+      solver.&.unify(fun_.args.get(i).type, arg_types.get(i))?
+        orelse { matches = false break }
+    if not(matches) then continue
+    var type_env = solver.finish()
+      orelse(error) return error[LookupFunSolution, Str](
+        "Found a function matching a call:{newline}
+        '  call: {signature(name, type_args, arg_types)}{newline}
+        ' match: {fun_.stripped_signature()}{newline}{newline}
+        'However, resolving the call doesn't work:{newline}
+        '{error}")
+    full_matches.&.push(LookupFunSolution { fun_, type_env })
+  }
+
+  if full_matches.is_empty() then return error[LookupFunSolution, Str]({
+    var out = string_builder().&
+    out."
+      'This call doesn't work:{newline}
+      ' > {signature(name, type_args, arg_types)}{newline}{newline}"
+    if name_matches.is_empty()
+    then out.'"There are no defintions named "{{name}}"."'
+    else {
+      out."These definitions have the same name, but arguments don't match:"
+      for match in name_matches do
+        out."{newline} - {match.stripped_signature()}"
+    }
+    out.to_str()
+  })
+  if full_matches.len.is_greater_than(1)
+  then return error[LookupFunSolution, Str]({
+    var out = string_builder().&
+    out.
+      "This call matches multiple functions:{newline}
+      '  call: {signature(name, type_args, arg_types)}{newline}"
+    for match in full_matches do {
+      var padded_signature = match.fun_.stripped_signature().format()
+        .pad_right(30, # )
+      out."{newline} match: {padded_signature}"
+      if match.type_env.is_not_empty() then {
+        out." with "
+        var first = true
+        for entry in match.type_env do {
+          if first then first = false else out.", "
+          out."{entry.key} = {entry.value}"
+        }
+      }
+    }
+    out.to_str()
+  })
+  ok[LookupFunSolution, Str](full_matches.get(0))
+}
+
 | Monomorphization  
 | A rough sketch on how this compiler stage works: The Ast functions are
 | compiled into monomorphized functions, starting from the main function. The
@@ -1764,15 +1997,7 @@ fun expr(slot: MonoSlotRef, self: CompileFun): MonoExpr {
 | out how to use it.
 
 fun compile(ast: Ast): Result[Mono, Str] {
-  var context = context()
-  var mono = Mono {
-    type_defs = map[Type, MonoTypeDef](),
-    layouts = map[Type, MemLayout](),
-    globals = map[Str, MonoFun](),
-    globals_init_order = vec[Str](),
-    funs = map[Str, MonoFun](),
-  }
-  var monoing = Monoing { context = context.&, ast, mono = mono.& }
+  var monoing = ast.prepare_monoing()?
 
   type("Never").compile(map[Str, Type](), monoing)?
   type("Nothing").compile(map[Str, Type](), monoing)?
@@ -1803,136 +2028,17 @@ fun compile(ast: Ast): Result[Mono, Str] {
     orelse(error) return error[Mono, Str]({
       var out = string_builder().&
       out."Error when compiling{newline}"
-      for signature in context.signatures do out." - {signature}{newline}"
+      for signature in monoing.context.signatures do out." - {signature}{newline}"
       out."{newline}{error}"
       out.to_str()
     })
 
-  var return_type = mono.funs.get(main_signature).return_type
+  var return_type = monoing.mono.funs.get(main_signature).return_type
   if not(return_type.is_never()) then return error[Mono, Str](
     "The main function should return Never, but it returns {return_type}.
     '{newline}You can call exit(0:U8) if you want the program to stop.")
 
-  ok[Mono, Str](mono)
-}
-
-| When monoing, some values are basically always needed. We pack them up here so
-| they can be passed around easily.
-| TODO: Store a Map from name to asts instead of the raw ast.
-| TODO: maybe also split the ast into types, funs, and vars
-struct Monoing { context: &Context, ast: Ast, mono: &Mono }
-
-fun name(def: AstDef): Str {
-  switch def
-  case opaque_(opaque) opaque.name
-  case struct_(struct_) struct_.name
-  case enum_(enum_) enum_.name
-  case var_(var_) var_.name
-  case fun_(fun_) fun_.name
-}
-
-| Looks up the type with the given name. Type names have to be unique.
-fun lookup_type(monoing: Monoing, name: Str): Result[AstDef, Str] {
-  var matches = vec[AstDef]()
-  for def in monoing.ast.defs do
-    if name.equals(def.name()) then matches.&.push(def)
-
-  if matches.is_empty() then return error[AstDef, Str](
-    '"There is no type named "{{name}}"."')
-  if matches.len.is_greater_than(1) then return error[AstDef, Str](
-    '"There are multiple types named "{{name}}"."')
-  ok[AstDef, Str](matches.get(0))
-}
-
-| Looks up the global variable with the given name. Names of global variables
-| have to be unique.
-fun lookup_global(monoing: Monoing, name: Str): Maybe[AstVar] {
-  var matches = vec[AstVar]()
-  for def in monoing.ast.defs do
-    if def is var_(var_) then
-      if name.equals(var_.name) then matches.&.push(var_)
-
-  if matches.is_empty() then return none[AstVar]()
-  if matches.len.is_greater_than(1) then return none[AstVar]()
-  some(matches.get(0))
-}
-
-| Looks up the function with the given name, the given number of type args
-| (none means they are inferred) and the args of the given types.
-struct LookupFunSolution { fun_: AstFun, type_env: Map[Str, Type] }
-fun lookup_fun(
-  monoing: Monoing,
-  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type],
-): Result[LookupFunSolution, Str] {
-  var name_matches = vec[AstFun]()
-  for def in monoing.ast.defs do
-    if def is fun_(fun_) then
-      if fun_.name.equals(name) then name_matches.&.push(fun_)
-
-  var full_matches = vec[LookupFunSolution]()
-  for fun_ in name_matches do {
-    var solver = create_type_solver(fun_.type_args)
-    if type_args is some(type_args_) then {
-      if type_args_.len.not_equals(fun_.type_args.len) then continue
-      for i in 0.to(type_args_.len) do
-        solver.&.unify(type(fun_.type_args.get(i)), type_args_.get(i))?.assert()
-    }
-    if arg_types.len.not_equals(fun_.args.len) then continue
-    var matches = true
-    for i in 0.to(arg_types.len) do
-      solver.&.unify(fun_.args.get(i).type, arg_types.get(i))?
-        orelse { matches = false break }
-    if not(matches) then continue
-    var type_env = solver.finish()
-      orelse(error) return error[LookupFunSolution, Str](
-        "Found a function matching a call:{newline}
-        '  call: {signature(name, type_args, arg_types)}{newline}
-        ' match: {AstDef.fun_(fun_).signature()}{newline}{newline}
-        'However, resolving the call doesn't work:{newline}
-        '{error}")
-    full_matches.&.push(LookupFunSolution { fun_, type_env })
-  }
-
-  if full_matches.is_empty() then return error[LookupFunSolution, Str]({
-    var out = string_builder().&
-    out."
-      'This call doesn't work:{newline}
-      ' > {signature(name, type_args, arg_types)}{newline}{newline}"
-    if name_matches.is_empty()
-    then out.'"There are no defintions named "{{name}}"."'
-    else {
-      out."These definitions have the same name, but arguments don't match:"
-      for match in name_matches do
-        out."{newline} - {AstDef.fun_(match).signature()}"
-    }
-    out.to_str()
-  })
-  if full_matches.len.is_greater_than(1)
-  then return error[LookupFunSolution, Str]({
-    var out = string_builder().&
-    out.
-      "This call matches multiple functions:{newline}
-      '  call: {signature(name, type_args, arg_types)}{newline}"
-    for match in full_matches do {
-      var type_args = vec[Type]()
-      for arg in match.fun_.type_args do type_args.&.push(type(arg))
-      var arg_types = vec[Type]()
-      for arg in match.fun_.args do arg_types.&.push(arg.type)
-      var padded_signature = signature(name, some(type_args), arg_types)
-        .format().pad_right(30, # )
-      out."{newline} match: {padded_signature}"
-      if match.type_env.is_not_empty() then {
-        out." with "
-        var first = true
-        for entry in match.type_env do {
-          if first then first = false else out.", "
-          out."{entry.key} = {entry.value}"
-        }
-      }
-    }
-    out.to_str()
-  })
-  ok[LookupFunSolution, Str](full_matches.get(0))
+  ok[Mono, Str](monoing.mono.*)
 }
 
 | Monomorphizes a type, outputting all the required type defs into the Mono. For
@@ -1958,11 +2064,11 @@ fun compile(
     MonoTypeDef.opaque_(MonoOpaqueType { size = 0, alignment = 0 }))
 
   switch monoing.lookup_type(type.name)?
-  case opaque_(opaque_) monoing.mono.type_defs.&.put(type, MonoTypeDef.opaque_(
-    MonoOpaqueType { size = opaque_.size, alignment = opaque_.alignment }
-  ))
-  case var_ unreachable()
-  case fun_ unreachable()
+  case opaque_(opaque_) {
+    monoing.mono.type_defs.&.put(type, MonoTypeDef.opaque_(
+      MonoOpaqueType { size = opaque_.size, alignment = opaque_.alignment }
+    ))
+  }
   case struct_(struct_) {
     var inner_type_env = map[Str, Type]()
     type.args.len.equals(struct_.type_args.len) orelse return error[Type, Str](
