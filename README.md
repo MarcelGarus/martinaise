@@ -11,7 +11,7 @@ To get an in-depth understanding of Martinaise, take a look at the standard libr
 > Martinaise is **not meant for serious projects**.
 >
 > Some consequences:
-> Martinaise has no error-resilient parser (it gives up at the first error), does not support multiple files, etc.
+> Martinaise has no error-resilient parser (it gives up at the first error), does not support multiple files, only works on x86_64, etc.
 
 ## Why?
 
@@ -20,6 +20,10 @@ To get an in-depth understanding of Martinaise, take a look at the standard libr
   This project scratches that itch.
 - I've only written small projects in Zig.
   With this project, I try to get more familiar with Zig.
+
+## Quick Tour
+
+For a quick tour of the language, have a look at the [tour.mar] file.
 
 ## Usage
 
@@ -32,65 +36,6 @@ So, you first need to bootstrap Martinaise.
 3. Run `make`. This builds all compiler generations. The newest compiler will be placed into the project root as the `martinaise` executable.
 4. Run `./martinaise help` for help and go from there.  
    Martinaise programs can be compiled and run using `./martinaise c path/to/program.mar > output.c && cc output.c -o output && ./output`
-
-## Quick Tour
-
-This tour assumes you know other programming languages.
-
-### Types
-
-Martinaise supports structs and associated enums.
-You can write generic data structures using brackets.
-
-```martinaise
-struct Foo { a: U8, b: Str }
-enum Maybe[T] { some: T, none }
-```
-
-### Control Flow
-
-```martinaise
-| This is a comment.
-
-var foo = 3  | variable
-
-if true then println("Hello")
-
-println(
-  switch maybe
-  case some(a) "a is {a}"
-  case none "Nothing to see"
-)
-
-println(if maybe is some(a) then "foo with {a}" else "blub")
-
-loop if stdin.read() is #o then break else foo = foo.inc()
-```
-
-### Functions
-
-Only used functions are type-checked, always with concrete types.
-For generic functions, each combination of type arguments will result in a new compiled function ("monomorphization").
-Functions use uniform calling syntax (`a.foo(b)` is the same as `foo(a, b)`).
-Functions can be overloaded (multiple functions can have the same name as long as for each function call, the type of the arguments make it clear which function is meant).
-
-```martinaise
-fun foo(num: U8): U64 { num.to_U64() }
-fun foo(str: Str): U64 { str.len() }
-fun foo[T](maybe: Maybe[T]): U64 {
-  switch maybe
-  case some(a) a.foo()
-  case none 3
-}
-
-fun main(): Never {
-  var three = Maybe[U8].none.foo()
-  var four = Maybe.some(4).foo()
-  var five = "Hello".foo()
-
-  exit(0:U8)
-}
-```
 
 ## Language History
 

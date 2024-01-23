@@ -1,0 +1,168 @@
+| Martinaise Tour  
+| This is a tour of the Martinaise language.
+| This is easier to follow if you have some experience in other programming
+| languages.
+
+| Comments  
+| Use the pipe character to start comments. They go to the end of the line. If
+| a comment line ends with two spaces, it's highlighted as a heading in the IDE.
+
+| Functions  
+| Create functions using the fun keyword.
+| You can overload functions (have functions with the same name as long as the
+| types of their arguments are different).
+| Writing a.foo(b) is an alternative way of writing foo(a, b).
+
+fun function(integer: U64) { println("Integer is {integer}") }
+fun function(string: Str) { println("String is {string}") }
+
+fun functions() {
+  function(3)     | calls function(U64)
+  function("Hi")  | calls function(Str)
+  4.function()    | calls function(U64)
+}
+
+| Variables, If, Loop  
+| You can declare variables using the var keyword. Variables can be shadowed by
+| other variables (by declaring a new variable using the same name, the old one
+| becomes inaccessible).
+
+fun variables() {
+  var a = 3
+  a = 4
+  | a = true    | This won't work – you can't assign a Bool to a U64.
+  var a = true  | This works. It's a completely new variable with the same name.
+}
+
+| Structs and Enums  
+| Structs contain each of their fields. Enums only contain one variant.
+
+struct SomeStruct { a: Bool, b: Bool }  | contains a AND b
+enum SomeEnum     { a: Bool, b: Bool }  | contains a OR b
+
+fun structs_and_enums() {
+  var bar = SomeStruct { a = true, b = false }
+  var baz = SomeEnum.a(true)
+
+  var a = bar.a  | field access on the struct
+}
+
+| Generics  
+| Functions, structs and enums can be generic by using brackets.
+
+fun dump(bool: Bool)  { println("bool {bool}") }
+fun dump(string: Str) { println(string) }
+
+fun generic[T](argument: T) { argument.dump() }
+
+fun generics() {
+  "Hi".generic()  | writes "Hi"
+  true.generic()  | writes "bool true"
+}
+
+| If, Switch, Orelse, For, Loop, Break, Continue  
+| There are several control flow structures you can use. None of them require
+| curly braces. You can start "bodies" with curly braces, grouping multiple
+| expressions together. Bodies evaluate to their last inner expression.
+
+fun control_flow() {
+  if true then println("This will be printed.")
+  if 3 < 1 then println("This won't.")
+
+  var number =
+    switch vec(1, 2, 3).get_maybe(2)
+    case some(item) item
+    case none 0
+  
+  | This is equivalent to this:
+  var number = vec(1, 2, 3).get_maybe(2) orelse 0
+
+  for i in 0..5 do println("i = {i}")
+
+  var a = 5
+  loop if a == 0 then break else {
+    println("{a}")
+    a = a.dec()
+  }
+}
+
+| Customizing orelse  
+| You can make your own types compatible with the orelse keyword. Just implement
+| a to_orelse function.
+
+struct Foo { a: U64 }
+
+fun to_orelse(foo: Foo): Orelse[Bool, U64] {
+  if foo.a < 5
+  then Orelse[Bool, U64].primary(foo.a > 0)
+  else Orelse[Bool, U64].secondary(foo.a)
+}
+
+fun custom_orelse() {
+  var fancy = Foo { a = 3 } orelse panic("too big")
+  var fancy = Foo { a = 10 } orelse(n) n > 100
+}
+
+| Custom operators  
+| You already saw operators such as in 2 < 3 or 0..5.
+| Operators are functions that accept two arguments and where the name matches
+| the following criteria:
+| - it only contains these characters: %!~@^\`/&*+$-<>=.
+| - it's not =
+| - it's not .
+| - it doesn't start with .*
+| - it doesn't start with .&
+| 
+
+fun ===(a: Bool, b: U64): Bool { false }
+
+fun %!~@^\`/&*+$-<>=.(a: U64, b: U64): U64 { 42 }
+
+fun use_operators() {
+  if true === 4 then panic("weird triple equal succeeded")
+  var a = 4 %!~@^\`/&*+$-<>=. 3
+}
+
+| Assembly  
+| You can define functions in x86_64 assembly.
+| You can also define opaque types, which can only be inspected from asm
+| functions.
+
+opaque MyInt = 8 bytes big, 8 bytes aligned
+
+fun create_one(): MyInt asm {
+  ; There are only integer literals for the stdlib integer types.
+  ; For information about the Martinaise calling convention and on how to
+  ; allocate memory, read the Assembly section in the stdlib.
+  mov r8, 1
+  mov r9, [rsp + 8] ; return address
+  mov [r9], r8 ; write the return value
+  ret
+}
+
+fun +(a: MyInt, b: MyInt): MyInt asm {
+  mov r8, [rsp + 16] ; a
+  add r8, [rsp + 24] ; b
+  mov r9, [rsp + 8] ; return address
+  mov [r9], r8 ; write the return value
+  ret
+}
+
+fun use_custom_asm_fun() {
+  var two = create_one() + create_one()
+}
+
+| Run everything  
+
+fun main(args: Slice[Str]): Never {
+  functions()
+  variables()
+  structs_and_enums()
+  generics()
+  control_flow()
+  custom_orelse()
+  use_operators()
+  use_custom_asm_fun()
+
+  exit(0:U8)
+}
