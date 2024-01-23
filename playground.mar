@@ -4,8 +4,7 @@ fun foo() {
   | if b is some(c) breakpoint
 }
 
-fun +(a: U64, b: U64): U64 { a.add(b) }
-fun %!#~@^\`/&*+$-<>=(a: U64, b: U64): U64 { 42 }
+fun %!~@^\`/&*+$-<>=(a: U64, b: U64): U64 { 42 }
 
 fun print_name[T]() {
   println(type[T]())
@@ -13,7 +12,7 @@ fun print_name[T]() {
 
 fun main(args: Slice[Str]): Never {
   println(3 + 4)
-  println(1 + 2 %!#~@^\`/&*+$-<>= 8)
+  println(1 + 2 %!~@^\`/&*+$-<>= 8)
 
   println(vec(1, 2, 3))
   print_name[Slice[Str]]()

@@ -536,7 +536,7 @@ fun parse_upper_name(parser: &Parser): Maybe[Str] {
 
 fun parse_operator_name(parser: &Parser): Maybe[Str] {
   parser.consume_whitespace()
-  var allowed = "%!#~@^\`/&*+$-<>="
+  var allowed = "%!~@^\`/&*+$-<>="
   var start = parser.cursor
   loop {
     var char = parser.current()
@@ -639,11 +639,13 @@ fun parse_expr_suffix(
 ): Result[Maybe[AstExpr], Str] {
   if parser.parse_expr_suffix_member(expr)? is some(mem) then return parsed(mem)
   if parser.parse_expr_suffix_call(expr)? is some(call) then return parsed(call)
-  if parser.parse_expr_suffix_orelse(expr)? is some(ore) then return parsed(ore)
   if parser.parse_expr_suffix_try(expr)? is some(try_) then return parsed(try_)
-  if operator_allowed
-  then if parser.parse_expr_suffix_assign_or_operator(expr)? is some(e)
+  if operator_allowed then {
+    if parser.parse_expr_suffix_orelse(expr)? is some(orelse_)
+    then return parsed(orelse_)
+    if parser.parse_expr_suffix_assign_or_operator(expr)? is some(e)
     then return parsed(e)
+  }
   no_match[AstExpr]()
 }
 
