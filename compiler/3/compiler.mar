@@ -3758,7 +3758,68 @@ fun mangle(type: Type): Str {
 }
 
 | File Watching  
-| TODO: implement
+| Here, we implement watching files usign a crude, blocking version.
+| If there are problems in this part of the code, these are two good resources:
+| - The original file watching in compiler/0, written in Zig.
+| - This tutorial: https://www.linuxjournal.com/article/8478
+
+| struct FileWatcher { inotify: File, watch: File }
+| fun watch_file(path: Str) {
+|   var inotify_fd = 294.syscall(0) | inotify_init1
+|   if inotify_fd.cast[U64, I64]().is_at_most(0:I64)
+|   then panic("couldn't open inotify interface for watching file")
+
+|   var flag_modify = 16#002
+|   var flag_create = 16#100
+|   var flag_delete = 16#200
+|   var watch_fd = 254.syscall( | inotify_add_watch
+|     inotify,
+|     path.to_os_str().address.to_U64(),
+|     flag_modify.or(flag_create).or(flag_delete),
+|   )
+|   if watch_fd.equals(0) then panic("couldn't register watch for file")
+
+|   FileWatcher {
+|     inotify = File { descriptor = inotify_fd },
+|     watch   = File { descriptor = watch_fd },
+|   }
+| }
+| fun stop(watcher: FileWatcher) { watcher.inotify.close() }
+| fun wait_for_change(watcher: FileWatcher) {
+|   | How does this work?
+|   | We make a read syscall to the inotify_fd. This gives us potentially multiple
+|   | events in the following form:
+|   |
+|   | struct inotify_event {
+|   |   wd: i32,
+|   |   mask: u32,
+|   |   cookie: u32,
+|   |   len: u32,
+|   |   name: []u8,
+|   | };
+|   |
+|   | Yes, the size of the last field "name" is not known statically – you first
+|   | have to read it from the len field. The len is however guaranteed to be a
+|   | multiple of 4 bytes so that events after that are aligned.
+|   var event_size_without_name = 16
+|   var buf_len = 1024.multiply(event_size_without_name).add(16)
+|   var buf = uninitialized_slice[U8](buf_len)
+
+|   loop {
+|     var len = watcher.inotify.read(buf)
+|     if len.equals(0) then panic("inotify read completed without an event")
+|     var i = 0
+|     loop {
+|       if i.is_at_least(len) then break
+|       | Horrible bit magic to get the wd and len fields. Whenever the C struct
+|       | layout changes, this needs to be updated.
+|       var wd  = buf.get_ref(i).to_address().to_reference[I32]().*
+|       var len = buf.get_ref(i.add(12)).to_address().to_reference[U32]().*
+|       i = i.add(event_size_without_name).add(len)
+|       if wd.equals(watcher.watch.descriptor) then return {}
+|     }
+|   }
+| }
 
 | Command Line Interface  
 | The command line interface which you use to interact with the Martinaise
@@ -3891,7 +3952,7 @@ fun main(args: Slice[Str]): Never {
   | - martinaise help
   | - martinaise ast <file>
   | - martinaise mono <file>
-  | - martinaise c <file>
+  | - martinaise asm <file>
   | - martinaise compile <file>
   | - martinaise run <file> [-- <additonal args>]
   | Note the program name itself is also an additional argument at the front.
@@ -3908,8 +3969,15 @@ fun main(args: Slice[Str]): Never {
   | TODO: throw if additional args are given
   | TODO: support -- and additional args for the run command
 
-  | TODO: support the watch command
-  var was_successful = run_pipeline(command, file_path)
-
-  exit(if was_successful then 0:U8 else 1:U8)
+  if command is watch then {
+    | var watcher = watch_file(file_path)
+    | loop {
+    |   println("watching file {seconds_since_unix_epoch().unwrap()}")
+    |   watcher.wait_for_change()
+    | }
+    todo()
+  } else {
+    var was_successful = run_pipeline(command, file_path)
+    exit(if was_successful then 0:U8 else 1:U8)
+  }
 }
