@@ -46,6 +46,7 @@
 | env  = environment
 | expr = expression
 | fun  = function
+| mono = monomorphize (verb as in "to mono something")
 | str  = string
 | var  = variable
 |
@@ -1466,13 +1467,16 @@ fun restore[T](vars: &Vars[T], scope: VarScope) {
 }
 
 | Context  
-| When monomorphizing fails, we want to have backtraces – a path from the main
-| function over all monomorphized function to the failing location. The Context
-| tracks what the compiler is currently doing – it's basically a stack of
-| function signatures. Every time a signature is pushed or popped, it also
-| prints a one-line message to the console, something like this:
+| When monoing fails, we want to have backtraces – a path from the main function
+| over all monoed function to the failing location. The Context tracks what the
+| compiler is currently doing – it's basically a stack of function signatures.
+| Each time a signature is pushed or popped, it also prints a one-line message
+| to the console, something like this:
 |
-| Compiling main > println > print > write > write_with_radix > digit_to_char...
+| Monoing main > println > print > write > write_with_radix > digit_to_char >...
+|
+| TODO: don't print every line, only visible changes
+| TODO: debounce printing
 
 struct Context { signatures: Vec[Str] }
 
@@ -1493,7 +1497,7 @@ fun pop(context: &Context) {
 
 fun print_status(context: Context) {
   var out = string_builder().&
-  out.write("Compiling ")
+  out.write("Monoing ")
   var first = true
   for signature in context.signatures do {
     if first then first = false else out.write(" > ")
@@ -1515,20 +1519,19 @@ fun print_status(context: Context) {
 }
 
 | Mono  
-| Generic code such as a function foo[T]() doesn't have any generic
-| representation in the final output. Instead, for every place where foo is
-| called (every "callsite"), a new version of foo gets compiled. This process
-| (called "monomorphization") enables useful programming patterns. For example,
-| just by writing a compare_to function for a type, you can automatically use
-| all other comparison functions. Generally speaking, monomorphized code also
-| tends to be faster than general code.
+| Generic code such as a function foo[T]() doesn't have any generic form in the
+| final output. Instead, for each place where foo is called (each "callsite"), a
+| new version of foo gets compiled. This process (called "monomorphization")
+| enables useful programming patterns. For example, just by writing a compare_to
+| function for a type, you can automatically use all other comparison functions.
+| Generally speaking, monoed code also tends to be faster than general code.
 |
 | The Mono is the next stage in the compiler. Here, functions and types are
-| monomorphized (aka they are not generic anymore). Only the functions and types
-| that are reachable from the main function appear here – everything else is
-| ignored. While the AST may contain invalid code (like 3 = 1), the Mono is
-| guaranteed to be correct – during the monomorphization, variable scoping, name
-| lookups, and type checking take place.
+| monoed (aka they are made to be not generic anymore). Only the functions and
+| types that are reachable from the main function appear here – everything else
+| is ignored. While the Ast may contain invalid code (like 3 = 1), the Mono is
+| guaranteed to be correct – during monoing, variable scoping, name lookups, and
+| type checking take place.
 |
 | TODO: explain slots, statements, expressions, globals
 
@@ -1668,16 +1671,33 @@ fun write[W](writer: W, expr: MonoExpr) {
   case never writer."_never"
 }
 
-fun push_slot(
-  slots: &Vec[MonoSlot], type: Type, initial_value: MonoSlotValue
+fun signature(
+  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type]
+): Signature { Signature { name, type_args, arg_types } }
+struct Signature {
+  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type]
+}
+fun write[W](writer: W, signature: Signature) {
+  writer."{signature.name}"
+  if signature.type_args is some(type_args_)
+  then writer.write(type_args(type_args_))
+  writer."({comma_separated(signature.arg_types)})"
+}
+
+fun push(
+  slots: &Vec[MonoSlot], type: Type, initial_value: MonoSlotValue,
 ): MonoSlotRef {
   var ref = MonoSlotRef { index = slots.len }
   slots.&.push(MonoSlot { type, initial_value })
   ref
 }
-fun push_slot(slots: &Vec[MonoSlot], type: Type): MonoSlotRef {
-  slots.push_slot(type, MonoSlotValue.uninitialized)
+fun push(slots: &Vec[MonoSlot], type: Type): MonoSlotRef {
+  slots.push(type, MonoSlotValue.uninitialized)
 }
+fun get_ref(slots: &Vec[MonoSlot], ref: MonoSlotRef): &MonoSlot {
+  slots.get_ref(ref.index)
+}
+
 fun push_assign(
   statements: &Vec[MonoStatement], to: MonoExpr, value: MonoExpr,
 ) {
@@ -1692,6 +1712,12 @@ fun push_call(
 fun push_ref(statements: &Vec[MonoStatement], to: MonoSlotRef, of: MonoExpr) {
   statements.push(MonoStatement.ref(MonoRef { to, of }))
 }
+
+var nothing_expr =
+  MonoExpr { kind = MonoExprKind.nothing, type = type("Nothing") }
+var never_expr =
+  MonoExpr { kind = MonoExprKind.never, type = type("Never") }
+
 fun expr(slot_ref: MonoSlotRef, type: Type): MonoExpr {
   MonoExpr { kind = MonoExprKind.slot(slot_ref), type }
 }
@@ -1702,10 +1728,14 @@ fun member(of: MonoExpr, name: Str, type: Type): MonoExpr {
   }
 }
 
+fun expr(slot: MonoSlotRef, self: CompileFun): MonoExpr {
+  slot.expr(self.slots.get(slot.index).type)
+}
+
 | Monomorphization  
-| A rough sketch on how this compiler stage works: The AST functions are
+| A rough sketch on how this compiler stage works: The Ast functions are
 | compiled into monomorphized functions, starting from the main function. The
-| Mono contains all compiled functions and types, corresponding to code and type
+| Mono contains all monoed functions and types, corresponding to code and type
 | definitions that actually need to be generated later on.
 |
 | Generic functions can be compiled multiple times with multiple type arguments.
@@ -1733,7 +1763,7 @@ fun member(of: MonoExpr, name: Str, type: Type): MonoExpr {
 | function is encountered recursively, only its signature is needed to figure
 | out how to use it.
 
-fun monomorphize(ast: Ast): Result[Mono, Str] {
+fun compile(ast: Ast): Result[Mono, Str] {
   var context = context()
   var mono = Mono {
     type_defs = map[Type, MonoTypeDef](),
@@ -1742,18 +1772,19 @@ fun monomorphize(ast: Ast): Result[Mono, Str] {
     globals_init_order = vec[Str](),
     funs = map[Str, MonoFun](),
   }
-  eprintln("Monoing ast")
-  type("Never").monomorphize(map[Str, Type](), ast, mono.&)?
-  type("Nothing").monomorphize(map[Str, Type](), ast, mono.&)?
+  var monoing = Monoing { context = context.&, ast, mono = mono.& }
+
+  type("Never").compile(map[Str, Type](), monoing)?
+  type("Nothing").compile(map[Str, Type](), monoing)?
   for config in all_int_configs do
-    config.to_type().monomorphize(map[Str, Type](), ast, mono.&)?
+    config.to_type().compile(map[Str, Type](), monoing)?
 
   var main =
-    switch ast.lookup_fun("main",
+    switch monoing.lookup_fun("main",
       none[Vec[Type]](), vec(type("Slice", vec(type("Str")))))
     case ok(main_with_args) main_with_args.fun_
     case error(error) {
-      switch ast.lookup_fun("main", none[Vec[Type]](), vec[Type]())
+      switch monoing.lookup_fun("main", none[Vec[Type]](), vec[Type]())
       case error return error[Mono, Str](
         "Your project must have one of these functions: main(Slice[Str]) or main()")
       | Generate a main(Slice[Str]) function that just calls main()
@@ -1768,8 +1799,7 @@ fun monomorphize(ast: Ast): Result[Mono, Str] {
       }
     }
 
-  var main_signature =
-    main.monomorphize(map[Str, Type](), context.&, ast, mono.&)
+  var main_signature = main.compile(map[Str, Type](), monoing)
     orelse(error) return error[Mono, Str]({
       var out = string_builder().&
       out."Error when compiling{newline}"
@@ -1786,6 +1816,12 @@ fun monomorphize(ast: Ast): Result[Mono, Str] {
   ok[Mono, Str](mono)
 }
 
+| When monoing, some values are basically always needed. We pack them up here so
+| they can be passed around easily.
+| TODO: Store a Map from name to asts instead of the raw ast.
+| TODO: maybe also split the ast into types, funs, and vars
+struct Monoing { context: &Context, ast: Ast, mono: &Mono }
+
 fun name(def: AstDef): Str {
   switch def
   case opaque_(opaque) opaque.name
@@ -1796,9 +1832,9 @@ fun name(def: AstDef): Str {
 }
 
 | Looks up the type with the given name. Type names have to be unique.
-fun lookup_type(ast: Ast, name: Str): Result[AstDef, Str] {
+fun lookup_type(monoing: Monoing, name: Str): Result[AstDef, Str] {
   var matches = vec[AstDef]()
-  for def in ast.defs do
+  for def in monoing.ast.defs do
     if name.equals(def.name()) then matches.&.push(def)
 
   if matches.is_empty() then return error[AstDef, Str](
@@ -1810,9 +1846,9 @@ fun lookup_type(ast: Ast, name: Str): Result[AstDef, Str] {
 
 | Looks up the global variable with the given name. Names of global variables
 | have to be unique.
-fun lookup_global_var(ast: Ast, name: Str): Maybe[AstVar] {
+fun lookup_global(monoing: Monoing, name: Str): Maybe[AstVar] {
   var matches = vec[AstVar]()
-  for def in ast.defs do
+  for def in monoing.ast.defs do
     if def is var_(var_) then
       if name.equals(var_.name) then matches.&.push(var_)
 
@@ -1825,10 +1861,11 @@ fun lookup_global_var(ast: Ast, name: Str): Maybe[AstVar] {
 | (none means they are inferred) and the args of the given types.
 struct LookupFunSolution { fun_: AstFun, type_env: Map[Str, Type] }
 fun lookup_fun(
-  ast: Ast, name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type]
+  monoing: Monoing,
+  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type],
 ): Result[LookupFunSolution, Str] {
   var name_matches = vec[AstFun]()
-  for def in ast.defs do
+  for def in monoing.ast.defs do
     if def is fun_(fun_) then
       if fun_.name.equals(name) then name_matches.&.push(fun_)
 
@@ -1849,7 +1886,7 @@ fun lookup_fun(
     var type_env = solver.finish()
       orelse(error) return error[LookupFunSolution, Str](
         "Found a function matching a call:{newline}
-        '  call: {call_signature(name, type_args, arg_types)}{newline}
+        '  call: {signature(name, type_args, arg_types)}{newline}
         ' match: {AstDef.fun_(fun_).signature()}{newline}{newline}
         'However, resolving the call doesn't work:{newline}
         '{error}")
@@ -1858,9 +1895,9 @@ fun lookup_fun(
 
   if full_matches.is_empty() then return error[LookupFunSolution, Str]({
     var out = string_builder().&
-    out.
-      "This call doesn't work:{newline}
-      ' > {call_signature(name, type_args, arg_types)}{newline}{newline}"
+    out."
+      'This call doesn't work:{newline}
+      ' > {signature(name, type_args, arg_types)}{newline}{newline}"
     if name_matches.is_empty()
     then out.'"There are no defintions named "{{name}}"."'
     else {
@@ -1870,16 +1907,20 @@ fun lookup_fun(
     }
     out.to_str()
   })
-  if full_matches.len.is_greater_than(1) then return error[LookupFunSolution, Str]({
+  if full_matches.len.is_greater_than(1)
+  then return error[LookupFunSolution, Str]({
     var out = string_builder().&
     out.
-      "This call doesn't work:{newline}
-      ' > {call_signature(name, type_args, arg_types)}{newline}{newline}
-      'Multiple definitions match:"
+      "This call matches multiple functions:{newline}
+      '  call: {signature(name, type_args, arg_types)}{newline}"
     for match in full_matches do {
-      var padded_signature = "{AstDef.fun_(match.fun_).signature()}"
-        .pad_right(30, # )
-      out."{newline} - {padded_signature}"
+      var type_args = vec[Type]()
+      for arg in match.fun_.type_args do type_args.&.push(type(arg))
+      var arg_types = vec[Type]()
+      for arg in match.fun_.args do arg_types.&.push(arg.type)
+      var padded_signature = signature(name, some(type_args), arg_types)
+        .format().pad_right(30, # )
+      out."{newline} match: {padded_signature}"
       if match.type_env.is_not_empty() then {
         out." with "
         var first = true
@@ -1894,43 +1935,30 @@ fun lookup_fun(
   ok[LookupFunSolution, Str](full_matches.get(0))
 }
 
-fun call_signature(
-  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type]
-): CallSignature { CallSignature { name, type_args, arg_types } }
-struct CallSignature {
-  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type]
-}
-fun write[W](writer: W, signature: CallSignature) {
-  writer."{signature.name}"
-  if signature.type_args is some(type_args_)
-  then writer.write(type_args(type_args_))
-  writer."({comma_separated(signature.arg_types)})"
-}
-
-| Monomorphizes a type, outputting all the required type defs into the mono. For
+| Monomorphizes a type, outputting all the required type defs into the Mono. For
 | example, monomorphizing Map[T, Bool] with {T: U64} results in Map[U64, Bool]
 | and also creates all the required defs (Map[U64, Bool], MapBucket[U64, Bool],
 | Slice[MapBucket[U64, Bool]], etc.)
 | Also saves the corresponding layout in the Mono.
-fun monomorphize(
-  type: Type, type_env: Map[Str, Type], ast: Ast, mono: &Mono
+fun compile(
+  type: Type, type_env: Map[Str, Type], monoing: Monoing,
 ): Result[Type, Str] {
   | TODO: Make sure generic types don't have parameters.
   var type = type_env.get_maybe(type.name) orelse {
     var args = vec[Type]()
-    for arg in type.args do args.&.push(arg.monomorphize(type_env, ast, mono)?)
+    for arg in type.args do args.&.push(arg.compile(type_env, monoing)?)
     Type { name = type.name, args }
   }
 
   if type.is_incomplete() then return ok[Type, Str](type)
 
-  if mono.type_defs.contains(type) then return ok[Type, Str](type)
+  if monoing.mono.type_defs.contains(type) then return ok[Type, Str](type)
   | TODO: explain
-  mono.type_defs.&.put(type,
+  monoing.mono.type_defs.&.put(type,
     MonoTypeDef.opaque_(MonoOpaqueType { size = 0, alignment = 0 }))
 
-  switch ast.lookup_type(type.name)?
-  case opaque_(opaque_) mono.type_defs.&.put(type, MonoTypeDef.opaque_(
+  switch monoing.lookup_type(type.name)?
+  case opaque_(opaque_) monoing.mono.type_defs.&.put(type, MonoTypeDef.opaque_(
     MonoOpaqueType { size = opaque_.size, alignment = opaque_.alignment }
   ))
   case var_ unreachable()
@@ -1947,10 +1975,11 @@ fun monomorphize(
     for field in struct_.fields do
       fields.&.push(MonoStructField {
         name = field.name,
-        type = field.type.monomorphize(inner_type_env, ast, mono)?,
+        type = field.type.compile(inner_type_env, monoing)?,
       })
 
-    mono.type_defs.&.put(type, MonoTypeDef.struct_(MonoStruct { fields }))
+    monoing.mono.type_defs.&
+      .put(type, MonoTypeDef.struct_(MonoStruct { fields }))
   }
   case enum_(enum_) {
     var inner_type_env = map[Str, Type]()
@@ -1964,101 +1993,86 @@ fun monomorphize(
     for variant in enum_.variants do
       variants.&.push(MonoEnumVariant {
         name = variant.name,
-        type = variant.type.monomorphize(inner_type_env, ast, mono)?,
+        type = variant.type.compile(inner_type_env, monoing)?,
       })
 
-    mono.type_defs.&.put(type, MonoTypeDef.enum_(MonoEnum { variants }))
+    monoing.mono.type_defs.&.put(type, MonoTypeDef.enum_(MonoEnum { variants }))
   }
 
-  var layout = type.mem_layout(mono.layouts.&, mono.type_defs)
-  mono.layouts.&.put(type, layout)
+  var layout = type.mem_layout(monoing.mono.layouts.&, monoing.mono.type_defs)
+  monoing.mono.layouts.&.put(type, layout)
 
   ok[Type, Str](type)
 }
 
-| Monomorphizes a global variable (well, it can't have type arguments, so
-| compiling would be the more appropriate term), outputting all the required
-| type defs, other global variables, and functions into the mono.
-fun monomorphize(
-  global: AstVar, context: &Context, ast: Ast, mono: &Mono
-): Result[Nothing, Str] {
-  if mono.globals.contains(global.name) then return ok[Nothing, Str]({})
+| Monoes a global variable (well, it can't have type arguments, so compiling
+| would be the more appropriate term), outputting all the required type defs,
+| other global variables, and functions into the Mono.
+fun compile(global: AstVar, monoing: Monoing): Result[Nothing, Str] {
+  if monoing.mono.globals.contains(global.name) then return ok[Nothing, Str]({})
 
-  context.push("var {global.name}")
-
-  var mono_fun = MonoFun {
-    type_args = vec[Type](),
-    arg_types = vec[Type](),
-    return_type = type("_"),
-    kind = MonoFunKind.asm_("<placeholder>"),
-  }
+  monoing.context.push("var {global.name}")
 
   var compile_fun = CompileFun {
-    context, ast, mono,
-    type_env = map[Str, Type](),
+    monoing, type_env = map[Str, Type](),
     return_type = type_sink(),
-    next_label = 0,
-    vars = vars[MonoSlotRef](),
-    slots = vec[MonoSlot](),
-    statements = vec[MonoStatement](),
+    slots = vec[MonoSlot](), statements = vec[MonoStatement](),
+    next_label = 0, vars = vars[MonoSlotRef](),
     break_scopes = stack[BreakScope](),
     continue_scopes = stack[ContinueScope](),
   }
 
-  var value = compile_fun.&.compile(global.value.*)?
-  if compile_fun.return_type.&.add(value.type) is error(error)
-  then return error[Nothing, Str](
-    "The value of the variable doesn't match its expected type.{newline}
-    '{error}")
+  var value = compile(global.value.*, compile_fun.&)?
+  compile_fun.statements.&.push(MonoStatement.return_(value))
+  compile_fun.return_type.&.add(value.type)
+    orelse(error) return error[Nothing, Str](
+      "The value of the variable doesn't match its expected type.{newline}
+      '{error}")
 
-  if not(value.type.is_never()) then
-    compile_fun.statements.&.push(MonoStatement.return_(value))
-
-  mono_fun.return_type = compile_fun.return_type.finish()
-  mono_fun.kind = MonoFunKind.body(MonoFunBody {
-    slots = compile_fun.slots,
-    statements = compile_fun.statements,
+  monoing.mono.globals.&.put(global.name, MonoFun {
+    type_args = vec[Type](),
+    arg_types = vec[Type](),
+    return_type = compile_fun.return_type.finish(),
+    kind = MonoFunKind.body(MonoFunBody {
+      slots = compile_fun.slots,
+      statements = compile_fun.statements,
+    }),
   })
-  mono.globals.&.put(global.name, mono_fun)
-  mono.globals_init_order.&.push(global.name)
+  monoing.mono.globals_init_order.&.push(global.name)
 
-  context.&.pop()
+  monoing.context.&.pop()
   ok[Nothing, Str]({})
 }
 
-| Monomorphizes a function, outputting it into the mono. Returns the function
-| signature. For example, monomorphizing foo[T](a: T) with {T: U64} would result
-| in the function signature foo(U64) and create all required types and functions
-| on the mono.
-fun monomorphize(
-  fun_: AstFun, type_env: Map[Str, Type],
-  context: &Context, ast: Ast, mono: &Mono,
+| Monos a function with a type env, outputting it into the Mono. Returns the
+| function signature. For example, monomorphizing foo[T](a: T) with {T: U64}
+| results in the function signature foo(U64) and creates all required types and
+| functions on the Mono.
+fun compile(
+  fun_: AstFun, type_env: Map[Str, Type], monoing: Monoing,
 ): Result[Str, Str] {
-  var arg_types = vec[Type]() {
-    for arg in fun_.args do
-      arg_types.&.push(arg.type.monomorphize(type_env, ast, mono)?)
-  }
   var type_args = vec[Type]()
   for arg in fun_.type_args do
-    type_args.&.push(type(arg).monomorphize(type_env, ast, mono)?)
-  var signature =
-    "{fun_.name}{type_args(type_args)}({comma_separated(arg_types)})"
-  if mono.funs.contains(signature)
-  then return ok[Str, Str](signature)
-  context.&.push(signature)
+    type_args.&.push(type(arg).compile(type_env, monoing)?)
 
-  var return_type = fun_.returns.monomorphize(type_env, ast, mono)?
+  var arg_types = vec[Type]()
+  for arg in fun_.args do
+    arg_types.&.push(arg.type.compile(type_env, monoing)?)
+
+  var signature = signature(fun_.name, some(type_args), arg_types).format()
+  if monoing.mono.funs.contains(signature) then return ok[Str, Str](signature)
+  monoing.context.&.push(signature)
+
+  var return_type = fun_.returns.compile(type_env, monoing)?
 
   | TODO: explain
-  mono.funs.&.put(signature, MonoFun {
+  monoing.mono.funs.&.put(signature, MonoFun {
     type_args, arg_types, return_type, kind = MonoFunKind.asm_("<placeholder>")
   })
 
   var kind =
     switch fun_.kind
-    case builtin MonoFunKind.body(monomorphize_builtin_fun(
-      context, ast, mono, fun_, type_args,
-    )?)
+    case builtin MonoFunKind.body(fun_.compile_builtin(type_args, monoing)?)
     case asm_(code) MonoFunKind.asm_(code)
     case body(body) {
       var slots = vec[MonoSlot]()
@@ -2066,82 +2080,75 @@ fun monomorphize(
       for i in 0.to(fun_.args.len) do {
         var slot = MonoSlotRef { index = slots.len }
         slots.&.push(MonoSlot {
-          type = arg_types.get(i),
-          initial_value = MonoSlotValue.arg(i)
+          type = arg_types.get(i), initial_value = MonoSlotValue.arg(i),
         })
         vars.&.define(fun_.args.get(i).name, slot)
       }
       var compile_fun = CompileFun {
-        context, ast, mono,
-        type_env,
+        monoing, type_env,
         return_type = type_sink(return_type),
-        next_label = 0,
-        vars,
-        slots,
-        statements = vec[MonoStatement](),
+        slots, statements = vec[MonoStatement](),
+        next_label = 0, vars,
         break_scopes = stack[BreakScope](),
         continue_scopes = stack[ContinueScope](),
       }
-      var body_result = compile_fun.&.compile_body(body)?
+      var body_result = body.compile(compile_fun.&)?
+      compile_fun.statements.&.push(MonoStatement.return_(body_result))
       | For builtin functions and asm functions, we trust the fully specified
       | return type. For Martinaise functions, we take the inferred return type.
-      if compile_fun.return_type.&.add(body_result.type) is error(error)
-      then return error[Str, Str](
-        "The last expression of the function body doesn't match the return type.
-        '{newline}{error}")
-      if not(body_result.type.is_never())
-      then compile_fun.statements.&.push(MonoStatement.return_(body_result))
-
+      compile_fun.return_type.&.add(body_result.type)
+        orelse(error) return error[Str, Str](
+          "The last expression of the function body doesn't match the return
+          'type.{newline}{error}")
       return_type = compile_fun.return_type.finish()
+
       MonoFunKind.body(MonoFunBody {
         slots = compile_fun.slots,
         statements = compile_fun.statements,
       })
     }
 
-  mono.funs.&.put(signature, MonoFun {
-    type_args, arg_types, return_type, kind
+  monoing.mono.funs.&.put(signature, MonoFun {
+    type_args, arg_types, return_type, kind,
   })
-  context.pop()
+  monoing.context.pop()
 
   ok[Str, Str](signature)
 }
 
-fun monomorphize_builtin_fun(
-  context: &Context, ast: Ast, mono: &Mono, fun_: AstFun, type_args: Vec[Type],
+fun compile_builtin(
+  fun_: AstFun, type_args: Vec[Type], monoing: Monoing,
 ): Result[MonoFunBody, Str] {
+  | All builtin functions have exactly one type arg.
+  var type = type_args.get(0)
+
   if fun_.name.equals("size_of") then ok[MonoFunBody, Str](MonoFunBody {
     slots = vec(MonoSlot {
       type = type("U64"),
-      initial_value =
-        MonoSlotValue.int(mono.layouts.get(type_args.get(0)).size),
+      initial_value = MonoSlotValue.int(monoing.mono.layouts.get(type).size),
     }),
-    statements = vec(MonoStatement.return_(MonoExpr {
-      type = type("U64"),
-      kind = MonoExprKind.slot(MonoSlotRef { index = 0 }),
-    })),
+    statements = vec(MonoStatement.return_(
+      MonoSlotRef { index = 0 }.expr(type("U64"))
+    )),
   })
   else if fun_.name.equals("alignment_of") then ok[MonoFunBody, Str](
     MonoFunBody {
       slots = vec(MonoSlot {
         type = type("U64"),
-        initial_value =
-          MonoSlotValue.int(mono.layouts.get(type_args.get(0)).alignment),
+        initial_value = MonoSlotValue.int(
+          monoing.mono.layouts.get(type).alignment),
       }),
-      statements = vec(MonoStatement.return_(MonoExpr {
-        type = type("U64"),
-        kind = MonoExprKind.slot(MonoSlotRef { index = 0 }),
-      })),
+      statements = vec(MonoStatement.return_(
+        MonoSlotRef { index = 0 }.expr(type("U64"))
+      )),
     },
   )
   else if fun_.name.equals("type") then {
-    var compile_fun = CompileReflectionFun {
-      context, ast, mono,
-      slots = vec[MonoSlot](),
-      statements = vec[MonoStatement](),
-      type_to_reflection_type = map[Type, MonoSlotRef](),
+    var compile_fun = CompileTypeFun {
+      monoing,
+      slots = vec[MonoSlot](), statements = vec[MonoStatement](),
     }
-    var reflected = type_args.get(0).compile_reflection(compile_fun.&)?
+    var reflected = type.compile_reflection(compile_fun.&)?
     compile_fun.statements.&.push(MonoStatement.return_(reflected))
     ok[MonoFunBody, Str](MonoFunBody {
       slots = compile_fun.slots, statements = compile_fun.statements,
@@ -2149,16 +2156,11 @@ fun monomorphize_builtin_fun(
   }
   else error[MonoFunBody, Str]("Unknown builtin {fun_.name}")
 }
-struct CompileReflectionFun {
-  context: &Context,
-  ast: Ast,
-  mono: &Mono,
-  slots: Vec[MonoSlot],
-  statements: Vec[MonoStatement],
-  type_to_reflection_type: Map[Type, MonoSlotRef],
+struct CompileTypeFun {
+  monoing: Monoing, slots: Vec[MonoSlot], statements: Vec[MonoStatement],
 }
 fun compile_reflection(
-  type: Type, out: &CompileReflectionFun,
+  type: Type, out: &CompileTypeFun,
 ): Result[MonoExpr, Str] {
   | Almost looks like we're writing C now.
   var nothing_t = type("Nothing")
@@ -2167,35 +2169,29 @@ fun compile_reflection(
   var vec_of_type_t = type("Vec", vec(type_t))
   var ref_of_vec_of_type_t = type("&", vec(vec_of_type_t))
 
-  if out.type_to_reflection_type.get_maybe(type) is some(ref)
-  then return ok[MonoExpr, Str](MonoExpr {
-    type = type_t, kind = MonoExprKind.slot(ref),
-  })
+  var name_slot = out.slots.&.push(str_t, MonoSlotValue.str(type.name))
 
-  var vec_slot = out.slots.&.push_slot(vec_of_type_t)
-  var make_vec = out.ast.lookup_fun("vec", some(vec(type_t)), vec[Type]())?
+  var vec_slot = out.slots.&.push(vec_of_type_t)
+  var make_vec = out.monoing.lookup_fun("vec", some(vec(type_t)), vec[Type]())?
   var make_vec_type_env = make_vec.type_env
-  var make_vec = make_vec.fun_
-    .monomorphize(make_vec_type_env, out.context, out.ast, out.mono)?
+  var make_vec = make_vec.fun_.compile(make_vec_type_env, out.monoing)?
   out.statements.&.push_call(vec_slot, make_vec, vec[MonoExpr]())
 
-  var ref_vec_slot = out.slots.&.push_slot(ref_of_vec_of_type_t)
+  var ref_vec_slot = out.slots.&.push(ref_of_vec_of_type_t)
   out.statements.&.push_ref(ref_vec_slot, vec_slot.expr(ref_of_vec_of_type_t))
 
   for arg in type.args do {
-    var arg_slot = out.slots.&.push_slot(nothing_t)
-    var push = out.ast
+    var arg_slot = out.slots.&.push(nothing_t)
+    var push = out.monoing
       .lookup_fun("push", none[Vec[Type]](), vec(ref_of_vec_of_type_t, type_t))?
     var push_type_env = push.type_env
-    var push = push.fun_
-      .monomorphize(push_type_env, out.context, out.ast, out.mono)?
+    var push = push.fun_.compile(push_type_env, out.monoing)?
     var arg = arg.compile_reflection(out)?
     out.statements.&.push_call(
       arg_slot, push, vec(ref_vec_slot.expr(ref_of_vec_of_type_t), arg))
   }
 
-  var type_slot = out.slots.&.push_slot(type_t)
-  var name_slot = out.slots.&.push_slot(str_t, MonoSlotValue.str(type.name))
+  var type_slot = out.slots.&.push(type_t)
   out.statements.&.push_assign(
     type_slot.expr(type_t).member("name", str_t),
     name_slot.expr(str_t),
@@ -2209,69 +2205,54 @@ fun compile_reflection(
 }
 
 struct CompileFun {
-  context: &Context,
-  ast: Ast,
-  mono: &Mono,
-  type_env: Map[Str, Type], | maps fun type args to concrete types
+  monoing: Monoing,
+  type_env: Map[Str, Type],
   return_type: TypeSink,
-  next_label: U64,
-  vars: Vars[MonoSlotRef],
   slots: Vec[MonoSlot],
   statements: Vec[MonoStatement],
+  next_label: U64,
+  vars: Vars[MonoSlotRef],
   | When lowering loops, breaks and continues don't know where to jump yet.
   | Instead, they fill these structures with jump addresses that need to be
   | adjusted later.
   break_scopes: Stack[BreakScope],
   continue_scopes: Stack[ContinueScope],
 }
-struct BreakScope {
-  result: MonoSlotRef,
-  type: Maybe[Type],
-  breaks: Vec[U64],
-}
+struct BreakScope { result: MonoSlotRef, type: Maybe[Type], breaks: Vec[U64] }
 struct ContinueScope { continues: Vec[U64] }
 
-fun add_slot(
-  self: &CompileFun, type: Type, initial_value: MonoSlotValue
-): MonoSlotRef {
-  var ref = MonoSlotRef { index = self.slots.len }
-  self.slots.&.push(MonoSlot { type, initial_value })
-  ref
-}
-fun add_slot(self: &CompileFun, type: Type): MonoSlotRef {
-  self.add_slot(type, MonoSlotValue.uninitialized)
-}
-fun update_slot_type(self: &CompileFun, slot: MonoSlotRef, type: Type) {
-  self.slots.get_ref(slot.index).type = type
-}
-fun slot_expr(self: CompileFun, slot: MonoSlotRef): MonoExpr {
-  MonoExpr {
-    kind = MonoExprKind.slot(slot),
-    type = self.slots.get(slot.index).type,
-  }
-}
-fun nothing_expr(): MonoExpr {
-  MonoExpr { kind = MonoExprKind.nothing, type = type("Nothing") }
-}
-fun never_expr(): MonoExpr {
-  MonoExpr { kind = MonoExprKind.never, type = type("Never") }
-}
-fun put(self: &CompileFun, statement: MonoStatement): U64 {
+fun push(self: &CompileFun, statement: MonoStatement): U64 {
   var index = self.statements.len
   self.statements.&.push(statement)
   index
 }
-fun put_label(self: &CompileFun): MonoLabel {
+fun push_placeholder(self: &CompileFun): U64 {
+  self.push(MonoStatement.label(MonoLabel { id = 0 }))
+}
+fun push_label(self: &CompileFun): MonoLabel {
   var label = MonoLabel { id = self.next_label }
   self.next_label = self.next_label.inc()
-  self.put(MonoStatement.label(label))
+  self.push(MonoStatement.label(label))
   label
 }
-fun put_placeholder(self: &CompileFun): U64 {
-  self.put(MonoStatement.label(MonoLabel { id = 0 }))
+fun push_assign(self: &CompileFun, to: MonoExpr, value: MonoExpr) {
+  self.statements.&.push_assign(to, value)
 }
+fun push_call(
+  self: &CompileFun, to: MonoSlotRef, fun_: Str, args: Vec[MonoExpr],
+) {
+  self.statements.&.push_call(to, fun_, args)
+}
+fun push_ref(self: &CompileFun, to: MonoSlotRef, of: MonoExpr) {
+  self.statements.&.push_ref(to, of)
+}
+
 fun update(self: &CompileFun, index: U64, statement: MonoStatement) {
-  self.statements.get_ref(index).* = statement
+  self.statements.&.get_ref(index).* = statement
+}
+
+fun expr(slot: MonoSlotRef, self: &CompileFun): MonoExpr {
+  slot.expr(self.slots.get(slot.index).type)
 }
 
 | Most expressions are compiled in a separate variable scope. For example, this
@@ -2285,41 +2266,41 @@ fun update(self: &CompileFun, index: U64, statement: MonoStatement) {
 |   var a = a
 |   var b = a  | works
 | }
-fun compile(self: &CompileFun, expr: AstExpr): Result[MonoExpr, Str] {
+fun compile(expr: AstExpr, self: &CompileFun): Result[MonoExpr, Str] {
   var scope = self.vars.snapshot()
-  var mono = self.compile_in_current_scope(expr)
+  var mono = expr.compile_in_current_scope(self)
   self.vars.&.restore(scope)
   mono
 }
-fun compile_body(
-  self: &CompileFun, body: Vec[AstExpr]
-): Result[MonoExpr, Str] {
+fun compile(body: Vec[AstExpr], self: &CompileFun): Result[MonoExpr, Str] {
   var scope = self.vars.snapshot()
   var last = none[MonoExpr]()
-  for expr in body do last = some(self.compile_in_current_scope(expr)?)
+  for expr in body do last = some(expr.compile_in_current_scope(self)?)
   self.vars.&.restore(scope)
-  ok[MonoExpr, Str](last orelse nothing_expr())
+  ok[MonoExpr, Str](last orelse nothing_expr)
 }
 fun compile_in_current_scope(
-  self: &CompileFun, expr: AstExpr
+  expr: AstExpr, self: &CompileFun,
 ): Result[MonoExpr, Str] {
+  var monoing = self.monoing
+
   ok[MonoExpr,Str](
     switch expr
-    case int(int) self.slot_expr(self.add_slot(
-      int.config.to_type(), MonoSlotValue.int(int.value),
-    ))
+    case int(int) self.slots.&
+      .push(int.config.to_type(), MonoSlotValue.int(int.value))
+      .expr(self)
     case str(str) {
-      type("Str").monomorphize(map[Str, Type](), self.ast, self.mono)?
-      self.slot_expr(self.add_slot(type("Str"), MonoSlotValue.str(str)))
+      type("Str").compile(map[Str, Type](), monoing)?
+      self.slots.&.push(type("Str"), MonoSlotValue.str(str)).expr(self)
     }
     case name(name) {
       switch self.vars.lookup(name)
-      case some(slot) self.slot_expr(slot)
+      case some(slot) slot.expr(self)
       case none {
-        switch self.ast.lookup_global_var(name)
+        switch monoing.lookup_global(name)
         case some(global) {
-          global.monomorphize(self.context, self.ast, self.mono)?
-          var type = self.mono.globals.get(name).return_type
+          global.compile(monoing)?
+          var type = monoing.mono.globals.get(name).return_type
           MonoExpr { kind = MonoExprKind.global(name), type }
         }
         | TODO: print which variables are in scope
@@ -2330,72 +2311,64 @@ fun compile_in_current_scope(
       var callee = none[MonoExpr]()
       var name =
         switch call.callee.*
-        | foo(a, b)
-        case name(name) name
-        | a.foo(b)
-        case member(member) {
-          callee = some(self.compile(member.of.*)?)
+        case name(name) name  | foo(a, b)
+        case member(member) { | a.foo(b)
+          callee = some(member.of.compile(self)?)
           member.name
         }
         default return error[MonoExpr, Str](
-          "You tried to call this expression:{newline}
-          ' > {call.callee.*.indented(indent(2))}{newline}{newline}
-          'This expression can't be called.")
+          "This expression can't be called:{newline}
+          ' > {call.callee.*.indented(indent(2))}{newline}")
       var type_args =
         switch call.type_args
+        case none none[Vec[Type]]()
         case some(type_args) {
           var mono_type_args = vec[Type]()
           for arg in type_args do
-            mono_type_args.&.push(
-              arg.monomorphize(self.type_env, self.ast, self.mono)?)
+            mono_type_args.&.push(arg.compile(self.type_env, monoing)?)
           some(mono_type_args)
         }
-        case none none[Vec[Type]]()
-      var args = vec[MonoExpr]() {
-        for arg in call.args do args.&.push(self.compile(arg)?)
-      }
+      var args = vec[MonoExpr]()
+      for arg in call.args do args.&.push(arg.compile(self)?)
       self.compile_call(name, callee, type_args, args)?
     }
     case make_struct(make_struct) {
       var struct_ =
-        switch self.ast.lookup_type(make_struct.type.name)?
+        switch monoing.lookup_type(make_struct.type.name)?
         case struct_(s) s
         default return error[MonoExpr, Str](
           "Tried to create a struct, but {make_struct.type.name} is not a 
           'struct type.")
       var fields = map[Str, MonoExpr]() {
         for field in make_struct.fields do
-          fields.&.put(field.name, self.compile(field.value)?)
+          fields.&.put(field.name, field.value.compile(self)?)
       }
       for field in struct_.fields do
         if not(fields.contains(field.name))
         then return error[MonoExpr, Str](
-          '"You tried to create a {make_struct.type.name}, but the 
-          '"{field.name}" field is missing."')
+          '"You tried to create a {{make_struct.type.name}}, but the 
+          '"{{field.name}}" field is missing."')
 
       var solver = create_type_solver(struct_.type_args)
       | TODO: Foo[] { ... } should not be treated like Foo { ... }
       if make_struct.type.args.is_not_empty() then {
-        if make_struct.type.args.len.not_equals(struct_.type_args.len)
-        then return error[MonoExpr, Str](
-          "Tried to create struct {struct_.name} with 
-          '{make_struct.type.args.len} type arguments, but it needs 
-          '{struct_.type_args.len}.")
+        make_struct.type.args.len.equals(struct_.type_args.len)
+          orelse return error[MonoExpr, Str](
+            "Tried to create struct {struct_.name} with 
+            '{make_struct.type.args.len} type arguments, but it needs 
+            '{struct_.type_args.len}.")
         for i in 0.to(struct_.type_args.len) do
-          if not(solver.&.unify(
+          solver.&.unify(
             type(struct_.type_args.get(i)),
-            make_struct.type.args.get(i)
-              .monomorphize(self.type_env, self.ast, self.mono)?
-          )?)
-          then unreachable()
+            make_struct.type.args.get(i).compile(self.type_env, monoing)?,
+          )? orelse unreachable()
       }
       for field in fields do {
         var name = field.key
         var value = field.value
         var type_in_struct = none[Type]()
         for f in struct_.fields do
-          if f.name.equals(name) then
-            type_in_struct = some(f.type)
+          if f.name.equals(name) then type_in_struct = some(f.type)
 
         if type_in_struct is none then return error[MonoExpr, Str](
           "Tried to initialize field {name} of {struct_.name}, but it doesn't 
@@ -2411,32 +2384,22 @@ fun compile_in_current_scope(
       var unspecialized_type = make_struct.type
       if make_struct.type.args.is_empty().and(struct_.type_args.is_not_empty())
       then for arg in struct_.type_args do
-        unspecialized_type.args.&.push(
-          type(arg).monomorphize(type_env, self.ast, self.mono)?)
-      var type = unspecialized_type.monomorphize(self.type_env, self.ast, self.mono)?
+        unspecialized_type.args.&.push(type(arg).compile(type_env, monoing)?)
+      var type = unspecialized_type.compile(self.type_env, monoing)?
 
-      var slot = self.slot_expr(self.add_slot(type))
-      for field in fields do {
-        self.put(MonoStatement.assign(MonoAssign {
-          to = MonoExpr {
-            kind = MonoExprKind.member(MonoMember {
-              of = slot.put_on_heap(), name = field.key,
-            }),
-            type = field.value.type,
-          },
-          value = field.value,
-        }))
-      }
+      var slot = self.slots.&.push(type).expr(self)
+      for field in fields do
+        self.push_assign(slot.member(field.key, field.value.type), field.value)
       slot
     }
     case make_enum(make_enum) {
       var enum_ =
-        switch self.ast.lookup_type(make_enum.type.name)?
+        switch monoing.lookup_type(make_enum.type.name)?
         case enum_(e) e
         default return error[MonoExpr, Str](
           "Tried to create an enum, but {make_enum.type.name} is not an enum 
           'type.")
-      var arg = self.compile(make_enum.arg.*)?
+      var arg = make_enum.arg.compile(self)?
       var variant_type = {
         var type = none[Type]()
         for variant in enum_.variants do
@@ -2456,8 +2419,7 @@ fun compile_in_current_scope(
         for i in 0.to(enum_.type_args.len) do {
           solver.&.unify(
             type(enum_.type_args.get(i)),
-            make_enum.type.args.get(i)
-              .monomorphize(self.type_env, self.ast, self.mono)?
+            make_enum.type.args.get(i).compile(self.type_env, monoing)?
           )? orelse unreachable()
         }
       }
@@ -2470,49 +2432,37 @@ fun compile_in_current_scope(
       var unspecialized_type = make_enum.type
       if make_enum.type.args.is_empty().and(enum_.type_args.is_not_empty())
       then for a in enum_.type_args do
-        unspecialized_type.args.&.push(
-          type(a).monomorphize(type_env, self.ast, self.mono)?)
-      var type = unspecialized_type.monomorphize(self.type_env, self.ast, self.mono)?
+        unspecialized_type.args.&.push(type(a).compile(type_env, monoing)?)
+      var type = unspecialized_type.compile(self.type_env, monoing)?
 
-      var slot = self.add_slot(type)
-      self.put(MonoStatement.set_enum(MonoSetEnum {
+      var slot = self.slots.&.push(type)
+      self.push(MonoStatement.set_enum(MonoSetEnum {
         slot, variant = make_enum.variant, value = arg,
       }))
-      self.slot_expr(slot)
+      slot.expr(self)
     }
     case member(member) {
-      var of = self.compile(member.of.*)?
+      var of = member.of.compile(self)?
       | expr.& references the of
       if member.name.equals("&") then {
-        var ref_type = type("&", vec(of.type))
-          .monomorphize(self.type_env, self.ast, self.mono)?
-        var slot = self.add_slot(ref_type)
-        self.put(MonoStatement.ref(MonoRef { to = slot, of }))
-        return ok[MonoExpr,Str](self.slot_expr(slot))
+        var ref_type = type("&", vec(of.type)).compile(self.type_env, monoing)?
+        var slot = self.slots.&.push(ref_type)
+        self.push_ref(slot, of)
+        return ok[MonoExpr,Str](slot.expr(self))
       }
       | When accessing a member on a reference, we automatically dereference the
       | receiver as often as necessary. For example, you can access point.x if
       | point is a &&&Point.
       loop
         if of.type.name.equals("&").and(member.name.not_equals("*"))
-        then of = MonoExpr {
-          kind = MonoExprKind.member(MonoMember {
-            of = of.put_on_heap(), name = "*",
-          }),
-          type = of.type.args.get(0),
-        }
+        then of = of.member("*", of.type.args.get(0))
         else break
       var struct_ =
-        switch self.mono.type_defs.get(of.type)
+        switch monoing.mono.type_defs.get(of.type)
         case struct_(s) s
         default return error[MonoExpr, Str](
           "You tried to access a field on {of.type}, but it's not a struct.
-          '{newline}{
-            switch self.mono.type_defs.get(of.type)
-            case opaque_ "opaque"
-            case struct_ "struct"
-            case enum_ "enum"
-          }")
+          '{newline}")
       var type = {
         var field_type = none[Type]()
         for field in struct_.fields do
@@ -2525,31 +2475,23 @@ fun compile_in_current_scope(
           out.to_str()
         })
       }
-      
-      MonoExpr {
-        kind = MonoExprKind.member(MonoMember {
-          of = of.put_on_heap(), name = member.name,
-        }),
-        type,
-      }
+
+      of.member(member.name, type)
     }
     case var_(var_) {
-      var value = self.compile(var_.value.*)?
-      var slot = self.add_slot(value.type)
-      self.put(MonoStatement.assign(MonoAssign {
-        to = self.slot_expr(slot),
-        value,
-      }))
+      var value = var_.value.compile(self)?
+      var slot = self.slots.&.push(value.type)
+      self.push_assign(slot.expr(self), value)
       self.vars.&.define(var_.name, slot)
-      nothing_expr()
+      nothing_expr
     }
     case assign(assign) {
-      var to = self.compile(assign.to.*)?
-      var value = self.compile(assign.value.*)?
+      var to = assign.to.compile(self)?
+      var value = assign.value.compile(self)?
       value.type.equals(to.type) orelse return error[MonoExpr, Str](
         "Tried to assign {value.type} to a variable of type {to.type}.")
-      self.put(MonoStatement.assign(MonoAssign { to, value }))
-      nothing_expr()
+      self.push_assign(to, value)
+      nothing_expr
     }
     | Switch  
     | Switches are lowered to a jump table. Here's an example of a switch and
@@ -2579,12 +2521,12 @@ fun compile_in_current_scope(
     | label_3: <─────────────────────┘
     | ...
     case switch_(switch_) {
-      var result = self.add_slot(type(""))
-      var type = none[Type]()
+      var result = self.slots.&.push(type(""))
+      var type = none[Type]() | TODO: use type sink
 
-      var value = self.compile(switch_.value.*)?
+      var value = switch_.value.compile(self)?
       var enum_ =
-        switch self.mono.type_defs.get(value.type)
+        switch monoing.mono.type_defs.get(value.type)
         case enum_(e) e
         default return error[MonoExpr, Str](
           "You tried to switch on {value.type}, but you can only switch on 
@@ -2623,10 +2565,10 @@ fun compile_in_current_scope(
 
       var jump_table_jumps = map[Str, U64]()
       for case_ in switch_.cases do
-        jump_table_jumps.&.put(case_.variant, self.put_placeholder())
+        jump_table_jumps.&.put(case_.variant, self.push_placeholder())
       var default_jump =
         switch switch_.default_
-        case some some(self.put_placeholder())
+        case some some(self.push_placeholder())
         case none none[U64]()
       | contains indices of statements which will be replaced with unconditional
       | jumps to after the switch
@@ -2634,7 +2576,7 @@ fun compile_in_current_scope(
 
       | Case bodies
       for case_ in switch_.cases do {
-        var label = self.put_label()
+        var label = self.push_label()
         self.update(
           jump_table_jumps.get(case_.variant),
           MonoStatement.jump_if_variant(MonoJumpIfVariant {
@@ -2648,14 +2590,14 @@ fun compile_in_current_scope(
               variant_type = some(variant.type)
           variant_type.unwrap()
         }
-        var unpacked = self.add_slot(variant_type)
-        self.put(MonoStatement.get_enum_value(MonoGetEnumValue {
+        var unpacked = self.slots.&.push(variant_type)
+        self.push(MonoStatement.get_enum_value(MonoGetEnumValue {
           to = unpacked, of = value, variant = case_.variant,
         }))
         var scope = self.vars.snapshot()
         if case_.binding is some(binding) then
           self.vars.&.define(binding, unpacked)
-        var then_ = self.compile(case_.then_.*)?
+        var then_ = case_.then_.compile(self)?
         self.vars.&.restore(scope)
 
         if not(then_.type.is_never()) then {
@@ -2667,37 +2609,32 @@ fun compile_in_current_scope(
                '{{AstExpr.switch_(switch_).indented(indent(0))}}{{newline}}
                'Previous switch cases return {{expected}}, but the case for 
                '"{{case_.variant}}" returns {{then_.type}}."')
-          self.put(MonoStatement.assign(MonoAssign {
-            to = self.slot_expr(result), value = then_
-          })).ignore()
+          self.push_assign(result.expr(self), then_).ignore()
         }
-        after_switch_jumps.&.push(self.put_placeholder())
+        after_switch_jumps.&.push(self.push_placeholder())
       }
 
       | Default case
       if switch_.default_ is some(default_) then {
-        var label = self.put_label()
+        var label = self.push_label()
         self.update(default_jump.unwrap(), MonoStatement.jump(MonoJump {
           target = label
         }))
-        var default_result = self.compile(default_.*)?
+        var default_result = default_.compile(self)?
         if not(default_result.type.is_never()) then {
-            type = some(default_result.type)
-            self.put(MonoStatement.assign(MonoAssign {
-                to = self.slot_expr(result),
-                value = default_result,
-            })).ignore()
+          type = some(default_result.type)
+          self.push_assign(result.expr(self), default_result).ignore()
         }
-        after_switch_jumps.&.push(self.put_placeholder())
+        after_switch_jumps.&.push(self.push_placeholder())
       }
 
-      var after_switch = self.put_label()
+      var after_switch = self.push_label()
       for jump in after_switch_jumps do
         self.update(jump,
           MonoStatement.jump(MonoJump { target = after_switch }))
 
-      self.update_slot_type(result, type orelse type("Never"))
-      self.slot_expr(result)
+      self.slots.&.get_ref(result).type = type orelse type("Never")
+      result.expr(self)
     }
     | Loop  
     | Loops are lowered to two labels – one before and one after the loop.
@@ -2724,76 +2661,71 @@ fun compile_in_current_scope(
     | label_1: <─────┘
     | ...
     case loop_(expr) {
-      var result = self.add_slot(type(""))
+      var result = self.slots.&.push(type(""))
       self.break_scopes.&.push(BreakScope {
         | TODO: turn this into an expr
         result,
-        type = none[Type](),
+        type = none[Type](), | TODO: use type sink
         breaks = vec[U64](),
       })
       | TODO: save the loop start instead
       self.continue_scopes.&.push(ContinueScope { continues = vec[U64]() })
 
-      var loop_start = self.put_label()
-      self.compile(expr.*)?
-      self.put(MonoStatement.jump(MonoJump { target = loop_start }))
+      var loop_start = self.push_label()
+      expr.compile(self)?
+      self.push(MonoStatement.jump(MonoJump { target = loop_start }))
 
-      var after_loop = self.put_label()
+      var after_loop = self.push_label()
       var scope = self.break_scopes.&.pop()
       for break_ in scope.breaks do
         self.update(break_,
           MonoStatement.jump(MonoJump { target = after_loop }))
 
-      self.update_slot_type(result, scope.type orelse type("Never"))
-      var scope = self.continue_scopes.&.pop() {
-        for continue_ in scope.continues do
-          self.update(
-            continue_,
-            MonoStatement.jump(MonoJump { target = loop_start }),
-          )
-      }
-      self.slot_expr(result)
+      self.slots.&.get_ref(result).type = scope.type orelse type("Never")
+      var scope = self.continue_scopes.&.pop()
+      for continue_ in scope.continues do
+        self.update(
+          continue_, MonoStatement.jump(MonoJump { target = loop_start }))
+      result.expr(self)
     }
     case break_(arg) {
       if self.break_scopes.is_empty() then return error[MonoExpr, Str](
         "There's a break outside out a loop.")
       var scope = self.break_scopes.top_ref()
 
-      var arg = self.compile(arg.*)?
+      var arg = arg.compile(self)?
 
       if scope.type is some(expected) then
         arg.type.equals(expected) orelse return error[MonoExpr, Str](
           "A previous break returned {expected}, but this break returns 
           '{arg.type}.")
       scope.type = some(arg.type)
-      self.put(MonoStatement.assign(MonoAssign {
-        | TODO: This is not correct. The type of the slot is only updated after
-        | the loop body is fully lowered. The created slot expr still has the
-        | wrong type.
-        to = self.slot_expr(scope.result), value = arg,
-      }))
+      | TODO: This is not correct. The type of the slot is only updated after
+      | the loop body is fully lowered. The created slot expr still has the
+      | wrong type.
+      self.push_assign(scope.result.expr(self), arg)
 
-      scope.breaks.&.push(self.put_placeholder())
-      never_expr()
+      scope.breaks.&.push(self.push_placeholder())
+      never_expr
     }
     case continue_ {
       if self.continue_scopes.is_empty() then return error[MonoExpr, Str](
         "There's a continue outside out a loop.")
       var scope = self.continue_scopes.top_ref()
-      scope.continues.&.push(self.put_placeholder())
-      never_expr()
+      scope.continues.&.push(self.push_placeholder())
+      never_expr
     }
     case return_(arg) {
-      var arg = self.compile(arg.*)?
-      if self.return_type.&.add(arg.type) is error(error)
-      then return error[MonoExpr, Str](
-        "The type of a return doesn't match the return type up to this point:
-        '{newline}{error}")
-      self.put(MonoStatement.return_(arg))
-      never_expr()
+      var arg = arg.compile(self)?
+      self.return_type.&.add(arg.type)
+        orelse(error) return error[MonoExpr, Str](
+          "The type of a return doesn't match the return type up to this point:
+          '{newline}{error}")
+      self.push(MonoStatement.return_(arg))
+      never_expr
     }
     case try(expr) {
-      var expr = self.compile(expr.*)?
+      var expr = expr.compile(self)?
       expr.type.name.equals("Result") orelse return error[MonoExpr, Str](
         "The try operator ? can only be used on Results.")
       var return_type = self.return_type.finish()
@@ -2809,32 +2741,31 @@ fun compile_in_current_scope(
       var ok_type = expr.type.args.get(0)
       var error_type = expr.type.args.get(1)
 
-      var jump_if_ok = self.put_placeholder()
-      var error_payload = self.add_slot(error_type)
-      self.put(MonoStatement.get_enum_value(MonoGetEnumValue {
+      var jump_if_ok = self.push_placeholder()
+      var error_payload = self.slots.&.push(error_type)
+      self.push(MonoStatement.get_enum_value(MonoGetEnumValue {
         to = error_payload, of = expr, variant = "error",
       }))
-      var error_to_return = self.add_slot(return_type)
-      self.put(MonoStatement.set_enum(MonoSetEnum {
+      var error_to_return = self.slots.&.push(return_type)
+      self.push(MonoStatement.set_enum(MonoSetEnum {
         slot = error_to_return,
         variant = "error",
-        value = self.slot_expr(error_payload),
+        value = error_payload.expr(self),
       }))
-      self.put(MonoStatement.return_(self.slot_expr(error_to_return)))
+      self.push(MonoStatement.return_(error_to_return.expr(self)))
 
-      var after_error_handling = self.put_label()
+      var after_error_handling = self.push_label()
       self.update(jump_if_ok, MonoStatement.jump_if_variant(MonoJumpIfVariant {
         condition = expr, variant = "ok", target = after_error_handling,
       }))
 
-      var ok_payload = self.add_slot(ok_type)
-      self.put(MonoStatement.get_enum_value(MonoGetEnumValue {
+      var ok_payload = self.slots.&.push(ok_type)
+      self.push(MonoStatement.get_enum_value(MonoGetEnumValue {
         to = ok_payload, of = expr, variant = "ok",
       }))
-      self.slot_expr(ok_payload)
+      ok_payload.expr(self)
     }
-    case body(body) self.compile_body(body)?
-    default todo()
+    case body(body) body.compile(self)?
   )
 }
 
@@ -2845,6 +2776,8 @@ fun compile_call(
   type_args: Maybe[Vec[Type]],
   explicit_args: Vec[MonoExpr],
 ): Result[MonoExpr, Str] {
+  var monoing = self.monoing
+  
   | Martinaise supports auto-dereferencing: If you call value.foo() on a value
   | of type &T, we first look for functions matching foo(&T). If none match, we
   | try dereferencing the value and look for functions matching foo(T). If we
@@ -2862,29 +2795,21 @@ fun compile_call(
       arg_types.&.push(arg.type)
     }
 
-    switch self.ast.lookup_fun(name, type_args, arg_types)
+    switch monoing.lookup_fun(name, type_args, arg_types)
     case error(error) {
       if first_error is none then first_error = some(error)
       if callee is some(c) then if c.type.name.equals("&") then {
         | Dereference the callee
-        callee = some(MonoExpr {
-          kind = MonoExprKind.member(MonoMember {
-            of = c.put_on_heap(), name = "*"
-          }),
-          type = c.type.args.get(0),
-        })
+        callee = some(c.member("*", c.type.args.get(0)))
         continue
       }
       return error[MonoExpr, Str](first_error.unwrap())
     }
     case ok(solution) {
-      var fun_ = solution.fun_.monomorphize(
-        solution.type_env,
-        self.context, self.ast, self.mono
-      )?
-      var result = self.add_slot(self.mono.funs.get(fun_).return_type)
-      self.put(MonoStatement.call(MonoCall { to = result, fun_, args }))
-      return ok[MonoExpr, Str](self.slot_expr(result))
+      var fun_ = solution.fun_.compile(solution.type_env, monoing)?
+      var result = self.slots.&.push(monoing.mono.funs.get(fun_).return_type)
+      self.push(MonoStatement.call(MonoCall { to = result, fun_, args }))
+      return ok[MonoExpr, Str](result.expr(self))
     }
   }
 }
@@ -3717,7 +3642,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   if command is ast then { println(ast) return true }
 
   print_on_same_line("Compiling {file_path}")
-  var mono = monomorphize(ast)
+  var mono = compile(ast)
     orelse(error) { print_on_same_line(error) return false }
   print_on_same_line("Calculating memory layout")
   | println(type("Foo").mem_layout(mono.type_defs))
