@@ -3396,12 +3396,12 @@ fun write_as_asm[W](writer: W, mono: Mono) {
     writer."{newline}"
   }
   writer."_init_globals:{newline}"
-  for global in mono.globals do
+  for global in mono.globals_init_order do
     | The global init functions are guaranteed not to take any arguments. The
     | stack only has to look like this: [caller][return]...
     writer."
-      '  push _globals.{global.key}{newline}
-      '  call _init_global_{global.key}{newline}
+      '  push _globals.{global}{newline}
+      '  call _init_global_{global}{newline}
       '  pop r8{newline}"
   writer."  ret{newline}{newline}"
 
