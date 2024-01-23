@@ -36,6 +36,10 @@
           }
         },
         {
+          "name": "keyword.operator",
+          "match": "[%!~@^`/&*+$-<>=.]"
+        },
+        {
           "begin": "(asm) {",
           "end": "}",
           "captures": {
