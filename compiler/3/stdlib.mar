@@ -917,7 +917,7 @@ fun digit_to_char(digit: U8): Char {
 fun parse_U64(str: Str): U64 {
   var num = 0
   for char in str do {
-    if not(#0.until(#9).contains(char))
+    if not({#0..=#9}.contains(char))
     then panic("non-digit in supposed number")
     num = num * 10 + {char - #0}.to_U64()
   }
@@ -1125,14 +1125,14 @@ fun uninitialized_slice[T](len: U64): Slice[T] {
 }
 fun filled_slice[T](len: U64, fill: T): Slice[T] {
   var slice = uninitialized_slice[T](len)
-  for i in 0.to(len) do slice.get_ref(i).* = fill
+  for i in 0..len do slice.get_ref(i).* = fill
   slice
 }
 
 fun is_empty[T](slice: Slice[T]): Bool { slice.len == 0 }
 fun get[T](slice: Slice[T], index: U64): T { slice.get_ref(index).* }
 fun get_ref[T](slice: Slice[T], index: U64): &T {
-  0.to(slice.len).contains(index) orelse panic("index out of bounds")
+  {0..slice.len}.contains(index) orelse panic("index out of bounds")
   slice.data.add_stride_offset(index)
 }
 
@@ -1186,7 +1186,7 @@ fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
 
 fun copy_to[T](from: Slice[T], to: Slice[T]) {
   assert(from.len == to.len, "copy_to slice lens don't match")
-  for i in 0.to(from.len) do to.get_ref(i).* = from.get(i)
+  for i in 0..from.len do to.get_ref(i).* = from.get(i)
 }
 fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
   assert(to <= slice.len, "subslice needs to be inside original slice")
@@ -1240,7 +1240,7 @@ fun sort[T](slice: &Slice[T]) {
   if slice.len <= 1 then return {}
   var pivot = slice.get(slice.len.dec())
   var i = 0
-  for j in 0.to(slice.len) do
+  for j in 0..slice.len do
     if slice.get(j) < pivot then {
       i = i.inc()
       swap(slice.get_ref(i.dec()), slice.get_ref(j))
@@ -1295,9 +1295,9 @@ fun to_str(str: OsStr): Str {
 }
 
 fun parse_digit(char: Char): U8 {
-  if #0.to(#9).contains(char.byte) then return char.byte - #0.byte
-  if #a.to(#z).contains(char.byte) then return char.byte - #a.byte + 16
-  if #A.to(#Z).contains(char.byte) then return char.byte - #A.byte + 16
+  if {#0..=#9}.contains(char.byte) then return char.byte - #0.byte
+  if {#a..=#z}.contains(char.byte) then return char.byte - #a.byte + 16
+  if {#A..=#Z}.contains(char.byte) then return char.byte - #A.byte + 16
   panic("not a digit")
 }
 fun <=>(a: Char, b: Char): Ordering { a.byte <=> b.byte }
@@ -1331,7 +1331,7 @@ fun len(str: Str): U64 { str.chars.len }
 fun is_empty(str: Str): Bool { str.len == 0 }
 fun get(str: Str, index: U64): Char { str.get_ref(index).* }
 fun get_ref(str: Str, index: U64): &Char {
-  0.to(str.len).contains(index) orelse panic("index out of bounds")
+  {0..str.len}.contains(index) orelse panic("index out of bounds")
   str.chars().get_ref(index)
 }
 
@@ -1427,10 +1427,11 @@ fun pad_right(str: Str, len: U64, char: Char): Str {
 
 struct Range[T] { start: T, end: T }
 
-fun to[T](start: T, end: T): Range[T] { Range { start, end } }
-fun until[T](start: T, end: T): Range[T] { Range { start, end = end.inc() } }
-fun range_by[T](start: T, len: T): Range[T] {
-  Range { start, end = start + len }
+fun ..[T](start: T, end: T): Range[T] { Range { start, end } }
+fun ..=[T](start: T, end: T): Range[T] { Range { start, end = end.inc() } }
+fun ..+[T](start: T, len: T): Range[T] { Range { start, end = start + len } }
+fun ..+=[T](start: T, len: T): Range[T] {
+  Range { start, end = start + len.inc() }
 }
 
 fun contains[T](range: Range[T], value: T): Bool {
@@ -1509,7 +1510,7 @@ fun skip[T, I](iter: Iter[T, I], amount: U64): Iter[T, _] {
 }
 struct SkipIter[T, I] { inner: I, amount: U64 }
 fun next[T, I](iter: &SkipIter[T, I]): Maybe[T] {
-  for i in 0.to(iter.amount) do {
+  for i in 0..iter.amount do {
     var next = iter.inner.&.next()
     if next is none then return next
   }
@@ -1613,7 +1614,7 @@ fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
 
 | fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
 |   if prefix.len.is_greater_than(slice.len) then return false
-|   for i in 0.to(prefix.len) do
+|   for i in 0..prefix.len do
 |     if slice.get(i) != prefix.get(i) then return false
 |   true
 | }
@@ -2027,7 +2028,7 @@ fun to_slices[T](deque: Deque[T]): Tuple[Slice[T], Slice[T]] {
 }
 fun ==[T](a: Deque[T], b: Deque[T]): Bool {
   a.len() == b.len() orelse return false
-  for i in 0.to(a.len()) do a.get(i) == b.get(i) orelse return false
+  for i in 0..a.len() do a.get(i) == b.get(i) orelse return false
   true
 }
 

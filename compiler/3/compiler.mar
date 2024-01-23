@@ -536,7 +536,7 @@ fun parse_upper_name(parser: &Parser): Maybe[Str] {
 
 fun parse_operator_name(parser: &Parser): Maybe[Str] {
   parser.consume_whitespace()
-  var allowed = "%!~@^\`/&*+$-<>="
+  var allowed = "%!~@^\`/&*+$-<>=."
   var start = parser.cursor
   loop {
     var char = parser.current()
@@ -546,7 +546,13 @@ fun parse_operator_name(parser: &Parser): Maybe[Str] {
     if is_operator then parser.advance() else break
   }
   if parser.cursor.equals(start) then return none[Str]()
-  some(parser.code.substr(start, parser.cursor))
+  var name = parser.code.substr(start, parser.cursor)
+  | disallow some patterns
+  if name.equals("=") then { parser.cursor = start return none[Str]() }
+  if name.equals(".") then { parser.cursor = start return none[Str]() }
+  if name.starts_with(".*").or(name.starts_with(".&"))
+  then { parser.cursor = start return none[Str]() }
+  some(name)
 }
 
 | Convenience methods for the three possible results of parsers returning a
@@ -637,15 +643,14 @@ fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Str] {
 fun parse_expr_suffix(
   parser: &Parser, expr: AstExpr, operator_allowed: Bool,
 ): Result[Maybe[AstExpr], Str] {
+  if operator_allowed then {
+    if parser.parse_expr_suffix_operator(expr)? is some(o) then return parsed(o)
+    if parser.parse_expr_suffix_orelse(expr)? is some(o) then return parsed(o)
+    if parser.parse_expr_suffix_assign(expr)? is some(a) then return parsed(a)
+  }
   if parser.parse_expr_suffix_member(expr)? is some(mem) then return parsed(mem)
   if parser.parse_expr_suffix_call(expr)? is some(call) then return parsed(call)
   if parser.parse_expr_suffix_try(expr)? is some(try_) then return parsed(try_)
-  if operator_allowed then {
-    if parser.parse_expr_suffix_orelse(expr)? is some(orelse_)
-    then return parsed(orelse_)
-    if parser.parse_expr_suffix_assign_or_operator(expr)? is some(e)
-    then return parsed(e)
-  }
   no_match[AstExpr]()
 }
 
@@ -1055,26 +1060,29 @@ fun parse_expr_suffix_call(
     parser.consume_prefix(",") orelse break
   }
   parser.consume_prefix(")") orelse return bad_input[AstExpr](
-    "Expected closing parenthesis of the call.")
+    "Expected closing parenthesis of the call. Args: {args.len}")
   parsed(current.call(type_args, args))
 }
 
-fun parse_expr_suffix_assign_or_operator(
+fun parse_expr_suffix_operator(
   parser: &Parser, current: AstExpr,
 ): Result[Maybe[AstExpr], Str] {
   var operator = parser.parse_operator_name() orelse return no_match[AstExpr]()
-  if operator.equals("=") then {
-    var value = parser.parse_expr()? orelse return bad_input[AstExpr](
-      "Expected an expression on the right side of the assign.")
-    parsed(AstExpr.assign(AstAssign {
-      to = current.put_on_heap(),
-      value = value.put_on_heap(),
-    }))
-  } else {
-    var value = parser.parse_expr(false)? orelse return bad_input[AstExpr](
-      "Expected an expression on the right side of the operator.")
-    parsed(AstExpr.name(operator).call(none[Vec[Type]](), vec(current, value)))
-  }
+  var value = parser.parse_expr(false)? orelse return bad_input[AstExpr](
+    "Expected an expression on the right side of the operator.")
+  parsed(AstExpr.name(operator).call(none[Vec[Type]](), vec(current, value)))
+}
+
+fun parse_expr_suffix_assign(
+  parser: &Parser, current: AstExpr,
+): Result[Maybe[AstExpr], Str] {
+  parser.consume_prefix("=") orelse return no_match[AstExpr]()
+  var value = parser.parse_expr()? orelse return bad_input[AstExpr](
+    "Expected an expression on the right side of the assign.")
+  parsed(AstExpr.assign(AstAssign {
+    to = current.put_on_heap(),
+    value = value.put_on_heap(),
+  }))
 }
 
 fun parse_expr_suffix_orelse(
@@ -3718,6 +3726,7 @@ fun mangle(name: Str): Str {
     if c.equals(#]) then { mangled.write("_end_") continue }
     if c.equals(#() then { mangled.write("_withargs_") continue }
     if c.equals(#)) then { mangled.write("_end_") continue }
+    if c.equals(#.) then { mangled.write("_dot_") continue }
     if c.equals(#,) then { mangled.write("_and_") continue }
     if c.equals(#%) then { mangled.write("_percent_") continue }
     if c.equals(#!) then { mangled.write("_bang_") continue }
