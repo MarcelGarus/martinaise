@@ -1,70 +1,21 @@
-enum CType { char: U8, short: U16, int: U32, long: U64 }
-struct Foo {
-  value: U32,
-  flup: CType,
-  foo: &Foo,
-  baz: Maybe[Maybe[Str]],
-  blub: Map[Str, U64],
+fun foo() {
+  var a = 3
+  var b = some(4)
+  | if b is some(c) breakpoint
 }
 
-struct CompileFun {
-  foo: Foo,
-  context: &Context,
-  ast: Ast,
-  mono: &Mono,
-  fun_: &MonoFun,
-  type_env: Map[Str, Type], | maps fun type args to concrete types
-  next_label: U64,
-  vars: Vars[MonoSlotRef],
-  return_type: TypeSink,
-  | When lowering loops, breaks and continues don't know where to jump yet.
-  | Instead, they fill these structures with jump addresses that need to be
-  | adjusted later.
-  break_scopes: Stack[BreakScope],
-  continue_scopes: Stack[ContinueScope],
-}
-struct Context {} | omitted
-struct Ast { defs: Vec[AstDef] }
-struct AstDef {} | omitted
-struct Mono {} | omitted
-struct MonoFun {} | omitted
-struct Type { name: Str, args: Vec[Type] }
-struct Vars[T] { visible: Vec[VarInScope[T]] }
-struct VarInScope[T] { name: Str, data: T }
-struct MonoSlotRef { index: U64 }
-struct TypeSink { current: Maybe[Type] }
-struct BreakScope {
-  result: MonoSlotRef,
-  type: Maybe[Type],
-  breaks: Vec[U64],
-}
-struct ContinueScope { continues: Vec[U64] }
+fun +(a: U64, b: U64): U64 { a.add(b) }
+fun %!#~@^\`/&*+$-<>=(a: U64, b: U64): U64 { 42 }
 
-| fun asm_write(file: File, char: Char) {
-|   1.syscall(file.descriptor, char.&.to_address(), 1).ignore()
-| }
+fun print_name[T]() {
+  println(type[T]())
+}
 
 fun main(args: Slice[Str]): Never {
-  var stdout = File { descriptor = 1 }
-  if 3.equals(3) then stdout.asm_write(#H)
-  stdout.asm_write(#w)
-  exit(add(8, 35))
-}
+  println(3 + 4)
+  println(1 + 2 %!#~@^\`/&*+$-<>= 8)
 
-fun mar_add(a: U64, b: U64): U64 { asm_add(a, b) }
-
-fun main(): Never {
-  | libc_write(2, #H.&.to_address(), 1)
-  | libc_write(2, #e.&.to_address(), 1)
-  | libc_write(2, #l.&.to_address(), 1)
-  | libc_write(2, #l.&.to_address(), 1)
-  | libc_write(2, #o.&.to_address(), 1)
-  | libc_write(2, #!.&.to_address(), 1)
-  | libc_write(2, newline.&.to_address(), 1)
-  loop {
-    var foo = mar_add(7, 35)
-  }
-  if Bool.true then var foo = 3
-  | TODO: println("Hello, world!")
-  exit(0)
+  println(vec(1, 2, 3))
+  print_name[Slice[Str]]()
+  exit(0:U8)
 }
