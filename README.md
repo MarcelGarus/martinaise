@@ -2,7 +2,8 @@
 
 A small, statically typed, low-level language.
 
-To get a feeling for how Martinaise programs look, take a look at the files in the `advent` folder.
+For a quick tour of the language, have a look at the [tour.mar](tour.mar) file.
+To get a feeling for how Martinaise programs look, take a look at the files in the [advent](advent/) folder.
 To get an in-depth understanding of Martinaise, take a look at the standard library and the compiler, both of which are in the compiler folder.
 
 > [!IMPORTANT]
@@ -20,10 +21,6 @@ To get an in-depth understanding of Martinaise, take a look at the standard libr
   This project scratches that itch.
 - I've only written small projects in Zig.
   With this project, I try to get more familiar with Zig.
-
-## Quick Tour
-
-For a quick tour of the language, have a look at the [tour.mar] file.
 
 ## Usage
 
