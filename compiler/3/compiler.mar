@@ -534,6 +534,21 @@ fun parse_upper_name(parser: &Parser): Maybe[Str] {
   parser.parse_name()
 }
 
+fun parse_operator_name(parser: &Parser): Maybe[Str] {
+  parser.consume_whitespace()
+  var allowed = "%!#~@^\`/&*+$-<>="
+  var start = parser.cursor
+  loop {
+    var char = parser.current()
+    var is_operator = false
+    for c in allowed.chars do
+      if char.equals(c) then is_operator = true
+    if is_operator then parser.advance() else break
+  }
+  if parser.cursor.equals(start) then return none[Str]()
+  some(parser.code.substr(start, parser.cursor))
+}
+
 | Convenience methods for the three possible results of parsers returning a
 | Result[Maybe[T], Str].
 fun bad_input[T](error: Str): Result[Maybe[T], Str] {
@@ -590,9 +605,14 @@ fun parse_type_params(parser: &Parser): Result[Maybe[Vec[Str]], Str] {
 | expressions that are written behind other expressions and wrap them, for
 | example `foo orelse bar` being parsed into an orelse of foo and bar.
 fun parse_expr(parser: &Parser): Result[Maybe[AstExpr], Str] {
+  parser.parse_expr(true)
+}
+fun parse_expr(
+  parser: &Parser, operator_allowed: Bool,
+): Result[Maybe[AstExpr], Str] {
   var expr = parser.parse_expr_without_suffix()?
     orelse return no_match[AstExpr]()
-  loop expr = parser.parse_expr_suffix(expr)? orelse break
+  loop expr = parser.parse_expr_suffix(expr, operator_allowed)? orelse break
   parsed(expr)
 }
 fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Str] {
@@ -615,13 +635,15 @@ fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Str] {
   no_match[AstExpr]()
 }
 fun parse_expr_suffix(
-  parser: &Parser, expr: AstExpr,
+  parser: &Parser, expr: AstExpr, operator_allowed: Bool,
 ): Result[Maybe[AstExpr], Str] {
   if parser.parse_expr_suffix_member(expr)? is some(mem) then return parsed(mem)
   if parser.parse_expr_suffix_call(expr)? is some(call) then return parsed(call)
-  if parser.parse_expr_suffix_assign(expr)? is some(ass) then return parsed(ass)
   if parser.parse_expr_suffix_orelse(expr)? is some(ore) then return parsed(ore)
   if parser.parse_expr_suffix_try(expr)? is some(try_) then return parsed(try_)
+  if operator_allowed
+  then if parser.parse_expr_suffix_assign_or_operator(expr)? is some(e)
+    then return parsed(e)
   no_match[AstExpr]()
 }
 
@@ -1035,16 +1057,22 @@ fun parse_expr_suffix_call(
   parsed(current.call(type_args, args))
 }
 
-fun parse_expr_suffix_assign(
+fun parse_expr_suffix_assign_or_operator(
   parser: &Parser, current: AstExpr,
 ): Result[Maybe[AstExpr], Str] {
-  parser.consume_prefix("=") orelse return no_match[AstExpr]()
-  var value = parser.parse_expr()? orelse return bad_input[AstExpr](
-    "Expected an expression on the right side of the assign.")
-  parsed(AstExpr.assign(AstAssign {
-    to = current.put_on_heap(),
-    value = value.put_on_heap(),
-  }))
+  var operator = parser.parse_operator_name() orelse return no_match[AstExpr]()
+  if operator.equals("=") then {
+    var value = parser.parse_expr()? orelse return bad_input[AstExpr](
+      "Expected an expression on the right side of the assign.")
+    parsed(AstExpr.assign(AstAssign {
+      to = current.put_on_heap(),
+      value = value.put_on_heap(),
+    }))
+  } else {
+    var value = parser.parse_expr(false)? orelse return bad_input[AstExpr](
+      "Expected an expression on the right side of the operator.")
+    parsed(AstExpr.name(operator).call(none[Vec[Type]](), vec(current, value)))
+  }
 }
 
 fun parse_expr_suffix_orelse(
@@ -1089,7 +1117,9 @@ fun parse_expr_suffix_try(
 fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
   parser.consume_keyword("fun") orelse return no_match[AstFun]()
   var fun_name = parser.parse_lower_name()
-    orelse return bad_input[AstFun]("Expected the name of the function.")
+    orelse parser.parse_operator_name()
+    orelse return bad_input[AstFun]("
+      'Expected a lowercase name or operator name of the function.")
   var type_args = parser.parse_type_params()? orelse vec[Str]()
   var args = vec[AstFunArg]()
   parser.consume_prefix("(")
@@ -3687,8 +3717,22 @@ fun mangle(name: Str): Str {
     if c.equals(#() then { mangled.write("_withargs_") continue }
     if c.equals(#)) then { mangled.write("_end_") continue }
     if c.equals(#,) then { mangled.write("_and_") continue }
-    if c.equals(#&) then { mangled.write("_refto_") continue }
+    if c.equals(#%) then { mangled.write("_percent_") continue }
+    if c.equals(#!) then { mangled.write("_bang_") continue }
+    if c.equals(#~) then { mangled.write("_tilde_") continue }
+    if c.equals(#@) then { mangled.write("_at_") continue }
+    if c.equals(#^) then { mangled.write("_roof_") continue }
+    if c.equals(#\) then { mangled.write("_backslash_") continue }
+    if c.equals(#`) then { mangled.write("_tick_") continue }
+    if c.equals(#/) then { mangled.write("_slash_") continue }
+    if c.equals(#&) then { mangled.write("_amp_") continue }
     if c.equals(#*) then { mangled.write("_star_") continue }
+    if c.equals(#+) then { mangled.write("_plus_") continue }
+    if c.equals(#$) then { mangled.write("_dollar_") continue }
+    if c.equals(#-) then { mangled.write("_minus_") continue }
+    if c.equals(#<) then { mangled.write("_less_") continue }
+    if c.equals(#>) then { mangled.write("_greater_") continue }
+    if c.equals(#=) then { mangled.write("_equals_") continue }
     if c.equals(# ) then continue
     mangled.write(c)
   }
