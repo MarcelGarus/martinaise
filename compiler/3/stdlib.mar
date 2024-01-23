@@ -26,6 +26,7 @@
 | TODO: provide way to get memory layouts of types as runtime first-class values
 | TODO: breakpoint
 | TODO: stack traces
+| TODO: catch circular global definitions
 
 | Nothing (aka Unit or Void)  
 | Nothing is a type with only one instance. From an information theoretical
@@ -977,13 +978,46 @@ fun max[T](a: T, b: T): T { if a.is_greater_than(b) then a else b }
 | Using some builtin functions that only take type arguments (no value
 | arguments), you can use information about types at runtime.
 
-fun size_of_type[T](): U64 { ... }
-fun alignment_of_type[T](): U64 { ... } | chaotic
+fun size_of[T](): U64 { ... }
+fun alignment_of[T](): U64 { ... } | chaotic
 
 | The size you need to use if you want to store multiple instances of the type
 | after each other in memory.
-fun stride_size_of_type[T](): U64 {
-  size_of_type[T]().round_up_to_multiple_of(alignment_of_type[T]())
+fun stride_size_of[T](): U64 {
+  size_of[T]().round_up_to_multiple_of(alignment_of[T]())
+}
+
+| Makes the name of the type available at runtime.
+fun type[T](): Type { ... }
+
+struct Type { name: Str, args: Vec[Type] }
+
+fun type(name: Str): Type { type(name, vec[Type]()) }
+fun type(name: Str, args: Vec[Type]): Type { Type { name, args } }
+fun is_never(type: Type): Bool { type.equals(type("Never")) }
+
+fun write[W](writer: W, type: Type) {
+  if type.name.equals("&")
+  then writer."&{type.args.get(0)}"
+  else writer."{type.name}{type_args(type.args)}"
+}
+fun type_args[T](args: Vec[T]): TypeArgsFormat[T] { TypeArgsFormat { args } }
+struct TypeArgsFormat[T] { args: Vec[T] }
+fun write[W, T](writer: W, type_args: TypeArgsFormat[T]) {
+  if type_args.args.is_not_empty()
+  then writer."[{comma_separated(type_args.args)}]"
+}
+
+fun equals(a: Type, b: Type): Bool {
+  a.name.equals(b.name) orelse return false
+  a.args.len.equals(b.args.len) orelse return false
+  for zip in zip(a.args.iter(), b.args.iter()) do
+    zip.a.equals(zip.b) orelse return false
+  true
+}
+fun hash(hasher: &Hasher, type: Type) {
+  hasher.hash(type.name)
+  hasher.hash_all(type.args)
 }
 
 | References & Addresses  
@@ -1013,8 +1047,7 @@ fun to_reference[T](address: Address): &T asm {
 fun cast[A, B](a: A): B {
   | at least a small sanity check
   assert(
-    size_of_type[A]().equals(size_of_type[B]()),
-    "cast between types of different sizes",
+    size_of[A]().equals(size_of[B]()), "cast between types of different sizes",
   )
   a.&.to_address().to_reference[B]().*
 }
@@ -1048,11 +1081,9 @@ fun swap[T](a: &T, b: &T) {
 | at an offset of their stride size, return a reference to the item at the
 | offset.
 fun add_stride_offset[T](ref: &T, offset: U64): &T {
-  ref.to_address()
-    .to_U64()
-    .add(offset.multiply(stride_size_of_type[T]()))
-    .to_address()
-    .to_reference[T]()
+  ref.to_address().to_U64()
+    .add(offset.multiply(stride_size_of[T]()))
+    .to_address().to_reference[T]()
 }
 
 | Heap & Memory Allocations  
@@ -1083,7 +1114,7 @@ fun malloc(size: U64, alignment: U64): Address {
   address
 }
 fun uninitialized[T](): &T {
-  malloc(size_of_type[T](), alignment_of_type[T]()).to_reference[T]()
+  malloc(size_of[T](), alignment_of[T]()).to_reference[T]()
 }
 fun put_on_heap[T](value: T): &T {
   var ref = uninitialized[T]()
@@ -1109,10 +1140,8 @@ fun empty_slice[T](): Slice[T] {
 }
 fun uninitialized_slice[T](len: U64): Slice[T] {
   if len.equals(0) then return empty_slice[T]()
-  var data = malloc(
-    len.multiply(stride_size_of_type[T]()),
-    alignment_of_type[T](),
-  ).to_reference[T]()
+  var data = malloc(len.multiply(stride_size_of[T]()), alignment_of[T]())
+    .to_reference[T]()
   Slice { data, len }
 }
 fun filled_slice[T](len: U64, fill: T): Slice[T] {
@@ -1267,7 +1296,7 @@ fun to_char(byte: U8): Char { Char { byte } }
 fun to_str(chars: Slice[Char]): Str { chars.cast[Slice[Char], Str]() }
 fun to_str(bytes: Slice[U8]): Str { bytes.cast[Slice[U8], Str]() }
 fun to_str(chars: Vec[Char]): Str { chars.to_slice().to_str() }
-fun chars(str: Str): Slice[U8] { str.cast[Str, Slice[Chars]]() }
+fun chars(str: Str): Slice[Char] { str.cast[Str, Slice[Char]]() }
 fun bytes(str: Str): Slice[U8] { str.cast[Str, Slice[U8]]() }
 
 fun to_os_str(str: Str): OsStr {
@@ -1326,7 +1355,7 @@ fun is_empty(str: Str): Bool { str.len.equals(0) }
 fun get(str: Str, index: U64): Char { str.get_ref(index).* }
 fun get_ref(str: Str, index: U64): &Char {
   0.to(str.len).contains(index) orelse panic("index out of bounds")
-  str.chars.get_ref(index)
+  str.chars().get_ref(index)
 }
 
 fun compare_to(a: Str, b: Str): Ordering {

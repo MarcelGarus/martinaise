@@ -486,7 +486,9 @@ fun parse_name(parser: &Parser): Maybe[Str] {
   var start = parser.cursor
   loop {
     var char = parser.current()
-    if #A.until(#Z).contains(char).or(#a.until(#z).contains(char)).or(char.equals(#_))
+    if #A.until(#Z).contains(char)
+      .or(#a.until(#z).contains(char))
+      .or(char.equals(#_))
     then { parser.advance() continue }
     if #0.until(#9).contains(char) then
       if parser.cursor.equals(start)
@@ -590,7 +592,9 @@ fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Str] {
     "Nice try, Mik!")
   no_match[AstExpr]()
 }
-fun parse_expr_suffix(parser: &Parser, expr: AstExpr): Result[Maybe[AstExpr], Str] {
+fun parse_expr_suffix(
+  parser: &Parser, expr: AstExpr,
+): Result[Maybe[AstExpr], Str] {
   if parser.parse_expr_suffix_member(expr)? is some(mem) then return parsed(mem)
   if parser.parse_expr_suffix_call(expr)? is some(call) then return parsed(call)
   if parser.parse_expr_suffix_assign(expr)? is some(ass) then return parsed(ass)
@@ -973,7 +977,9 @@ fun parse_return(parser: &Parser): Result[Maybe[AstExpr], Str] {
   parsed(AstExpr.return_(expr.put_on_heap()))
 }
 
-fun parse_expr_suffix_member(parser: &Parser, current: AstExpr): Result[Maybe[AstExpr], Str] {
+fun parse_expr_suffix_member(
+  parser: &Parser, current: AstExpr,
+): Result[Maybe[AstExpr], Str] {
   parser.consume_prefix(".") orelse return no_match[AstExpr]()
   if parser.consume_prefix("*") then return parsed(current.member("*"))
   if parser.consume_prefix("&") then return parsed(current.member("&"))
@@ -989,7 +995,9 @@ fun parse_expr_suffix_member(parser: &Parser, current: AstExpr): Result[Maybe[As
   return bad_input[AstExpr]("Expected the name of a member.")
 }
 
-fun parse_expr_suffix_call(parser: &Parser, current: AstExpr): Result[Maybe[AstExpr], Str] {
+fun parse_expr_suffix_call(
+  parser: &Parser, current: AstExpr,
+): Result[Maybe[AstExpr], Str] {
   var type_args = parser.parse_type_args()?
   parser.consume_prefix("(")
     orelse return if type_args is some
@@ -1005,7 +1013,9 @@ fun parse_expr_suffix_call(parser: &Parser, current: AstExpr): Result[Maybe[AstE
   parsed(current.call(type_args, args))
 }
 
-fun parse_expr_suffix_assign(parser: &Parser, current: AstExpr): Result[Maybe[AstExpr], Str] {
+fun parse_expr_suffix_assign(
+  parser: &Parser, current: AstExpr,
+): Result[Maybe[AstExpr], Str] {
   parser.consume_prefix("=") orelse return no_match[AstExpr]()
   var value = parser.parse_expr()? orelse return bad_input[AstExpr](
     "Expected an expression on the right side of the assign.")
@@ -1015,7 +1025,9 @@ fun parse_expr_suffix_assign(parser: &Parser, current: AstExpr): Result[Maybe[As
   }))
 }
 
-fun parse_expr_suffix_orelse(parser: &Parser, current: AstExpr): Result[Maybe[AstExpr], Str] {
+fun parse_expr_suffix_orelse(
+  parser: &Parser, current: AstExpr,
+): Result[Maybe[AstExpr], Str] {
   parser.consume_keyword("orelse") orelse return no_match[AstExpr]()
   var binding =
     if parser.consume_prefix("(") then {
@@ -1045,7 +1057,9 @@ fun parse_expr_suffix_orelse(parser: &Parser, current: AstExpr): Result[Maybe[As
   }))
 }
 
-fun parse_expr_suffix_try(parser: &Parser, current: AstExpr): Result[Maybe[AstExpr], Str] {
+fun parse_expr_suffix_try(
+  parser: &Parser, current: AstExpr,
+): Result[Maybe[AstExpr], Str] {
   parser.consume_prefix("?") orelse return no_match[AstExpr]()
   parsed(AstExpr.try(current.put_on_heap()))
 }
@@ -1268,6 +1282,7 @@ fun write_line_number[W](writer: W, n: U64) {
 struct Mono {
   | Monomorphized type definitions.
   type_defs: Map[Type, MonoTypeDef],
+  layouts: Map[Type, MemLayout],
 
   | Global variables. They map to a function that computes the value.
   globals: Map[Str, MonoFun],
@@ -1298,7 +1313,7 @@ struct MonoFun {
 struct MonoSlot { type: Type, initial_value: MonoSlotValue }
 enum MonoSlotValue { uninitialized, arg: U64, int: U64, str: Str }
 struct MonoSlotRef { index: U64 }
-enum MonoFunKind { builtin, body: MonoFunBody, asm_: Str }
+enum MonoFunKind { body: MonoFunBody, asm_: Str }
 struct MonoFunBody {
   slots: Vec[MonoSlot],
   statements: Vec[MonoStatement],
@@ -1359,7 +1374,6 @@ fun write[W](writer: W, mono: Mono) {
 fun write[W](writer: W, name: Str, fun_: MonoFun) {
   writer."{name}{newline}"
   switch fun_.kind
-  case builtin writer."  <builtin>"
   case body(body) {
     for zip in body.slots.iter().enumerate() do {
       var index = zip.index
@@ -1399,6 +1413,40 @@ fun write[W](writer: W, expr: MonoExpr) {
   case member(member) writer."{member.of.*}.{member.name}"
   case nothing writer."_nothing"
   case never writer."_never"
+}
+
+fun push_slot(
+  slots: &Vec[MonoSlot], type: Type, initial_value: MonoSlotValue
+): MonoSlotRef {
+  var ref = MonoSlotRef { index = slots.len }
+  slots.&.push(MonoSlot { type, initial_value })
+  ref
+}
+fun push_slot(slots: &Vec[MonoSlot], type: Type): MonoSlotRef {
+  slots.push_slot(type, MonoSlotValue.uninitialized)
+}
+fun push_assign(
+  statements: &Vec[MonoStatement], to: MonoExpr, value: MonoExpr,
+) {
+  statements.push(MonoStatement.assign(MonoAssign { to, value }))
+}
+fun push_call(
+  statements: &Vec[MonoStatement], to: MonoSlotRef, fun_: Str,
+  args: Vec[MonoExpr],
+) {
+  statements.push(MonoStatement.call(MonoCall { to, fun_, args }))
+}
+fun push_ref(statements: &Vec[MonoStatement], to: MonoSlotRef, of: MonoExpr) {
+  statements.push(MonoStatement.ref(MonoRef { to, of }))
+}
+fun expr(slot_ref: MonoSlotRef, type: Type): MonoExpr {
+  MonoExpr { kind = MonoExprKind.slot(slot_ref), type }
+}
+fun member(of: MonoExpr, name: Str, type: Type): MonoExpr {
+  MonoExpr {
+    kind = MonoExprKind.member(MonoMember { of = of.put_on_heap(), name }),
+    type,
+  }
 }
 
 | Context  
@@ -1689,6 +1737,7 @@ fun monomorphize(ast: Ast): Result[Mono, Str] {
   var context = context()
   var mono = Mono {
     type_defs = map[Type, MonoTypeDef](),
+    layouts = map[Type, MemLayout](),
     globals = map[Str, MonoFun](),
     globals_init_order = vec[Str](),
     funs = map[Str, MonoFun](),
@@ -1862,6 +1911,7 @@ fun write[W](writer: W, signature: CallSignature) {
 | example, monomorphizing Map[T, Bool] with {T: U64} results in Map[U64, Bool]
 | and also creates all the required defs (Map[U64, Bool], MapBucket[U64, Bool],
 | Slice[MapBucket[U64, Bool]], etc.)
+| Also saves the corresponding layout in the Mono.
 fun monomorphize(
   type: Type, type_env: Map[Str, Type], ast: Ast, mono: &Mono
 ): Result[Type, Str] {
@@ -1878,8 +1928,6 @@ fun monomorphize(
   | TODO: explain
   mono.type_defs.&.put(type,
     MonoTypeDef.opaque_(MonoOpaqueType { size = 0, alignment = 0 }))
-
-  eprintln("Monoing {type}")
 
   switch ast.lookup_type(type.name)?
   case opaque_(opaque_) mono.type_defs.&.put(type, MonoTypeDef.opaque_(
@@ -1922,6 +1970,9 @@ fun monomorphize(
     mono.type_defs.&.put(type, MonoTypeDef.enum_(MonoEnum { variants }))
   }
 
+  var layout = type.mem_layout(mono.layouts.&, mono.type_defs)
+  mono.layouts.&.put(type, layout)
+
   ok[Type, Str](type)
 }
 
@@ -1939,7 +1990,7 @@ fun monomorphize(
     type_args = vec[Type](),
     arg_types = vec[Type](),
     return_type = type("_"),
-    kind = MonoFunKind.builtin,
+    kind = MonoFunKind.asm_("<placeholder>"),
   }
 
   var compile_fun = CompileFun {
@@ -1981,7 +2032,7 @@ fun monomorphize(
 | on the mono.
 fun monomorphize(
   fun_: AstFun, type_env: Map[Str, Type],
-  context: &Context, ast: Ast, mono: &Mono
+  context: &Context, ast: Ast, mono: &Mono,
 ): Result[Str, Str] {
   var arg_types = vec[Type]() {
     for arg in fun_.args do
@@ -2000,12 +2051,14 @@ fun monomorphize(
 
   | TODO: explain
   mono.funs.&.put(signature, MonoFun {
-    type_args, arg_types, return_type, kind = MonoFunKind.builtin
+    type_args, arg_types, return_type, kind = MonoFunKind.asm_("<placeholder>")
   })
 
   var kind =
     switch fun_.kind
-    case builtin MonoFunKind.builtin
+    case builtin MonoFunKind.body(monomorphize_builtin_fun(
+      context, ast, mono, fun_, type_args,
+    )?)
     case asm_(code) MonoFunKind.asm_(code)
     case body(body) {
       var slots = vec[MonoSlot]()
@@ -2052,6 +2105,107 @@ fun monomorphize(
   context.pop()
 
   ok[Str, Str](signature)
+}
+
+fun monomorphize_builtin_fun(
+  context: &Context, ast: Ast, mono: &Mono, fun_: AstFun, type_args: Vec[Type],
+): Result[MonoFunBody, Str] {
+  if fun_.name.equals("size_of") then ok[MonoFunBody, Str](MonoFunBody {
+    slots = vec(MonoSlot {
+      type = type("U64"),
+      initial_value =
+        MonoSlotValue.int(mono.layouts.get(type_args.get(0)).size),
+    }),
+    statements = vec(MonoStatement.return_(MonoExpr {
+      type = type("U64"),
+      kind = MonoExprKind.slot(MonoSlotRef { index = 0 }),
+    })),
+  })
+  else if fun_.name.equals("alignment_of") then ok[MonoFunBody, Str](
+    MonoFunBody {
+      slots = vec(MonoSlot {
+        type = type("U64"),
+        initial_value =
+          MonoSlotValue.int(mono.layouts.get(type_args.get(0)).alignment),
+      }),
+      statements = vec(MonoStatement.return_(MonoExpr {
+        type = type("U64"),
+        kind = MonoExprKind.slot(MonoSlotRef { index = 0 }),
+      })),
+    },
+  )
+  else if fun_.name.equals("type") then {
+    var compile_fun = CompileReflectionFun {
+      context, ast, mono,
+      slots = vec[MonoSlot](),
+      statements = vec[MonoStatement](),
+      type_to_reflection_type = map[Type, MonoSlotRef](),
+    }
+    var reflected = type_args.get(0).compile_reflection(compile_fun.&)?
+    compile_fun.statements.&.push(MonoStatement.return_(reflected))
+    ok[MonoFunBody, Str](MonoFunBody {
+      slots = compile_fun.slots, statements = compile_fun.statements,
+    })
+  }
+  else error[MonoFunBody, Str]("Unknown builtin {fun_.name}")
+}
+struct CompileReflectionFun {
+  context: &Context,
+  ast: Ast,
+  mono: &Mono,
+  slots: Vec[MonoSlot],
+  statements: Vec[MonoStatement],
+  type_to_reflection_type: Map[Type, MonoSlotRef],
+}
+fun compile_reflection(
+  type: Type, out: &CompileReflectionFun,
+): Result[MonoExpr, Str] {
+  | Almost looks like we're writing C now.
+  var nothing_t = type("Nothing")
+  var str_t = type("Str")
+  var type_t = type("Type")
+  var vec_of_type_t = type("Vec", vec(type_t))
+  var ref_of_vec_of_type_t = type("&", vec(vec_of_type_t))
+
+  if out.type_to_reflection_type.get_maybe(type) is some(ref)
+  then return ok[MonoExpr, Str](MonoExpr {
+    type = type_t, kind = MonoExprKind.slot(ref),
+  })
+
+  var vec_slot = out.slots.&.push_slot(vec_of_type_t)
+  var make_vec = out.ast.lookup_fun("vec", some(vec(type_t)), vec[Type]())?
+  var make_vec_type_env = make_vec.type_env
+  var make_vec = make_vec.fun_
+    .monomorphize(make_vec_type_env, out.context, out.ast, out.mono)?
+  out.statements.&.push_call(vec_slot, make_vec, vec[MonoExpr]())
+
+  var ref_vec_slot = out.slots.&.push_slot(ref_of_vec_of_type_t)
+  out.statements.&.push_ref(ref_vec_slot, vec_slot.expr(ref_of_vec_of_type_t))
+
+  for arg in type.args do {
+    var arg_slot = out.slots.&.push_slot(nothing_t)
+    var push = out.ast
+      .lookup_fun("push", none[Vec[Type]](), vec(ref_of_vec_of_type_t, type_t))?
+    var push_type_env = push.type_env
+    var push = push.fun_
+      .monomorphize(push_type_env, out.context, out.ast, out.mono)?
+    var arg = arg.compile_reflection(out)?
+    out.statements.&.push_call(
+      arg_slot, push, vec(ref_vec_slot.expr(ref_of_vec_of_type_t), arg))
+  }
+
+  var type_slot = out.slots.&.push_slot(type_t)
+  var name_slot = out.slots.&.push_slot(str_t, MonoSlotValue.str(type.name))
+  out.statements.&.push_assign(
+    type_slot.expr(type_t).member("name", str_t),
+    name_slot.expr(str_t),
+  )
+  out.statements.&.push_assign(
+    type_slot.expr(type_t).member("args", vec_of_type_t),
+    vec_slot.expr(vec_of_type_t),
+  )
+
+  ok[MonoExpr, Str](type_slot.expr(type_t))
 }
 
 struct CompileFun {
@@ -2737,7 +2891,6 @@ fun compile_call(
 
 | Memory Layout  
 | Finding efficient memory layouts for types is a bit tricky.
-|
 
 struct MemLayout {
   type: Type,
@@ -2750,13 +2903,8 @@ enum MemLayoutStructPart { padding: U64, field: MemLayoutField }
 struct MemLayoutField { name: Str, layout: MemLayout }
 struct MemLayoutVariant { name: Str, layout: MemLayout }
 
-fun mem_layout(type_defs: Map[Type, MonoTypeDef]): Map[Type, MemLayout] {
-  var layouts = map[Type, MemLayout]()
-  for def in type_defs do def.key.mem_layout(layouts.&, type_defs)
-  layouts
-}
 fun mem_layout(
-  type: Type, layouts: &Map[Type, MemLayout], type_defs: Map[Type, MonoTypeDef]
+  type: Type, layouts: &Map[Type, MemLayout], type_defs: Map[Type, MonoTypeDef],
 ): MemLayout {
   if layouts.get_maybe(type) is some(layout) then return layout else {
     var layout = type.calculate_mem_layout(layouts, type_defs)
@@ -3077,7 +3225,6 @@ fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, U64] {
 }
 
 fun write_as_asm[W](writer: W, mono: Mono) {
-  var layouts = mono.type_defs.mem_layout()
   var arg_layouts = map[Str, MemLayout]() | maps fun signature to arg struct mem layout
   var string_literals = vec[Str]() | will be put into rodata section at the end
 
@@ -3090,7 +3237,7 @@ fun write_as_asm[W](writer: W, mono: Mono) {
       })
     arg_layouts.&.put(name, calculate_mem_layout(
       type("arguments of {name}"), MonoTypeDef.struct_(arg_struct),
-      layouts.&, mono.type_defs,
+      mono.layouts.&, mono.type_defs,
     ))
   }
 
@@ -3111,7 +3258,7 @@ fun write_as_asm[W](writer: W, mono: Mono) {
     '_globals:{newline}"
   for global in mono.globals do
     writer."  .{global.key} resb 
-      '{layouts.get(global.value.return_type).size}{newline}"
+      '{mono.layouts.get(global.value.return_type).size}{newline}"
   writer."{newline}"
 
   writer."
@@ -3184,9 +3331,7 @@ fun write_as_asm[W](writer: W, mono: Mono) {
   for global in mono.globals do {
     writer."_init_global_{global.key}:{newline}"
     writer.write_body_as_asm(
-      "_init_global", global.value, string_literals.&,
-      mono, layouts, arg_layouts,
-    )
+      "_init_global", global.value, string_literals.&, mono, arg_layouts)
     writer."{newline}"
   }
   writer."_init_globals:{newline}"
@@ -3207,7 +3352,7 @@ fun write_as_asm[W](writer: W, mono: Mono) {
       "; {signature}{newline}
       '{signature.mangle()}:{newline}"
     writer.write_body_as_asm(
-      signature, fun_, string_literals.&, mono, layouts, arg_layouts)
+      signature, fun_, string_literals.&, mono, arg_layouts)
     writer."{newline}"
   }
 
@@ -3261,27 +3406,11 @@ fun write_as_asm[W](writer: W, mono: Mono) {
 
 fun write_body_as_asm[W](
   writer: W, signature: Str, fun_: MonoFun,
-  string_literals: &Vec[Str],
-  mono: Mono, layouts: Map[Type, MemLayout], arg_layouts: Map[Str, MemLayout],
+  string_literals: &Vec[Str], mono: Mono, arg_layouts: Map[Str, MemLayout],
 ) {
-  switch fun_.kind
-  case asm_(code) writer."{code}{newline}"
-  case builtin {
-    if signature.starts_with("size_of_type")
-    then writer."
-      '  mov r8, {layouts.get(fun_.type_args.get(0)).size}{newline}
-      '  mov r9, [rsp + 8]{newline}
-      '  mov [r9], r8{newline}
-      '  ret"
-    else if signature.starts_with("alignment_of_type")
-    then writer."
-      '  mov r8, {layouts.get(fun_.type_args.get(0)).alignment}{newline}
-      '  mov r9, [rsp + 8]{newline}
-      '  mov [r9], r8{newline}
-      '  ret"
-    else panic("Unknown builtin fun {signature}")
-  }
-  case body(body) {
+  var layouts = mono.layouts
+
+  switch fun_.kind case asm_(code) writer."{code}{newline}" case body(body) {
     var labels = vec[Str]().&
 
     var arg_offsets =
