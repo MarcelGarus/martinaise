@@ -1344,7 +1344,6 @@ fun to_str(builder: StringBuilder): Str {
   builder.chars.to_slice().to_str()
 }
 
-fun len(str: Str): U64 { str.chars.len }
 fun is_empty(str: Str): Bool { str.len == 0 }
 fun get(str: Str, index: U64): Char { str.get_ref(index).* }
 fun get_ref(str: Str, index: U64): &Char {

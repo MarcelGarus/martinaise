@@ -414,7 +414,7 @@ fun is_whitespace(char: Char): Bool {
 
 fun consume_whitespace(parser: &Parser) {
   loop {
-    if parser.cursor >= parser.code.len() then break
+    if parser.cursor >= parser.code.len then break
     var char = parser.current()
     if char.is_whitespace() then {
       parser.cursor = parser.cursor.inc()
@@ -422,7 +422,7 @@ fun consume_whitespace(parser: &Parser) {
     }
     if char == #| then {
       loop {
-        if parser.cursor >= parser.code.len() then break
+        if parser.cursor >= parser.code.len then break
         if parser.current() == newline then break
         parser.cursor = parser.cursor.inc()
       }
@@ -434,7 +434,7 @@ fun consume_whitespace(parser: &Parser) {
 fun consume_prefix(parser: &Parser, prefix: Str): Bool {
   parser.consume_whitespace()
   parser.rest().starts_with(prefix) orelse return false
-  parser.advance_by(prefix.len())
+  parser.advance_by(prefix.len)
   true
 }
 | Also makes sure there's a non-letter following, so consume_keyword("fun")
@@ -442,15 +442,15 @@ fun consume_prefix(parser: &Parser, prefix: Str): Bool {
 fun consume_keyword(parser: &Parser, keyword: Str): Bool {
   parser.consume_whitespace()
   parser.rest().starts_with(keyword) orelse return false
-  if parser.rest().len() > keyword.len() then {
-    var char_after = parser.rest().get(keyword.len())
+  if parser.rest().len > keyword.len then {
+    var char_after = parser.rest().get(keyword.len)
     var goes_on = char_after == #_
       .or(#A.until(#Z).contains(char_after))
       .or(#a.until(#z).contains(char_after))
       .or(#0.until(#9).contains(char_after))
     if goes_on then return false
   }
-  parser.advance_by(keyword.len())
+  parser.advance_by(keyword.len)
   true
 }
 
@@ -489,7 +489,7 @@ fun parse_operator_name(parser: &Parser): Maybe[Str] {
   loop {
     var char = parser.current()
     var is_operator = false
-    for c in allowed.chars do
+    for c in allowed.chars() do
       if char == c then is_operator = true
     if is_operator then parser.advance() else break
   }
@@ -1195,7 +1195,7 @@ fun parse_def(parser: &Parser): Result[Maybe[AstDef], Str] {
 fun parse_defs(parser: &Parser): Result[Vec[AstDef], Str] {
   var defs = vec[AstDef]()
   loop switch parser.parse_def()? case some(d) defs.&.push(d) case none break
-  if parser.cursor < parser.code.len()
+  if parser.cursor < parser.code.len
   then return error[Vec[AstDef], Str]("Expected a definition.")
   ok[Vec[AstDef], Str](defs)
 }
@@ -1238,8 +1238,8 @@ fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
   var lines = vec[Str]()
   var current_line = string_builder().&
   var offset_in_line = 0
-  for i in 0.to(code.len()) do {
-    if i == offset then offset_in_line = current_line.len()
+  for i in 0.to(code.len) do {
+    if i == offset then offset_in_line = current_line.len
     if code.get(i) == newline
     then {
       lines.&.push(current_line.to_str())
@@ -1516,9 +1516,9 @@ fun print_status(context: Context) {
     for char in signature.iter().enumerate() do
       if {char.item == #(} / {char.item == #[} then { i = char.index break }
     out.write(signature.substr(0, i))
-    if out.len() > 80 then break
+    if out.len > 80 then break
   }
-  if out.len() > 80 then {
+  if out.len > 80 then {
     out.truncate_to_len(77)
     out.write("...")
   }
@@ -3171,11 +3171,11 @@ fun fit_to_size(str: Str, size: U64): Str { str.fit_to_size(size, " ") }
 fun fit_to_size(str: Str, size: U64, padding: Str): Str {
   if size == 0 then return ""
   if size == 1 then return "…"
-  if str.len() >= size then str = "{str.first(size.dec())}…"
+  if str.len >= size then str = "{str.first(size.dec())}…"
 
   var string = string_builder().&
   string.write(str)
-  for i in str.len().to(size) do string.write(padding)
+  for i in str.len.to(size) do string.write(padding)
   string.to_str()
 }
 fun write_n[W](writer: W, n: U64, str: Str) {
@@ -3563,7 +3563,7 @@ fun write_body_as_asm[W](
         writer."
           '          mov r8, qword _str_{index}{newline}
           '          mov [rsp + {offset}], r8{newline}
-          '          mov r8, {str.chars.len}{newline}
+          '          mov r8, {str.len}{newline}
           '          mov [rsp + {offset.add(8)}], r8{newline}"
       }
     }
@@ -3869,7 +3869,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   var input = "{stdlib}{newline}{file}{newline}"
 
   print_on_same_line("Parsing {file_path}")
-  var ast = parse(input, stdlib.len())
+  var ast = parse(input, stdlib.len)
     orelse(error) { eprintln(error) return false }
   if command is ast then { println(ast) return true }
   var ast = ast.prepare()
