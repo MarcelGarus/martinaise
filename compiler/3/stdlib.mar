@@ -409,14 +409,14 @@ fun syscall(
 fun syscall_read(fd: U64, buf: U64, count: U64): U64                    {   0.syscall(fd, buf, count) }
 fun syscall_write(fd: U64, buf: U64, count: U64): U64                   {   1.syscall(fd, buf, count) }
 fun syscall_open(filename: U64, flags: U64, mode: U64): U64             {   2.syscall(filename, flags, mode) }
-fun syscall_close(fd: U64): U64                                         {   3.syscall(fd, buf, count) }
+fun syscall_close(fd: U64): U64                                         {   3.syscall(fd) }
 fun syscall_fork(): U64                                                 {  57.syscall() }
 fun syscall_execve(filename: U64, argv: U64, envp: U64): U64            {  59.syscall(filename, argv, envp) }
 fun syscall_exit(error_code: U64): U64                                  {  60.syscall(error_code) }
 fun syscall_wait4(pid: U64, stat_addr: U64, options: U64, ru: U64): U64 {  61.syscall(pid, stat_addr, options, ru) }
 fun syscall_creat(pathname: U64, mode: U64): U64                        {  85.syscall(pathname, mode) }
 fun syscall_time(tloc: U64): U64                                        { 201.syscall(tloc) }
-fun syscall_inotify_add_watch(fd: U64, path: U64, mask: U64): U64       { 254.syscall(flags) }
+fun syscall_inotify_add_watch(fd: U64, path: U64, mask: U64): U64       { 254.syscall(fd, path, mask) }
 fun syscall_inotify_init1(flags: U64): U64                              { 294.syscall(flags) }
 
 | Many syscalls return 0 or -1 if an operation didn't work. Here are helpers for
