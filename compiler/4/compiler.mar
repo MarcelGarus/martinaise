@@ -241,9 +241,9 @@ fun write[W](writer: W, enum_: AstEnum) {
 }
 
 struct Indent { amount: U64 }
-fun inc(indent: Indent): Indent { Indent { amount = indent.amount.inc() } }
+fun inc(indent: Indent): Indent { Indent { amount = indent.amount + 1 } }
 fun write[W](writer: W, indent: Indent) {
-  for i in 0..indent.amount.multiply(2) do writer." "
+  for i in 0..{2 * indent.amount} do writer." "
 }
 struct Indented[T] { indent: Indent, what: T }
 fun write[W, T](writer: W, indented: Indented[T]) {
@@ -406,7 +406,7 @@ struct Parser { code: Str, cursor: U64 }
 fun current(parser: Parser): Char { parser.code.get(parser.cursor) }
 fun rest(parser: Parser): Str { parser.code.without_first(parser.cursor) }
 fun advance(parser: &Parser) { parser.advance_by(1) }
-fun advance_by(parser: &Parser, n: U64) { parser.cursor = parser.cursor.add(n) }
+fun advance_by(parser: &Parser, n: U64) { parser.cursor = parser.cursor + n }
 | TODO: move into stdlib?
 fun is_whitespace(char: Char): Bool {
   {char == space} / {char == tab} / {char == newline}
@@ -417,14 +417,14 @@ fun consume_whitespace(parser: &Parser) {
     if parser.cursor >= parser.code.len then break
     var char = parser.current()
     if char.is_whitespace() then {
-      parser.cursor = parser.cursor.inc()
+      parser.cursor = parser.cursor + 1
       continue
     }
     if char == #| then {
       loop {
         if parser.cursor >= parser.code.len then break
         if parser.current() == newline then break
-        parser.cursor = parser.cursor.inc()
+        parser.cursor = parser.cursor + 1
       }
       continue
     }
@@ -604,19 +604,18 @@ fun parse_expr_suffix(
 fun parse_digits(parser: &Parser, radix: U64): Result[Maybe[U64], Str] {
   var start = parser.cursor
   var num = 0
-  if radix > 10.add(26)
-  then return bad_input[U64]("The radix is too big.")
+  if radix > {10 + 26} then return bad_input[U64]("The radix is too big.")
   loop {
     var char = parser.current()
     if {#0 ..+ min(radix, 10).to_U8()}.contains(char) then {
-      num = num.multiply(radix).add(char.subtract(#0).to_U64())
+      num = num * radix + {char - #0}.to_U64()
       parser.advance()
       continue
     }
     if radix >= 10
-    then if {#a ..+ min(radix.subtract(10), 26).to_U8()}.contains(char)
+    then if {#a ..+ min(radix - 10, 26).to_U8()}.contains(char)
       then {
-        num = num.multiply(radix).add(char.subtract(#a).add(10:U8).to_U64())
+        num = num * radix - {char  -#a + 10:U8}.to_U64()
         parser.advance()
         continue
       }
@@ -696,12 +695,12 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
   loop
       if parser.rest().get(metaness) != #'
       then break
-      else metaness = metaness.inc()
+      else metaness = metaness + 1
   if parser.rest().get(metaness) == #"
   then return if metaness >= 1
     then bad_input[Vec[AstExpr]]("Expected a double quote.")
     else no_match[Vec[AstExpr]]()
-  parser.advance_by(metaness.inc())
+  parser.advance_by(metaness + 1)
 
   var parts = vec[AstExpr]()
   var part = vec[Char]()
@@ -710,10 +709,10 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
     var num_braces = 0
     loop
       if parser.rest().get(num_braces) == #{
-      then num_braces = num_braces.inc()
+      then num_braces = num_braces + 1
       else break
-    if num_braces >= metaness.inc() then {
-      for i in 0..num_braces.subtract(metaness.inc()) do part.&.push(#{)
+    if num_braces >= {metaness + 1} then {
+      for i in 0..{num_braces - metaness - 1} do part.&.push(#{)
       if part.is_not_empty() then {
         parts.&.push(AstExpr.str(part.to_str()))
         part = vec[Char]()
@@ -751,7 +750,7 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
       is_followed_by_enough_single_quotes
     } then {
       if part.is_not_empty() then parts.&.push(AstExpr.str(part.to_str()))
-      parser.advance_by(metaness.inc())
+      parser.advance_by(metaness + 1)
       return parsed(parts)
     }
     | everything else -> literal character
@@ -1210,7 +1209,7 @@ fun parse(code: Str, stdlib_size: U64): Result[Ast, Str] {
       parser.code, parser.cursor, error))
     else error[Ast, Str](format_error_with_context(
       parser.code.without_first(stdlib_size),
-      parser.cursor.subtract(stdlib_size),
+      parser.cursor - stdlib_size,
       error
     ))
   }
@@ -1252,13 +1251,13 @@ fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
   | offset_in_line is the offset into the last complete line.
   var num_lines_to_display = min(lines.len, 4)
   var out = string_builder().&
-  for line_number in lines.len.subtract(num_lines_to_display)..lines.len do {
+  for line_number in {lines.len - num_lines_to_display}..lines.len do {
     out.write_line_number(line_number)
     out." | {lines.get(line_number)}{newline}"
   }
-  for i in 0..7.add(offset_in_line) do out." "
+  for i in 0..{7 + offset_in_line} do out." "
   out."^{newline}"
-  for i in 0..7.add(offset_in_line) do out." "
+  for i in 0..{7 + offset_in_line} do out." "
   out.write(error)
   out.to_str()
 }
@@ -1414,9 +1413,9 @@ fun finish(solver: TypeSolver): Result[Map[Str, Type], Str] {
 | var foo = 2
 | var bar = 3
 | var baz = {
-|   var foo = foo.inc()
-|   bar = bar.dec()
-|   foo.multiply(2)
+|   var foo = foo + 1
+|   bar = bar - 1
+|   foo * 2
 | }
 |
 | ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐
@@ -2267,7 +2266,7 @@ fun push_placeholder(self: &CompileFun): U64 {
 }
 fun push_label(self: &CompileFun): MonoLabel {
   var label = MonoLabel { id = self.next_label }
-  self.next_label = self.next_label.inc()
+  self.next_label = self.next_label + 1
   self.push(MonoStatement.label(label))
   label
 }
@@ -2944,9 +2943,10 @@ fun calculate_mem_layout(
       var size = 0
       for field in permutation do {
         var field = remaining_fields.get(field)
+        | TODO: use round_up_to_multiple of
         size = size
-          .add(size.needed_for_multiple_of(field.layout.alignment)) | padding
-          .add(field.layout.size) | the field itself
+          + size.needed_for_multiple_of(field.layout.alignment) | padding
+          + field.layout.size | the field itself
       }
       if size < smallest_size_of_remaining then {
         smallest_size_of_remaining = size
@@ -2959,17 +2959,17 @@ fun calculate_mem_layout(
     var size = 0
     for field in fields_sized_multiple_of_alignment do {
       parts.&.push(MemLayoutStructPart.field(field))
-      size = size.add(field.layout.size)
+      size = size + field.layout.size
     }
     for index in smallest_permutation do {
       var field = remaining_fields.get(index)
       var padding = size.needed_for_multiple_of(field.layout.alignment)
       if padding > 0 then {
         parts.&.push(MemLayoutStructPart.padding(padding))
-        size = size.add(padding)
+        size = size + padding
       }
       parts.&.push(MemLayoutStructPart.field(field))
-      size = size.add(field.layout.size)
+      size = size + field.layout.size
     }
     MemLayout { type, size, alignment, kind = MemLayoutKind.struct_(parts) }
   }
@@ -2983,13 +2983,13 @@ fun calculate_mem_layout(
       size = max(size, layout.size)
       variants.&.push(MemLayoutVariant { name = variant.name, layout })
     }
-    var size = size.inc() | one byte for the tag
+    var size = size + 1 | one byte for the tag
     MemLayout { type, size, alignment, kind = MemLayoutKind.enum_(variants) }
   }
 }
 
 fun needed_for_multiple_of(number: U64, factor: U64): U64 {
-  number.round_up_to_multiple_of(factor).subtract(number)
+  number.round_up_to_multiple_of(factor) - number
 }
 
 | TODO: move to stdlib?
@@ -3003,21 +3003,21 @@ struct Permutations { is_first: Bool, last: Slice[U64] }
 fun next(self: &Permutations): Maybe[Slice[U64]] {
   if self.is_first then { self.is_first = false return some(self.last) }
   if self.last.is_empty() then return none[Slice[U64]]()
-  var index = self.last.len.dec()
+  var index = self.last.len - 1
   loop {
     if index == 0 then { return none[Slice[U64]]() }
-    index = index.dec()
-    if self.last.get(index) < self.last.get(index.inc()) then {
+    index = index - 1
+    if self.last.get(index) < self.last.get(index + 1) then {
       | Find the smallest element after the index that is greater than
       | list[index].
-      var smallest_index = index.inc()
-      var smallest = self.last.get(index.inc())
-      for j in index.add(2)..self.last.len do
+      var smallest_index = index + 1
+      var smallest = self.last.get(index + 1)
+      for j in {index + 2}..self.last.len do
         if {self.last.get(j) > self.last.get(index)}
           & {self.last.get(j) < smallest}
         then smallest_index = j
       swap(self.last.get_ref(index), self.last.get_ref(smallest_index))
-      self.last.without_first(index.inc()).&.sort()
+      self.last.without_first(index + 1).&.sort()
       return some(self.last)
     }
   }
@@ -3069,14 +3069,14 @@ fun write[W](writer: W, layout: MemLayout) {
   loop {
     if byte > layout.size then break
     writer."▏{"{byte}".fit_to_size(7)}"
-    byte = byte.add(8)
+    byte = byte + 8
   }
   writer."{newline}"
 
   for line in mem_writer.lines.iter().enumerate() do {
     writer.write(line.item.to_str())
     if line.index == 0 then writer." {layout.size}"
-    if line.index < mem_writer.lines.len.dec() then writer.writeln()
+    if line.index < {mem_writer.lines.len - 1} then writer.writeln()
   }
 }
 fun num_lines_when_printing(layout: MemLayout): U64 {
@@ -3091,13 +3091,13 @@ fun num_lines_when_printing(layout: MemLayout): U64 {
         case padding 1
         case field(field) field.layout.num_lines_when_printing()
       )
-    max.add(3)
+    max + 3
   }
   case enum_(variants) {
     var sum = 0
     for variant in variants do
-      sum = sum.add(max(1, variant.layout.num_lines_when_printing())).inc()
-    sum.add(2)
+      sum = sum + max(1, variant.layout.num_lines_when_printing()) + 1
+    sum + 2
   }
 }
 fun write(
@@ -3115,27 +3115,27 @@ fun write(
 
   switch layout.kind
   case opaque_
-    writer.line(line.inc())."{format(layout.type).fit_to_size(layout.size)}"
+    writer.line(line + 1)."{format(layout.type).fit_to_size(layout.size)}"
   case struct_(parts) {
-    writer.line(line.inc())."{format(layout.type).fit_to_size(layout.size)}"
-    var last_line = line.add(layout.num_lines_when_printing())
+    writer.line(line + 1)."{format(layout.type).fit_to_size(layout.size)}"
+    var last_line = line + layout.num_lines_when_printing()
     for part in parts do
       switch part
       case padding(padding) {
-        writer.line(line.add(2)).write_n(padding, " ")
-        writer.line(line.add(3)).write_n(padding, "{MemShade.padding}")
-        writer.shade(line.add(3)).* = MemShade.padding
-        for line in line.add(4)..last_line do {
+        writer.line(line + 2).write_n(padding, " ")
+        writer.line(line + 3).write_n(padding, "{MemShade.padding}")
+        writer.shade(line + 3).* = MemShade.padding
+        for line in {line + 4}..last_line do {
           writer.line(line).write_n(padding, " ")
           writer.shade(line).* = MemShade.padding
         }
       }
       case field(field) {
-        writer.line(line.add(2))
+        writer.line(line + 2)
           .write(field.name.fit_to_size(field.layout.size))
-        writer.write(field.layout, line.add(3), shade)
+        writer.write(field.layout, line + 3, shade)
         for line
-        in line.add(3).add(field.layout.num_lines_when_printing())..last_line
+        in {line + 3 + field.layout.num_lines_when_printing()}..last_line
         do {
           writer.line(line).write_n(field.layout.size, " ")
           writer.shade(line).* = MemShade.padding
@@ -3143,26 +3143,26 @@ fun write(
       }
   }
   case enum_(variants) {
-    writer.line(line.inc())
-      ."{format(layout.type).fit_to_size(layout.size.dec())}│"
+    writer.line(line + 1)
+      ."{format(layout.type).fit_to_size(layout.size - 1)}│"
     var start_line = line
-    var line = line.add(2)
+    var line = line + 2
     for variant in variants.iter().enumerate() do {
-      var is_last = variant.index == variants.len.dec()
+      var is_last = variant.index == variants.len - 1
       var variant = variant.item
-      var padding = layout.size.subtract(variant.layout.size).dec()
+      var padding = layout.size - variant.layout.size - 1
       writer.line(line)
-        ."{variant.name.fit_to_size(layout.size.dec(), "─")}
+        ."{variant.name.fit_to_size(layout.size - 1, "─")}
          '{if is_last then "┘" else "┤"}"
-      writer.write(variant.layout, line.inc(), shade)
-      writer.line(line.inc()).write_n(padding, "{MemShade.padding}")
-      writer.line(line.inc())."{if is_last then " " else "│"}"
+      writer.write(variant.layout, line + 1, shade)
+      writer.line(line + 1).write_n(padding, "{MemShade.padding}")
+      writer.line(line + 1)."{if is_last then " " else "│"}"
       var lines = variant.layout.num_lines_when_printing()
-      for line in line.add(2)..line.inc().add(lines) do {
+      for line in {line + 2}..{line + 1 + lines} do {
         writer.line(line).write_n(padding, " ")
         writer.line(line)."{if is_last then " " else "│"}"
       }
-      line = line.inc().add(variant.layout.num_lines_when_printing())
+      line = line + 1 + variant.layout.num_lines_when_printing()
     }
     for line in start_line..line do writer.shade(line).* = MemShade.padding
   }
@@ -3171,7 +3171,7 @@ fun fit_to_size(str: Str, size: U64): Str { str.fit_to_size(size, " ") }
 fun fit_to_size(str: Str, size: U64, padding: Str): Str {
   if size == 0 then return ""
   if size == 1 then return "…"
-  if str.len >= size then str = "{str.first(size.dec())}…"
+  if str.len >= size then str = "{str.first(size - 1)}…"
 
   var string = string_builder().&
   string.write(str)
@@ -3282,14 +3282,13 @@ fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, U64] {
   var offsets = map[Str, U64]()
   var offset = 0
   for part in parts do
-    offset = offset.add(
+    offset = offset +
       switch part
       case padding(padding) padding
       case field(field) {
         offsets.&.put(field.name, offset)
         field.layout.size
       }
-    )
   offsets
 }
 
@@ -3518,8 +3517,8 @@ fun write_body_as_asm[W](
       var offset =
         if slot.item.initial_value is arg
         then locals_size
-          .add(16)  | caller's ip and return value
-          .add(arg_offsets.get("arg_{slot.index}"))
+          + 16  | caller's ip and return value
+          + arg_offsets.get("arg_{slot.index}")
         else locals_offsets.get("local_{slot.index}")
       slot_offsets.&.put(MonoSlotRef { index = slot.index }, offset)
     }
@@ -3528,7 +3527,7 @@ fun write_body_as_asm[W](
     writer."{indent(labels)}sub rsp, {locals_size}{newline}"
     writer.
       "{indent(labels)}; rsp + {locals_size}: caller's ip{newline}
-      '{indent(labels)}; rsp + {locals_size.add(8)}: 
+      '{indent(labels)}; rsp + {locals_size + 8}: 
         'address of where to put the return value{newline}"
     for slot in body.slots.iter().enumerate() do {
       var slot_ref = MonoSlotRef { index = slot.index }
@@ -3564,7 +3563,7 @@ fun write_body_as_asm[W](
           '          mov r8, qword _str_{index}{newline}
           '          mov [rsp + {offset}], r8{newline}
           '          mov r8, {str.len}{newline}
-          '          mov [rsp + {offset.add(8)}], r8{newline}"
+          '          mov [rsp + {offset + 8}], r8{newline}"
       }
     }
 
@@ -3589,7 +3588,7 @@ fun write_body_as_asm[W](
 
         var to_offset = slot_offsets.get(set.slot)
         var payload_size = layouts.get(set.value.type).size
-        var variant_tag_offset = to_offset.add(layouts.get(type).size.dec())
+        var variant_tag_offset = to_offset + layouts.get(type).size - 1
 
         writer."
           '{indent(labels)}mov r8, {variant}{newline}
@@ -3615,15 +3614,15 @@ fun write_body_as_asm[W](
         }
         writer."
           '{indent(labels)}sub rsp, 8{newline}
-          '{indent(labels)}lea r8, [rsp + {args_size.add(8).add(slot_offsets.get(call.to))}]{newline}
+          '{indent(labels)}lea r8, [rsp + {args_size + 8 + slot_offsets.get(call.to)}]{newline}
           '{indent(labels)}mov [rsp], r8{newline}
           '{indent(labels)}call {call.fun_.mangle()}{newline}
-          '{indent(labels)}add rsp, {args_size.add(8)}{newline}"
+          '{indent(labels)}add rsp, {args_size + 8}{newline}"
       }
       case jump(jump) writer."{indent(labels)}jmp {jump.target}{newline}"
       case jump_if_variant(jump) {
         var type = jump.condition.type
-        var variant_tag_offset = layouts.get(type).size.subtract(1)
+        var variant_tag_offset = layouts.get(type).size - 1
         var checked_tag = 0
         if mono.type_defs.get(type) is enum_(enum_) then {
           for v in enum_.variants.iter().enumerate() do
@@ -3648,7 +3647,7 @@ fun write_body_as_asm[W](
         var size = layouts.get(expr.type).size
 
         writer.save_address(expr, "r8", 0, slot_offsets, layouts)
-        writer."{indent(labels)}mov r9, [rsp + {locals_size.add(8)}]{newline}"
+        writer."{indent(labels)}mov r9, [rsp + {locals_size + 8}]{newline}"
         writer.copy_memory("r8", 0, "r9", 0, size)
         writer."{indent(labels)}jmp .end{newline}"
       }
@@ -3670,7 +3669,7 @@ fun indent(labels: &Vec[Str]): LabeledIndent {
 struct LabeledIndent { labels: &Vec[Str] }
 fun write[W](writer: W, self: LabeledIndent) {
   if self.labels.is_not_empty() then
-    for i in 0..self.labels.len.dec() do
+    for i in 0..{self.labels.len - 1} do
       writer."  {self.labels.get(i)}:{newline}"
   if self.labels.is_empty()
   then writer."          "
@@ -3688,7 +3687,7 @@ fun save_address[W](
   case never {} | you can read zero bytes from anywhere
   case global(name) writer."          lea {register}, [_globals.{name}] ; {expr}{newline}" | TODO
   case slot(slot) writer."
-    '          lea {register}, [rsp + {locals_offset.add(slot_offsets.get(slot))}] ; {expr}{newline}"
+    '          lea {register}, [rsp + {locals_offset + slot_offsets.get(slot)}] ; {expr}{newline}"
   case member(member) {
     writer.save_address(member.of.*, register, locals_offset, slot_offsets, layouts)
     if member.name == "*"
@@ -3713,16 +3712,16 @@ fun copy_memory[W](
   var i = 0
   loop {
     if i >= amount then break
-    if amount.subtract(i) >= 8 then {
+    if amount - i >= 8 then {
       writer."
-        '          mov r15, [{from_reg} + {from_offset.add(i)}]{newline}
-        '          mov [{to_reg} + {to_offset.add(i)}], r15{newline}"
-      i = i.add(8)
+        '          mov r15, [{from_reg} + {from_offset + i}]{newline}
+        '          mov [{to_reg} + {to_offset + i}], r15{newline}"
+      i = i + 8
     } else {
       writer."
-        '          mov r15b, [{from_reg} + {from_offset.add(i)}]{newline}
-        '          mov [{to_reg} + {to_offset.add(i)}], r15b{newline}"
-      i = i.inc()
+        '          mov r15b, [{from_reg} + {from_offset + i}]{newline}
+        '          mov [{to_reg} + {to_offset + i}], r15b{newline}"
+      i = i + 1
     }
   }
 }
@@ -3812,7 +3811,7 @@ fun mangle(type: Type): Str {
 |   | have to read it from the len field. The len is however guaranteed to be a
 |   | multiple of 4 bytes so that events after that are aligned.
 |   var event_size_without_name = 16
-|   var buf_len = 1024.multiply(event_size_without_name).add(16)
+|   var buf_len = 1024 * event_size_without_name + 16
 |   var buf = uninitialized_slice[U8](buf_len)
 
 |   loop {
@@ -3824,8 +3823,8 @@ fun mangle(type: Type): Str {
 |       | Horrible bit magic to get the wd and len fields. Whenever the C struct
 |       | layout changes, this needs to be updated.
 |       var wd  = buf.get_ref(i).to_address().to_reference[I32]().*
-|       var len = buf.get_ref(i.add(12)).to_address().to_reference[U32]().*
-|       i = i.add(event_size_without_name).add(len)
+|       var len = buf.get_ref(i + 12).to_address().to_reference[U32]().*
+|       i = i + event_size_without_name + len
 |       if wd == watcher.watch.descriptor then return {}
 |     }
 |   }
