@@ -693,10 +693,10 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
   | strings starts with metaness single quotes, then a double quote
   var metaness = 0
   loop
-      if parser.rest().get(metaness) != #'
-      then break
-      else metaness = metaness + 1
-  if parser.rest().get(metaness) == #"
+    if parser.rest().get(metaness) != #'
+    then break
+    else metaness = metaness + 1
+  if parser.rest().get(metaness) != #"
   then return if metaness >= 1
     then bad_input[Vec[AstExpr]]("Expected a double quote.")
     else no_match[Vec[AstExpr]]()
@@ -750,7 +750,7 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
       is_followed_by_enough_single_quotes
     } then {
       if part.is_not_empty() then parts.&.push(AstExpr.str(part.to_str()))
-      parser.advance_by(metaness + 1)
+      parser.advance_by(1 + metaness)
       return parsed(parts)
     }
     | everything else -> literal character
@@ -3958,7 +3958,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
 fun wrong_usage(): Never { print_usage_info(stderr) exit(1:U8) }
 
 fun main(args: Slice[Str]): Never {
-  eprintln("Welcome to Martinaise 3.")
+  eprintln("Welcome to Martinaise 4.")
 
   | Ways to use this program:
   | - martinaise help

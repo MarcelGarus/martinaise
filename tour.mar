@@ -112,7 +112,6 @@ fun custom_orelse() {
 | - it's not .
 | - it doesn't start with .*
 | - it doesn't start with .&
-| 
 
 fun ===(a: Bool, b: U64): Bool { false }
 
