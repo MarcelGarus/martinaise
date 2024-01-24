@@ -865,6 +865,14 @@ fun to_U32(n: U64): U32 asm {
   mov [r9], r8d
   ret
 }
+fun to_U64(n: I32): U64 asm {
+  ; TODO: assert that n is positive
+  mov r8, 0           ; sign extension (always zero for positive ints)
+  mov r8d, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8
+  ret
+}
 
 fun inc(a: U8): U8   { a + 1:U8 }
 fun inc(a: U16): U16 { a + 1:U16 }
@@ -2259,6 +2267,14 @@ fun exec(program: Str, args: Slice[Str]): Never {
   panic("exec didn't work")
 }
 
-fun run(command: Str, args: Slice[Str]) {
-  switch fork() case child exec(command, args) case parent(child) child.wait()
+| Note: The program needs to be the path to a concrete program. This does not
+| search the path.
+fun run(program: Str, args: Slice[Str]) {
+  switch fork() case child exec(program, args) case parent(child) child.wait()
+}
+fun run(shell_command: Str) {
+  | Using strace on a simple C program that uses the stdlib system function to
+  | run a command, we can see that it runs /bin/sh with sh -c <command>.
+  | Here, we do the same thing.
+  run("/bin/sh", vec("sh", "-c", shell_command).to_slice())
 }

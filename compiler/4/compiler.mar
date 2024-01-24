@@ -3772,63 +3772,63 @@ fun mangle(type: Type): Str {
 | - The original file watching in compiler/0, written in Zig.
 | - This tutorial: https://www.linuxjournal.com/article/8478
 
-| struct FileWatcher { inotify: File, watch: File }
-| fun watch_file(path: Str) {
-|   var inotify_fd = 294.syscall(0) | inotify_init1
-|   if inotify_fd.cast[U64, I64]() <= 0:I64
-|   then panic("couldn't open inotify interface for watching file")
+struct FileWatcher { inotify: File, watch: File }
+fun watch_file(path: Str): FileWatcher {
+  var inotify_fd = syscall_inotify_init1(0)
+  if inotify_fd.cast[U64, I64]() <= 0:I64
+  then panic("couldn't open inotify interface for watching file")
 
-|   var flag_modify = 16#002
-|   var flag_create = 16#100
-|   var flag_delete = 16#200
-|   var watch_fd = 254.syscall( | inotify_add_watch
-|     inotify,
-|     path.to_os_str().address.to_U64(),
-|     flag_modify.or(flag_create).or(flag_delete),
-|   )
-|   if watch_fd == 0 then panic("couldn't register watch for file")
+  var flag_modify = 16#002
+  var flag_create = 16#100
+  var flag_delete = 16#200
+  var watch_fd = syscall_inotify_add_watch(
+    inotify_fd,
+    path.to_os_str().address.to_U64(),
+    flag_modify.or(flag_create).or(flag_delete),
+  )
+  if watch_fd == 0 then panic("couldn't register watch for file")
 
-|   FileWatcher {
-|     inotify = File { descriptor = inotify_fd },
-|     watch   = File { descriptor = watch_fd },
-|   }
-| }
-| fun stop(watcher: FileWatcher) { watcher.inotify.close() }
-| fun wait_for_change(watcher: FileWatcher) {
-|   | How does this work?
-|   | We make a read syscall to the inotify_fd. This gives us potentially multiple
-|   | events in the following form:
-|   |
-|   | struct inotify_event {
-|   |   wd: i32,
-|   |   mask: u32,
-|   |   cookie: u32,
-|   |   len: u32,
-|   |   name: []u8,
-|   | };
-|   |
-|   | Yes, the size of the last field "name" is not known statically – you first
-|   | have to read it from the len field. The len is however guaranteed to be a
-|   | multiple of 4 bytes so that events after that are aligned.
-|   var event_size_without_name = 16
-|   var buf_len = 1024 * event_size_without_name + 16
-|   var buf = uninitialized_slice[U8](buf_len)
+  FileWatcher {
+    inotify = File { descriptor = inotify_fd },
+    watch   = File { descriptor = watch_fd },
+  }
+}
+fun stop(watcher: FileWatcher) { watcher.inotify.close() }
+fun wait_for_change(watcher: FileWatcher) {
+  | How does this work?
+  | We make a read syscall to the inotify_fd. This gives us potentially multiple
+  | events in the following form:
+  |
+  | struct inotify_event {
+  |   wd: i32,
+  |   mask: u32,
+  |   cookie: u32,
+  |   len: u32,
+  |   name: []u8,
+  | };
+  |
+  | Yes, the size of the last field "name" is not known statically – you first
+  | have to read it from the len field. The len is however guaranteed to be a
+  | multiple of 4 bytes so that events after that are aligned.
+  var event_size_without_name = 16
+  var buf_len = 1024 * event_size_without_name + 16
+  var buf = uninitialized_slice[U8](buf_len)
 
-|   loop {
-|     var len = watcher.inotify.read(buf)
-|     if len == 0 then panic("inotify read completed without an event")
-|     var i = 0
-|     loop {
-|       if i >= len then break
-|       | Horrible bit magic to get the wd and len fields. Whenever the C struct
-|       | layout changes, this needs to be updated.
-|       var wd  = buf.get_ref(i).to_address().to_reference[I32]().*
-|       var len = buf.get_ref(i + 12).to_address().to_reference[U32]().*
-|       i = i + event_size_without_name + len
-|       if wd == watcher.watch.descriptor then return {}
-|     }
-|   }
-| }
+  loop {
+    var len = watcher.inotify.read(buf).unwrap("reading inotify events failed")
+    if len == 0 then panic("inotify read completed without an event")
+    var i = 0
+    loop {
+      if i >= len then break
+      | Horrible bit magic to get the wd and len fields. Whenever the C struct
+      | layout changes, this needs to be updated.
+      var wd  = buf.get_ref(i).to_address().to_reference[I32]().*.to_U64()
+      var len = buf.get_ref(i + 12).to_address().to_reference[U32]().*.to_U64()
+      i = i + event_size_without_name + len
+      if wd == watcher.watch.descriptor then return {}
+    }
+  }
+}
 
 | Command Line Interface  
 | The command line interface which you use to interact with the Martinaise
@@ -3900,57 +3900,41 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
     return true
   }
 
-  todo()
+  | TODO: assert that the file ends with .mar?
+  var file_path_without_extension =
+    if file_path.ends_with(".mar")
+    then file_path.without_last(4)
+    else file_path
+  var asm_file = "{file_path_without_extension}.s"
+  var object_file = "{file_path_without_extension}.o"
+  var exe_file = file_path_without_extension
+
+  print_on_same_line("Writing assembly to file")
+  write_file(asm_file, asm.bytes()).unwrap()
+
+  | TODO: make sure that the external commands succeed before calling the next
+  | one
+
+  print_on_same_line("Compiling assembly using nasm")
+  run("nasm -f elf64 -o {object_file} {asm_file}")
+
+  println("Linking object file using ld")
+  run("ld -o {exe_file} {object_file}")
+
+  | TODO: remove generated asm and object file?
+
   if command is compile then {
+    println("Compiled to {exe_file}. Enjoy!")
     return true
   }
 
-  |   { // Compile C
-  |       print_on_same_line("Compiling C using GCC\n", .{});
-  |       var gcc = std.ChildProcess.init(&[_]Str{ "gcc", "output.c" }, alloc);
-  |       gcc.stdout = std.io.getStdOut();
-  |       gcc.stderr = std.io.getStdErr();
-  |       const worked = switch (try gcc.spawnAndWait()) {
-  |           .Exited => |code| code == 0,
-  |           else => false,
-  |       };
-  |       if (!worked) {
-  |           std.debug.print("Compiling C using GCC failed.\n", .{});
-  |           return false;
-  |       }
-  |   }
+  println("Running {exe_file}")
+  run(exe_file, vec(exe_file).to_slice())
 
-  |   { // Run it
-  |       print_on_same_line("Running {s}\n", .{file_path});
-  |       var program = std.ChildProcess.init(&[_]Str{"./a.out"}, alloc);
-  |       program.stdout = std.io.getStdOut();
-  |       program.stderr = std.io.getStdErr();
-  |       const start = std.time.nanoTimestamp();
-  |       const wait_result = try program.spawnAndWait();
-  |       const end = std.time.nanoTimestamp();
-  |       const runtime: usize = @intCast(end - start);
-  |       std.debug.print("\n", .{});
-  |       switch (wait_result) {
-  |           .Exited => |code| {
-  |               std.debug.print("Program exited with {d} after {d} ms.\n", .{
-  |                   code,
-  |                   @divTrunc(runtime, 1000000),
-  |               });
-  |           },
-  |           .Signal => |signal| {
-  |               std.debug.print("Program was signalled {d}.\n", .{signal});
-  |               return error.ProgramSignaled;
-  |           },
-  |           .Stopped => |val| {
-  |               std.debug.print("Program stopped because of {d}.\n", .{val});
-  |               return error.Todo;
-  |           },
-  |           .Unknown => |val| {
-  |               std.debug.print("Waiting for program completed with unknown wait result {d}.\n", .{val});
-  |               return error.Todo;
-  |           },
-  |       }
-  |   }
+  | TODO: time it
+  | TODO: print exit status of the program
+
+  println("{exe_file} finished")
 
   true
 }
@@ -3982,12 +3966,23 @@ fun main(args: Slice[Str]): Never {
   | TODO: support -- and additional args for the run command
 
   if command is watch then {
-    | var watcher = watch_file(file_path)
-    | loop {
-    |   println("watching file {seconds_since_unix_epoch().unwrap()}")
-    |   watcher.wait_for_change()
-    | }
-    todo()
+    eprintln("Starting watcher")
+    var watcher = watch_file(file_path)
+    loop {
+      | TODO: immediately continue waiting and kill the subprocess when the file
+      | changes
+      | TODO: clear the terminal screen
+
+      switch fork()
+      case child {
+        var was_successful = run_pipeline(command, file_path)
+        exit(if was_successful then 0:U8 else 1:U8)
+      }
+      case parent(child) child.wait()
+
+      eprintln("waiting for file change")
+      watcher.wait_for_change()
+    }
   } else {
     var was_successful = run_pipeline(command, file_path)
     exit(if was_successful then 0:U8 else 1:U8)
