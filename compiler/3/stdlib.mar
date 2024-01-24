@@ -1445,8 +1445,8 @@ struct Range[T] { start: T, end: T }
 
 fun ..[T](start: T, end: T): Range[T] { Range { start, end } }
 fun ..=[T](start: T, end: T): Range[T] { Range { start, end = end.inc() } }
-fun ..+[T](start: T, len: T): Range[T] { Range { start, end = start + len } }
-fun ..+=[T](start: T, len: T): Range[T] {
+fun ..+[T, D](start: T, len: D): Range[T] { Range { start, end = start + len } }
+fun ..+=[T, D](start: T, len: D): Range[T] {
   Range { start, end = start + len.inc() }
 }
 
