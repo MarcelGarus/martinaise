@@ -1715,19 +1715,18 @@ fun to_os_flags(flags: Set[OpenFileFlag]): U64 {
   var flag_trunc  = 8#1000
   var flag_append = 8#2000
 
-  var res = 0
   | "The argument flags must include one of the following access modes:
   |  O_RDONLY, O_WRONLY, or O_RDWR. These request opening the file read-only,
   |  write-only, or read/write, respectively."
   | https://man7.org/linux/man-pages/man2/open.2.html
-  res = res.or(
+  var res =
     if flags.contains(OpenFileFlag.read)
     then if flags.contains(OpenFileFlag.write) then flag_rdwr else flag_rdonly
     else {
       flags.contains(OpenFileFlag.write) orelse panic("must read or write")
       flag_wronly
     }
-  )
+
   | "In addition, zero or more file creation flags and file status flags can be
   |  bitwise ORed in flags. The file creation flags are O_CLOEXEC, O_CREATE,
   |  O_DIRECTORY, O_EXCL, O_NOCTTY, O_NOFOLLOW, O_TMPFILE, and O_TRUNC. The file
@@ -1750,11 +1749,14 @@ fun create_file(filename: Str, mode: U64): Result[File, Str] {
 }
 
 fun open_file(
-  filename: Str, flags: Set[OpenFileFlag], mode: U64
+  filename: Str, flags: Set[OpenFileFlag], mode: U64,
 ): Result[File, Str] {
   var descriptor =
-    syscall_open(filename.to_os_str().address.to_U64(), flags.to_os_flags())
-    .error_if_zero("couldn't open file {filename}")?
+    syscall_open(
+      filename.to_os_str().address.to_U64(),
+      flags.to_os_flags(),
+      mode,
+    ).error_if_zero("couldn't open file {filename}")?
   ok[File, Str](File { descriptor })
 }
 
@@ -2244,8 +2246,8 @@ fun fork(): Forked {
 | https://man7.org/linux/man-pages/man2/waitid.2.html
 fun wait(pid: Pid) { syscall_wait4(pid.value, 0, 0, 0).ignore() }
 
-fun exec(command: Str, args: Slice[Str]): Never {
-  var command = command.to_os_str().address.to_U64()
+fun exec(program: Str, args: Slice[Str]): Never {
+  var program = program.to_os_str().address.to_U64()
   | The exec syscall expects the arguments to be arranged like this:
   | [ptr to str][ptr to str][0         ]
   var os_args = malloc(args.len.inc() * 8, 8).to_reference[U64]()
@@ -2253,7 +2255,7 @@ fun exec(command: Str, args: Slice[Str]): Never {
     os_args.add_stride_offset(arg.index).* =
       arg.item.to_os_str().address.to_U64()
   syscall_execve(
-    command, os_args.to_address().to_U64(), 0.&.to_address().to_U64())
+    program, os_args.to_address().to_U64(), 0.&.to_address().to_U64())
   panic("exec didn't work")
 }
 

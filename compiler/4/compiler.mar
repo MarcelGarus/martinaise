@@ -2219,7 +2219,7 @@ fun compile(
       | return type. For Martinaise functions, we take the inferred return type.
       compile_fun.return_type.&.add(body_result.type)
         orelse(error) return error[Str, Str](
-          "The last expression of the function body doesn't match the return
+          "The last expression of the function body doesn't match the return 
           'type.{newline}{error}")
       return_type = compile_fun.return_type.finish()
 
