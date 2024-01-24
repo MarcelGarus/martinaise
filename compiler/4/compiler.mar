@@ -498,7 +498,7 @@ fun parse_operator_name(parser: &Parser): Maybe[Str] {
   | disallow some patterns
   if name == "=" then { parser.cursor = start return none[Str]() }
   if name == "." then { parser.cursor = start return none[Str]() }
-  if name.starts_with(".*").or(name.starts_with(".&"))
+  if name.starts_with(".*") / name.starts_with(".&")
   then { parser.cursor = start return none[Str]() }
   some(name)
 }
@@ -1238,7 +1238,7 @@ fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
   var current_line = string_builder().&
   var offset_in_line = 0
   for i in 0..code.len do {
-    if i == offset then offset_in_line = current_line.len
+    if i == offset then offset_in_line = current_line.len()
     if code.get(i) == newline
     then {
       lines.&.push(current_line.to_str())
@@ -1515,9 +1515,9 @@ fun print_status(context: Context) {
     for char in signature.iter().enumerate() do
       if {char.item == #(} / {char.item == #[} then { i = char.index break }
     out.write(signature.substr(0, i))
-    if out.len > 80 then break
+    if out.len() > 80 then break
   }
-  if out.len > 80 then {
+  if out.len() > 80 then {
     out.truncate_to_len(77)
     out.write("...")
   }
@@ -2419,7 +2419,7 @@ fun compile_in_current_scope(
       var type_env = solver.finish()?
 
       var unspecialized_type = make_struct.type
-      if make_struct.type.args.is_empty().and(struct_.type_args.is_not_empty())
+      if make_struct.type.args.is_empty() & struct_.type_args.is_not_empty()
       then for arg in struct_.type_args do
         unspecialized_type.args.&.push(type(arg).compile(type_env, ast, mono)?)
       var type = unspecialized_type.compile(self.type_env, ast, mono)?
@@ -2467,7 +2467,7 @@ fun compile_in_current_scope(
       var type_env = solver.finish()?
 
       var unspecialized_type = make_enum.type
-      if make_enum.type.args.is_empty().and(enum_.type_args.is_not_empty())
+      if make_enum.type.args.is_empty() & enum_.type_args.is_not_empty()
       then for a in enum_.type_args do
         unspecialized_type.args.&.push(type(a).compile(type_env, ast, mono)?)
       var type = unspecialized_type.compile(self.type_env, ast, mono)?
