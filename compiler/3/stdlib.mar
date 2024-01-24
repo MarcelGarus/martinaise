@@ -1280,6 +1280,7 @@ struct Char { byte: U8 }
 struct Str { data: &Char, len: U64 }
 struct OsStr { address: Address } | null-terminated
 
+var space = # 
 var newline = 10:U8.to_char()
 var tab = 9:U8.to_char()
 

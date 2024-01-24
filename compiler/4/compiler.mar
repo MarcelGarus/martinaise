@@ -90,17 +90,15 @@ var all_int_configs = {
   configs
 }
 
-fun equals(a: Signedness, b: Signedness): Bool {
+fun ==(a: Signedness, b: Signedness): Bool {
   switch a
   case signed { switch b case signed true case unsigned false }
   case unsigned { switch b case signed false case unsigned true }
 }
-fun equals(a: IntConfig, b: IntConfig): Bool {
-  a.signedness.equals(b.signedness).and(a.bits.equals(b.bits))
+fun ==(a: IntConfig, b: IntConfig): Bool {
+  {a.signedness == b.signedness} & {a.bits == b.bits}
 }
-fun equals(a: Int, b: Int): Bool {
-  a.config.equals(b.config).and(a.value.equals(b.value))
-}
+fun ==(a: Int, b: Int): Bool { {a.config == b.config} & {a.value == b.value} }
 
 fun write[W](writer: W, signedness: Signedness) {
   writer.write(switch signedness case signed #I case unsigned #U)
@@ -216,11 +214,11 @@ fun write[W](writer: W, def: AstDef) {
   case var_(v) writer.write(v)
   case fun_(f) writer.write(f)
 }
-fun write[W](writer: W, opaque: AstOpaqueType) {
-  writer."opaque {opaque.name} = {opaque.size} {
-    if opaque.size.equals(1) then "byte" else "bytes"
-  } big, {opaque.alignment} {
-    if opaque.alignment.equals(1) then "byte" else "bytes"
+fun write[W](writer: W, opaque_: AstOpaqueType) {
+  writer."opaque {opaque_.name} = {opaque_.size} {
+    if opaque_.size == 1 then "byte" else "bytes"
+  } big, {opaque_.alignment} {
+    if opaque_.alignment == 1 then "byte" else "bytes"
   } aligned"
 }
 fun write[W](writer: W, struct_: AstStruct) {
@@ -409,9 +407,9 @@ fun current(parser: Parser): Char { parser.code.get(parser.cursor) }
 fun rest(parser: Parser): Str { parser.code.without_first(parser.cursor) }
 fun advance(parser: &Parser) { parser.advance_by(1) }
 fun advance_by(parser: &Parser, n: U64) { parser.cursor = parser.cursor.add(n) }
-| TODO: move into stdlib
+| TODO: move into stdlib?
 fun is_whitespace(char: Char): Bool {
-  char.equals(# ).or(char.equals(tab)).or(char.equals(newline))
+  {char == space} / {char == tab} / {char == newline}
 }
 
 fun consume_whitespace(parser: &Parser) {
@@ -422,10 +420,10 @@ fun consume_whitespace(parser: &Parser) {
       parser.cursor = parser.cursor.inc()
       continue
     }
-    if char.equals(#|) then {
+    if char == #| then {
       loop {
         if parser.cursor.is_at_least(parser.code.len()) then break
-        if parser.current().equals(newline) then break
+        if parser.current() == newline then break
         parser.cursor = parser.cursor.inc()
       }
       continue
@@ -446,7 +444,7 @@ fun consume_keyword(parser: &Parser, keyword: Str): Bool {
   parser.rest().starts_with(keyword) orelse return false
   if parser.rest().len().is_greater_than(keyword.len()) then {
     var char_after = parser.rest().get(keyword.len())
-    var goes_on = char_after.equals(#_)
+    var goes_on = char_after == #_
       .or(#A.until(#Z).contains(char_after))
       .or(#a.until(#z).contains(char_after))
       .or(#0.until(#9).contains(char_after))
@@ -460,17 +458,15 @@ fun parse_name(parser: &Parser): Maybe[Str] {
   var start = parser.cursor
   loop {
     var char = parser.current()
-    if #A.until(#Z).contains(char)
-      .or(#a.until(#z).contains(char))
-      .or(char.equals(#_))
+    if {#A..=#Z}.contains(char) / {#a..=#z}.contains(char) / {char == #_}
     then { parser.advance() continue }
     if #0.until(#9).contains(char) then
-      if parser.cursor.equals(start)
+      if parser.cursor == start
       then break
       else { parser.advance() continue }
     break
   }
-  if parser.cursor.equals(start) then return none[Str]()
+  if parser.cursor == start then return none[Str]()
   some(parser.code.substr(start, parser.cursor))
 }
 
@@ -494,14 +490,14 @@ fun parse_operator_name(parser: &Parser): Maybe[Str] {
     var char = parser.current()
     var is_operator = false
     for c in allowed.chars do
-      if char.equals(c) then is_operator = true
+      if char == c then is_operator = true
     if is_operator then parser.advance() else break
   }
-  if parser.cursor.equals(start) then return none[Str]()
+  if parser.cursor == start then return none[Str]()
   var name = parser.code.substr(start, parser.cursor)
   | disallow some patterns
-  if name.equals("=") then { parser.cursor = start return none[Str]() }
-  if name.equals(".") then { parser.cursor = start return none[Str]() }
+  if name == "=" then { parser.cursor = start return none[Str]() }
+  if name == "." then { parser.cursor = start return none[Str]() }
   if name.starts_with(".*").or(name.starts_with(".&"))
   then { parser.cursor = start return none[Str]() }
   some(name)
@@ -588,8 +584,7 @@ fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Str] {
   if parser.parse_continue()? is some(continue_) then return parsed(continue_)
   if parser.parse_return()? is some(return_) then return parsed(return_)
   if parser.parse_lower_name() is some(n) then return parsed(AstExpr.name(n))
-  if parser.current().equals(#;) then return bad_input[AstExpr](
-    "Nice try, Mik!")
+  if parser.current() == #; then return bad_input[AstExpr]("Nice try, Mik!")
   no_match[AstExpr]()
 }
 fun parse_expr_suffix(
@@ -625,29 +620,29 @@ fun parse_digits(parser: &Parser, radix: U64): Result[Maybe[U64], Str] {
         parser.advance()
         continue
       }
-    if char.equals(#_) then parser.advance() else break
+    if char == #_ then parser.advance() else break
   }
-  if parser.cursor.equals(start) then return no_match[U64]()
+  if parser.cursor == start then return no_match[U64]()
   parsed(num)
 }
 
 fun parse_int(parser: &Parser): Result[Maybe[AstExpr], Str] {
   parser.consume_whitespace()
   var value = parser.parse_digits(10)? orelse return no_match[AstExpr]()
-  if parser.current().equals(##) then {
+  if parser.current() == ## then {
     parser.advance()
     var radix = value
     value = parser.parse_digits(radix)? orelse return bad_input[AstExpr](
       "Expected the value of the number after the radix pound.")
   }
-  if parser.current().not_equals(#:) then return parsed(AstExpr.int(Int {
+  if parser.current() != #: then return parsed(AstExpr.int(Int {
     value,
     config = IntConfig { signedness = Signedness.unsigned, bits = 64 },
   }))
   parser.advance()
   var signedness =
-    if parser.current().equals(#I) then Signedness.signed
-    else if parser.current().equals(#U) then Signedness.unsigned
+    if parser.current() == #I then Signedness.signed
+    else if parser.current() == #U then Signedness.unsigned
     else return bad_input[AstExpr]("Expected a signedness (U or I).")
   parser.advance()
   var bits = parser.parse_digits(10)?
@@ -676,7 +671,7 @@ fun parse_char(parser: &Parser): Result[Maybe[AstExpr], Str] {
 | TODO: document strings somewhere
 fun parse_str(parser: &Parser): Result[Maybe[AstExpr], Str] {
   var parts = parser.parse_str_parts()? orelse return no_match[AstExpr]()
-  if parts.len.equals(1) then {
+  if parts.len == 1 then {
     var expr = parts.get(0)
     if expr is str then return parsed(expr)
   }
@@ -699,12 +694,11 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
   | strings starts with metaness single quotes, then a double quote
   var metaness = 0
   loop
-      if parser.rest().get(metaness).not_equals(#')
+      if parser.rest().get(metaness) != #'
       then break
       else metaness = metaness.inc()
-  if parser.rest().get(metaness).not_equals(#")
-  then return
-    if metaness.is_at_least(1)
+  if parser.rest().get(metaness) == #"
+  then return if metaness.is_at_least(1)
     then bad_input[Vec[AstExpr]]("Expected a double quote.")
     else no_match[Vec[AstExpr]]()
   parser.advance_by(metaness.inc())
@@ -715,7 +709,7 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
     | (metaness + 1) braces -> interpolation
     var num_braces = 0
     loop
-      if parser.rest().get(num_braces).equals(#{)
+      if parser.rest().get(num_braces) == #{
       then num_braces = num_braces.inc()
       else break
     if num_braces.is_at_least(metaness.inc()) then {
@@ -736,12 +730,12 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
     | newline -> skip, parse whitespace in next line until quote
     |   single quote -> newline inserted
     |   double quote -> no newline inserted
-    if parser.current().equals(newline) then {
+    if parser.current() == newline then {
       parser.advance()
       loop {
         var char = parser.current()
-        if char.equals(# ) then { parser.advance() continue }
-        if char.equals(#') then break
+        if char == #  then { parser.advance() continue }
+        if char == #' then break
         return bad_input[Vec[AstExpr]](
           "After a newline, a string needs to have a single quote.")
       }
@@ -749,10 +743,10 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
       continue
     }
     | double quote + metaness single quotes -> string ends
-    if parser.current().equals(#") then if {
+    if parser.current() == #" then if {
       var is_followed_by_enough_single_quotes = true
       for j in 1.until(metaness) do
-        if parser.rest().get(j).not_equals(#')
+        if parser.rest().get(j) != #'
         then is_followed_by_enough_single_quotes = false
       is_followed_by_enough_single_quotes
     } then {
@@ -1105,7 +1099,7 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
     if parser.consume_prefix('"{ ... }"') then AstFunKind.builtin
     else if parser.consume_prefix('"asm {"') then {
       var start = parser.cursor
-      loop if parser.current().equals(#}) then break else parser.advance()
+      loop if parser.current() == #} then break else parser.advance()
       var asm_code = parser.code.substr(start, parser.cursor)
       asm_code.&.trim_prefix("{newline}")
       asm_code.&.trim_suffix("{newline}")
@@ -1137,7 +1131,7 @@ fun parse_bytes_amount(parser: &Parser, name: Str): Result[Maybe[U64], Str] {
   parser.consume_whitespace()
   var amount = parser.parse_digits(10)?
     orelse return bad_input[U64]("Expected {name}.")
-  if amount.equals(1)
+  if amount == 1
   then parser.consume_prefix("byte")
     orelse return bad_input[U64]('"Expected "byte"."')
   else parser.consume_prefix("bytes")
@@ -1245,8 +1239,8 @@ fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
   var current_line = string_builder().&
   var offset_in_line = 0
   for i in 0.to(code.len()) do {
-    if i.equals(offset) then offset_in_line = current_line.len()
-    if code.get(i).equals(newline)
+    if i == offset then offset_in_line = current_line.len()
+    if code.get(i) == newline
     then {
       lines.&.push(current_line.to_str())
       current_line = string_builder().&
@@ -1291,7 +1285,7 @@ fun type_sink(): TypeSink { TypeSink { current = none[Type]() } }
 fun type_sink(type: Type): TypeSink { TypeSink { current = some(type) } }
 
 fun add(sink: &TypeSink, type: Type): Result[Nothing, Str] {
-  if type.equals(type("Never")) then return ok[Nothing, Str]({})
+  if type.is_never() then return ok[Nothing, Str]({})
   switch sink.current
   case none {
     sink.current = some(type)
@@ -1311,10 +1305,10 @@ fun add(sink: &TypeSink, type: Type): Result[Nothing, Str] {
 | Merges potentially incomplete types. For example, Maybe[A, _] and Maybe[_, B]
 | would get merged to Maybe[A, B].
 fun merge(a: Type, b: Type): Maybe[Type] {
-  if a.name.equals("_") then return some(b)
-  if b.name.equals("_") then return some(a)
-  if a.name.not_equals(b.name) then return none[Type]()
-  if a.args.len.not_equals(b.args.len) then return none[Type]()
+  if a.name == "_" then return some(b)
+  if b.name == "_" then return some(a)
+  if a.name != b.name then return none[Type]()
+  if a.args.len != b.args.len then return none[Type]()
   var merged_args = vec[Type]()
   for i in 0.to(a.args.len) do
     switch merge(a.args.get(i), b.args.get(i))
@@ -1378,8 +1372,8 @@ fun unify(solver: &TypeSolver, generic: Type, concrete: Type): Result[Bool, Str]
     return ok[Bool, Str](true)
   }
 
-  generic.name.equals(concrete.name) orelse return ok[Bool, Str](false)
-  generic.args.len.equals(concrete.args.len) orelse return ok[Bool, Str](false)
+  generic.name == concrete.name orelse return ok[Bool, Str](false)
+  generic.args.len == concrete.args.len orelse return ok[Bool, Str](false)
   for zip in zip(generic.args.iter(), concrete.args.iter()) do
     solver.unify(zip.a, zip.b)? orelse return ok[Bool, Str](false)
 
@@ -1469,7 +1463,7 @@ fun define[T](vars: &Vars[T], name: Str, data: T) {
 }
 fun lookup[T](vars: Vars[T], name: Str): Maybe[T] {
   for var_ in vars.visible.to_slice().rev_iter() do
-    if var_.name.equals(name) then return some(var_.data)
+    if var_.name == name then return some(var_.data)
   none[T]()
 }
 
@@ -1519,10 +1513,8 @@ fun print_status(context: Context) {
     | Because we want many signatures to fit on one line, only write the
     | function name up to the first opening parenthesis or bracket.
     var i = 0
-    for char in signature.iter().enumerate() do {
-      if char.item.equals(#().or(char.item.equals(#[))
-      then { i = char.index break }
-    }
+    for char in signature.iter().enumerate() do
+      if {char.item == #(} / {char.item == #[} then { i = char.index break }
     out.write(signature.substr(0, i))
     if out.len().is_greater_than(80) then break
   }
@@ -1624,7 +1616,7 @@ enum MonoExprKind {
 struct MonoMember { of: &MonoExpr, name: Str }
 
 fun hash(hasher: &Hasher, slot: MonoSlotRef) { hasher.hash(slot.index) }
-fun equals(a: MonoSlotRef, b: MonoSlotRef): Bool { a.index.equals(b.index) }
+fun ==(a: MonoSlotRef, b: MonoSlotRef): Bool { a.index == b.index }
 
 fun write[W](writer: W, mono: Mono) {
   writer."Types:{newline}"
@@ -1851,7 +1843,7 @@ fun exists(
 }
 fun exists(type: Str, types: Map[Str, AstType], extra: Vec[Str]): Bool {
   if types.contains(type) then true else {
-    for extra in extra do if extra.equals(type) then return true
+    for extra in extra do if extra == type then return true
     false
   }
 }
@@ -1884,11 +1876,11 @@ fun lookup_fun(
   for fun_ in name_matches do {
     var solver = create_type_solver(fun_.type_args)
     if type_args is some(type_args_) then {
-      if type_args_.len.not_equals(fun_.type_args.len) then continue
+      if type_args_.len != fun_.type_args.len then continue
       for i in 0.to(type_args_.len) do
         solver.&.unify(type(fun_.type_args.get(i)), type_args_.get(i))?.assert()
     }
-    if arg_types.len.not_equals(fun_.args.len) then continue
+    if arg_types.len != fun_.args.len then continue
     var matches = true
     for i in 0.to(arg_types.len) do
       solver.&.unify(fun_.args.get(i).type, arg_types.get(i))?
@@ -2074,7 +2066,7 @@ fun compile(
   }
   case struct_(struct_) {
     var inner_type_env = map[Str, Type]()
-    type.args.len.equals(struct_.type_args.len) orelse return error[Type, Str](
+    type.args.len == struct_.type_args.len orelse return error[Type, Str](
       "You tried to use a {type}, but {struct_.name} takes 
       '{struct_.type_args.len} type arguments.")
     for zip in zip(struct_.type_args.iter(), type.args.iter()) do
@@ -2092,7 +2084,7 @@ fun compile(
   }
   case enum_(enum_) {
     var inner_type_env = map[Str, Type]()
-    type.args.len.equals(enum_.type_args.len) orelse return error[Type, Str](
+    type.args.len == enum_.type_args.len orelse return error[Type, Str](
       "You tried to use a {type}, but {enum_.name} takes {enum_.type_args.len} 
       'type arguments.")
     for i in 0.to(type.args.len) do
@@ -2110,6 +2102,14 @@ fun compile(
 
   ok[Type, Str](type)
 }
+
+| You can use _ to infer parts of the type, for example like Maybe[_].
+fun is_complete(type: Type): Bool {
+  if type.name == "_" then return false
+  for arg in type.args do arg.is_complete() orelse return false
+  true
+}
+fun is_incomplete(type: Type): Bool { not(type.is_complete()) }
 
 | Monoes a global variable (well, it can't have type arguments, so compiling
 | would be the more appropriate term), outputting all the required type defs,
@@ -2182,9 +2182,9 @@ fun compile(
   var kind =
     switch fun_.kind
     case builtin {
-      if fun_.name.equals("size_of") then MonoFunKind.builtin
-      else if fun_.name.equals("alignment_of") then MonoFunKind.builtin
-      else if fun_.name.equals("type") then {
+      if fun_.name == "size_of" then MonoFunKind.builtin
+      else if fun_.name == "alignment_of" then MonoFunKind.builtin
+      else if fun_.name == "type" then {
         type("Type").compile(map[Str, Type](), ast, mono)?
         var make_vec = ast.lookup_fun("vec", none[Vec[Type]](), vec[Type]())
           .unwrap().fun_.compile(map[Str, Type](), context, ast, mono)?
@@ -2391,7 +2391,7 @@ fun compile_in_current_scope(
       var solver = create_type_solver(struct_.type_args)
       | TODO: Foo[] { ... } should not be treated like Foo { ... }
       if make_struct.type.args.is_not_empty() then {
-        make_struct.type.args.len.equals(struct_.type_args.len)
+        make_struct.type.args.len == struct_.type_args.len
           orelse return error[MonoExpr, Str](
             "Tried to create struct {struct_.name} with 
             '{make_struct.type.args.len} type arguments, but it needs 
@@ -2407,7 +2407,7 @@ fun compile_in_current_scope(
         var value = field.value
         var type_in_struct = none[Type]()
         for f in struct_.fields do
-          if f.name.equals(name) then type_in_struct = some(f.type)
+          if f.name == name then type_in_struct = some(f.type)
 
         if type_in_struct is none then return error[MonoExpr, Str](
           "Tried to initialize field {name} of {struct_.name}, but it doesn't 
@@ -2442,7 +2442,7 @@ fun compile_in_current_scope(
       var variant_type = {
         var type = none[Type]()
         for variant in enum_.variants do
-          if variant.name.equals(make_enum.variant)
+          if variant.name == make_enum.variant
           then type = some(variant.type)
         type orelse return error[MonoExpr, Str](
           "Unknown variant {make_enum.type.name}.{make_enum.variant}.")
@@ -2451,7 +2451,7 @@ fun compile_in_current_scope(
       var solver = create_type_solver(enum_.type_args)
       | TODO: Maybe[].some(3) should not be treated like Maybe.some(3)
       if make_enum.type.args.is_not_empty() then {
-        if make_enum.type.args.len.not_equals(enum_.type_args.len)
+        if make_enum.type.args.len != enum_.type_args.len
         then return error[MonoExpr, Str](
           "Tried to create enum {enum_.name} with {make_enum.type.args.len} 
           'type arguments, but it needs {enum_.type_args.len}.")
@@ -2483,7 +2483,7 @@ fun compile_in_current_scope(
     case member(member) {
       var of = member.of.compile(self)?
       | expr.& references the of
-      if member.name.equals("&") then {
+      if member.name == "&" then {
         var ref_type = type("&", vec(of.type))
           .compile(self.type_env, ast, mono)?
         var slot = self.slots.&.push(ref_type)
@@ -2494,7 +2494,7 @@ fun compile_in_current_scope(
       | receiver as often as necessary. For example, you can access point.x if
       | point is a &&&Point.
       loop
-        if of.type.name.equals("&").and(member.name.not_equals("*"))
+        if {of.type.name == "&"} & {member.name != "*"}
         then of = of.member("*", of.type.args.get(0))
         else break
       var struct_ =
@@ -2506,7 +2506,7 @@ fun compile_in_current_scope(
       var type = {
         var field_type = none[Type]()
         for field in struct_.fields do
-          if field.name.equals(member.name) then field_type = some(field.type)
+          if field.name == member.name then field_type = some(field.type)
         field_type orelse return error[MonoExpr, Str]({
           var out = string_builder().&
           out.'""{{member.name}}" is not a field on {{of.type}}.{{newline}}
@@ -2528,7 +2528,7 @@ fun compile_in_current_scope(
     case assign(assign) {
       var to = assign.to.compile(self)?
       var value = assign.value.compile(self)?
-      value.type.equals(to.type) orelse return error[MonoExpr, Str](
+      value.type == to.type orelse return error[MonoExpr, Str](
         "Tried to assign {value.type} to a variable of type {to.type}.")
       self.push_assign(to, value)
       nothing_expr
@@ -2583,7 +2583,7 @@ fun compile_in_current_scope(
         | TODO: when supporting continue with label, use that
         var handled_this_case = false
         for variant in enum_.variants do
-          if variant.name.equals(case_.variant) then {
+          if variant.name == case_.variant then {
             handled.&.put(case_.variant)
             handled_this_case = true
           }
@@ -2626,7 +2626,7 @@ fun compile_in_current_scope(
         var variant_type = {
           var variant_type = none[Type]()
           for variant in enum_.variants do
-            if variant.name.equals(case_.variant) then
+            if variant.name == case_.variant then
               variant_type = some(variant.type)
           variant_type.unwrap()
         }
@@ -2644,7 +2644,7 @@ fun compile_in_current_scope(
           switch type
           case none type = some(then_.type)
           case some(expected)
-            then_.type.equals(expected) orelse return error[MonoExpr, Str](
+            then_.type == expected orelse return error[MonoExpr, Str](
               '"When lowering this:{{newline}}
                '{{AstExpr.switch_(switch_).indented(indent(0))}}{{newline}}
                'Previous switch cases return {{expected}}, but the case for 
@@ -2736,7 +2736,7 @@ fun compile_in_current_scope(
       var arg = arg.compile(self)?
 
       if scope.type is some(expected) then
-        arg.type.equals(expected) orelse return error[MonoExpr, Str](
+        arg.type == expected orelse return error[MonoExpr, Str](
           "A previous break returned {expected}, but this break returns 
           '{arg.type}.")
       scope.type = some(arg.type)
@@ -2766,12 +2766,12 @@ fun compile_in_current_scope(
     }
     case try(expr) {
       var expr = expr.compile(self)?
-      expr.type.name.equals("Result") orelse return error[MonoExpr, Str](
+      expr.type.name == "Result" orelse return error[MonoExpr, Str](
         "The try operator ? can only be used on Results.")
       var return_type = self.return_type.finish()
-      return_type.name.equals("Result") orelse return error[MonoExpr, Str](
+      return_type.name == "Result" orelse return error[MonoExpr, Str](
         "The try operator ? can only be used in functions that return Result.")
-      expr.type.args.get(1).equals(return_type.args.get(1))
+      expr.type.args.get(1) == return_type.args.get(1)
         orelse return error[MonoExpr, Str](
           "You used ? on a Result where the error type doesn't match the error 
           'type of the function.{newline}{newline}
@@ -2840,7 +2840,7 @@ fun compile_call(
     switch ast.lookup_fun(name, type_args, arg_types)
     case error(error) {
       if first_error is none then first_error = some(error)
-      if callee is some(c) then if c.type.name.equals("&") then {
+      if callee is some(c) then if c.type.name == "&" then {
         | Dereference the callee
         callee = some(c.member("*", c.type.args.get(0)))
         continue
@@ -2896,7 +2896,7 @@ fun mem_layout(
 fun calculate_mem_layout(
   type: Type, layouts: &Map[Type, MemLayout], type_defs: Map[Type, MonoTypeDef]
 ): MemLayout {
-  if type.name.equals("&")
+  if type.name == "&"
   then return MemLayout { type, size = 8, alignment = 8, kind = MemLayoutKind.opaque_ }
   calculate_mem_layout(type, type_defs.get(type), layouts, type_defs)
 }
@@ -2930,7 +2930,7 @@ fun calculate_mem_layout(
     var fields_sized_multiple_of_alignment = vec[MemLayoutField]()
     var remaining_fields = vec[MemLayoutField]()
     for field in fields do
-      if field.layout.size.modulo(alignment).equals(0)
+      if field.layout.size.modulo(alignment) == 0
       then fields_sized_multiple_of_alignment.&.push(field)
       else remaining_fields.&.push(field)
 
@@ -2992,10 +2992,8 @@ fun calculate_mem_layout(
 fun needed_for_multiple_of(number: U64, factor: U64): U64 {
   number.round_up_to_multiple_of(factor).subtract(number)
 }
-fun round_up_to_multiple_of(number: U64, factor: U64): U64 {
-  number.add(factor.dec()).divide(factor).multiply(factor)
-}
 
+| TODO: move to stdlib?
 fun permutations(size: U64): Iter[Slice[U64], Permutations] {
   var numbers = vec[U64]()
   for i in 0.to(size) do numbers.&.push(i)
@@ -3008,7 +3006,7 @@ fun next(self: &Permutations): Maybe[Slice[U64]] {
   if self.last.is_empty() then return none[Slice[U64]]()
   var index = self.last.len.dec()
   loop {
-    if index.equals(0) then { return none[Slice[U64]]() }
+    if index == 0 then { return none[Slice[U64]]() }
     index = index.dec()
     if self.last.get(index).is_less_than(self.last.get(index.inc())) then {
       | Find the smallest element after the index that is greater than
@@ -3078,12 +3076,12 @@ fun write[W](writer: W, layout: MemLayout) {
 
   for line in mem_writer.lines.iter().enumerate() do {
     writer.write(line.item.to_str())
-    if line.index.equals(0) then writer." {layout.size}"
+    if line.index == 0 then writer." {layout.size}"
     if line.index.is_less_than(mem_writer.lines.len.dec()) then writer.writeln()
   }
 }
 fun num_lines_when_printing(layout: MemLayout): U64 {
-  if layout.size.equals(0) then return 0
+  if layout.size == 0 then return 0
   switch layout.kind
   case opaque_ 2
   case struct_(parts) {
@@ -3106,7 +3104,7 @@ fun num_lines_when_printing(layout: MemLayout): U64 {
 fun write(
   writer: &MemWriter, layout: MemLayout, line: U64, preffered_shade: MemShade
 ) {
-  if layout.size.equals(0) then return {}
+  if layout.size == 0 then return {}
 
   var shade =
     switch preffered_shade
@@ -3151,7 +3149,7 @@ fun write(
     var start_line = line
     var line = line.add(2)
     for variant in variants.iter().enumerate() do {
-      var is_last = variant.index.equals(variants.len.dec())
+      var is_last = variant.index == variants.len.dec()
       var variant = variant.item
       var padding = layout.size.subtract(variant.layout.size).dec()
       writer.line(line)
@@ -3172,8 +3170,8 @@ fun write(
 }
 fun fit_to_size(str: Str, size: U64): Str { str.fit_to_size(size, " ") }
 fun fit_to_size(str: Str, size: U64, padding: Str): Str {
-  if size.equals(0) then return ""
-  if size.equals(1) then return "…"
+  if size == 0 then return ""
+  if size == 1 then return "…"
   if str.len().is_at_least(size) then str = "{str.first(size.dec())}…"
 
   var string = string_builder().&
@@ -3555,10 +3553,10 @@ fun write_body_as_asm[W](
       case int(int) {
         writer."          mov r8, {int}{newline}"
         var size = layouts.get(body.slots.get(slot.index).type).size
-        if size.equals(1) then writer."          mov [rsp + {offset}], r8b{newline}"
-        if size.equals(2) then writer."          mov [rsp + {offset}], r8w{newline}"
-        if size.equals(4) then writer."          mov [rsp + {offset}], r8d{newline}"
-        if size.equals(8) then writer."          mov [rsp + {offset}], r8{newline}"
+        if size == 1 then writer."          mov [rsp + {offset}], r8b{newline}"
+        if size == 2 then writer."          mov [rsp + {offset}], r8w{newline}"
+        if size == 4 then writer."          mov [rsp + {offset}], r8d{newline}"
+        if size == 8 then writer."          mov [rsp + {offset}], r8{newline}"
       }
       case str(str) {
         var index = string_literals.len
@@ -3587,7 +3585,7 @@ fun write_body_as_asm[W](
         var variant = 0
         if mono.type_defs.get(type) is enum_(enum_) then {
           for v in enum_.variants.iter().enumerate() do
-            if v.item.name.equals(set.variant) then variant = v.index
+            if v.item.name == set.variant then variant = v.index
         } else panic("is not an enum")
 
         var to_offset = slot_offsets.get(set.slot)
@@ -3630,7 +3628,7 @@ fun write_body_as_asm[W](
         var checked_tag = 0
         if mono.type_defs.get(type) is enum_(enum_) then {
           for v in enum_.variants.iter().enumerate() do
-            if v.item.name.equals(jump.variant) then checked_tag = v.index
+            if v.item.name == jump.variant then checked_tag = v.index
         } else panic("is not an enum")
 
         writer.save_address(jump.condition, "r8", 0, slot_offsets, layouts)
@@ -3694,7 +3692,7 @@ fun save_address[W](
     '          lea {register}, [rsp + {locals_offset.add(slot_offsets.get(slot))}] ; {expr}{newline}"
   case member(member) {
     writer.save_address(member.of.*, register, locals_offset, slot_offsets, layouts)
-    if member.name.equals("*")
+    if member.name == "*"
     then writer."          mov {register}, [{register}] ; {expr}{newline}"
     else {
       | eprintln("member of {member.of.type}")
@@ -3734,30 +3732,30 @@ fun mangle(name: Str): Str {
   var mangled = string_builder().&
   | mangled.write("mar_")
   for c in name do {
-    if c.equals(#_) then { mangled.write("__") continue }
-    if c.equals(#[) then { mangled.write("_of_") continue }
-    if c.equals(#]) then { mangled.write("_end_") continue }
-    if c.equals(#() then { mangled.write("_withargs_") continue }
-    if c.equals(#)) then { mangled.write("_end_") continue }
-    if c.equals(#.) then { mangled.write("_dot_") continue }
-    if c.equals(#,) then { mangled.write("_and_") continue }
-    if c.equals(#%) then { mangled.write("_percent_") continue }
-    if c.equals(#!) then { mangled.write("_bang_") continue }
-    if c.equals(#~) then { mangled.write("_tilde_") continue }
-    if c.equals(#@) then { mangled.write("_at_") continue }
-    if c.equals(#^) then { mangled.write("_roof_") continue }
-    if c.equals(#\) then { mangled.write("_backslash_") continue }
-    if c.equals(#`) then { mangled.write("_tick_") continue }
-    if c.equals(#/) then { mangled.write("_slash_") continue }
-    if c.equals(#&) then { mangled.write("_amp_") continue }
-    if c.equals(#*) then { mangled.write("_star_") continue }
-    if c.equals(#+) then { mangled.write("_plus_") continue }
-    if c.equals(#$) then { mangled.write("_dollar_") continue }
-    if c.equals(#-) then { mangled.write("_minus_") continue }
-    if c.equals(#<) then { mangled.write("_less_") continue }
-    if c.equals(#>) then { mangled.write("_greater_") continue }
-    if c.equals(#=) then { mangled.write("_equals_") continue }
-    if c.equals(# ) then continue
+    if c == #_ then { mangled.write("__") continue }
+    if c == #[ then { mangled.write("_of_") continue }
+    if c == #] then { mangled.write("_end_") continue }
+    if c == #( then { mangled.write("_withargs_") continue }
+    if c == #) then { mangled.write("_end_") continue }
+    if c == #. then { mangled.write("_dot_") continue }
+    if c == #, then { mangled.write("_and_") continue }
+    if c == #% then { mangled.write("_percent_") continue }
+    if c == #! then { mangled.write("_bang_") continue }
+    if c == #~ then { mangled.write("_tilde_") continue }
+    if c == #@ then { mangled.write("_at_") continue }
+    if c == #^ then { mangled.write("_roof_") continue }
+    if c == #\ then { mangled.write("_backslash_") continue }
+    if c == #` then { mangled.write("_tick_") continue }
+    if c == #/ then { mangled.write("_slash_") continue }
+    if c == #& then { mangled.write("_amp_") continue }
+    if c == #* then { mangled.write("_star_") continue }
+    if c == #+ then { mangled.write("_plus_") continue }
+    if c == #$ then { mangled.write("_dollar_") continue }
+    if c == #- then { mangled.write("_minus_") continue }
+    if c == #< then { mangled.write("_less_") continue }
+    if c == #> then { mangled.write("_greater_") continue }
+    if c == #= then { mangled.write("_equals_") continue }
+    if c == #  then continue
     mangled.write(c)
   }
   mangled.to_str()
@@ -3790,7 +3788,7 @@ fun mangle(type: Type): Str {
 |     path.to_os_str().address.to_U64(),
 |     flag_modify.or(flag_create).or(flag_delete),
 |   )
-|   if watch_fd.equals(0) then panic("couldn't register watch for file")
+|   if watch_fd == 0 then panic("couldn't register watch for file")
 
 |   FileWatcher {
 |     inotify = File { descriptor = inotify_fd },
@@ -3820,7 +3818,7 @@ fun mangle(type: Type): Str {
 
 |   loop {
 |     var len = watcher.inotify.read(buf)
-|     if len.equals(0) then panic("inotify read completed without an event")
+|     if len == 0 then panic("inotify read completed without an event")
 |     var i = 0
 |     loop {
 |       if i.is_at_least(len) then break
@@ -3829,7 +3827,7 @@ fun mangle(type: Type): Str {
 |       var wd  = buf.get_ref(i).to_address().to_reference[I32]().*
 |       var len = buf.get_ref(i.add(12)).to_address().to_reference[U32]().*
 |       i = i.add(event_size_without_name).add(len)
-|       if wd.equals(watcher.watch.descriptor) then return {}
+|       if wd == watcher.watch.descriptor then return {}
 |     }
 |   }
 | }
@@ -3840,13 +3838,13 @@ fun mangle(type: Type): Str {
 
 enum Command { help, ast, mono, asm, compile, run, watch }
 fun parse_command(command: Str): Maybe[Command] {
-  if command.equals("help") then return some(Command.help)
-  if command.equals("ast") then return some(Command.ast)
-  if command.equals("mono") then return some(Command.mono)
-  if command.equals("asm") then return some(Command.asm)
-  if command.equals("compile") then return some(Command.compile)
-  if command.equals("run") then return some(Command.run)
-  if command.equals("watch") then return some(Command.watch)
+  if command == "help" then return some(Command.help)
+  if command == "ast" then return some(Command.ast)
+  if command == "mono" then return some(Command.mono)
+  if command == "asm" then return some(Command.asm)
+  if command == "compile" then return some(Command.compile)
+  if command == "run" then return some(Command.run)
+  if command == "watch" then return some(Command.watch)
   none[Command]()
 }
 
