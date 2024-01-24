@@ -3864,8 +3864,8 @@ fun print_usage_info(out: File) {
 | (stuff is printed to stdout). Returns whether it ran through successfully.
 fun run_pipeline(command: Command, file_path: Str): Bool {
   print_on_same_line("Reading {file_path}")
-  var stdlib = read_file("stdlib.mar").to_str()
-  var file = read_file(file_path).to_str()
+  var stdlib = read_file("stdlib.mar").unwrap("couldn't read stdlib").to_str()
+  var file = read_file(file_path).unwrap("couldn't read {file_path}").to_str()
   var input = "{stdlib}{newline}{file}{newline}"
 
   print_on_same_line("Parsing {file_path}")
