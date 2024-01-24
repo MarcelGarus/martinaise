@@ -243,7 +243,7 @@ fun write[W](writer: W, enum_: AstEnum) {
 struct Indent { amount: U64 }
 fun inc(indent: Indent): Indent { Indent { amount = indent.amount.inc() } }
 fun write[W](writer: W, indent: Indent) {
-  for i in 0.to(indent.amount.multiply(2)) do writer." "
+  for i in 0..indent.amount.multiply(2) do writer." "
 }
 struct Indented[T] { indent: Indent, what: T }
 fun write[W, T](writer: W, indented: Indented[T]) {
@@ -444,10 +444,10 @@ fun consume_keyword(parser: &Parser, keyword: Str): Bool {
   parser.rest().starts_with(keyword) orelse return false
   if parser.rest().len > keyword.len then {
     var char_after = parser.rest().get(keyword.len)
-    var goes_on = char_after == #_
-      .or(#A.until(#Z).contains(char_after))
-      .or(#a.until(#z).contains(char_after))
-      .or(#0.until(#9).contains(char_after))
+    var goes_on = {char_after == #_}
+      / {#A..=#Z}.contains(char_after)
+      / {#a..=#z}.contains(char_after)
+      / {#0..=#9}.contains(char_after)
     if goes_on then return false
   }
   parser.advance_by(keyword.len)
@@ -460,7 +460,7 @@ fun parse_name(parser: &Parser): Maybe[Str] {
     var char = parser.current()
     if {#A..=#Z}.contains(char) / {#a..=#z}.contains(char) / {char == #_}
     then { parser.advance() continue }
-    if #0.until(#9).contains(char) then
+    if {#0..=#9}.contains(char) then
       if parser.cursor == start
       then break
       else { parser.advance() continue }
@@ -472,13 +472,13 @@ fun parse_name(parser: &Parser): Maybe[Str] {
 
 fun parse_lower_name(parser: &Parser): Maybe[Str] {
   parser.consume_whitespace()
-  if not(#a.until(#z).contains(parser.current())) then return none[Str]()
+  if not({#a..=#z}.contains(parser.current())) then return none[Str]()
   parser.parse_name()
 }
 
 fun parse_upper_name(parser: &Parser): Maybe[Str] {
   parser.consume_whitespace()
-  if not(#A.until(#Z).contains(parser.current())) then return none[Str]()
+  if not({#A..=#Z}.contains(parser.current())) then return none[Str]()
   parser.parse_name()
 }
 
@@ -608,13 +608,13 @@ fun parse_digits(parser: &Parser, radix: U64): Result[Maybe[U64], Str] {
   then return bad_input[U64]("The radix is too big.")
   loop {
     var char = parser.current()
-    if #0.to(#0.add(min(radix, 10).to_U8())).contains(char) then {
+    if {#0 ..+ min(radix, 10).to_U8()}.contains(char) then {
       num = num.multiply(radix).add(char.subtract(#0).to_U64())
       parser.advance()
       continue
     }
     if radix >= 10
-    then if #a.to(#a.add(min(radix.subtract(10), 26).to_U8())).contains(char)
+    then if {#a ..+ min(radix.subtract(10), 26).to_U8()}.contains(char)
       then {
         num = num.multiply(radix).add(char.subtract(#a).add(10:U8).to_U64())
         parser.advance()
@@ -713,7 +713,7 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
       then num_braces = num_braces.inc()
       else break
     if num_braces >= metaness.inc() then {
-      for i in 0.to(num_braces.subtract(metaness.inc())) do part.&.push(#{)
+      for i in 0..num_braces.subtract(metaness.inc()) do part.&.push(#{)
       if part.is_not_empty() then {
         parts.&.push(AstExpr.str(part.to_str()))
         part = vec[Char]()
@@ -722,7 +722,7 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
       var expr = parser.parse_expr()? orelse return bad_input[Vec[AstExpr]](
         "Expected an expression as string interpolation.")
       parts.&.push(expr)
-      for i in 0.until(metaness) do
+      for i in 0 ..= metaness do
         parser.consume_prefix("}") orelse return bad_input[Vec[AstExpr]](
           "Expected a closing brace after string interpolation.")
       continue
@@ -745,7 +745,7 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
     | double quote + metaness single quotes -> string ends
     if parser.current() == #" then if {
       var is_followed_by_enough_single_quotes = true
-      for j in 1.until(metaness) do
+      for j in 1 ..= metaness do
         if parser.rest().get(j) != #'
         then is_followed_by_enough_single_quotes = false
       is_followed_by_enough_single_quotes
@@ -1238,7 +1238,7 @@ fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
   var lines = vec[Str]()
   var current_line = string_builder().&
   var offset_in_line = 0
-  for i in 0.to(code.len) do {
+  for i in 0..code.len do {
     if i == offset then offset_in_line = current_line.len
     if code.get(i) == newline
     then {
@@ -1252,13 +1252,13 @@ fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
   | offset_in_line is the offset into the last complete line.
   var num_lines_to_display = min(lines.len, 4)
   var out = string_builder().&
-  for line_number in lines.len.subtract(num_lines_to_display).to(lines.len) do {
+  for line_number in lines.len.subtract(num_lines_to_display)..lines.len do {
     out.write_line_number(line_number)
     out." | {lines.get(line_number)}{newline}"
   }
-  for i in 0.to(7.add(offset_in_line)) do out." "
+  for i in 0..7.add(offset_in_line) do out." "
   out."^{newline}"
-  for i in 0.to(7.add(offset_in_line)) do out." "
+  for i in 0..7.add(offset_in_line) do out." "
   out.write(error)
   out.to_str()
 }
@@ -1310,7 +1310,7 @@ fun merge(a: Type, b: Type): Maybe[Type] {
   if a.name != b.name then return none[Type]()
   if a.args.len != b.args.len then return none[Type]()
   var merged_args = vec[Type]()
-  for i in 0.to(a.args.len) do
+  for i in 0..a.args.len do
     switch merge(a.args.get(i), b.args.get(i))
     case none return none[Type]()
     case some(type) merged_args.&.push(type)
@@ -1877,12 +1877,12 @@ fun lookup_fun(
     var solver = create_type_solver(fun_.type_args)
     if type_args is some(type_args_) then {
       if type_args_.len != fun_.type_args.len then continue
-      for i in 0.to(type_args_.len) do
+      for i in 0..type_args_.len do
         solver.&.unify(type(fun_.type_args.get(i)), type_args_.get(i))?.assert()
     }
     if arg_types.len != fun_.args.len then continue
     var matches = true
-    for i in 0.to(arg_types.len) do
+    for i in 0..arg_types.len do
       solver.&.unify(fun_.args.get(i).type, arg_types.get(i))?
         orelse { matches = false break }
     if not(matches) then continue
@@ -2086,7 +2086,7 @@ fun compile(
     type.args.len == enum_.type_args.len orelse return error[Type, Str](
       "You tried to use a {type}, but {enum_.name} takes {enum_.type_args.len} 
       'type arguments.")
-    for i in 0.to(type.args.len) do
+    for i in 0..type.args.len do
       inner_type_env.&.put(enum_.type_args.get(i), type.args.get(i))
 
     var variants = vec[MonoEnumVariant]()
@@ -2199,7 +2199,7 @@ fun compile(
     case body(body) {
       var slots = vec[MonoSlot]()
       var vars = vars[MonoSlotRef]()
-      for i in 0.to(fun_.args.len) do {
+      for i in 0..fun_.args.len do {
         var slot = MonoSlotRef { index = slots.len }
         slots.&.push(MonoSlot {
           type = arg_types.get(i), initial_value = MonoSlotValue.arg(i),
@@ -2395,7 +2395,7 @@ fun compile_in_current_scope(
             "Tried to create struct {struct_.name} with 
             '{make_struct.type.args.len} type arguments, but it needs 
             '{struct_.type_args.len}.")
-        for i in 0.to(struct_.type_args.len) do
+        for i in 0..struct_.type_args.len do
           solver.&.unify(
             type(struct_.type_args.get(i)),
             make_struct.type.args.get(i).compile(self.type_env, ast, mono)?,
@@ -2454,7 +2454,7 @@ fun compile_in_current_scope(
         then return error[MonoExpr, Str](
           "Tried to create enum {enum_.name} with {make_enum.type.args.len} 
           'type arguments, but it needs {enum_.type_args.len}.")
-        for i in 0.to(enum_.type_args.len) do {
+        for i in 0..enum_.type_args.len do {
           solver.&.unify(
             type(enum_.type_args.get(i)),
             make_enum.type.args.get(i).compile(self.type_env, ast, mono)?
@@ -2995,7 +2995,7 @@ fun needed_for_multiple_of(number: U64, factor: U64): U64 {
 | TODO: move to stdlib?
 fun permutations(size: U64): Iter[Slice[U64], Permutations] {
   var numbers = vec[U64]()
-  for i in 0.to(size) do numbers.&.push(i)
+  for i in 0..size do numbers.&.push(i)
   Permutations { is_first = true, last = numbers.to_slice() }
     .wrap_in_iter[Slice[U64], Permutations]()
 }
@@ -3012,7 +3012,7 @@ fun next(self: &Permutations): Maybe[Slice[U64]] {
       | list[index].
       var smallest_index = index.inc()
       var smallest = self.last.get(index.inc())
-      for j in index.add(2).to(self.last.len) do
+      for j in index.add(2)..self.last.len do
         if {self.last.get(j) > self.last.get(index)}
           & {self.last.get(j) < smallest}
         then smallest_index = j
@@ -3049,7 +3049,7 @@ struct MemWriter {
 fun mem_writer(lines: U64): MemWriter {
   var lines_vec = vec[StringBuilder]()
   var last_shades = vec[MemShade]()
-  for i in 0.to(lines) do {
+  for i in 0..lines do {
     lines_vec.&.push(string_builder())
     last_shades.&.push(MemShade.padding)
   }
@@ -3110,7 +3110,7 @@ fun write(
     case padding unreachable()
     case a if writer.last_shades.get(line) is a then MemShade.b else MemShade.a
     case b if writer.last_shades.get(line) is b then MemShade.a else MemShade.b
-  for i in 0.to(layout.size) do writer.line(line)."{shade}"
+  for i in 0..layout.size do writer.line(line)."{shade}"
   writer.last_shades.get_ref(line).* = shade
 
   switch layout.kind
@@ -3125,7 +3125,7 @@ fun write(
         writer.line(line.add(2)).write_n(padding, " ")
         writer.line(line.add(3)).write_n(padding, "{MemShade.padding}")
         writer.shade(line.add(3)).* = MemShade.padding
-        for line in line.add(4).to(last_line) do {
+        for line in line.add(4)..last_line do {
           writer.line(line).write_n(padding, " ")
           writer.shade(line).* = MemShade.padding
         }
@@ -3135,7 +3135,7 @@ fun write(
           .write(field.name.fit_to_size(field.layout.size))
         writer.write(field.layout, line.add(3), shade)
         for line
-        in line.add(3).add(field.layout.num_lines_when_printing()).to(last_line)
+        in line.add(3).add(field.layout.num_lines_when_printing())..last_line
         do {
           writer.line(line).write_n(field.layout.size, " ")
           writer.shade(line).* = MemShade.padding
@@ -3158,13 +3158,13 @@ fun write(
       writer.line(line.inc()).write_n(padding, "{MemShade.padding}")
       writer.line(line.inc())."{if is_last then " " else "│"}"
       var lines = variant.layout.num_lines_when_printing()
-      for line in line.add(2).to(line.inc().add(lines)) do {
+      for line in line.add(2)..line.inc().add(lines) do {
         writer.line(line).write_n(padding, " ")
         writer.line(line)."{if is_last then " " else "│"}"
       }
       line = line.inc().add(variant.layout.num_lines_when_printing())
     }
-    for line in start_line.to(line) do writer.shade(line).* = MemShade.padding
+    for line in start_line..line do writer.shade(line).* = MemShade.padding
   }
 }
 fun fit_to_size(str: Str, size: U64): Str { str.fit_to_size(size, " ") }
@@ -3175,11 +3175,11 @@ fun fit_to_size(str: Str, size: U64, padding: Str): Str {
 
   var string = string_builder().&
   string.write(str)
-  for i in str.len.to(size) do string.write(padding)
+  for i in str.len..size do string.write(padding)
   string.to_str()
 }
 fun write_n[W](writer: W, n: U64, str: Str) {
-  for i in 0.to(n) do writer.write(str)
+  for i in 0..n do writer.write(str)
 }
 
 | Builtin Functions  
@@ -3670,7 +3670,7 @@ fun indent(labels: &Vec[Str]): LabeledIndent {
 struct LabeledIndent { labels: &Vec[Str] }
 fun write[W](writer: W, self: LabeledIndent) {
   if self.labels.is_not_empty() then
-    for i in 0.to(self.labels.len.dec()) do
+    for i in 0..self.labels.len.dec() do
       writer."  {self.labels.get(i)}:{newline}"
   if self.labels.is_empty()
   then writer."          "
