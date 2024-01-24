@@ -420,6 +420,7 @@ fun exit(status: U8): Never { 60.syscall(status.to_U64()) halt() }
 fun panic(message: Str): Never { stderr.writeln(message) exit(1:U8) }
 fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
+fun unreachable(reason: Str): Never { panic("unreachable: {reason}") }
 fun todo(): Never { panic("todo") }
 fun assert(condition: Bool) { assert(condition, "assert failed") }
 fun assert(condition: Bool, message: Str) { condition orelse panic(message) }
@@ -1153,7 +1154,7 @@ fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
     if i == a.len then return Ordering.less
     if i == b.len then return Ordering.greater
     var ord = a.get(i) <=> b.get(i)
-    if ord is equal then {} default return ord
+    if ord is equal then {} else return ord
     i = i.inc()
   }
 }
@@ -1218,10 +1219,12 @@ fun last[T](slice: Slice[T], amount: U64): Slice[T] {
   assert(amount <= slice.len, "last amount too big")
   slice.subslice(slice.len - amount, slice.len)
 }
+fun without_first[T](slice: Slice[T]): Slice[T] { slice.without_first(1) }
 fun without_first[T](slice: Slice[T], amount: U64): Slice[T] {
   assert(amount <= slice.len, "without_first amount too big")
   slice.subslice(amount, slice.len)
 }
+fun without_last[T](slice: Slice[T]): Slice[T] { slice.without_last(1) }
 fun without_last[T](slice: Slice[T], amount: U64): Slice[T] {
   assert(amount <= slice.len, "without_last amount too big")
   slice.subslice(0, slice.len - amount)
@@ -1360,7 +1363,7 @@ fun ==(a: Str, b: Str): Bool {
   a.len == b.len orelse return false
   if a <=> b is equal then true else false
 }
-fun hash(hasher: &Hasher, str: Str) { hasher.hash(str.chars) }
+fun hash(hasher: &Hasher, str: Str) { hasher.hash(str.chars()) }
 fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }
 
 fun iter(str: Str): Iter[Char, _] {
@@ -1370,7 +1373,7 @@ struct StrIter { str: Str, index: U64 }
 fun next(iter: &StrIter): Maybe[Char] {
   if iter.index < iter.str.len
   then {
-    var char = iter.str.chars.get(iter.index)
+    var char = iter.str.chars().get(iter.index)
     iter.index = iter.index.inc()
     some(char)
   }
@@ -1379,7 +1382,7 @@ fun next(iter: &StrIter): Maybe[Char] {
 
 fun substr(str: Str, from: U64, to: U64): Str {
   to <= str.len orelse panic("substr needs to be inside original str")
-  Str { chars = str.chars.subslice(from, to) }
+  str.chars().subslice(from, to).to_str()
 }
 fun first(str: Str): Char {
   assert(str.is_not_empty(), "first only works on non-empty strs")
@@ -1406,10 +1409,10 @@ fun without_last(str: Str, amount: U64): Str {
   str.substr(0, str.len - amount)
 }
 fun starts_with(str: Str, prefix: Str): Bool {
-  str.chars.starts_with(prefix.chars)
+  str.chars().starts_with(prefix.chars())
 }
 fun ends_with(str: Str, suffix: Str): Bool {
-  str.chars.ends_with(suffix.chars)
+  str.chars().ends_with(suffix.chars())
 }
 fun trim_prefix(str: &Str, prefix: Str) {
   assert(str.starts_with(prefix), "trim_prefix doesn't match prefix")
@@ -1421,14 +1424,14 @@ fun trim_suffix(str: &Str, suffix: Str) {
 }
 fun split(str: Str, separator: Str): Slice[Str] {
   var parts = vec[Str]()
-  for part in str.iter().split(separator.chars) do parts.&.push(part.to_str())
+  for part in str.iter().split(separator.chars()) do parts.&.push(part.to_str())
   parts.to_slice()
 }
 fun lines(slice: Str): Slice[Str] { slice.split("{newline}") }
 fun pad_right(str: Str, len: U64, char: Char): Str {
   var string = string_builder().&
   string.write(str)
-  loop if string.len < len then string.write(char) else break
+  loop if string.len() < len then string.write(char) else break
   string.to_str()
 }
 
@@ -1750,7 +1753,7 @@ fun read_byte(file: File): Result[Maybe[U8], Str] {
   else ok[Maybe[U8], Str](some(c))
 }
 
-fun write_bytes_safe(file: File, buffer: Slice[U8]): Result[Nothing, Str] {
+fun write_bytes_safely(file: File, buffer: Slice[U8]): Result[Nothing, Str] {
   loop {
     if buffer.is_empty() then break
     var bytes_written = 1.syscall(
@@ -1762,7 +1765,7 @@ fun write_bytes_safe(file: File, buffer: Slice[U8]): Result[Nothing, Str] {
   }
   ok[Nothing, Str]({})
 }
-fun write_byte_safe(file: File, byte: U8): Result[Nothing, Str] {
+fun write_byte_safely(file: File, byte: U8): Result[Nothing, Str] {
   var bytes_written = 1.syscall(
     file.descriptor, byte.&.to_address().to_U64(), 1,
   )
@@ -1771,10 +1774,10 @@ fun write_byte_safe(file: File, byte: U8): Result[Nothing, Str] {
   else ok[Nothing, Str]({})
 }
 fun write_bytes(file: File, buffer: Slice[U8]) {
-  file.write_bytes_safe(buffer) orelse(e) panic(e)
+  file.write_bytes_safely(buffer) orelse(e) panic(e)
 }
 fun write_byte(file: File, byte: U8) {
-  file.write_byte_safe(byte) orelse(e) panic(e)
+  file.write_byte_safely(byte) orelse(e) panic(e)
 }
 
 fun close(file: File): Result[Nothing, Str] {
@@ -1801,8 +1804,9 @@ fun write_file(name: Str, content: Slice[U8]): Result[Nothing, Str] {
       .to_set(),
     8#666 | read and write access for everyone
   )?
-  for byte in content do file.write_byte(byte)?
+  for byte in content do file.write_byte_safely(byte)?
   file.close()?
+  ok[Nothing, Str]({})
 }
 
 | Printing  
