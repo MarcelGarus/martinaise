@@ -72,54 +72,6 @@ fun print_on_same_line(message: Str) {
   eprintln(message)
 }
 
-| Types  
-| Types such as Int or Slice[&U8] are represented as a tree. For example, the
-| Slice[&U8] type is represented like this:
-|
-| Type { name = "Slice", args = [
-|   Type { name = "&", args = [
-|     Type { name = "U8", args = [] }
-|   ] }
-| ] }
-
-struct Type { name: Str, args: Vec[Type] }
-
-fun type(name: Str): Type { type(name, vec[Type]()) }
-fun type(name: Str, args: Vec[Type]): Type { Type { name, args } }
-fun is_never(type: Type): Bool { type.equals(type("Never")) }
-
-fun write[W](writer: W, type: Type) {
-  if type.name.equals("&")
-  then writer."&{type.args.get(0)}"
-  else writer."{type.name}{type_args(type.args)}"
-}
-fun type_args[T](args: Vec[T]): TypeArgsFormat[T] { TypeArgsFormat { args } }
-struct TypeArgsFormat[T] { args: Vec[T] }
-fun write[W, T](writer: W, type_args: TypeArgsFormat[T]) {
-  if type_args.args.is_not_empty()
-  then writer."[{comma_separated(type_args.args)}]"
-}
-
-fun equals(a: Type, b: Type): Bool {
-  a.name.equals(b.name) orelse return false
-  a.args.len.equals(b.args.len) orelse return false
-  for zip in zip(a.args.iter(), b.args.iter()) do
-    zip.a.equals(zip.b) orelse return false
-  true
-}
-fun hash(hasher: &Hasher, type: Type) {
-  hasher.hash(type.name)
-  hasher.hash_all(type.args)
-}
-
-| You can use _ to infer parts of the type, for example like Maybe[_].
-fun is_complete(type: Type): Bool {
-  if type.name.equals("_") then return false
-  for arg in type.args do arg.is_complete() orelse return false
-  true
-}
-fun is_incomplete(type: Type): Bool { not(type.is_complete()) }
-
 | Numbers  
 | Number types such such as U8 or I32 are special in Candy. These numbers and
 | mathematical functions for them are magically in scope. Here are some basic
