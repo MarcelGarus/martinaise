@@ -414,7 +414,7 @@ fun is_whitespace(char: Char): Bool {
 
 fun consume_whitespace(parser: &Parser) {
   loop {
-    if parser.cursor.is_at_least(parser.code.len()) then break
+    if parser.cursor >= parser.code.len() then break
     var char = parser.current()
     if char.is_whitespace() then {
       parser.cursor = parser.cursor.inc()
@@ -422,7 +422,7 @@ fun consume_whitespace(parser: &Parser) {
     }
     if char == #| then {
       loop {
-        if parser.cursor.is_at_least(parser.code.len()) then break
+        if parser.cursor >= parser.code.len() then break
         if parser.current() == newline then break
         parser.cursor = parser.cursor.inc()
       }
@@ -442,7 +442,7 @@ fun consume_prefix(parser: &Parser, prefix: Str): Bool {
 fun consume_keyword(parser: &Parser, keyword: Str): Bool {
   parser.consume_whitespace()
   parser.rest().starts_with(keyword) orelse return false
-  if parser.rest().len().is_greater_than(keyword.len()) then {
+  if parser.rest().len() > keyword.len() then {
     var char_after = parser.rest().get(keyword.len())
     var goes_on = char_after == #_
       .or(#A.until(#Z).contains(char_after))
@@ -604,7 +604,7 @@ fun parse_expr_suffix(
 fun parse_digits(parser: &Parser, radix: U64): Result[Maybe[U64], Str] {
   var start = parser.cursor
   var num = 0
-  if radix.is_greater_than(10.add(26))
+  if radix > 10.add(26)
   then return bad_input[U64]("The radix is too big.")
   loop {
     var char = parser.current()
@@ -613,7 +613,7 @@ fun parse_digits(parser: &Parser, radix: U64): Result[Maybe[U64], Str] {
       parser.advance()
       continue
     }
-    if radix.is_at_least(10)
+    if radix >= 10
     then if #a.to(#a.add(min(radix.subtract(10), 26).to_U8())).contains(char)
       then {
         num = num.multiply(radix).add(char.subtract(#a).add(10:U8).to_U64())
@@ -698,7 +698,7 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
       then break
       else metaness = metaness.inc()
   if parser.rest().get(metaness) == #"
-  then return if metaness.is_at_least(1)
+  then return if metaness >= 1
     then bad_input[Vec[AstExpr]]("Expected a double quote.")
     else no_match[Vec[AstExpr]]()
   parser.advance_by(metaness.inc())
@@ -712,7 +712,7 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
       if parser.rest().get(num_braces) == #{
       then num_braces = num_braces.inc()
       else break
-    if num_braces.is_at_least(metaness.inc()) then {
+    if num_braces >= metaness.inc() then {
       for i in 0.to(num_braces.subtract(metaness.inc())) do part.&.push(#{)
       if part.is_not_empty() then {
         parts.&.push(AstExpr.str(part.to_str()))
@@ -1195,7 +1195,7 @@ fun parse_def(parser: &Parser): Result[Maybe[AstDef], Str] {
 fun parse_defs(parser: &Parser): Result[Vec[AstDef], Str] {
   var defs = vec[AstDef]()
   loop switch parser.parse_def()? case some(d) defs.&.push(d) case none break
-  if parser.cursor.is_less_than(parser.code.len())
+  if parser.cursor < parser.code.len()
   then return error[Vec[AstDef], Str]("Expected a definition.")
   ok[Vec[AstDef], Str](defs)
 }
@@ -1205,7 +1205,7 @@ fun parse(code: Str, stdlib_size: U64): Result[Ast, Str] {
   | TODO: Replace switch with catch/orelse
   switch parser.&.parse_defs()
   case error(error) {
-    if parser.cursor.is_at_most(stdlib_size)
+    if parser.cursor <= stdlib_size
     then error[Ast, Str](format_error_with_context(
       parser.code, parser.cursor, error))
     else error[Ast, Str](format_error_with_context(
@@ -1244,7 +1244,7 @@ fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
     then {
       lines.&.push(current_line.to_str())
       current_line = string_builder().&
-      if i.is_at_least(offset) then break
+      if i >= offset then break
     }
     else current_line.write(code.get(i))
   }
@@ -1263,9 +1263,9 @@ fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
   out.to_str()
 }
 fun write_line_number[W](writer: W, n: U64) {
-  if n.is_at_least(1000) then writer.write(n)
-  else if n.is_at_least(100) then writer.write(" {n}")
-  else if n.is_at_least(10) then writer.write("  {n}")
+  if n >= 1000 then writer.write(n)
+  else if n >= 100 then writer.write(" {n}")
+  else if n >= 10 then writer.write("  {n}")
   else writer.write("   {n}")
 }
 
@@ -1383,7 +1383,7 @@ fun finish(solver: TypeSolver): Result[Map[Str, Type], Str] {
   for var_ in solver.vars do
     if not(solver.env.contains(var_)) then return error[Map[Str, Type], Str]({
       var out = string_builder().&
-      if solver.env.size.is_greater_than(0) then {
+      if solver.env.size > 0 then {
         out."These type variables are bound:{newline}"
         for entry in solver.env do out." - {entry.key} = {entry.value}{newline}"
       }
@@ -1493,7 +1493,7 @@ fun context(): Context { Context { signatures = vec[Str]() } }
 fun push(context: &Context, signature: Str) {
   context.signatures.&.push(signature)
   context.print_status()
-  if context.signatures.len.is_at_least(100) then {
+  if context.signatures.len >= 100 then {
     for signature in context.signatures do eprintln(signature)
     panic("overflow")
   }
@@ -1516,9 +1516,9 @@ fun print_status(context: Context) {
     for char in signature.iter().enumerate() do
       if {char.item == #(} / {char.item == #[} then { i = char.index break }
     out.write(signature.substr(0, i))
-    if out.len().is_greater_than(80) then break
+    if out.len() > 80 then break
   }
-  if out.len().is_greater_than(80) then {
+  if out.len() > 80 then {
     out.truncate_to_len(77)
     out.write("...")
   }
@@ -1641,7 +1641,7 @@ fun write[W](writer: W, name: Str, fun_: MonoFun) {
     for zip in body.slots.iter().enumerate() do {
       var index = zip.index
       var slot = zip.item
-      if index.is_greater_than(0) then writer.write(newline)
+      if index > 0 then writer.write(newline)
       writer."  _{index}: {slot.type} = "
       switch slot.initial_value
       case uninitialized writer."uninitialized"
@@ -1910,8 +1910,7 @@ fun lookup_fun(
     }
     out.to_str()
   })
-  if full_matches.len.is_greater_than(1)
-  then return error[LookupFunSolution, Str]({
+  if full_matches.len > 1 then return error[LookupFunSolution, Str]({
     var out = string_builder().&
     out.
       "This call matches multiple functions:{newline}
@@ -2940,7 +2939,7 @@ fun calculate_mem_layout(
     var smallest_size_of_remaining = 999999999 | TODO
     for permutation in permutations(remaining_fields.len).enumerate() do {
       | Only try the first 1000 permutations.
-      if permutation.index.is_at_least(1000) then break
+      if permutation.index >= 1000 then break
       var permutation = permutation.item
       var size = 0
       for field in permutation do {
@@ -2949,7 +2948,7 @@ fun calculate_mem_layout(
           .add(size.needed_for_multiple_of(field.layout.alignment)) | padding
           .add(field.layout.size) | the field itself
       }
-      if size.is_less_than(smallest_size_of_remaining) then {
+      if size < smallest_size_of_remaining then {
         smallest_size_of_remaining = size
         permutation.copy_to(smallest_permutation)
       }
@@ -2965,7 +2964,7 @@ fun calculate_mem_layout(
     for index in smallest_permutation do {
       var field = remaining_fields.get(index)
       var padding = size.needed_for_multiple_of(field.layout.alignment)
-      if padding.is_greater_than(0) then {
+      if padding > 0 then {
         parts.&.push(MemLayoutStructPart.padding(padding))
         size = size.add(padding)
       }
@@ -3008,14 +3007,14 @@ fun next(self: &Permutations): Maybe[Slice[U64]] {
   loop {
     if index == 0 then { return none[Slice[U64]]() }
     index = index.dec()
-    if self.last.get(index).is_less_than(self.last.get(index.inc())) then {
+    if self.last.get(index) < self.last.get(index.inc()) then {
       | Find the smallest element after the index that is greater than
       | list[index].
       var smallest_index = index.inc()
       var smallest = self.last.get(index.inc())
       for j in index.add(2).to(self.last.len) do
-        if self.last.get(j).is_greater_than(self.last.get(index))
-          .and(self.last.get(j).is_less_than(smallest))
+        if {self.last.get(j) > self.last.get(index)}
+          & {self.last.get(j) < smallest}
         then smallest_index = j
       swap(self.last.get_ref(index), self.last.get_ref(smallest_index))
       self.last.without_first(index.inc()).&.sort()
@@ -3068,7 +3067,7 @@ fun write[W](writer: W, layout: MemLayout) {
 
   var byte = 0
   loop {
-    if byte.is_greater_than(layout.size) then break
+    if byte > layout.size then break
     writer."▏{"{byte}".fit_to_size(7)}"
     byte = byte.add(8)
   }
@@ -3077,7 +3076,7 @@ fun write[W](writer: W, layout: MemLayout) {
   for line in mem_writer.lines.iter().enumerate() do {
     writer.write(line.item.to_str())
     if line.index == 0 then writer." {layout.size}"
-    if line.index.is_less_than(mem_writer.lines.len.dec()) then writer.writeln()
+    if line.index < mem_writer.lines.len.dec() then writer.writeln()
   }
 }
 fun num_lines_when_printing(layout: MemLayout): U64 {
@@ -3172,7 +3171,7 @@ fun fit_to_size(str: Str, size: U64): Str { str.fit_to_size(size, " ") }
 fun fit_to_size(str: Str, size: U64, padding: Str): Str {
   if size == 0 then return ""
   if size == 1 then return "…"
-  if str.len().is_at_least(size) then str = "{str.first(size.dec())}…"
+  if str.len() >= size then str = "{str.first(size.dec())}…"
 
   var string = string_builder().&
   string.write(str)
@@ -3713,8 +3712,8 @@ fun copy_memory[W](
 ) {
   var i = 0
   loop {
-    if i.is_at_least(amount) then break
-    if amount.subtract(i).is_at_least(8) then {
+    if i >= amount then break
+    if amount.subtract(i) >= 8 then {
       writer."
         '          mov r15, [{from_reg} + {from_offset.add(i)}]{newline}
         '          mov [{to_reg} + {to_offset.add(i)}], r15{newline}"
@@ -3777,7 +3776,7 @@ fun mangle(type: Type): Str {
 | struct FileWatcher { inotify: File, watch: File }
 | fun watch_file(path: Str) {
 |   var inotify_fd = 294.syscall(0) | inotify_init1
-|   if inotify_fd.cast[U64, I64]().is_at_most(0:I64)
+|   if inotify_fd.cast[U64, I64]() <= 0:I64
 |   then panic("couldn't open inotify interface for watching file")
 
 |   var flag_modify = 16#002
@@ -3821,7 +3820,7 @@ fun mangle(type: Type): Str {
 |     if len == 0 then panic("inotify read completed without an event")
 |     var i = 0
 |     loop {
-|       if i.is_at_least(len) then break
+|       if i >= len then break
 |       | Horrible bit magic to get the wd and len fields. Whenever the C struct
 |       | layout changes, this needs to be updated.
 |       var wd  = buf.get_ref(i).to_address().to_reference[I32]().*
@@ -3970,13 +3969,13 @@ fun main(args: Slice[Str]): Never {
   | - martinaise compile <file>
   | - martinaise run <file> [-- <additonal args>]
   | Note the program name itself is also an additional argument at the front.
-  if args.len.is_less_than(2) then wrong_usage()
+  if args.len < 2 then wrong_usage()
   var command = parse_command(args.get(1)) orelse wrong_usage()
   if command is help then {
     print_usage_info(stdout)
     exit(0:U8)
   }
-  if args.len.is_less_than(3) then wrong_usage()
+  if args.len < 3 then wrong_usage()
   var file_path = args.get(2)
 
   | TODO: support -O <output>
