@@ -2268,6 +2268,14 @@ fun exec(program: Str, args: Slice[Str]): Never {
   panic("exec didn't work")
 }
 
-fun run(command: Str, args: Slice[Str]) {
-  switch fork() case child exec(command, args) case parent(child) child.wait()
+| Note: The program needs to be the path to a concrete program. This does not
+| search the path.
+fun run(program: Str, args: Slice[Str]) {
+  switch fork() case child exec(program, args) case parent(child) child.wait()
+}
+fun run(shell_command: Str) {
+  | Using strace on a simple C program that uses the stdlib system function to
+  | run a command, we can see that it runs /bin/sh with sh -c <command>.
+  | Here, we do the same thing.
+  run("/bin/sh", vec("sh", "-c", shell_command).to_slice())
 }
