@@ -403,7 +403,23 @@ fun syscall(
   ret
 }
 
-| Many syscalls return 0 or -1 if an operation didn't work. Here's a helper for
+| Syscall table
+| https://chromium.googlesource.com/chromiumos/docs/+/master/constants/syscalls.md
+
+fun syscall_read(fd: U64, buf: U64, count: U64): U64                    {   0.syscall(fd, buf, count) }
+fun syscall_write(fd: U64, buf: U64, count: U64): U64                   {   1.syscall(fd, buf, count) }
+fun syscall_open(filename: U64, flags: U64, mode: U64): U64             {   2.syscall(filename, flags, mode) }
+fun syscall_close(fd: U64): U64                                         {   3.syscall(fd) }
+fun syscall_fork(): U64                                                 {  57.syscall() }
+fun syscall_execve(filename: U64, argv: U64, envp: U64): U64            {  59.syscall(filename, argv, envp) }
+fun syscall_exit(error_code: U64): U64                                  {  60.syscall(error_code) }
+fun syscall_wait4(pid: U64, stat_addr: U64, options: U64, ru: U64): U64 {  61.syscall(pid, stat_addr, options, ru) }
+fun syscall_creat(pathname: U64, mode: U64): U64                        {  85.syscall(pathname, mode) }
+fun syscall_time(tloc: U64): U64                                        { 201.syscall(tloc) }
+fun syscall_inotify_add_watch(fd: U64, path: U64, mask: U64): U64       { 254.syscall(fd, path, mask) }
+fun syscall_inotify_init1(flags: U64): U64                              { 294.syscall(flags) }
+
+| Many syscalls return 0 or -1 if an operation didn't work. Here are helpers for
 | dealing with that.
 fun error_if_zero(value: U64, message: Str): Result[U64, Str] {
   if value.cast[U64, I64]() == 0:I64
@@ -419,7 +435,7 @@ fun error_if_minus_one(value: U64, message: Str): Result[U64, Str] {
 | Halting, Exiting, and Panicking  
 
 fun halt(): Never { loop {} }
-fun exit(status: U8): Never { 60.syscall(status.to_U64()) halt() }
+fun exit(status: U8): Never { syscall_exit(status.to_U64()) halt() }
 fun panic(message: Str): Never { stderr.writeln(message) exit(1:U8) }
 fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
@@ -1699,19 +1715,18 @@ fun to_os_flags(flags: Set[OpenFileFlag]): U64 {
   var flag_trunc  = 8#1000
   var flag_append = 8#2000
 
-  var res = 0
   | "The argument flags must include one of the following access modes:
   |  O_RDONLY, O_WRONLY, or O_RDWR. These request opening the file read-only,
   |  write-only, or read/write, respectively."
   | https://man7.org/linux/man-pages/man2/open.2.html
-  res = res.or(
+  var res =
     if flags.contains(OpenFileFlag.read)
     then if flags.contains(OpenFileFlag.write) then flag_rdwr else flag_rdonly
     else {
       flags.contains(OpenFileFlag.write) orelse panic("must read or write")
       flag_wronly
     }
-  )
+
   | "In addition, zero or more file creation flags and file status flags can be
   |  bitwise ORed in flags. The file creation flags are O_CLOEXEC, O_CREATE,
   |  O_DIRECTORY, O_EXCL, O_NOCTTY, O_NOFOLLOW, O_TMPFILE, and O_TRUNC. The file
@@ -1721,6 +1736,7 @@ fun to_os_flags(flags: Set[OpenFileFlag]): U64 {
   |  affect the semantics of subsequent I/O operations."
   | https://man7.org/linux/man-pages/man2/open.2.html
   | TODO: support more flags
+  eprintln("create flag set? {flags.contains(OpenFileFlag.create)}")
   if flags.contains(OpenFileFlag.create)   then res = res.or(flag_create)
   if flags.contains(OpenFileFlag.truncate) then res = res.or(flag_trunc)
   if flags.contains(OpenFileFlag.append)   then res = res.or(flag_append)
@@ -1728,29 +1744,32 @@ fun to_os_flags(flags: Set[OpenFileFlag]): U64 {
 }
 
 fun create_file(filename: Str, mode: U64): Result[File, Str] {
-  var descriptor = 85.syscall(filename.to_os_str().address.to_U64(), mode)
+  var descriptor = syscall_creat(filename.to_os_str().address.to_U64(), mode)
     .error_if_zero("couldn't create file {filename}")?
   ok[File, Str](File { descriptor })
 }
 
 fun open_file(
-  filename: Str, flags: Set[OpenFileFlag], mode: U64
+  filename: Str, flags: Set[OpenFileFlag], mode: U64,
 ): Result[File, Str] {
   var descriptor =
-    2.syscall(filename.to_os_str().address.to_U64(), flags.to_os_flags())
-    .error_if_zero("couldn't open file {filename}")?
+    syscall_open(
+      filename.to_os_str().address.to_U64(),
+      flags.to_os_flags(),
+      mode,
+    ).error_if_zero("couldn't open file {filename}")?
   ok[File, Str](File { descriptor })
 }
 
 fun read(file: File, buffer: Slice[U8]): Result[U64, Str] {
   var bytes_read =
-    0.syscall(file.descriptor, buffer.data.to_address().to_U64(), buffer.len)
+    syscall_read(file.descriptor, buffer.data.to_address().to_U64(), buffer.len)
     .error_if_minus_one("couldn't read from file")?
   ok[U64, Str](bytes_read)
 }
 fun read_byte(file: File): Result[Maybe[U8], Str] {
   var c = 0:U8
-  var bytes_read = 0.syscall(file.descriptor, c.&.to_address().to_U64(), 1)
+  var bytes_read = syscall_read(file.descriptor, c.&.to_address().to_U64(), 1)
     .error_if_minus_one("couldn't read from file")?
   if bytes_read == 0 then ok[Maybe[U8], Str](none[U8]())
   else ok[Maybe[U8], Str](some(c))
@@ -1759,7 +1778,7 @@ fun read_byte(file: File): Result[Maybe[U8], Str] {
 fun write_bytes_safely(file: File, buffer: Slice[U8]): Result[Nothing, Str] {
   loop {
     if buffer.is_empty() then break
-    var bytes_written = 1.syscall(
+    var bytes_written = syscall_write(
       file.descriptor, buffer.data.to_address().to_U64(), buffer.len,
     )
     if bytes_written.cast[U64, I64]() <= 0:I64
@@ -1769,7 +1788,7 @@ fun write_bytes_safely(file: File, buffer: Slice[U8]): Result[Nothing, Str] {
   ok[Nothing, Str]({})
 }
 fun write_byte_safely(file: File, byte: U8): Result[Nothing, Str] {
-  var bytes_written = 1.syscall(
+  var bytes_written = syscall_write(
     file.descriptor, byte.&.to_address().to_U64(), 1,
   )
   if bytes_written.cast[U64, I64]() <= 0:I64
@@ -1784,7 +1803,7 @@ fun write_byte(file: File, byte: U8) {
 }
 
 fun close(file: File): Result[Nothing, Str] {
-  var returned = 3.syscall(file.descriptor)
+  var returned = syscall_close(file.descriptor)
   if returned.cast[U64, I64]() < 0:I64
   then error[Nothing, Str]("couldn't close file")
   else ok[Nothing, Str]({})
@@ -2190,7 +2209,7 @@ fun min[T](slice: Set[T]): Maybe[T] {
 | Telling the Time  
 
 fun seconds_since_unix_epoch(): Result[U64, Str] {
-  var result = 201.syscall(0).error_if_minus_one("couldn't get time")?
+  var result = syscall_time(0).error_if_minus_one("couldn't get time")?
   ok[U64, Str](result)
 }
 
@@ -2210,7 +2229,7 @@ fun write[W](writer: W, pid: Pid) { writer."PID({pid.value})" }
 | on the child process), the child process enters a zombie mode and resources
 | are not freed.
 fun fork(): Forked {
-  var pid = 57.syscall()
+  var pid = syscall_fork()
   if pid == 0 then Forked.child else Forked.parent(Pid { value = pid })
 }
 
@@ -2226,18 +2245,18 @@ fun fork(): Forked {
 |
 | https://man7.org/linux/man-pages/man2/wait4.2.html
 | https://man7.org/linux/man-pages/man2/waitid.2.html
-fun raw_wait4(pid: U64) { 61.syscall(pid, 0, 0, 0).ignore() }
-fun wait(pid: Pid) { raw_wait4(pid.value) }
+fun wait(pid: Pid) { syscall_wait4(pid.value, 0, 0, 0).ignore() }
 
-fun exec(command: Str, args: Slice[Str]): Never {
-  var command = command.to_os_str().address.to_U64()
+fun exec(program: Str, args: Slice[Str]): Never {
+  var program = program.to_os_str().address.to_U64()
   | The exec syscall expects the arguments to be arranged like this:
   | [ptr to str][ptr to str][0         ]
   var os_args = malloc(args.len.inc() * 8, 8).to_reference[U64]()
   for arg in args.iter().enumerate() do
     os_args.add_stride_offset(arg.index).* =
       arg.item.to_os_str().address.to_U64()
-  59.syscall(command, os_args.to_address().to_U64(), 0.&.to_address().to_U64())
+  syscall_execve(
+    program, os_args.to_address().to_U64(), 0.&.to_address().to_U64())
   panic("exec didn't work")
 }
 
