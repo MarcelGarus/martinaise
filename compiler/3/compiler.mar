@@ -3344,90 +3344,6 @@ fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, U64] {
   offsets
 }
 
-| struct MachineCodeBuilder {
-|   text: Vec[U8],   | text section:   initialized, executable
-|   data: Vec[U8],   | data section:   initialized, readable, writable
-|   rodata: Vec[U8], | rodata section: initialized, readable
-|   bss: Vec[U8],    | bss section:    readable, writable
-|   backpatches: Map[Str, Label],
-|   label: Map[Label, ]
-| }
-
-| struct Asm {
-|   text: Vec[AsmInstruction],
-| }
-| struct AsmInstruction {
-|   moniker: Moniker,
-|   op1: AsmOperand,
-|   op2: AsmOperand,
-| }
-| struct Moniker {
-|   c0: Char, c1: Char, c2: Char, c3: Char, c4: Char, c5: Char, c6: Char,
-| }
-| enum AsmOperand {
-|   immediate: U64,
-|   register: Register,
-|   memory: Register,
-| }
-| struct Register { moniker: RegisterMoniker, size: RegisterSize }
-
-| 1 2 4 8
-| b w d q
-| u d q o
-| e z v a s
-
-| lea r8, [rsp + 88] ; _0
-| mov r15, [r8 + 0]
-| mov [rsp + 0], r15
-| mov r15, [r8 + 8]
-| mov [rsp + 8], r15
-| lea r8, [rsp + 104] ; _1
-| mov r15, [r8 + 0]
-| mov [rsp + 16], r15
-| lea r8, [rsp + 88] ; _0
-| add r8, 8 ; _0.len
-| mov r15, [r8 + 0]
-| mov [rsp + 24], r15
-| sub rsp, 8
-| lea r8, [rsp + 56]
-| mov [rsp], r8
-| call subslice_of_U8_end__withargs_Slice_of_U8_end__and_U64_and_U64_end_
-| add rsp, 40
-
-| lea A [S + 88]
-| mov B [A + 0]
-| mov [S + 0] B
-| mov B [A + 8]
-| mov [S + 8] B
-| lea A [S + 104]
-| mov B [A + 0]
-| mov [S + 16] B
-
-
-| mov A S
-| call "subslice[U8](Slice[U8], U64, U64)"
-
-| enum RegisterMoniker {
-|      | Intl Moniker | traditional usage | cdecl arg | Martinaise usage
-|   a, | rax          | accumulator       | 1         | general purpose
-|   b, | rbx          | base              |           | general purpose
-|   c, | rcx          | counter           | 5         | general purpose
-|   d, | rdx          | data              | 4         | general purpose
-|   e, | rsi          | source index      | 3         | general purpose
-|   f, | rdi          | destination index | 2         | general purpose
-|   g, | rsp          | stack pointer     |           | general purpose
-|   h, | rbp          | base pointer      |           | general purpose
-|   i, | r8           | general purpose   | 6         | general purpose
-|   j, | r9           | general purpose   | 7         | general purpose
-|   k, | r10          | general purpose   |           | general purpose
-|   l, | r11          | general purpose   |           | general purpose
-|   m, | r12          | general purpose   |           | general purpose
-|   n, | r13          | general purpose   |           | general purpose
-|   r, | r14          | general purpose   |           | return pointer
-|   s, | r15          | general purpose   |           | stack pointer
-| }
-| enum RegisterSize { s64, s32, s16, h8, l8 }
-
 fun write_as_asm[W](writer: W, layouts: Map[Type, MemLayout], mono: Mono) {
   var context = context()
   var layouts = mono.type_defs.mem_layout_all_types()
@@ -3901,6 +3817,139 @@ fun mangle(type: Type): Str {
   formatted.&.write(type)
   formatted.to_str().mangle()
 }
+
+| Machine Code Backend  
+| TODO: implement
+
+| struct MachineCodeBuilder {
+|   text: Vec[U8],   | text section:   initialized, executable
+|   data: Vec[U8],   | data section:   initialized, readable, writable
+|   rodata: Vec[U8], | rodata section: initialized, readable
+|   bss: Vec[U8],    | bss section:    readable, writable
+|   backpatches: Map[Label, Vec[U64]], | label to offsets
+|   label: Map[Label, U64], | label to offset
+| }
+
+| struct Asm { mc: &MachineCodeBuilder }
+
+| fun emit(asm: &Asm, byte: U8) { asm.mc.text.&.push(byte) }
+| fun emit(asm: &Asm, word: U16) {
+|   asm.emit(word.to_U8())
+|   asm.emit({word >> 8}.to_U8())
+| }
+| fun emit(asm: &Asm, doubleword: U32) {
+|   asm.emit(doubleword.to_U16())
+|   asm.emit({doubleword >> 16}.to_U16())
+| }
+| | fun emit(asm: &Asm, quadword: U64) {
+| |   asm.emit(quadword.to_U32())
+| |   asm.emit({quadword >> 32}.to_U32())
+| | }
+| fun emit(asm: &Asm, a: U8, b: U8, c: U8) { asm.emit(a) asm.emit(b) asm.emit(c) }
+
+| fun mov_rax(asm: &Asm, value: U32) {
+|   asm.emit(16#48:U8, 16#c7:U8, 16#c0:U8)
+|   asm.emit(value)
+| }
+| fun mov_rax(asm: &Asm, value: U32) {
+|   asm.emit(16#48:U8, 16#c7:U8, 16#c0:U8)
+|   asm.emit(value)
+| }
+| fun ret(asm: &Asm) { asm.emit(16#c3:U8) }
+
+| fun add() machinecode {
+|   48 c7 c0 09 00 00 00
+| }
+
+| fun init_heap(asm: &Asm) {
+|   asm.mov_rax(12) | brk
+|   asm.mov_rdi(0)  | brk(0) returns the break (where the data segment ends)
+|   asm.syscall()
+|   asm.mov("_heap.head", rax)
+|   asm.mov("_heap.end", rax)
+|   asm.ret()
+| }
+
+| struct Asm {
+|   text: Vec[AsmInstruction],
+| }
+| struct AsmInstruction {
+|   moniker: Moniker,
+|   op1: AsmOperand,
+|   op2: AsmOperand,
+| }
+| struct Moniker {
+|   c0: Char, c1: Char, c2: Char, c3: Char, c4: Char, c5: Char, c6: Char,
+| }
+| enum AsmOperand {
+|   immediate: U64,
+|   register: Register,
+|   memory: Register,
+| }
+| struct Register { moniker: RegisterMoniker, size: RegisterSize }
+
+| | 1 2 4 8
+| | b w d q
+| | u d q o
+| | e z v a s
+
+| | lea r8, [rsp + 88] ; _0
+| | mov r15, [r8 + 0]
+| | mov [rsp + 0], r15
+| | mov r15, [r8 + 8]
+| | mov [rsp + 8], r15
+| | lea r8, [rsp + 104] ; _1
+| | mov r15, [r8 + 0]
+| | mov [rsp + 16], r15
+| | lea r8, [rsp + 88] ; _0
+| | add r8, 8 ; _0.len
+| | mov r15, [r8 + 0]
+| | mov [rsp + 24], r15
+| | sub rsp, 8
+| | lea r8, [rsp + 56]
+| | mov [rsp], r8
+| | call subslice_of_U8_end__withargs_Slice_of_U8_end__and_U64_and_U64_end_
+| | add rsp, 40
+
+| | lea A [S + 88]
+| | mov B [A + 0]
+| | mov [S + 0] B
+| | mov B [A + 8]
+| | mov [S + 8] B
+| | lea A [S + 104]
+| | mov B [A + 0]
+| | mov [S + 16] B
+
+
+| | mov A S
+| | call "subslice[U8](Slice[U8], U64, U64)"
+
+| fun reg16() {}
+
+| var rax = reg64(16#ff) var eax = reg32(16#ff) var ax = reg16(ffff) var ah = reg8(55)
+
+
+
+| enum RegisterMoniker {
+|      | Intl Moniker | traditional usage | cdecl arg | Martinaise usage
+|   a, | rax          | accumulator       | 1         | general purpose
+|   b, | rbx          | base              |           | general purpose
+|   c, | rcx          | counter           | 5         | general purpose
+|   d, | rdx          | data              | 4         | general purpose
+|   e, | rsi          | source index      | 3         | general purpose
+|   f, | rdi          | destination index | 2         | general purpose
+|   g, | rsp          | stack pointer     |           | general purpose
+|   h, | rbp          | base pointer      |           | general purpose
+|   i, | r8           | general purpose   | 6         | general purpose
+|   j, | r9           | general purpose   | 7         | general purpose
+|   k, | r10          | general purpose   |           | general purpose
+|   l, | r11          | general purpose   |           | general purpose
+|   m, | r12          | general purpose   |           | general purpose
+|   n, | r13          | general purpose   |           | general purpose
+|   r, | r14          | general purpose   |           | return pointer
+|   s, | r15          | general purpose   |           | stack pointer
+| }
+| enum RegisterSize { s64, s32, s16, h8, l8 }
 
 | File Watching  
 | Here, we implement watching files usign a crude, blocking version.
