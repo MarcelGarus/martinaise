@@ -3882,7 +3882,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   var layouts = mono.type_defs.mem_layout_all_types()
   if command is mono then { println(mono) return true }
 
-  print_on_same_line("Compiling reflection functions")
+  print_on_same_line("Monoing reflection functions")
   mono.&.compile_builtins(layouts)
 
   print_on_same_line("Compiling to assembly")
@@ -3900,6 +3900,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
     return true
   }
 
+  | TODO: compile to machine code in memory (in Martinaise)
   | TODO: assert that the file ends with .mar?
   var file_path_without_extension =
     if file_path.ends_with(".mar")
@@ -3975,13 +3976,17 @@ fun main(args: Slice[Str]): Never {
 
       switch fork()
       case child {
+        run("clear")
+        eprintln("=====")
         var was_successful = run_pipeline(command, file_path)
         exit(if was_successful then 0:U8 else 1:U8)
       }
-      case parent(child) child.wait()
-
-      eprintln("waiting for file change")
-      watcher.wait_for_change()
+      case parent(child) {
+        eprintln("waiting for file change")
+        watcher.wait_for_change()
+        child.kill(9)
+        child.wait()
+      }
     }
   } else {
     var was_successful = run_pipeline(command, file_path)

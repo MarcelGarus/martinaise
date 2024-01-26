@@ -414,6 +414,7 @@ fun syscall_fork(): U64                                                 {  57.sy
 fun syscall_execve(filename: U64, argv: U64, envp: U64): U64            {  59.syscall(filename, argv, envp) }
 fun syscall_exit(error_code: U64): U64                                  {  60.syscall(error_code) }
 fun syscall_wait4(pid: U64, stat_addr: U64, options: U64, ru: U64): U64 {  61.syscall(pid, stat_addr, options, ru) }
+fun syscall_kill(pid: U64, sig: U64): U64                               {  62.syscall(pid, sig) }
 fun syscall_creat(pathname: U64, mode: U64): U64                        {  85.syscall(pathname, mode) }
 fun syscall_time(tloc: U64): U64                                        { 201.syscall(tloc) }
 fun syscall_inotify_add_watch(fd: U64, path: U64, mask: U64): U64       { 254.syscall(fd, path, mask) }
@@ -725,24 +726,24 @@ fun modulo(a: U64, b: U64): U64 { a.remainder(b) }
 
 fun and(a: U64, b: U64): U64 asm {
   mov r8, [rsp + 16] ; a
-  and r8, [rsp + 32] ; b
-  mov r9, [rsp + 8]   ; return address
+  and r8, [rsp + 24] ; b
+  mov r9, [rsp + 8]  ; return address
   mov [r9], r8
   ret
 }
 
 fun or(a: U64, b: U64): U64 asm {
   mov r8, [rsp + 16] ; a
-  or r8, [rsp + 32] ; b
-  mov r9, [rsp + 8]   ; return address
+  or r8, [rsp + 24]  ; b
+  mov r9, [rsp + 8]  ; return address
   mov [r9], r8
   ret
 }
 
 fun xor(a: U64, b: U64): U64 asm {
   mov r8, [rsp + 16] ; a
-  xor r8, [rsp + 32] ; b
-  mov r9, [rsp + 8]   ; return address
+  xor r8, [rsp + 24] ; b
+  mov r9, [rsp + 8]  ; return address
   mov [r9], r8
   ret
 }
@@ -1744,6 +1745,7 @@ fun to_os_flags(flags: Set[OpenFileFlag]): U64 {
   |  affect the semantics of subsequent I/O operations."
   | https://man7.org/linux/man-pages/man2/open.2.html
   | TODO: support more flags
+  eprintln("create flag set? {flags.contains(OpenFileFlag.create)}")
   if flags.contains(OpenFileFlag.create)   then res = res.or(flag_create)
   if flags.contains(OpenFileFlag.truncate) then res = res.or(flag_trunc)
   if flags.contains(OpenFileFlag.append)   then res = res.or(flag_append)
@@ -2253,6 +2255,12 @@ fun fork(): Forked {
 | https://man7.org/linux/man-pages/man2/wait4.2.html
 | https://man7.org/linux/man-pages/man2/waitid.2.html
 fun wait(pid: Pid) { syscall_wait4(pid.value, 0, 0, 0).ignore() }
+
+fun kill(pid: Pid, signal: U64): Result[Nothing, Str] {
+  if syscall_kill(pid.value, signal) == 0
+  then ok[Nothing, Str]({})
+  else error[Nothing, Str]("couldn't send signal")
+}
 
 fun exec(program: Str, args: Slice[Str]): Never {
   var program = program.to_os_str().address.to_U64()
