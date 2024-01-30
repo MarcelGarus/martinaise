@@ -3818,138 +3818,341 @@ fun mangle(type: Type): Str {
   formatted.to_str().mangle()
 }
 
-| Machine Code Backend  
-| TODO: implement
+| Assembling  
+| Martinaise supports two backends, both of which operate on the abstraction
+| level of x86_64 assembly instructions:
+| - A textual assembly backend that produces NASM.
+| - A binary backend that produces machine code directly.
+|
+| The process of converting the Mono to one of these stages is called
+| "assembling". To support both backends, assembling is generic over an
+| assembler. An assembler is a type with a function for every required assembly
+| instruction, for example:
+| - ret()
+| - add(Reg64, Reg64)
+| - add(Reg32, Reg32)
+| - mov(Reg64, U64)
+| - ...
+|
+| This way, the assembly instructions are type checked in Martinaise (for
+| example, you can't add a Reg16 to a Reg64). The binary backend can also emit
+| totally different opcodes and encodings for instructions with the same
+| mnemonic but different operands.
 
-| struct MachineCodeBuilder {
-|   text: Vec[U8],   | text section:   initialized, executable
-|   data: Vec[U8],   | data section:   initialized, readable, writable
-|   rodata: Vec[U8], | rodata section: initialized, readable
-|   bss: Vec[U8],    | bss section:    readable, writable
-|   backpatches: Map[Label, Vec[U64]], | label to offsets
-|   label: Map[Label, U64], | label to offset
+| All register names.
+enum Reg8  { ah,al, bh,bl, cl,  dl,  sil, dil, spl, bpl, r8b, r9b, r10b, r11b, r12b, r13b, r14b, r15b }
+enum Reg16 { ax,    bx,    cx,  dx,  si,  di,  sp,  bp,  r8w, r9w, r10w, r11w, r12w, r13w, r14w, r15w }
+enum Reg32 { eax,   ebx,   ecx, edx, esi, edi, esp, ebp, r8d, r9d, r10d, r11d, r12d, r13d, r14d, r15d }
+enum Reg64 { rax,   rbx,   rcx, rdx, rsi, rdi, rsp, rbp, r8,  r9,  r10,  r11,  r12,  r13,  r14,  r15  }
+
+var rax = Reg64.rax var eax = Reg32.eax var ax = Reg16.ax var ah = Reg8.ah var al = Reg8.al
+var rbx = Reg64.rbx var ebx = Reg32.ebx var bx = Reg16.bx var bh = Reg8.bh var bl = Reg8.bl
+var rcx = Reg64.rcx var ecx = Reg32.ecx var cx = Reg16.cx var cl = Reg8.cl
+var rdx = Reg64.rdx var edx = Reg32.edx var dx = Reg16.dx var dl = Reg8.dl
+var rsi = Reg64.rsi var esi = Reg32.esi var si = Reg16.si var sil = Reg8.sil
+var rdi = Reg64.rdi var edi = Reg32.edi var di = Reg16.di var dil = Reg8.dil
+var rsp = Reg64.rsp var esp = Reg32.esp var sp = Reg16.sp var spl = Reg8.spl
+var rbp = Reg64.rbp var ebp = Reg32.ebp var bp = Reg16.bp var bpl = Reg8.bpl
+var r8 = Reg64.r8 var r8d = Reg32.r8d var r8w = Reg16.r8w var r8b = Reg8.r8b
+var r9 = Reg64.r9 var r9d = Reg32.r9d var r9w = Reg16.r9w var r9b = Reg8.r9b
+var r10 = Reg64.r10 var r10d = Reg32.r10d var r10w = Reg16.r10w var r10b = Reg8.r10b
+var r11 = Reg64.r11 var r11d = Reg32.r11d var r11w = Reg16.r11w var r11b = Reg8.r11b
+var r12 = Reg64.r12 var r12d = Reg32.r12d var r12w = Reg16.r12w var r12b = Reg8.r12b
+var r13 = Reg64.r13 var r13d = Reg32.r13d var r13w = Reg16.r13w var r13b = Reg8.r13b
+var r14 = Reg64.r14 var r14d = Reg32.r14d var r14w = Reg16.r14w var r14b = Reg8.r14b
+var r15 = Reg64.r15 var r15d = Reg32.r15d var r15w = Reg16.r15w var r15b = Reg8.r15b
+
+fun write[W](writer: W, reg: Reg8) {
+  writer.write(
+    switch reg
+    case ah "ah" case al "al" case bh "bh" case bl "bl" case cl "cl" case dl "dl"
+    case sil  "sil"  case dil  "dil"  case spl  "spl"  case bpl  "bpl"
+    case r8b  "r8b"  case r9b  "r9b"  case r10b "r10b" case r11b "r11b"
+    case r12b "r12b" case r13b "r13b" case r14b "r14b" case r15b "r15b"
+  )
+}
+fun write[W](writer: W, reg: Reg16) {
+  writer.write(
+    switch reg
+    case ax   "ax"   case bx   "bx"   case cx   "cx"   case dx   "dx"
+    case si   "si"   case di   "di"   case sp   "sp"   case bp   "bp"
+    case r8w  "r8w"  case r9w  "r9w"  case r10w "r10w" case r11w "r11w"
+    case r12w "r12w" case r13w "r13w" case r14w "r14w" case r15w "r15w"
+  )
+}
+fun write[W](writer: W, reg: Reg32) {
+  writer.write(
+    switch reg
+    case eax  "eax"  case ebx  "ebx"  case ecx  "ecx"  case edx  "edx"
+    case esi  "esi"  case edi  "edi"  case esp  "esp"  case ebp  "ebp"
+    case r8d  "r8d"  case r9d  "r9d"  case r10d "r10d" case r11d "r11d"
+    case r12d "r12d" case r13d "r13d" case r14d "r14d" case r15d "r15d"
+  )
+}
+fun write[W](writer: W, reg: Reg64) {
+  writer.write(
+    switch reg
+    case rax "rax" case rbx "rbx" case rcx "rcx" case rdx "rdx"
+    case rsi "rsi" case rdi "rdi" case rsp "rsp" case rbp "rbp"
+    case r8  "r8"  case r9  "r9"  case r10 "r10" case r11 "r11"
+    case r12 "r12" case r13 "r13" case r14 "r14" case r15 "r15"
+  )
+}
+
+| A reference to memory. The "where" is usually a Reg64 or a Str (label).
+struct Memory[W] { where: W, offset: U64 }
+fun memory[W](where: W): Memory[W] { Memory { where, offset = 0 } }
+fun memory[W](where: W, offset: U64): Memory[W] { Memory { where, offset } }
+
+fun write[W, D](writer: W, mem: Memory[D]) { writer."[{mem.where} + {mem.offset}]" }
+
+| struct Sections[Assembler] {
+|   text:   Assembler, | readable, executable
+|   rodata: Assembler, | readable
+|   bss:    Assembler, | readable, writable, uninitialized
+|   data:   Assembler, | readable, writable
 | }
 
-| struct Asm { mc: &MachineCodeBuilder }
+fun assemble[Assembler](
+  mono: Mono, layouts: Map[Type, MemLayout],
+  text: &Assembler, | readable, executable (for code)
+) {
+  var arg_layouts = map[Str, MemLayout]() | maps fun signature to arg struct mem layout
+  var string_literals = vec[Str]() | will be put into rodata section at the end
 
-| fun emit(asm: &Asm, byte: U8) { asm.mc.text.&.push(byte) }
-| fun emit(asm: &Asm, word: U16) {
-|   asm.emit(word.to_U8())
-|   asm.emit({word >> 8}.to_U8())
-| }
-| fun emit(asm: &Asm, doubleword: U32) {
-|   asm.emit(doubleword.to_U16())
-|   asm.emit({doubleword >> 16}.to_U16())
-| }
-| | fun emit(asm: &Asm, quadword: U64) {
-| |   asm.emit(quadword.to_U32())
-| |   asm.emit({quadword >> 32}.to_U32())
-| | }
-| fun emit(asm: &Asm, a: U8, b: U8, c: U8) { asm.emit(a) asm.emit(b) asm.emit(c) }
+  for fun_ in mono.funs do {
+    var name = fun_.key
+    var arg_struct = MonoStruct { fields = vec[MonoStructField]() }
+    for arg in fun_.value.arg_types.iter().enumerate() do
+      arg_struct.fields.&.push(MonoStructField {
+        name = "arg_{arg.index}", type = arg.item,
+      })
+    arg_layouts.&.put(name, calculate_mem_layout(
+      type("arguments of {name}"), MonoTypeDef.struct_(arg_struct),
+      layouts.&, mono.type_defs,
+    ))
+  }
 
-| fun mov_rax(asm: &Asm, value: U32) {
-|   asm.emit(16#48:U8, 16#c7:U8, 16#c0:U8)
-|   asm.emit(value)
+  text.label("_start") {
+    text.call("_init_heap")
+    text.call("_init_globals")
+    | The C-style args need to be converted into Martinaise-style args, aka a
+    | Slice[Str].
+    var num_args = r8
+    var c_args_cursor = r9
+    var args_cursor = r10
+    var args_start = r15
+    var args_end = r11
+    text.pop(num_args) | First thing on the stack is the number of args.
+    text.mov(c_args_cursor, rsp) | Next, the args themselves.
+    text.mov(r10, r8)  | How much memory to reserve for the slice data.
+    text.shl(r10, 4)   | For each arg, there's a Str = 16 bytes.
+    text.sub(rsp, r10) | Reserve memory.
+    text.mov(args_cursor, rsp)
+    text.mov(args_start, rsp)
+    text.mov(args_end, c_args_cursor)
+    text.label(".find_next_arg")
+    text.cmp(args_cursor, args_end)
+    text.je(".call_main") | Read all arguments.
+    { | Find the length of the null-terminated C string, save it in r13.
+      var start = r12
+      var cursor = r13
+      text.mov(start, memory(c_args_cursor))
+      text.mov(cursor, start)
+      text.label(".find_len")
+      text.mov(r14b, memory(cursor))
+      text.cmp(r14, 0)    | null-byte?
+      text.je(".add_arg") | ends the string
+      text.inc(cursor)
+      text.jmp(".find_len")
+      text.label(".add_arg")
+      text.sub(cursor, start) | calculate the str length
+    }
+    | Build the Str's Slice[Char]
+    text.mov(memory(args_cursor), r12)    | data: &Char
+    text.mov(memory(args_cursor, 8), r13) | len: U64
+    text.add(args_cursor, 16)
+    text.add(c_args_cursor, 8)
+    text.jmp(".find_next_arg")
+    text.label(".call_main") {
+      text.sub(rsp, 16) | Reserve memory for the surrounding Slice
+      text.mov(memory(rsp), r15)    | data: &Str
+      text.mov(memory(rsp, 8), r8) | len: U64
+      text.push(0) | where to store the returned Never
+      text.call("main(Slice[Str])")
+    }
+  }
+
+  text.label("_init_heap") {
+    text.mov(rax, 12) | brk syscall number
+    text.mov(rdi, 0)  | brk(0) returns the break (where the data segment ends)
+    text.syscall()
+    text.mov(memory("_heap.head"), rax)
+    text.mov(memory("_heap.end"), rax)
+    text.ret()
+  }
+
+  text.label("_malloc") {
+    | Note: This function doesn't follow the Martinaise calling convention. It
+    | expects the amount to allocate in r8 and the alignment in r9. Returns the
+    | address in rax.
+    var amount = r8
+    var alignment = r9
+    var new_address = r10
+    text.mov(new_address, memory("_heap.head"))
+    { | Check that alignment is 1, 2, 4, or 8.
+      text.cmp(alignment, 8)
+      text.jg(".error") | alignment must be <= 8
+      text.popcnt(r11, alignment)
+      text.cmp(r11, 1)
+      text.jne(".error") | alignment must be 1, 2, 4, or 8
+    }
+    { | Round up the new_address to a multiple of the alignment. Rounding up to
+      | the alignment means:
+      |
+      | new_address = (new_address + (r9 - 1)) & bitmask for lower bits
+      |
+      | For example, for alignment 4:
+      |
+      | new_address = (new_address + 3) & ...1111100
+      text.add(new_address, alignment)
+      text.dec(new_address)
+      text.neg(alignment) | ...1111 or ...1110 or ...1100 or ...1000
+      text.and(new_address, alignment)
+    }
+    var end_of_allocation = r11
+    text.mov(end_of_allocation, new_address)
+    text.mov(end_of_allocation, amount)
+    text.cmp(end_of_allocation, memory("_heap.end"))
+    text.jge(".realloc")
+    text.label(".actually_allocate") {
+      | Here, we assume there is enough memory for the allocation.
+      text.mov(memory("_heap.head"), end_of_allocation)
+      text.mov(rax, r10)
+      text.ret()
+    }
+    text.label(".realloc") {
+      var new_brk = r12
+      text.mov(new_brk, memory("_heap.end"))
+      text.label(".find_new_brk")
+      text.add(new_brk, 4096) | page size on Linux
+      text.cmp(new_brk, end_of_allocation)
+      text.jl("find_new_brk")
+      { | Do the brk(new_brk) syscall.
+        text.push(new_address)
+        text.push(end_of_allocation)
+        text.push(new_brk)
+        text.mov(rax, 12)      | brk
+        text.mov(rdi, new_brk) | brk(new_brk) moves the break to new_brk
+        text.syscall()
+        text.pop(new_brk)
+        text.pop(end_of_allocation)
+        text.pop(new_address)
+      }
+      text.cmp(rax, new_brk)
+      text.jl(".error") | setting the brk failed TODO: describe why this can happen
+      text.mov(memory("_heap.end"), rax)
+      text.jmp(".actually_allocate")
+    }
+    text.label(".error") {
+      text.mov(rax, 0)
+      text.ret()
+    }
+  }
+}
+
+| Textual NASM Assembler  
+| This backend produces textual NASM code.
+
+struct Nasm { builder: StringBuilder }
+
+fun write_byte(asm: &Nasm, byte: U8) { asm.builder.&.write_byte(byte) }
+fun write_bytes(asm: &Nasm, bytes: Slice[U8]) {
+  asm.builder.&.write_bytes(bytes)
+}
+fun label(asm: &Nasm, label: Str)               { asm."{label}:{newline}" }
+fun add(asm: &Nasm, a: Reg64, b: U64)           { asm."add {a} {b}{newline}" }
+fun add(asm: &Nasm, a: Reg64, b: Reg64)         { asm."add {a} {b}{newline}" }
+fun and(asm: &Nasm, a: Reg64, b: Reg64)         { asm."and {a} {b}{newline}" }
+fun call(asm: &Nasm, label: Str)                { asm."call {label}{newline}" }
+fun cmp(asm: &Nasm, a: Reg64, b: U64)           { asm."cmp {a} {b}{newline}" }
+fun cmp(asm: &Nasm, a: Reg64, b: Memory[Str])   { asm."cmp {a} {b}{newline}" }
+fun cmp(asm: &Nasm, a: Reg64, b: Reg64)         { asm."cmp {a} {b}{newline}" }
+fun dec(asm: &Nasm, a: Reg64)                   { asm."dec {a}{newline}" }
+fun inc(asm: &Nasm, a: Reg64)                   { asm."inc {a}{newline}" }
+fun je(asm: &Nasm, label: Str)                  { asm."je {label}{newline}" }
+fun jg(asm: &Nasm, label: Str)                  { asm."jg {label}{newline}" }
+fun jge(asm: &Nasm, label: Str)                 { asm."jge {label}{newline}" }
+fun jl(asm: &Nasm, label: Str)                  { asm."jl {label}{newline}" }
+fun jmp(asm: &Nasm, label: Str)                 { asm."jmp {label}{newline}" }
+fun jne(asm: &Nasm, label: Str)                 { asm."jne {label}{newline}" }
+fun jz(asm: &Nasm, label: Str)                  { asm."jz {label}{newline}" }
+fun mov(asm: &Nasm, a: Reg8, b: Memory[Reg64])  { asm."mov {a} {b}{newline}" }
+fun mov(asm: &Nasm, a: Reg64, b: U64)           { asm."mov {a} {b}{newline}" }
+fun mov(asm: &Nasm, a: Reg64, b: Reg64)         { asm."mov {a} {b}{newline}" }
+fun mov(asm: &Nasm, a: Reg64, b: Memory[Str])   { asm."mov {a} {b}{newline}" }
+fun mov(asm: &Nasm, a: Reg64, b: Memory[Reg64]) { asm."mov {a} {b}{newline}" }
+fun mov(asm: &Nasm, a: Memory[Str], b: Reg64)   { asm."mov {a} {b}{newline}" }
+fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg64) { asm."mov {a} {b}{newline}" }
+fun neg(asm: &Nasm, a: Reg64)                   { asm."neg {a}{newline}" }
+fun pop(asm: &Nasm, a: Reg64)                   { asm."pop {a}{newline}" }
+fun popcnt(asm: &Nasm, a: Reg64, b: Reg64)     { asm."popcnt {a} {b}{newline}" }
+fun push(asm: &Nasm, a: U64)                    { asm."push {a}{newline}" }
+fun push(asm: &Nasm, a: Reg64)                  { asm."push {a}{newline}" }
+fun ret(asm: &Nasm)                             { asm."ret{newline}" }
+fun shl(asm: &Nasm, a: Reg64, amount: U64)   { asm."shl {a} {amount}{newline}" }
+fun sub(asm: &Nasm, a: Reg64, b: U64)           { asm."sub {a} {b}{newline}" }
+fun sub(asm: &Nasm, a: Reg64, b: Reg64)         { asm."sub {a} {b}{newline}" }
+fun syscall(asm: &Nasm)                         { asm."syscall{newline}" }
+
+| Machine Code Assembler  
+| This backend produces x86_64 machine code directly. Compared to generating
+| assembly code, this has some benefits:
+| - There are less dependencies. Martinaise can directly output an executable
+|   without requiring a third-party assembler or linker.
+| - It uses less memory. It doesn't create a huge string of assembly source code
+|   that no human is going to read anyways.
+| - It enables whole-program JIT compilation. The generated machine code can be
+|   kept in memory, mmaped as executable and jumped to directly.
+
+struct MachineCodeAssembler {
+  text: Vec[U8],   | text section:   initialized, executable
+  data: Vec[U8],   | data section:   initialized, readable, writable
+  rodata: Vec[U8], | rodata section: initialized, readable
+  bss: Vec[U8],    | bss section:    readable, writable
+  label: Map[Label, U64], | label to offset
+  backpatches: Map[Label, Vec[U64]], | places that need to be fixed offsets
+}
+
+fun emit(asm: &Assembler, byte: U8) { asm.mc.text.&.push(byte) }
+fun emit(asm: &Assembler, word: U16) {
+  asm.emit(word.to_U8())
+  asm.emit(word.shift_right(8).to_U8())
+}
+fun emit(asm: &Assembler, doubleword: U32) {
+  asm.emit(doubleword.to_U16())
+  asm.emit(doubleword.shift_right(16).to_U16())
+}
+| fun emit(asm: &Assembler, quadword: U64) {
+|   asm.emit(quadword.to_U32())
+|   asm.emit(quadword.shift_right(32).to_U32())
 | }
-| fun mov_rax(asm: &Asm, value: U32) {
-|   asm.emit(16#48:U8, 16#c7:U8, 16#c0:U8)
-|   asm.emit(value)
-| }
-| fun ret(asm: &Asm) { asm.emit(16#c3:U8) }
+fun emit(asm: &Assembler, a: U8, b: U8, c: U8) { asm.emit(a) asm.emit(b) asm.emit(c) }
+
+fun mov_rax(asm: &Assembler, value: U32) {
+  asm.emit(16#48:U8, 16#c7:U8, 16#c0:U8)
+  asm.emit(value)
+}
+fun mov_rax(asm: &Assembler, reg64: Reg64, value: U32) {
+  | REX.W + C7 /0 id
+  asm.emit(16#48:U8, 16#c7:U8, 16#c0:U8)
+  asm.emit(value)
+}
+fun ret(asm: &Assembler) { asm.emit(16#c3:U8) }
 
 | fun add() machinecode {
-|   48 c7 c0 09 00 00 00
+|   48 c7 c0 00000009
 | }
-
-| fun init_heap(asm: &Asm) {
-|   asm.mov_rax(12) | brk
-|   asm.mov_rdi(0)  | brk(0) returns the break (where the data segment ends)
-|   asm.syscall()
-|   asm.mov("_heap.head", rax)
-|   asm.mov("_heap.end", rax)
-|   asm.ret()
-| }
-
-| struct Asm {
-|   text: Vec[AsmInstruction],
-| }
-| struct AsmInstruction {
-|   moniker: Moniker,
-|   op1: AsmOperand,
-|   op2: AsmOperand,
-| }
-| struct Moniker {
-|   c0: Char, c1: Char, c2: Char, c3: Char, c4: Char, c5: Char, c6: Char,
-| }
-| enum AsmOperand {
-|   immediate: U64,
-|   register: Register,
-|   memory: Register,
-| }
-| struct Register { moniker: RegisterMoniker, size: RegisterSize }
-
-| | 1 2 4 8
-| | b w d q
-| | u d q o
-| | e z v a s
-
-| | lea r8, [rsp + 88] ; _0
-| | mov r15, [r8 + 0]
-| | mov [rsp + 0], r15
-| | mov r15, [r8 + 8]
-| | mov [rsp + 8], r15
-| | lea r8, [rsp + 104] ; _1
-| | mov r15, [r8 + 0]
-| | mov [rsp + 16], r15
-| | lea r8, [rsp + 88] ; _0
-| | add r8, 8 ; _0.len
-| | mov r15, [r8 + 0]
-| | mov [rsp + 24], r15
-| | sub rsp, 8
-| | lea r8, [rsp + 56]
-| | mov [rsp], r8
-| | call subslice_of_U8_end__withargs_Slice_of_U8_end__and_U64_and_U64_end_
-| | add rsp, 40
-
-| | lea A [S + 88]
-| | mov B [A + 0]
-| | mov [S + 0] B
-| | mov B [A + 8]
-| | mov [S + 8] B
-| | lea A [S + 104]
-| | mov B [A + 0]
-| | mov [S + 16] B
-
-
-| | mov A S
-| | call "subslice[U8](Slice[U8], U64, U64)"
-
-| fun reg16() {}
-
-| var rax = reg64(16#ff) var eax = reg32(16#ff) var ax = reg16(ffff) var ah = reg8(55)
-
-
-
-| enum RegisterMoniker {
-|      | Intl Moniker | traditional usage | cdecl arg | Martinaise usage
-|   a, | rax          | accumulator       | 1         | general purpose
-|   b, | rbx          | base              |           | general purpose
-|   c, | rcx          | counter           | 5         | general purpose
-|   d, | rdx          | data              | 4         | general purpose
-|   e, | rsi          | source index      | 3         | general purpose
-|   f, | rdi          | destination index | 2         | general purpose
-|   g, | rsp          | stack pointer     |           | general purpose
-|   h, | rbp          | base pointer      |           | general purpose
-|   i, | r8           | general purpose   | 6         | general purpose
-|   j, | r9           | general purpose   | 7         | general purpose
-|   k, | r10          | general purpose   |           | general purpose
-|   l, | r11          | general purpose   |           | general purpose
-|   m, | r12          | general purpose   |           | general purpose
-|   n, | r13          | general purpose   |           | general purpose
-|   r, | r14          | general purpose   |           | return pointer
-|   s, | r15          | general purpose   |           | stack pointer
-| }
-| enum RegisterSize { s64, s32, s16, h8, l8 }
 
 | File Watching  
 | Here, we implement watching files usign a crude, blocking version.
