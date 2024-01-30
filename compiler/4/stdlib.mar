@@ -18,12 +18,15 @@
 | TODO:   break and continue with targets
 | TODO:   funs as values, function types, higher-order funs?
 | TODO:   slice literals? array literals?
+| TODO: stdlib
+| TODO:   infinity, minus infinity?
 | TODO: catch more errors
 | TODO:   enforce that statement-like expressions evaluate to Nothing
 | TODO:   disallow _ in type args, structs, enums, and recursive functions
 | TODO:   improve int parsing: be strict about whitespace
 | TODO:   catch circular global definitions
 | TODO: tooling
+| TODO:   use g++ name mangling for automatic gdb demangling
 | TODO:   watching files
 | TODO:   breakpoint
 | TODO:   stack traces

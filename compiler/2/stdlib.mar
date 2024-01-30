@@ -170,8 +170,11 @@ enum Result[O, E] { ok: O, error: E }
 fun ok[O, E](o: O): Result[O, E] { Result[O, E].ok(o) }
 fun error[O, E](e: E): Result[O, E] { Result[O, E].error(e) }
 
+fun unwrap[O, E](result: Result[O, E], message: Str): O {
+  switch result case ok(o) o case error panic(message)
+}
 fun unwrap[O, E](result: Result[O, E]): O {
-  switch result case ok(o) o case error(e) panic("called error.unwrap")
+  switch result case ok(o) o case error(e) panic("called error.unwrap: {e}")
 }
 
 fun write[W, O, E](writer: W, result: Result[O, E]) {
@@ -636,6 +639,9 @@ fun len(builder: StringBuilder): U64 { builder.chars.len }
 fun truncate_to_len(builder: &StringBuilder, len: U64) {
   assert(len.is_at_most(builder.chars.len))
   builder.chars.len = len
+}
+fun write[W](writer: W, builder: StringBuilder) {
+  writer.write_bytes(builder.chars.to_slice().cast[Slice[Char], Slice[U8]]())
 }
 fun to_str(builder: StringBuilder): Str {
   Str { chars = builder.chars.to_slice() }

@@ -437,7 +437,24 @@ fun error_if_minus_one(value: U64, message: Str): Result[U64, Str] {
 
 fun halt(): Never { loop {} }
 fun exit(status: U8): Never { syscall_exit(status.to_U64()) halt() }
-fun panic(message: Str): Never { stderr.writeln(message) exit(1:U8) }
+fun panic(message: Str): Never asm {
+  ; This is implemented in assembly just to make sure that panic doesn't depend
+  ; on any other functionality.
+  mov rax, 1          ; write syscall
+  mov rdi, 2          ; stderr
+  mov rsi, [rsp + 16] ; message.data
+  mov rdx, [rsp + 24] ; message.len
+  syscall
+  push 10 ; newline character
+  mov rax, 1   ; write syscall
+  mov rdi, 2   ; stderr
+  mov rsi, rsp ; pointer to newline
+  mov rdx, 1
+  syscall
+  mov rax, 60 ; exit
+  mov rdi, 1  ; status code 1
+  syscall
+}
 fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
 fun unreachable(reason: Str): Never { panic("unreachable: {reason}") }
