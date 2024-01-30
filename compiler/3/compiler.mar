@@ -3346,7 +3346,6 @@ fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, U64] {
 
 fun write_as_asm[W](writer: W, layouts: Map[Type, MemLayout], mono: Mono) {
   var context = context()
-  var layouts = mono.type_defs.mem_layout_all_types()
 
   var arg_layouts = map[Str, MemLayout]() | maps fun signature to arg struct mem layout
   var string_literals = vec[Str]() | will be put into rodata section at the end
