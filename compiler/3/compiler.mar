@@ -3996,11 +3996,11 @@ fun machine_code(): MachineCode {
 fun emit(asm: &MachineCode, byte: U8) { asm.bytes.&.push(byte) }
 fun emit(asm: &MachineCode, word: U16) {
   asm.emit(word.to_U8())
-  asm.emit(word.shift_right(8).to_U8())
+  asm.emit(word.divide(256:U16).to_U8())
 }
 fun emit(asm: &MachineCode, doubleword: U32) {
   asm.emit(doubleword.to_U16())
-  asm.emit(doubleword.shift_right(16).to_U16())
+  asm.emit(doubleword.divide(256:U32).divide(256:U32).to_U16())
 }
 | fun emit(asm: &MachineCode, quadword: U64) {
 |   asm.emit(quadword.to_U32())
@@ -4047,7 +4047,9 @@ fun and(asm: &MachineCode, a: Reg64, b: Reg64) {
   todo("implement and instruction")
 }
 fun call(asm: &MachineCode, label: Str) {
-  todo("implement call instruction")
+  asm.emit(16#e8:U8)
+  asm.emit(16#aaaaaaaa:U32) | relative address
+  | TODO: add backpatch
 }
 fun cmp(asm: &MachineCode, a: Reg8, b: U8) {
   todo("implement cmp instruction")
