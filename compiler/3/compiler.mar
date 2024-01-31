@@ -3979,44 +3979,207 @@ fun nasm(mono: Mono, layouts: Map[Type, MemLayout]): Str {
 | - It enables whole-program JIT compilation. The generated machine code can be
 |   kept in memory, mmaped as executable and jumped to directly.
 
-struct MachineCodeAssembler {
-  text: Vec[U8],   | text section:   initialized, executable
-  data: Vec[U8],   | data section:   initialized, readable, writable
-  rodata: Vec[U8], | rodata section: initialized, readable
-  bss: Vec[U8],    | bss section:    readable, writable
-  label: Map[Label, U64], | label to offset
-  backpatches: Map[Label, Vec[U64]], | places that need to be fixed offsets
+struct MachineCode {
+  bytes: Vec[U8],
+  labels: Map[Str, U64], | label to offset
+  backpatches: Map[Str, Vec[U64]], | places that need to be fixed
 }
 
-fun emit(asm: &Assembler, byte: U8) { asm.mc.text.&.push(byte) }
-fun emit(asm: &Assembler, word: U16) {
+fun machine_code(): MachineCode {
+  MachineCode {
+    bytes = vec[U8](),
+    labels = map[Str, U64](),
+    backpatches = map[Str, Vec[U64]](),
+  }
+}
+
+fun emit(asm: &MachineCode, byte: U8) { asm.bytes.&.push(byte) }
+fun emit(asm: &MachineCode, word: U16) {
   asm.emit(word.to_U8())
   asm.emit(word.shift_right(8).to_U8())
 }
-fun emit(asm: &Assembler, doubleword: U32) {
+fun emit(asm: &MachineCode, doubleword: U32) {
   asm.emit(doubleword.to_U16())
   asm.emit(doubleword.shift_right(16).to_U16())
 }
-| fun emit(asm: &Assembler, quadword: U64) {
+| fun emit(asm: &MachineCode, quadword: U64) {
 |   asm.emit(quadword.to_U32())
 |   asm.emit(quadword.shift_right(32).to_U32())
 | }
-fun emit(asm: &Assembler, a: U8, b: U8, c: U8) { asm.emit(a) asm.emit(b) asm.emit(c) }
+fun emit(asm: &MachineCode, a: U8, b: U8, c: U8) { asm.emit(a) asm.emit(b) asm.emit(c) }
 
-fun mov_rax(asm: &Assembler, value: U32) {
+| TODO: Remove. This is only called for asm functions.
+fun write_byte(asm: &MachineCode, byte: U8) { todo("remove asm functions") }
+fun write_bytes(asm: &MachineCode, asm: Slice[U8]) {
+  todo("remove asm functions")
+}
+
+fun comment(asm: &MachineCode, comment: Str) {}
+
+fun label(asm: &MachineCode, label: Str) { asm.labels.&.put(label, asm.bytes.len) }
+fun disambiguated_label(asm: &MachineCode, prefix: Str): Str {
+  var label = "{prefix}.{asm.bytes.len}"
+  asm.label(label)
+  label
+}
+
+fun global(asm: &MachineCode, label: Str) {}
+
+fun align(asm: &MachineCode, alignment: U64) {
+  asm.resb(asm.bytes.len.needed_for_multiple_of(alignment))
+}
+fun resb(asm: &MachineCode, amount: U64) {
+  for i in 0.to(amount) do asm.emit(16#aa:U8) | use aa as placeholder
+}
+fun db(asm: &MachineCode, bytes: Slice[U8])  {
+  | TODO: add push_all to stdlib
+  for byte in bytes do asm.emit(byte)
+}
+
+| Instructions
+fun add(asm: &MachineCode, a: Reg64, b: U64) {
+  todo("implement add instruction")
+}
+fun add(asm: &MachineCode, a: Reg64, b: Reg64) {
+  todo("implement add instruction")
+}
+fun and(asm: &MachineCode, a: Reg64, b: Reg64) {
+  todo("implement and instruction")
+}
+fun call(asm: &MachineCode, label: Str) {
+  todo("implement call instruction")
+}
+fun cmp(asm: &MachineCode, a: Reg8, b: U8) {
+  todo("implement cmp instruction")
+}
+fun cmp(asm: &MachineCode, a: Reg64, b: U64) {
+  todo("implement cmp instruction")
+}
+fun cmp(asm: &MachineCode, a: Reg64, b: Memory[Str]) {
+  todo("implement cmp instruction")
+}
+fun cmp(asm: &MachineCode, a: Reg64, b: Reg64) {
+  todo("implement cmp instruction")
+}
+fun dec(asm: &MachineCode, a: Reg64) {
+  todo("implement dec instruction")
+}
+fun inc(asm: &MachineCode, a: Reg64) {
+  todo("implement inc instruction")
+}
+fun je(asm: &MachineCode, label: Str) {
+  todo("implement je instruction")
+}
+fun jg(asm: &MachineCode, label: Str) {
+  todo("implement jg instruction")
+}
+fun jge(asm: &MachineCode, label: Str) {
+  todo("implement jge instruction")
+}
+fun jl(asm: &MachineCode, label: Str) {
+  todo("implement jl instruction")
+}
+fun jmp(asm: &MachineCode, label: Str) {
+  todo("implement jmp instruction")
+}
+fun jne(asm: &MachineCode, label: Str) {
+  todo("implement jne instruction")
+}
+fun jz(asm: &MachineCode, label: Str) {
+  todo("implement jz instruction")
+}
+fun lea(asm: &MachineCode, a: Reg64, b: Memory[Str]) {
+  todo("implement lea instruction")
+}
+fun lea(asm: &MachineCode, a: Reg64, b: Memory[Reg64]) {
+  todo("implement lea instruction")
+}
+fun mov(asm: &MachineCode, a: Reg8, b: Memory[Reg64]) {
+  todo("implement mov instruction")
+}
+fun mov(asm: &MachineCode, a: Reg64, b: U64) {
+  todo("implement mov instruction")
+}
+fun mov(asm: &MachineCode, a: Reg64, b: Reg64) {
+  todo("implement mov instruction")
+}
+fun mov(asm: &MachineCode, a: Reg64, b: Memory[Str]) {
+  todo("implement mov instruction")
+}
+fun mov(asm: &MachineCode, a: Reg64, b: Memory[Reg64]) {
+  todo("implement mov instruction")
+}
+fun mov(asm: &MachineCode, a: Memory[Str], b: Reg64) {
+  todo("implement mov instruction")
+}
+fun mov(asm: &MachineCode, a: Memory[Reg64], b: Reg8) {
+  todo("implement mov instruction")
+}
+fun mov(asm: &MachineCode, a: Memory[Reg64], b: Reg16) {
+  todo("implement mov instruction")
+}
+fun mov(asm: &MachineCode, a: Memory[Reg64], b: Reg32) {
+  todo("implement mov instruction")
+}
+fun mov(asm: &MachineCode, a: Memory[Reg64], b: Reg64) {
+  todo("implement mov instruction")
+}
+fun neg(asm: &MachineCode, a: Reg64) {
+  todo("implement neg instruction")
+}
+fun pop(asm: &MachineCode, a: Reg64) {
+  todo("implement pop instruction")
+}
+fun popcnt(asm: &MachineCode, a: Reg64, b: Reg64) {
+  todo("implement popcnt instruction")
+}
+fun push(asm: &MachineCode, a: U64) {
+  todo("implement push instruction")
+}
+fun push(asm: &MachineCode, a: Reg64) {
+  todo("implement push instruction")
+}
+fun push(asm: &MachineCode, a: Str) {
+  todo("implement push instruction")
+}
+fun ret(asm: &MachineCode) {
+  asm.emit(16#c3:U8)
+}
+fun shl(asm: &MachineCode, a: Reg64, amount: U64) {
+  todo("implement shl instruction")
+}
+fun sub(asm: &MachineCode, a: Reg64, b: U64) {
+  todo("implement sub instruction")
+}
+fun sub(asm: &MachineCode, a: Reg64, b: Reg64) {
+  todo("implement sub instruction")
+}
+fun syscall(asm: &MachineCode) {
+  todo("implement syscall instruction")
+}
+
+fun mov_rax(asm: &MachineCode, value: U32) {
   asm.emit(16#48:U8, 16#c7:U8, 16#c0:U8)
   asm.emit(value)
 }
-fun mov_rax(asm: &Assembler, reg64: Reg64, value: U32) {
+fun mov_rax(asm: &MachineCode, reg64: Reg64, value: U32) {
   | REX.W + C7 /0 id
   asm.emit(16#48:U8, 16#c7:U8, 16#c0:U8)
   asm.emit(value)
 }
-fun ret(asm: &Assembler) { asm.emit(16#c3:U8) }
 
 | fun add() machinecode {
 |   48 c7 c0 00000009
 | }
+
+| Compiles the Mono to an ELF64 binary.
+fun elf(mono: Mono, layouts: Map[Type, MemLayout]): Vec[U8] {
+  var text   = machine_code()
+  var bss    = machine_code()
+  var rodata = machine_code()
+  mono.assemble(layouts, text.&, rodata.&, bss.&)
+  todo("link sections")
+}
 
 | File Watching  
 | Here, we implement watching files usign a crude, blocking version.
@@ -4146,6 +4309,16 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
     buffered.flush()
     print_on_same_line("Compiled to assembly. Enjoy!")
     return true
+  }
+
+  if command is compile then {
+    print_on_same_line("Assembling")
+    var elf = mono.elf(layouts)
+    print_on_same_line("Writing executable")
+    var buffered = stdout.buffered_writer(1024).&
+    buffered.writeln(elf)
+    buffered.flush()
+    print_on_same_line("Compiled to elf binary. Enjoy!")
   }
 
   todo()

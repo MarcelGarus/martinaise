@@ -65,6 +65,7 @@ fun exit(status: U8): Never { libc_exit(status) halt() }
 fun panic(message: Str): Never { stderr.writeln(message) exit(1:U8) }
 fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
+fun todo(message: Str): Never { panic("todo: {message}") }
 fun todo(): Never { panic("todo") }
 fun assert(condition: Bool) { assert(condition, "assert failed") }
 fun assert(condition: Bool, message: Str) {
