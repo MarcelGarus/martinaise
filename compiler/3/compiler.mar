@@ -3861,8 +3861,6 @@ fun write_bytes(asm: &Nasm, bytes: Slice[U8]) {
   asm.builder.&.write_bytes(bytes)
 }
 
-fun comment(asm: &Nasm, comment: Str) { asm."  ; {comment}{newline}" }
-
 fun mangle(name: Str): Str {
   | We trust labels that start with an underscore to only contain valid label
   | characters. This is so that _start, _malloc, _global_... etc. labels all
@@ -3903,6 +3901,8 @@ fun mangle(name: Str): Str {
 fun mangle(mem: Memory[Str]): Memory[Str] {
   memory(mem.where.mangle(), mem.offset)
 }
+
+fun comment(asm: &Nasm, comment: Str) { asm."  ; {comment}{newline}" }
 
 fun label(asm: &Nasm, label: Str) { asm."{label.mangle()}:{newline}" }
 fun disambiguated_label(asm: &Nasm, prefix: Str): Str {
@@ -3963,9 +3963,7 @@ fun nasm(mono: Mono, layouts: Map[Type, MemLayout]): Str {
   var text   = Nasm { builder = string_builder() }
   var bss    = Nasm { builder = string_builder() }
   var rodata = Nasm { builder = string_builder() }
-  eprintln("assembling")
   mono.assemble(layouts, text.&, rodata.&, bss.&)
-  eprintln("assembled")
   "section .text{newline}{text.builder}{newline}
   'section .rodata{newline}{rodata.builder}{newline}
   'section .bss{newline}{bss.builder}{newline}"
