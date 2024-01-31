@@ -7,15 +7,14 @@ const reg8 = [
 ];
 const reg64 = [
   //
-  "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rsp", "rbp",
+  "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
   "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
 ];
 
 void main() async {
   // for (final offset in [0, 0x33333333])
-  //   for (final dest in reg8)
-  //     for (final source in reg64)
-  //       await dumpInstruction("mov $dest, [$source + $offset]");
+  for (final dest in reg8)
+    for (final source in reg64) await dumpInstruction("mov $dest, [$source]");
 
   for (final immediate in [0x11223344, 0x1122334455667788])
     for (final dest in reg64) await dumpInstruction("mov $dest, $immediate");
