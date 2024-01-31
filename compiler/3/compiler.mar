@@ -3863,72 +3863,13 @@ fun write_bytes(asm: &Nasm, bytes: Slice[U8]) {
 
 fun comment(asm: &Nasm, comment: Str) { asm."  ; {comment}{newline}" }
 
-fun mangle_label(label: Str): Str {
+fun mangle(name: Str): Str {
   | We trust labels that start with an underscore to only contain valid label
   | characters. This is so that _start, _malloc, _global_... etc. labels all
   | stay simple and readable, while user-written functions (which can't start
   | with an underscore) are mangled.
-  if label.starts_with("_") then label else label.mangle()
-}
-fun label(asm: &Nasm, label: Str) { asm."{label.mangle_label()}:{newline}" }
-fun disambiguated_label(asm: &Nasm, prefix: Str): Str {
-  var label = "{prefix}.{asm.builder.len()}"
-  asm.label(label)
-  label
-}
-fun mangle(mem: Memory[Str]): Memory[Str] {
-  memory(mem.where.mangle_label(), mem.offset)
-}
+  if name.starts_with("_") then return name
 
-fun global(asm: &Nasm, label: Str) { asm."global {label.mangle_label()}{newline}" }
-
-fun align(asm: &Nasm, alignment: U64) { asm."  align {alignment}{newline}" }
-fun resb(asm: &Nasm, amount: U64)     { asm."  resb {amount}{newline}" }
-fun db(asm: &Nasm, bytes: Slice[U8])  { asm."  db {comma_separated(bytes)}{newline}" }
-
-| Instructions
-fun add(asm: &Nasm, a: Reg64, b: U64)           { asm."  add {a}, {b}{newline}" }
-fun add(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  add {a}, {b}{newline}" }
-fun and(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  and {a}, {b}{newline}" }
-fun call(asm: &Nasm, label: Str)                { asm."  call {label.mangle_label()}{newline}" }
-fun cmp(asm: &Nasm, a: Reg8, b: U8)             { asm."  cmp {a}, {b}{newline}" }
-fun cmp(asm: &Nasm, a: Reg64, b: U64)           { asm."  cmp {a}, {b}{newline}" }
-fun cmp(asm: &Nasm, a: Reg64, b: Memory[Str])   { asm."  cmp {a}, {b.mangle()}{newline}" }
-fun cmp(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  cmp {a}, {b}{newline}" }
-fun dec(asm: &Nasm, a: Reg64)                   { asm."  dec {a}{newline}" }
-fun inc(asm: &Nasm, a: Reg64)                   { asm."  inc {a}{newline}" }
-fun je(asm: &Nasm, label: Str)                  { asm."  je {label.mangle_label()}{newline}" }
-fun jg(asm: &Nasm, label: Str)                  { asm."  jg {label.mangle_label()}{newline}" }
-fun jge(asm: &Nasm, label: Str)                 { asm."  jge {label.mangle_label()}{newline}" }
-fun jl(asm: &Nasm, label: Str)                  { asm."  jl {label.mangle_label()}{newline}" }
-fun jmp(asm: &Nasm, label: Str)                 { asm."  jmp {label.mangle_label()}{newline}" }
-fun jne(asm: &Nasm, label: Str)                 { asm."  jne {label.mangle_label()}{newline}" }
-fun jz(asm: &Nasm, label: Str)                  { asm."  jz {label.mangle_label()}{newline}" }
-fun lea(asm: &Nasm, a: Reg64, b: Memory[Str])   { asm."  lea {a}, {b.mangle()}{newline}" }
-fun lea(asm: &Nasm, a: Reg64, b: Memory[Reg64]) { asm."  lea {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Reg8, b: Memory[Reg64])  { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Reg64, b: U64)           { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Reg64, b: Memory[Str])   { asm."  mov {a}, {b.mangle()}{newline}" }
-fun mov(asm: &Nasm, a: Reg64, b: Memory[Reg64]) { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Memory[Str], b: Reg64)   { asm."  mov {a.mangle()}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg8)  { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg16) { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg32) { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg64) { asm."  mov {a}, {b}{newline}" }
-fun neg(asm: &Nasm, a: Reg64)                   { asm."  neg {a}{newline}" }
-fun pop(asm: &Nasm, a: Reg64)                   { asm."  pop {a}{newline}" }
-fun popcnt(asm: &Nasm, a: Reg64, b: Reg64)      { asm."  popcnt {a}, {b}{newline}" }
-fun push(asm: &Nasm, a: U64)                    { asm."  push {a}{newline}" }
-fun push(asm: &Nasm, a: Reg64)                  { asm."  push {a}{newline}" }
-fun push(asm: &Nasm, a: Str)                    { asm."  push {a.mangle_label()}{newline}" }
-fun ret(asm: &Nasm)                             { asm."  ret{newline}" }
-fun shl(asm: &Nasm, a: Reg64, amount: U64)      { asm."  shl {a}, {amount}{newline}" }
-fun sub(asm: &Nasm, a: Reg64, b: U64)           { asm."  sub {a}, {b}{newline}" }
-fun sub(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  sub {a}, {b}{newline}" }
-fun syscall(asm: &Nasm)                         { asm."  syscall{newline}" }
-
-fun mangle(name: Str): Str {
   var mangled = string_builder().&
   for c in name do {
     if c.equals(#_) then { mangled.write("__") continue }
@@ -3959,13 +3900,64 @@ fun mangle(name: Str): Str {
   }
   mangled.to_str()
 }
-
-fun mangle(type: Type): Str {
-  | TODO: add to_string to stdlib
-  var formatted = string_builder().&
-  formatted.&.write(type)
-  formatted.to_str().mangle()
+fun mangle(mem: Memory[Str]): Memory[Str] {
+  memory(mem.where.mangle(), mem.offset)
 }
+
+fun label(asm: &Nasm, label: Str) { asm."{label.mangle()}:{newline}" }
+fun disambiguated_label(asm: &Nasm, prefix: Str): Str {
+  var label = "{prefix}.{asm.builder.len()}"
+  asm.label(label)
+  label
+}
+
+fun global(asm: &Nasm, label: Str) { asm."global {label.mangle()}{newline}" }
+
+fun align(asm: &Nasm, alignment: U64) { asm."  align {alignment}{newline}" }
+fun resb(asm: &Nasm, amount: U64)     { asm."  resb {amount}{newline}" }
+fun db(asm: &Nasm, bytes: Slice[U8])  { asm."  db {comma_separated(bytes)}{newline}" }
+
+| Instructions
+fun add(asm: &Nasm, a: Reg64, b: U64)           { asm."  add {a}, {b}{newline}" }
+fun add(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  add {a}, {b}{newline}" }
+fun and(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  and {a}, {b}{newline}" }
+fun call(asm: &Nasm, label: Str)                { asm."  call {label.mangle()}{newline}" }
+fun cmp(asm: &Nasm, a: Reg8, b: U8)             { asm."  cmp {a}, {b}{newline}" }
+fun cmp(asm: &Nasm, a: Reg64, b: U64)           { asm."  cmp {a}, {b}{newline}" }
+fun cmp(asm: &Nasm, a: Reg64, b: Memory[Str])   { asm."  cmp {a}, {b.mangle()}{newline}" }
+fun cmp(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  cmp {a}, {b}{newline}" }
+fun dec(asm: &Nasm, a: Reg64)                   { asm."  dec {a}{newline}" }
+fun inc(asm: &Nasm, a: Reg64)                   { asm."  inc {a}{newline}" }
+fun je(asm: &Nasm, label: Str)                  { asm."  je {label.mangle()}{newline}" }
+fun jg(asm: &Nasm, label: Str)                  { asm."  jg {label.mangle()}{newline}" }
+fun jge(asm: &Nasm, label: Str)                 { asm."  jge {label.mangle()}{newline}" }
+fun jl(asm: &Nasm, label: Str)                  { asm."  jl {label.mangle()}{newline}" }
+fun jmp(asm: &Nasm, label: Str)                 { asm."  jmp {label.mangle()}{newline}" }
+fun jne(asm: &Nasm, label: Str)                 { asm."  jne {label.mangle()}{newline}" }
+fun jz(asm: &Nasm, label: Str)                  { asm."  jz {label.mangle()}{newline}" }
+fun lea(asm: &Nasm, a: Reg64, b: Memory[Str])   { asm."  lea {a}, {b.mangle()}{newline}" }
+fun lea(asm: &Nasm, a: Reg64, b: Memory[Reg64]) { asm."  lea {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Reg8, b: Memory[Reg64])  { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Reg64, b: U64)           { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Reg64, b: Memory[Str])   { asm."  mov {a}, {b.mangle()}{newline}" }
+fun mov(asm: &Nasm, a: Reg64, b: Memory[Reg64]) { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Memory[Str], b: Reg64)   { asm."  mov {a.mangle()}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg8)  { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg16) { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg32) { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg64) { asm."  mov {a}, {b}{newline}" }
+fun neg(asm: &Nasm, a: Reg64)                   { asm."  neg {a}{newline}" }
+fun pop(asm: &Nasm, a: Reg64)                   { asm."  pop {a}{newline}" }
+fun popcnt(asm: &Nasm, a: Reg64, b: Reg64)      { asm."  popcnt {a}, {b}{newline}" }
+fun push(asm: &Nasm, a: U64)                    { asm."  push {a}{newline}" }
+fun push(asm: &Nasm, a: Reg64)                  { asm."  push {a}{newline}" }
+fun push(asm: &Nasm, a: Str)                    { asm."  push {a.mangle()}{newline}" }
+fun ret(asm: &Nasm)                             { asm."  ret{newline}" }
+fun shl(asm: &Nasm, a: Reg64, amount: U64)      { asm."  shl {a}, {amount}{newline}" }
+fun sub(asm: &Nasm, a: Reg64, b: U64)           { asm."  sub {a}, {b}{newline}" }
+fun sub(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  sub {a}, {b}{newline}" }
+fun syscall(asm: &Nasm)                         { asm."  syscall{newline}" }
 
 fun nasm(mono: Mono, layouts: Map[Type, MemLayout]): Str {
   var text   = Nasm { builder = string_builder() }
@@ -4148,7 +4140,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   mono.&.compile_builtins(layouts)
 
   if command is asm then {
-    print_on_same_line("Compiling to assembly")
+    print_on_same_line("Assembling")
     var nasm = mono.nasm(layouts)
     print_on_same_line("Writing assembly")
     var buffered = stdout.buffered_writer(1024).&
