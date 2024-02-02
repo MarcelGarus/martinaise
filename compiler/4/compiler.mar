@@ -2996,11 +2996,13 @@ fun needed_for_multiple_of(number: U64, factor: U64): U64 {
 fun permutations(size: U64): Iter[Slice[U64], Permutations] {
   var numbers = vec[U64]()
   for i in 0..size do numbers.&.push(i)
-  Permutations { is_first = true, last = numbers.to_slice() }
-    .wrap_in_iter[Slice[U64], Permutations]()
+  Iter[Slice[U64], Permutations] {
+    state = Permutations { is_first = true, last = numbers.to_slice() }
+  }
 }
 struct Permutations { is_first: Bool, last: Slice[U64] }
-fun next(self: &Permutations): Maybe[Slice[U64]] {
+fun next(self: &Iter[Slice[U64], Permutations]): Maybe[Slice[U64]] {
+  var self = self.state.&
   if self.is_first then { self.is_first = false return some(self.last) }
   if self.last.is_empty() then return none[Slice[U64]]()
   var index = self.last.len - 1
@@ -3276,7 +3278,93 @@ fun compile_reflection(type: Type, out: &CompileTypeFun): MonoExpr {
   type_slot.expr(type_t)
 }
 
-| Assembly Backend  
+| Assembling  
+| Martinaise supports two backends, both of which operate on the abstraction
+| level of x86_64 assembly instructions:
+| - A textual assembly backend that produces NASM.
+| - A binary backend that produces machine code directly.
+|
+| The process of converting the Mono to one of these stages is called
+| "assembling". To support both backends, assembling is generic over an
+| assembler. An assembler is a type with a function for every required assembly
+| instruction, for example:
+| - ret()
+| - add(Reg64, Reg64)
+| - add(Reg32, Reg32)
+| - mov(Reg64, U64)
+| - ...
+|
+| This way, the assembly instructions are type checked in Martinaise (for
+| example, you can't add a Reg16 to a Reg64). The binary backend can also emit
+| totally different opcodes and encodings for instructions with the same
+| mnemonic but different operands.
+
+| All register names.
+enum Reg8  { ah,al, bh,bl, cl,  dl,  sil, dil, spl, bpl, r8b, r9b, r10b, r11b, r12b, r13b, r14b, r15b }
+enum Reg16 { ax,    bx,    cx,  dx,  si,  di,  sp,  bp,  r8w, r9w, r10w, r11w, r12w, r13w, r14w, r15w }
+enum Reg32 { eax,   ebx,   ecx, edx, esi, edi, esp, ebp, r8d, r9d, r10d, r11d, r12d, r13d, r14d, r15d }
+enum Reg64 { rax,   rbx,   rcx, rdx, rsi, rdi, rsp, rbp, r8,  r9,  r10,  r11,  r12,  r13,  r14,  r15  }
+
+var rax = Reg64.rax var eax = Reg32.eax var ax = Reg16.ax var ah = Reg8.ah var al = Reg8.al
+var rbx = Reg64.rbx var ebx = Reg32.ebx var bx = Reg16.bx var bh = Reg8.bh var bl = Reg8.bl
+var rcx = Reg64.rcx var ecx = Reg32.ecx var cx = Reg16.cx var cl = Reg8.cl
+var rdx = Reg64.rdx var edx = Reg32.edx var dx = Reg16.dx var dl = Reg8.dl
+var rsi = Reg64.rsi var esi = Reg32.esi var si = Reg16.si var sil = Reg8.sil
+var rdi = Reg64.rdi var edi = Reg32.edi var di = Reg16.di var dil = Reg8.dil
+var rsp = Reg64.rsp var esp = Reg32.esp var sp = Reg16.sp var spl = Reg8.spl
+var rbp = Reg64.rbp var ebp = Reg32.ebp var bp = Reg16.bp var bpl = Reg8.bpl
+var r8 = Reg64.r8 var r8d = Reg32.r8d var r8w = Reg16.r8w var r8b = Reg8.r8b
+var r9 = Reg64.r9 var r9d = Reg32.r9d var r9w = Reg16.r9w var r9b = Reg8.r9b
+var r10 = Reg64.r10 var r10d = Reg32.r10d var r10w = Reg16.r10w var r10b = Reg8.r10b
+var r11 = Reg64.r11 var r11d = Reg32.r11d var r11w = Reg16.r11w var r11b = Reg8.r11b
+var r12 = Reg64.r12 var r12d = Reg32.r12d var r12w = Reg16.r12w var r12b = Reg8.r12b
+var r13 = Reg64.r13 var r13d = Reg32.r13d var r13w = Reg16.r13w var r13b = Reg8.r13b
+var r14 = Reg64.r14 var r14d = Reg32.r14d var r14w = Reg16.r14w var r14b = Reg8.r14b
+var r15 = Reg64.r15 var r15d = Reg32.r15d var r15w = Reg16.r15w var r15b = Reg8.r15b
+
+fun write[W](writer: W, reg: Reg8) {
+  writer.write(
+    switch reg
+    case ah "ah" case al "al" case bh "bh" case bl "bl" case cl "cl" case dl "dl"
+    case sil  "sil"  case dil  "dil"  case spl  "spl"  case bpl  "bpl"
+    case r8b  "r8b"  case r9b  "r9b"  case r10b "r10b" case r11b "r11b"
+    case r12b "r12b" case r13b "r13b" case r14b "r14b" case r15b "r15b"
+  )
+}
+fun write[W](writer: W, reg: Reg16) {
+  writer.write(
+    switch reg
+    case ax   "ax"   case bx   "bx"   case cx   "cx"   case dx   "dx"
+    case si   "si"   case di   "di"   case sp   "sp"   case bp   "bp"
+    case r8w  "r8w"  case r9w  "r9w"  case r10w "r10w" case r11w "r11w"
+    case r12w "r12w" case r13w "r13w" case r14w "r14w" case r15w "r15w"
+  )
+}
+fun write[W](writer: W, reg: Reg32) {
+  writer.write(
+    switch reg
+    case eax  "eax"  case ebx  "ebx"  case ecx  "ecx"  case edx  "edx"
+    case esi  "esi"  case edi  "edi"  case esp  "esp"  case ebp  "ebp"
+    case r8d  "r8d"  case r9d  "r9d"  case r10d "r10d" case r11d "r11d"
+    case r12d "r12d" case r13d "r13d" case r14d "r14d" case r15d "r15d"
+  )
+}
+fun write[W](writer: W, reg: Reg64) {
+  writer.write(
+    switch reg
+    case rax "rax" case rbx "rbx" case rcx "rcx" case rdx "rdx"
+    case rsi "rsi" case rdi "rdi" case rsp "rsp" case rbp "rbp"
+    case r8  "r8"  case r9  "r9"  case r10 "r10" case r11 "r11"
+    case r12 "r12" case r13 "r13" case r14 "r14" case r15 "r15"
+  )
+}
+
+| A reference to memory. The "where" is usually a Reg64 or a Str (label).
+struct Memory[W] { where: W, offset: U64 }
+fun memory[W](where: W): Memory[W] { Memory { where, offset = 0 } }
+fun memory[W](where: W, offset: U64): Memory[W] { Memory { where, offset } }
+
+fun write[W, D](writer: W, mem: Memory[D]) { writer."[{mem.where} + {mem.offset}]" }
 
 fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, U64] {
   var offsets = map[Str, U64]()
@@ -3292,10 +3380,12 @@ fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, U64] {
   offsets
 }
 
-fun write_as_asm[W](writer: W, layouts: Map[Type, MemLayout], mono: Mono) {
-  var context = context()
-  var layouts = mono.type_defs.mem_layout_all_types()
-
+fun assemble[Assembler](
+  mono: Mono, layouts: Map[Type, MemLayout],
+  text: &Assembler,   | readable, executable (for code)
+  rodata: &Assembler, | readable (for string literals)
+  bss: &Assembler,    | readable, writable, uninitialized (for heap and globals)
+) {
   var arg_layouts = map[Str, MemLayout]() | maps fun signature to arg struct mem layout
   var string_literals = vec[Str]() | will be put into rodata section at the end
 
@@ -3312,182 +3402,184 @@ fun write_as_asm[W](writer: W, layouts: Map[Type, MemLayout], mono: Mono) {
     ))
   }
 
-  writer."
-    '; This file is a compiled Martinaise file.{newline}
-    '; Compile: nasm -f elf64 file.s{newline}
-    '; Link:    ld file.o -o file{newline}
-    '; Run:     ./file{newline}{newline}"
-
-  writer."
-    'section .bss ; uninitialized memory{newline}
-    '{newline}
-    '_heap:{newline}
-    '  align 8{newline}
-    '  .head: resb 8{newline}
-    '  .end: resb 8{newline}
-    '{newline}
-    '_globals:{newline}"
-  for global in mono.globals do
-    writer."  .{global.key} resb 
-      '{layouts.get(global.value.return_type).size}{newline}"
-  writer."{newline}"
-
-  writer."
-    'section .text ; executable code{newline}
-    '{newline}
-    '_init_heap:{newline}
-    '  mov rax, 12 ; brk{newline}
-    '  mov rdi, 0  ; brk(0) returns the break (where the data segment ends){newline}
-    '  syscall{newline}
-    '  mov [_heap.head], rax{newline}
-    '  mov [_heap.end], rax{newline}
-    '  ret{newline}
-    '{newline}
-    '_malloc:{newline}
-    '    ; Does not follow the Martinaise calling convention. Expects the amount to{newline}
-    '    ; allocate in r8 and the alignment in r9. Returns the address in rax.{newline}
-    '    mov r10, [_heap.head] ; the address of the newly allocated memory{newline}
-    '    cmp r9, 8{newline}
-    '    jg .error ; alignment must be <= 8{newline}
-    '    popcnt r11, r9{newline}
-    '    cmp r11, 1{newline}
-    '    jne .error  ; alignment must be 1, 2, 4, or 8{newline}
-    '    ; rounding up to alignment means r10 = (r10 + (r9 - 1)) & bitmask for lower{newline}
-    '    ; for example, for alignment 4: r10 = (r10 + 3) & ...1111100{newline}
-    '    add r10, r9{newline}
-    '    dec r10{newline}
-    '    neg r9 ; make r9 a bitmask; ...1111 or ...1110 or ...1100 or ...1000{newline}
-    '    and r10, r9{newline}
-    '    ; r10 is now rounded up so that it matches the required alignment{newline}
-    '    ; find the end of the allocated data -> r11{newline}
-    '    mov r11, r10{newline}
-    '    add r11, r8{newline}
-    '    cmp r11, [_heap.end]{newline}
-    '    jge .realloc{newline}
-    '    mov [_heap.head], r11{newline}
-    '    mov rax, r10{newline}
-    '    ret{newline}
-    '  .realloc:{newline}
-    '    ; find the amount to allocate{newline}
-    '    mov r12, [_heap.end]{newline}
-    '  .find_new_brk:{newline}
-    '    add r12, 4096{newline}
-    '    cmp r12, r11{newline}
-    '    jl .find_new_brk{newline}
-    '  .found_new_brk:{newline}
-    '    push r10{newline}
-    '    push r11{newline}
-    '    mov rax, 12  ; brk{newline}
-    '    mov rdi, r12 ; brk(r12) moves the break to r12{newline}
-    '    syscall{newline}
-    '    pop r11{newline}
-    '    pop r10{newline}
-    '    cmp rax, r12{newline}
-    '    jl .error ; setting the brk failed{newline}
-    '    mov [_heap.head], r11{newline}
-    '    mov [_heap.end], rax{newline}
-    '    mov rax, r10{newline}
-    '    ret{newline}
-    '  .error:{newline}
-    '    mov rax, 0{newline}
-    '    ret{newline}
-    '{newline}"
-
-  arg_layouts.&.put("_init_global", MemLayout {
-    type = type("Nothing"),
-    size = 0,
-    alignment = 1,
-    kind = MemLayoutKind.struct_(vec[MemLayoutStructPart]()),
-  })
-  for global in mono.globals do {
-    writer."_init_global_{global.key}:{newline}"
-    writer.write_body_as_asm(
-      "_init_global", global.value,
-      string_literals.&, mono, layouts, arg_layouts,
-    )
-    writer."{newline}"
+  text.global("_start") | make _start public
+  text.label("_start") {
+    text.call("_init_heap")
+    text.call("_init_globals")
+    | The C-style args need to be converted into Martinaise-style args, aka a
+    | Slice[Str].
+    var num_args = r8
+    var c_args_cursor = r9
+    var args_cursor = r10
+    var args_start = r15
+    var args_end = r11
+    text.pop(num_args) | First thing on the stack is the number of args.
+    text.mov(c_args_cursor, rsp) | Next, the args themselves.
+    text.mov(r10, r8)  | How much memory to reserve for the slice data.
+    text.shl(r10, 4)   | For each arg, there's a Str = 16 bytes.
+    text.sub(rsp, r10) | Reserve memory.
+    text.mov(args_cursor, rsp)
+    text.mov(args_start, rsp)
+    text.mov(args_end, c_args_cursor)
+    text.label("_start.find_next_arg")
+    text.cmp(args_cursor, args_end)
+    text.je("_start.call_main") | Read all arguments.
+    { | Find the length of the null-terminated C string, save it in r13.
+      var start = r12
+      var cursor = r13
+      text.mov(start, memory(c_args_cursor))
+      text.mov(cursor, start)
+      text.label("_start.find_len")
+      text.mov(r14b, memory(cursor))
+      text.cmp(r14, 0)    | null-byte?
+      text.je("_start.add_arg") | ends the string
+      text.inc(cursor)
+      text.jmp("_start.find_len")
+      text.label("_start.add_arg")
+      text.sub(cursor, start) | calculate the str length
+    }
+    | Build the Str's Slice[Char]
+    text.mov(memory(args_cursor), r12)    | data: &Char
+    text.mov(memory(args_cursor, 8), r13) | len: U64
+    text.add(args_cursor, 16)
+    text.add(c_args_cursor, 8)
+    text.jmp("_start.find_next_arg")
+    text.label("_start.call_main") {
+      text.sub(rsp, 16) | Reserve memory for the surrounding Slice
+      text.mov(memory(rsp), r15)    | data: &Str
+      text.mov(memory(rsp, 8), r8) | len: U64
+      text.push(0) | where to store the returned Never
+      text.call("main(Slice[Str])")
+    }
   }
-  writer."_init_globals:{newline}"
-  for global in mono.globals_init_order do
-    | The global init functions are guaranteed not to take any arguments. The
-    | stack only has to look like this: [caller][return]...
-    writer."
-      '  push _globals.{global}{newline}
-      '  call _init_global_{global}{newline}
-      '  pop r8{newline}"
-  writer."  ret{newline}{newline}"
+
+  bss.align(8)
+  bss.label("_heap_head") bss.resb(8)
+  bss.label("_heap_end")  bss.resb(8)
+
+  text.label("_init_heap") {
+    text.mov(rax, 12) | brk syscall number
+    text.mov(rdi, 0)  | brk(0) returns the break (where the data segment ends)
+    text.syscall()
+    text.mov(memory("_heap_head"), rax)
+    text.mov(memory("_heap_end"), rax)
+    text.ret()
+  }
+
+  text.label("_malloc") {
+    | Note: This function doesn't follow the Martinaise calling convention. It
+    | expects the amount to allocate in r8 and the alignment in r9. Returns the
+    | address in rax.
+    var amount = r8
+    var alignment = r9
+    var new_address = r10
+    text.mov(new_address, memory("_heap_head"))
+    { | Check that alignment is 1, 2, 4, or 8.
+      text.cmp(alignment, 8)
+      text.jg("_malloc.error") | alignment must be <= 8
+      text.popcnt(r11, alignment)
+      text.cmp(r11, 1)
+      text.jne("_malloc.error") | alignment must be 1, 2, 4, or 8
+    }
+    { | Round up the new_address to a multiple of the alignment. Rounding up to
+      | the alignment means:
+      |
+      | new_address = (new_address + (r9 - 1)) & bitmask for lower bits
+      |
+      | For example, for alignment 4:
+      |
+      | new_address = (new_address + 3) & ...1111100
+      text.add(new_address, alignment)
+      text.dec(new_address)
+      text.neg(alignment) | ...1111 or ...1110 or ...1100 or ...1000
+      text.and(new_address, alignment)
+    }
+    var end_of_allocation = r11
+    text.mov(end_of_allocation, new_address)
+    text.add(end_of_allocation, amount)
+    text.cmp(end_of_allocation, memory("_heap_end"))
+    text.jge("_malloc.realloc")
+    text.label("_malloc.actually_allocate") {
+      | Here, we assume there is enough memory for the allocation.
+      text.mov(memory("_heap_head"), end_of_allocation)
+      text.mov(rax, r10)
+      text.ret()
+    }
+    text.label("_malloc.realloc") {
+      var new_brk = r12
+      text.mov(new_brk, memory("_heap_end"))
+      text.label("_malloc.find_new_brk")
+      text.add(new_brk, 4096) | page size on Linux
+      text.cmp(new_brk, end_of_allocation)
+      text.jl("_malloc.find_new_brk")
+      { | Do the brk(new_brk) syscall.
+        text.push(new_address)
+        text.push(end_of_allocation)
+        text.push(new_brk)
+        text.mov(rax, 12)      | brk
+        text.mov(rdi, new_brk) | brk(new_brk) moves the break to new_brk
+        text.syscall()
+        text.pop(new_brk)
+        text.pop(end_of_allocation)
+        text.pop(new_address)
+      }
+      text.cmp(rax, new_brk)
+      text.jl("_malloc.error") | setting the brk failed TODO: describe why this can happen
+      text.mov(memory("_heap_end"), rax)
+      text.jmp("_malloc.actually_allocate")
+    }
+    text.label("_malloc.error") {
+      text.mov(rax, 0)
+      text.ret()
+    }
+  }
+
+  for global in mono.globals do {
+    bss.label("_global_{global.key}")
+    bss.resb(layouts.get(global.value.return_type).size)
+
+    var signature = "_init_global_{global.key}"
+    arg_layouts.&.put(signature, MemLayout {
+      type = type("Nothing"),
+      size = 0,
+      alignment = 1,
+      kind = MemLayoutKind.struct_(vec[MemLayoutStructPart]()),
+    })
+    text.label(signature)
+    global.value.assemble_body(
+      signature, mono, layouts, arg_layouts, text, rodata,
+    )
+  }
+  text.label("_init_globals") {
+    for global in mono.globals_init_order do {
+      | The global init functions are guaranteed not to take any arguments. The
+      | stack only has to look like this: [caller][return]...
+      text.push("_global_{global}")
+      text.call("_init_global_{global}")
+      text.pop(r8)
+    }
+    text.ret()
+  }
 
   for fun_ in mono.funs do {
     var signature = fun_.key
     var fun_ = fun_.value
-
-    writer.
-      "; {signature}{newline}
-      '{signature.mangle()}:{newline}"
-    writer.write_body_as_asm(
-      signature, fun_, string_literals.&, mono, layouts, arg_layouts)
-    writer."{newline}"
+    text.label(signature)
+    fun_.assemble_body(signature, mono, layouts, arg_layouts, text, rodata)
   }
-
-  writer."
-    'global _start{newline}
-    '_start:{newline}
-    '  call _init_heap{newline}
-    '  call _init_globals{newline}
-    '.prep_args:{newline}
-    '  ; We need to put the args in a Slice[Str].{newline}
-    '  pop r8       ; num args{newline}
-    '  mov r9, rsp  ; cursor through the original c-style args{newline}
-    '  mov r10, r8  ; how much memory to reserve for the slice data{newline}
-    '  shl r10, 4   ; for each arg, there's a Str in the data (16 bytes){newline}
-    '  sub rsp, r10 ; reserve the amount of data{newline}
-    '  mov r10, rsp ; cursor through the Martinaise-style args{newline}
-    '  mov r11, r9  ; end of the Martinaise-style args{newline}
-    '  mov r15, rsp ; start of the Martinaise-style args{newline}
-    '.find_next_arg:{newline}
-    '  cmp r10, r11{newline}
-    '  je .call_main{newline}
-    '  mov r12, [r9] ; the start of the C-style string{newline}
-    '  mov r13, r12  ; cursor for finding the str length{newline}
-    '.find_len:{newline}
-    '  mov r14b, [r13]{newline}
-    '  cmp r14, 0{newline}
-    '  je .add_arg{newline}
-    '  inc r13{newline}
-    '  jmp .find_len{newline}
-    '.add_arg:{newline}
-    '  sub r13, r12       ; the str length{newline}
-    '  mov [r10], r12     ; the data: &Char of the str slice{newline}
-    '  mov [r10 + 8], r13 ; the len: U64 of the str slice{newline}
-    '  add r10, 16        ; advance cursor through Martinaise args{newline}
-    '  add r9, 8          ; advance cursor through C args{newline}
-    '  jmp .find_next_arg{newline}
-    '.call_main:{newline}
-    '  sub rsp, 16       ; reserve memory for the surrounding slice{newline}
-    '  mov [rsp], r15    ; data: &Str of the args slice{newline}
-    '  mov [rsp + 8], r8 ; len: U64 of the args slice{newline}
-    '  push rsp          ; where to store the returned Never{newline}
-    '  call {"main(Slice[Str])".mangle()}{newline}
-    '  ret{newline}{newline}"
-
-  writer."
-    'section .rodata{newline}"
-  for str in string_literals.iter().enumerate() do
-    writer."{newline}
-      '_str_{str.index}: db {comma_separated(str.item.bytes())}{newline}"
 }
 
-fun write_body_as_asm[W](
-  writer: W, signature: Str, fun_: MonoFun,
-  string_literals: &Vec[Str], mono: Mono,
-  layouts: Map[Type, MemLayout], arg_layouts: Map[Str, MemLayout],
+fun assemble_body[Assembler](
+  fun_: MonoFun, signature: Str,
+  mono: Mono, layouts: Map[Type, MemLayout], arg_layouts: Map[Str, MemLayout],
+  text: &Assembler, rodata: &Assembler,
 ) {
+  text.comment(signature)
+
   switch fun_.kind
   case builtin panic("Mono still contains builtins")
-  case asm_(code) writer."{code}{newline}"
+  case asm_(code) text."{code}{newline}"
   case body(body) {
-    var labels = vec[Str]().&
-
     var arg_offsets =
       if arg_layouts.get(signature).kind is struct_(fields)
       then fields.name_to_offset_map()
@@ -3523,23 +3615,20 @@ fun write_body_as_asm[W](
       slot_offsets.&.put(MonoSlotRef { index = slot.index }, offset)
     }
 
-    | Print the layout
-    writer."{indent(labels)}sub rsp, {locals_size}{newline}"
-    writer.
-      "{indent(labels)}; rsp + {locals_size}: caller's ip{newline}
-      '{indent(labels)}; rsp + {locals_size + 8}: 
-        'address of where to put the return value{newline}"
+    text.sub(rsp, locals_size)
+    text.comment("rsp + {locals_size}: caller's ip")
+    text.comment("rsp + {locals_size + 8}: 
+      'address of where to put the return value")
     for slot in body.slots.iter().enumerate() do {
       var slot_ref = MonoSlotRef { index = slot.index }
-      writer.
-        "{indent(labels)}; rsp + {slot_offsets.get(slot_ref)}: 
+      text.comment("rsp + {slot_offsets.get(slot_ref)}: 
         '{slot_ref}: {slot.item.type} = {
           switch slot.item.initial_value
           case uninitialized "uninitialized"
           case arg(i) "arg_{i}"
           case int(int) "{int}"
           case str(str) '""{{str}}""'
-        }{newline}"
+        }")
     }
 
     for slot in slot_offsets do {
@@ -3549,34 +3638,33 @@ fun write_body_as_asm[W](
       case uninitialized {}
       case arg {}
       case int(int) {
-        writer."          mov r8, {int}{newline}"
+        text.mov(r8, int)
         var size = layouts.get(body.slots.get(slot.index).type).size
-        if size == 1 then writer."          mov [rsp + {offset}], r8b{newline}"
-        if size == 2 then writer."          mov [rsp + {offset}], r8w{newline}"
-        if size == 4 then writer."          mov [rsp + {offset}], r8d{newline}"
-        if size == 8 then writer."          mov [rsp + {offset}], r8{newline}"
+        if size == 1 then text.mov(memory(rsp, offset), r8b)
+        if size == 2 then text.mov(memory(rsp, offset), r8w)
+        if size == 4 then text.mov(memory(rsp, offset), r8d)
+        if size == 8 then text.mov(memory(rsp, offset), r8)
       }
       case str(str) {
-        var index = string_literals.len
-        string_literals.push(str)
-        writer."
-          '          mov r8, qword _str_{index}{newline}
-          '          mov [rsp + {offset}], r8{newline}
-          '          mov r8, {str.len}{newline}
-          '          mov [rsp + {offset + 8}], r8{newline}"
+        var label = rodata.disambiguated_label("_str_")
+        rodata.db(str.bytes())
+        text.lea(r8, memory(label))
+        text.mov(memory(rsp, offset), r8)
+        text.mov(r8, str.bytes().len)
+        text.mov(memory(rsp, offset + 8), r8)
       }
     }
 
     for statement in body.statements do {
-      if statement is label then {} else writer."{indent(labels)}; {statement}{newline}"
+      if statement is label then {} else text.comment("{statement}")
 
       switch statement
-      case label(label) labels.push("{label}")
+      case label(label) text.label("{signature}.{label}")
       case assign(assign) {
         var size = layouts.get(assign.value.type).size
-        writer.save_address(assign.value, "r8", 0, slot_offsets, layouts)
-        writer.save_address(assign.to, "r9", 0, slot_offsets, layouts)
-        writer.copy_memory("r8", 0, "r9", 0, size)
+        text.save_address(r8, assign.value, 0, slot_offsets, layouts)
+        text.save_address(r9, assign.to, 0, slot_offsets, layouts)
+        text.copy_memory(memory(r8), memory(r9), size)
       }
       case set_enum(set) {
         var type = body.slots.get(set.slot.index).type
@@ -3590,14 +3678,14 @@ fun write_body_as_asm[W](
         var payload_size = layouts.get(set.value.type).size
         var variant_tag_offset = to_offset + layouts.get(type).size - 1
 
-        writer."
-          '{indent(labels)}mov r8, {variant}{newline}
-          '{indent(labels)}mov [rsp + {variant_tag_offset}], r8b{newline}"
-        writer.save_address(set.value, "r8", 0, slot_offsets, layouts)
-        writer.copy_memory("r8", 0, "rsp", to_offset, payload_size)
+        text.mov(r8, variant)
+        text.mov(memory(rsp, variant_tag_offset), r8b)
+        text.save_address(r8, set.value, 0, slot_offsets, layouts)
+        text.copy_memory(memory(r8), memory(rsp, to_offset), payload_size)
       }
       case call(call) {
-        var args_layout = arg_layouts.get(call.fun_)
+        var args_layout = arg_layouts.get_maybe(call.fun_)
+          .unwrap("no arg layout for {call.fun_} available")
         var arg_offsets = {
           if args_layout.kind is struct_(s)
           then s
@@ -3605,132 +3693,127 @@ fun write_body_as_asm[W](
         }.name_to_offset_map()
         var args_size = args_layout.size.round_up_to_multiple_of(8)
 
-        writer."{indent(labels)}sub rsp, {args_size}{newline}"
+        text.sub(rsp, args_size)
         for arg in call.args.iter().enumerate() do {
           var size = layouts.get(arg.item.type).size
           var offset_in_args = arg_offsets.get("arg_{arg.index}")
-          writer.save_address(arg.item, "r8", args_size, slot_offsets, layouts)
-          writer.copy_memory("r8", 0, "rsp", offset_in_args, size)
+          text.save_address(r8, arg.item, args_size, slot_offsets, layouts)
+          text.copy_memory(memory(r8), memory(rsp, offset_in_args), size)
         }
-        writer."
-          '{indent(labels)}sub rsp, 8{newline}
-          '{indent(labels)}lea r8, [rsp + {args_size + 8 + slot_offsets.get(call.to)}]{newline}
-          '{indent(labels)}mov [rsp], r8{newline}
-          '{indent(labels)}call {call.fun_.mangle()}{newline}
-          '{indent(labels)}add rsp, {args_size + 8}{newline}"
+        text.sub(rsp, 8)
+        text.lea(r8, memory(rsp, args_size + 8 + slot_offsets.get(call.to)))
+        text.mov(memory(rsp), r8)
+        text.call(call.fun_)
+        text.add(rsp, args_size + 8)
       }
-      case jump(jump) writer."{indent(labels)}jmp {jump.target}{newline}"
+      case jump(jump) text.jmp("{signature}.{jump.target}")
       case jump_if_variant(jump) {
         var type = jump.condition.type
         var variant_tag_offset = layouts.get(type).size - 1
-        var checked_tag = 0
+        var checked_tag = 0:U8
         if mono.type_defs.get(type) is enum_(enum_) then {
           for v in enum_.variants.iter().enumerate() do
-            if v.item.name == jump.variant then checked_tag = v.index
+            if v.item.name == jump.variant then checked_tag = v.index.to_U8()
         } else panic("is not an enum")
 
-        writer.save_address(jump.condition, "r8", 0, slot_offsets, layouts)
-        writer."
-          '{indent(labels)}mov r8b, [r8 + {variant_tag_offset}]{newline}
-          '{indent(labels)}cmp r8b, {checked_tag}{newline}
-          '{indent(labels)}je  {jump.target}{newline}"
+        text.save_address(r8, jump.condition, 0, slot_offsets, layouts)
+        text.mov(r8b, memory(r8, variant_tag_offset))
+        text.cmp(r8b, checked_tag)
+        text.je("{signature}.{jump.target}")
       }
       case get_enum_value(get) {
         var variant_type = body.slots.get(get.to.index).type
         var size = layouts.get(variant_type).size
         var to_offset = slot_offsets.get(get.to)
 
-        writer.save_address(get.of, "r8", 0, slot_offsets, layouts)
-        writer.copy_memory("r8", 0, "rsp", to_offset, size)
+        text.save_address(r8, get.of, 0, slot_offsets, layouts)
+        text.copy_memory(memory(r8), memory(rsp, to_offset), size)
       }
       case return_(expr) {
         var size = layouts.get(expr.type).size
 
-        writer.save_address(expr, "r8", 0, slot_offsets, layouts)
-        writer."{indent(labels)}mov r9, [rsp + {locals_size + 8}]{newline}"
-        writer.copy_memory("r8", 0, "r9", 0, size)
-        writer."{indent(labels)}jmp .end{newline}"
+        text.save_address(r8, expr, 0, slot_offsets, layouts)
+        text.mov(r9, memory(rsp, locals_size + 8))
+        text.copy_memory(memory(r8), memory(r9), size)
+        text.jmp("{signature}.end")
       }
       case ref(ref) {
-        writer.save_address(ref.of, "r8", 0, slot_offsets, layouts)
-        writer."{indent(labels)}mov [rsp + {slot_offsets.get(ref.to)}], r8{newline}"
+        text.save_address(r8, ref.of, 0, slot_offsets, layouts)
+        text.mov(memory(rsp, slot_offsets.get(ref.to)), r8)
       }
     }
-    labels.push(".end")
-    writer."
-      '{indent(labels)}add rsp, {locals_size}{newline}
-      '{indent(labels)}ret{newline}"
+    text.label("{signature}.end")
+    text.add(rsp, locals_size)
+    text.ret()
   }
 }
 
-fun indent(labels: &Vec[Str]): LabeledIndent {
-  LabeledIndent { labels }
-}
-struct LabeledIndent { labels: &Vec[Str] }
-fun write[W](writer: W, self: LabeledIndent) {
-  if self.labels.is_not_empty() then
-    for i in 0..{self.labels.len - 1} do
-      writer."  {self.labels.get(i)}:{newline}"
-  if self.labels.is_empty()
-  then writer."          "
-  else writer."  {"{self.labels.to_slice().last()}:".pad_right(7, # )} "
-  self.labels.len = 0
-}
-
 | Saves the address of the expr in the register.
-fun save_address[W](
-  writer: W, expr: MonoExpr, register: Str, locals_offset: U64,
+fun save_address[Assembler](
+  text: Assembler, register: Reg64, expr: MonoExpr, locals_offset: U64,
   slot_offsets: Map[MonoSlotRef, U64], layouts: Map[Type, MemLayout],
 ) {
   switch expr.kind
   case nothing {} | you can read zero bytes from anywhere
   case never {} | you can read zero bytes from anywhere
-  case global(name) writer."          lea {register}, [_globals.{name}] ; {expr}{newline}" | TODO
-  case slot(slot) writer."
-    '          lea {register}, [rsp + {locals_offset + slot_offsets.get(slot)}] ; {expr}{newline}"
+  case global(name) text.lea(register, memory("_global_{name}"))
+  case slot(slot)
+    text.lea(register, memory(rsp, locals_offset + slot_offsets.get(slot)))
   case member(member) {
-    writer.save_address(member.of.*, register, locals_offset, slot_offsets, layouts)
+    text.save_address(register, member.of.*, locals_offset, slot_offsets, layouts)
     if member.name == "*"
-    then writer."          mov {register}, [{register}] ; {expr}{newline}"
+    then text.mov(register, memory(register))
     else {
-      | eprintln("member of {member.of.type}")
       var offset_in_struct =
         switch layouts.get(member.of.type).kind
         case struct_(s) s.name_to_offset_map().get(member.name)
         case enum_(e) panic("member receiver is an enum")
         case opaque_(o) panic("{member.of.type} is opaque: {o}")
         default panic("member receiver is always a struct")
-      writer."          add {register}, {offset_in_struct} ; {expr}{newline}"
+      text.add(register, offset_in_struct)
     }
   }
 }
 
-fun copy_memory[W](
-  writer: W,
-  from_reg: Str, from_offset: U64, to_reg: Str, to_offset: U64, amount: U64,
+fun copy_memory[Assembler, A, B](
+  text: Assembler, from: Memory[A], to: Memory[B], amount: U64,
 ) {
   var i = 0
   loop {
     if i >= amount then break
     if amount - i >= 8 then {
-      writer."
-        '          mov r15, [{from_reg} + {from_offset + i}]{newline}
-        '          mov [{to_reg} + {to_offset + i}], r15{newline}"
+      | TODO: implement + U64 for memory
+      text.mov(r15, memory(from.where, from.offset + i))
+      text.mov(memory(to.where, to.offset + i), r15)
       i = i + 8
     } else {
-      writer."
-        '          mov r15b, [{from_reg} + {from_offset + i}]{newline}
-        '          mov [{to_reg} + {to_offset + i}], r15b{newline}"
+      text.mov(r15b, memory(from.where, from.offset + i))
+      text.mov(memory(to.where, to.offset + i), r15b)
       i = i + 1
     }
   }
 }
 
+| Textual NASM Assembler  
+| This backend produces textual NASM code.
+
+struct Nasm { builder: StringBuilder }
+
+fun write_byte(asm: &Nasm, byte: U8) { asm.builder.&.write_byte(byte) }
+fun write_bytes(asm: &Nasm, bytes: Slice[U8]) {
+  asm.builder.&.write_bytes(bytes)
+}
+
 fun mangle(name: Str): Str {
+  | We trust labels that start with an underscore to only contain valid label
+  | characters. This is so that _start, _malloc, _global_... etc. labels all
+  | stay simple and readable, while user-written functions (which can't start
+  | with an underscore) are mangled.
+  if name.starts_with("_") then return name
+
   var mangled = string_builder().&
-  | mangled.write("mar_")
   for c in name do {
-    if c == #_ then { mangled.write("__") continue }
+    if c == #) then { mangled.write("__") continue }
     if c == #[ then { mangled.write("_of_") continue }
     if c == #] then { mangled.write("_end_") continue }
     if c == #( then { mangled.write("_withargs_") continue }
@@ -3758,12 +3841,75 @@ fun mangle(name: Str): Str {
   }
   mangled.to_str()
 }
+fun mangle(mem: Memory[Str]): Memory[Str] {
+  memory(mem.where.mangle(), mem.offset)
+}
 
-fun mangle(type: Type): Str {
-  | TODO: add to_string to stdlib
-  var formatted = string_builder().&
-  formatted.&.write(type)
-  formatted.to_str().mangle()
+fun comment(asm: &Nasm, comment: Str) { asm."  ; {comment}{newline}" }
+
+fun label(asm: &Nasm, label: Str) { asm."{label.mangle()}:{newline}" }
+fun disambiguated_label(asm: &Nasm, prefix: Str): Str {
+  var label = "{prefix}.{asm.builder.len()}"
+  asm.label(label)
+  label
+}
+
+fun global(asm: &Nasm, label: Str) { asm."global {label.mangle()}{newline}" }
+
+fun align(asm: &Nasm, alignment: U64) { asm."  align {alignment}{newline}" }
+fun resb(asm: &Nasm, amount: U64)     { asm."  resb {amount}{newline}" }
+fun db(asm: &Nasm, bytes: Slice[U8])  { asm."  db {comma_separated(bytes)}{newline}" }
+
+| Instructions
+fun add(asm: &Nasm, a: Reg64, b: U64)           { asm."  add {a}, {b}{newline}" }
+fun add(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  add {a}, {b}{newline}" }
+fun and(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  and {a}, {b}{newline}" }
+fun call(asm: &Nasm, label: Str)                { asm."  call {label.mangle()}{newline}" }
+fun cmp(asm: &Nasm, a: Reg8, b: U8)             { asm."  cmp {a}, {b}{newline}" }
+fun cmp(asm: &Nasm, a: Reg64, b: U64)           { asm."  cmp {a}, {b}{newline}" }
+fun cmp(asm: &Nasm, a: Reg64, b: Memory[Str])   { asm."  cmp {a}, {b.mangle()}{newline}" }
+fun cmp(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  cmp {a}, {b}{newline}" }
+fun dec(asm: &Nasm, a: Reg64)                   { asm."  dec {a}{newline}" }
+fun inc(asm: &Nasm, a: Reg64)                   { asm."  inc {a}{newline}" }
+fun je(asm: &Nasm, label: Str)                  { asm."  je {label.mangle()}{newline}" }
+fun jg(asm: &Nasm, label: Str)                  { asm."  jg {label.mangle()}{newline}" }
+fun jge(asm: &Nasm, label: Str)                 { asm."  jge {label.mangle()}{newline}" }
+fun jl(asm: &Nasm, label: Str)                  { asm."  jl {label.mangle()}{newline}" }
+fun jmp(asm: &Nasm, label: Str)                 { asm."  jmp {label.mangle()}{newline}" }
+fun jne(asm: &Nasm, label: Str)                 { asm."  jne {label.mangle()}{newline}" }
+fun jz(asm: &Nasm, label: Str)                  { asm."  jz {label.mangle()}{newline}" }
+fun lea(asm: &Nasm, a: Reg64, b: Memory[Str])   { asm."  lea {a}, {b.mangle()}{newline}" }
+fun lea(asm: &Nasm, a: Reg64, b: Memory[Reg64]) { asm."  lea {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Reg8, b: Memory[Reg64])  { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Reg64, b: U64)           { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Reg64, b: Memory[Str])   { asm."  mov {a}, {b.mangle()}{newline}" }
+fun mov(asm: &Nasm, a: Reg64, b: Memory[Reg64]) { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Memory[Str], b: Reg64)   { asm."  mov {a.mangle()}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg8)  { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg16) { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg32) { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg64) { asm."  mov {a}, {b}{newline}" }
+fun neg(asm: &Nasm, a: Reg64)                   { asm."  neg {a}{newline}" }
+fun pop(asm: &Nasm, a: Reg64)                   { asm."  pop {a}{newline}" }
+fun popcnt(asm: &Nasm, a: Reg64, b: Reg64)      { asm."  popcnt {a}, {b}{newline}" }
+fun push(asm: &Nasm, a: U64)                    { asm."  push {a}{newline}" }
+fun push(asm: &Nasm, a: Reg64)                  { asm."  push {a}{newline}" }
+fun push(asm: &Nasm, a: Str)                    { asm."  push {a.mangle()}{newline}" }
+fun ret(asm: &Nasm)                             { asm."  ret{newline}" }
+fun shl(asm: &Nasm, a: Reg64, amount: U64)      { asm."  shl {a}, {amount}{newline}" }
+fun sub(asm: &Nasm, a: Reg64, b: U64)           { asm."  sub {a}, {b}{newline}" }
+fun sub(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  sub {a}, {b}{newline}" }
+fun syscall(asm: &Nasm)                         { asm."  syscall{newline}" }
+
+fun nasm(mono: Mono, layouts: Map[Type, MemLayout]): Str {
+  var text   = Nasm { builder = string_builder() }
+  var bss    = Nasm { builder = string_builder() }
+  var rodata = Nasm { builder = string_builder() }
+  mono.assemble(layouts, text.&, rodata.&, bss.&)
+  "section .text{newline}{text.builder}{newline}
+  'section .rodata{newline}{rodata.builder}{newline}
+  'section .bss{newline}{bss.builder}{newline}"
 }
 
 | File Watching  
@@ -3860,22 +4006,22 @@ fun print_usage_info(out: File) {
 }
 
 | Runs the pipeline that matches the command. Errors are handled internally
-| (stuff is printed to stdout). Returns whether it ran through successfully.
+| (stuff is printed to stderr). Returns whether it ran through successfully.
 fun run_pipeline(command: Command, file_path: Str): Bool {
-  print_on_same_line("Reading {file_path}")
+  println("Reading {file_path}")
   var stdlib = read_file("stdlib.mar").unwrap("couldn't read stdlib").to_str()
   var file = read_file(file_path).unwrap("couldn't read {file_path}").to_str()
   var input = "{stdlib}{newline}{file}{newline}"
 
   print_on_same_line("Parsing {file_path}")
-  var ast = parse(input, stdlib.len)
+  var ast = input.parse(stdlib.len)
     orelse(error) { eprintln(error) return false }
   if command is ast then { println(ast) return true }
   var ast = ast.prepare()
     orelse(error) { print_on_same_line(error) return false }
 
   print_on_same_line("Monoing")
-  var mono = compile(ast)
+  var mono = ast.compile()
     orelse(error) { print_on_same_line(error) return false }
 
   print_on_same_line("Memory layouting")
@@ -3885,16 +4031,13 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   print_on_same_line("Monoing reflection functions")
   mono.&.compile_builtins(layouts)
 
-  print_on_same_line("Compiling to assembly")
-  var asm = {
-    var code = string_builder().&
-    code.write_as_asm(layouts, mono)
-    code.to_str()
-  }
+  print_on_same_line("Assembling")
+  var nasm = mono.nasm(layouts)
+
   if command is asm then {
     print_on_same_line("Writing assembly")
     var buffered = stdout.buffered_writer(1024).&
-    buffered.writeln(asm)
+    buffered.writeln(nasm)
     buffered.flush()
     print_on_same_line("Compiled to assembly. Enjoy!")
     return true
@@ -3911,7 +4054,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   var exe_file = file_path_without_extension
 
   print_on_same_line("Writing assembly to file")
-  write_file(asm_file, asm.bytes()).unwrap()
+  write_file(asm_file, nasm.bytes()).unwrap()
 
   | TODO: make sure that the external commands succeed before calling the next
   | one
