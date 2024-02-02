@@ -459,6 +459,7 @@ fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
 fun unreachable(reason: Str): Never { panic("unreachable: {reason}") }
 fun todo(): Never { panic("todo") }
+fun todo(message: Str): Never { panic("todo: {message}") }
 fun assert(condition: Bool) { assert(condition, "assert failed") }
 fun assert(condition: Bool, message: Str) { condition orelse panic(message) }
 
@@ -1228,7 +1229,7 @@ fun next[T](iter: &Iter[T, SliceIter[T]]): Maybe[T] {
 }
 
 fun rev_iter[T](slice: Slice[T]): Iter[T, _] {
-  Iter { state = SliceRevIter { slice, index = slice.len } }
+  Iter[T, SliceRevIter[T]] { state = SliceRevIter { slice, index = slice.len } }
 }
 struct SliceRevIter[T] {
   slice: Slice[T],
@@ -1384,6 +1385,7 @@ fun truncate_to_len(builder: &StringBuilder, len: U64) {
   assert(len <= builder.chars.len)
   builder.chars.len = len
 }
+fun write[W](writer: W, sb: StringBuilder) { writer.write(sb.to_str()) }
 fun to_str(builder: StringBuilder): Str {
   builder.chars.to_slice().to_str()
 }
@@ -1587,23 +1589,23 @@ fun next[T, I](iter: &Iter[T, TakeIter[I]]): Maybe[T] {
 }
 
 | Zips two iters of equal length.
-fun zip[A, B, IA, IB](a: Iter[IA], b: Iter[IB]): Iter[Tuple2[A, B], _] {
+fun zip[A, B, IA, IB](a: Iter[A, IA], b: Iter[B, IB]): Iter[Tuple2[A, B], _] {
   Iter[Tuple2[A, B], ZipIter[IA, IB]] {
-    state = ZipIter[IA, IB] { a = a.inner, b = b.inner }
+    state = ZipIter[IA, IB] { a = a.state, b = b.state }
   }
 }
 struct ZipIter[IA, IB] { a: IA, b: IB }
 fun next[A, B, IA, IB](
   iter: &Iter[Tuple2[A, B], ZipIter[IA, IB]],
 ): Maybe[Tuple2[A, B]] {
-  switch iter.a.&.next()
+  switch Iter[A, IA] { state = iter.state.a }.&.next()
   case some(a) {
-    switch iter.b.&.next()
+    switch Iter[B, IB] { state = iter.state.b }.&.next()
     case none panic("zip iters have unequal length")
     case some(b) some(tuple(a, b))
   }
   case none {
-    switch iter.b.&.next()
+    switch Iter[B, IB] { state = iter.state.b }.&.next()
     case some panic("zip iters have unequal length")
     case none none[Tuple2[A, B]]()
   }
@@ -2172,7 +2174,9 @@ fun write[W, K, V](writer: W, map: Map[K, V]) {
 }
 
 fun iter[K, V](map: Map[K, V]): Iter[MapEntry[K, V], _] {
-  Iter { state = MapIter { buckets = map.buckets, index = 0 } }
+  Iter[MapEntry[K, V], MapIter[K, V]] {
+    state = MapIter { buckets = map.buckets, index = 0 }
+  }
 }
 struct MapIter[K, V] { buckets: Slice[MapBucket[K, V]], index: U64 }
 fun next[K, V](
@@ -2214,10 +2218,12 @@ fun write[W, T](writer: W, set: Set[T]) {
 }
 
 fun iter[T](set: Set[T]): Iter[T, _] {
-  Iter[T, _] { state = SetIter { buckets = set.map.buckets, index = 0 } }
+  Iter[T, SetIter[T]] {
+    state = SetIter { buckets = set.map.buckets, index = 0 }
+  }
 }
 struct SetIter[T] { buckets: Slice[MapBucket[T, Nothing]], index: U64 }
-fun next[T](set: &Iter[T, SetIter[T]]): Maybe[T] {
+fun next[T](iter: &Iter[T, SetIter[T]]): Maybe[T] {
   var state = iter.state.&
   loop {
     if state.index >= state.buckets.len then return none[T]()
