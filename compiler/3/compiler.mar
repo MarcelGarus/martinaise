@@ -4065,7 +4065,7 @@ fun print_usage_info(out: File) {
 | Runs the pipeline that matches the command. Errors are handled internally
 | (stuff is printed to stderr). Returns whether it ran through successfully.
 fun run_pipeline(command: Command, file_path: Str): Bool {
-  println("Reading {file_path}")
+  stderr.writeln("Reading {file_path}")
   var stdlib = read_file("stdlib.mar").to_str()
   var file = read_file(file_path).to_str()
   var input = "{stdlib}{newline}{file}{newline}"
