@@ -1559,6 +1559,13 @@ fun iter[T, I](iter: Iter[T, I]): Iter[T, I] { iter }
 
 fun is_empty[T, I](iter: &Iter[T, I]): Bool { iter.next().is_none() }
 
+fun next_from_iter_state[T, I](state: &I): Maybe[T] {
+  var iter = Iter[T, I] { state = state.* }
+  var item = iter.&.next()
+  state.* = iter.state
+  item
+}
+
 | Skips the given amount of elements on the inner iter, then acts like the inner
 | iter.
 fun skip[T, I](iter: Iter[T, I], amount: U64): Iter[T, _] {
@@ -1568,11 +1575,11 @@ struct SkipIter[I] { inner: I, amount: U64 }
 fun next[T, I](iter: &Iter[T, SkipIter[I]]): Maybe[T] {
   var state = iter.state.&
   for i in 0..state.amount do {
-    var next = state.inner.&.next()
+    var next = state.inner.&.next_from_iter_state[T, I]()
     if next is none then return none[T]()
   }
   state.amount = 0
-  state.inner.&.next()
+  state.inner.&.next_from_iter_state[T, I]()
 }
 
 | Takes the given amount of elements, then ends.
@@ -1584,7 +1591,7 @@ fun next[T, I](iter: &Iter[T, TakeIter[I]]): Maybe[T] {
   var state = iter.state.&
   if state.amount < 0 then none[T]() else {
     state.amount = state.amount.dec()
-    state.inner.&.next()
+    state.inner.&.next_from_iter_state[T, I]()
   }
 }
 
@@ -1598,14 +1605,14 @@ struct ZipIter[IA, IB] { a: IA, b: IB }
 fun next[A, B, IA, IB](
   iter: &Iter[Tuple2[A, B], ZipIter[IA, IB]],
 ): Maybe[Tuple2[A, B]] {
-  switch Iter[A, IA] { state = iter.state.a }.&.next()
+  switch iter.state.a.&.next_from_iter_state[A, IA]()
   case some(a) {
-    switch Iter[B, IB] { state = iter.state.b }.&.next()
+    switch iter.state.b.&.next_from_iter_state[B, IB]()
     case none panic("zip iters have unequal length")
     case some(b) some(tuple(a, b))
   }
   case none {
-    switch Iter[B, IB] { state = iter.state.b }.&.next()
+    switch iter.state.b.&.next_from_iter_state[B, IB]()
     case some panic("zip iters have unequal length")
     case none none[Tuple2[A, B]]()
   }
@@ -1624,7 +1631,7 @@ fun next[T, I](
   iter: &Iter[Enumerated[T], EnumeratedIter[I]],
 ): Maybe[Enumerated[T]] {
   var state = iter.state.&
-  switch Iter[T, I] { state = state.inner }.&.next()
+  switch state.inner.&.next_from_iter_state[T, I]()
   case some(item) {
     var index = state.index
     state.index = state.index.inc()
@@ -1768,7 +1775,6 @@ fun to_os_flags(flags: Set[OpenFileFlag]): U64 {
   |  affect the semantics of subsequent I/O operations."
   | https://man7.org/linux/man-pages/man2/open.2.html
   | TODO: support more flags
-  eprintln("create flag set? {flags.contains(OpenFileFlag.create)}")
   if flags.contains(OpenFileFlag.create)   then res = res.or(flag_create)
   if flags.contains(OpenFileFlag.truncate) then res = res.or(flag_trunc)
   if flags.contains(OpenFileFlag.append)   then res = res.or(flag_append)
