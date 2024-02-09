@@ -3912,6 +3912,86 @@ fun nasm(mono: Mono, layouts: Map[Type, MemLayout]): Str {
   'section .bss{newline}{bss.builder}{newline}"
 }
 
+| Textual FASM Assembler  
+| This backend produces textual FASM code.
+
+struct Fasm { builder: StringBuilder }
+
+fun write_byte(asm: &Fasm, byte: U8) { asm.builder.&.write_byte(byte) }
+fun write_bytes(asm: &Fasm, bytes: Slice[U8]) {
+  asm.builder.&.write_bytes(bytes)
+}
+
+fun comment(asm: &Fasm, comment: Str) { asm."  ; {comment}{newline}" }
+
+fun label(asm: &Fasm, label: Str) { asm."{label.mangle()}:{newline}" }
+fun disambiguated_label(asm: &Fasm, prefix: Str): Str {
+  var label = "{prefix}.{asm.builder.len()}"
+  asm.label(label)
+  label
+}
+
+fun global(asm: &Fasm, label: Str) { asm."entry {label.mangle()}{newline}" }
+
+fun align(asm: &Fasm, alignment: U64) { asm."  align {alignment}{newline}" }
+fun resb(asm: &Fasm, amount: U64)     { asm."  rb {amount}{newline}" }
+fun db(asm: &Fasm, bytes: Slice[U8])  { asm."  db {comma_separated(bytes)}{newline}" }
+
+| Instructions
+fun add(asm: &Fasm, a: Reg64, b: U64)           { asm."  add {a}, {b}{newline}" }
+fun add(asm: &Fasm, a: Reg64, b: Reg64)         { asm."  add {a}, {b}{newline}" }
+fun and(asm: &Fasm, a: Reg64, b: Reg64)         { asm."  and {a}, {b}{newline}" }
+fun call(asm: &Fasm, label: Str)                { asm."  call {label.mangle()}{newline}" }
+fun cmp(asm: &Fasm, a: Reg8, b: U8)             { asm."  cmp {a}, {b}{newline}" }
+fun cmp(asm: &Fasm, a: Reg64, b: U64)           { asm."  cmp {a}, {b}{newline}" }
+fun cmp(asm: &Fasm, a: Reg64, b: Memory[Str])   { asm."  cmp {a}, {b.mangle()}{newline}" }
+fun cmp(asm: &Fasm, a: Reg64, b: Reg64)         { asm."  cmp {a}, {b}{newline}" }
+fun dec(asm: &Fasm, a: Reg64)                   { asm."  dec {a}{newline}" }
+fun inc(asm: &Fasm, a: Reg64)                   { asm."  inc {a}{newline}" }
+fun je(asm: &Fasm, label: Str)                  { asm."  je {label.mangle()}{newline}" }
+fun jg(asm: &Fasm, label: Str)                  { asm."  jg {label.mangle()}{newline}" }
+fun jge(asm: &Fasm, label: Str)                 { asm."  jge {label.mangle()}{newline}" }
+fun jl(asm: &Fasm, label: Str)                  { asm."  jl {label.mangle()}{newline}" }
+fun jmp(asm: &Fasm, label: Str)                 { asm."  jmp {label.mangle()}{newline}" }
+fun jne(asm: &Fasm, label: Str)                 { asm."  jne {label.mangle()}{newline}" }
+fun jz(asm: &Fasm, label: Str)                  { asm."  jz {label.mangle()}{newline}" }
+fun lea(asm: &Fasm, a: Reg64, b: Memory[Str])   { asm."  lea {a}, {b.mangle()}{newline}" }
+fun lea(asm: &Fasm, a: Reg64, b: Memory[Reg64]) { asm."  lea {a}, {b}{newline}" }
+fun mov(asm: &Fasm, a: Reg8, b: Memory[Reg64])  { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Fasm, a: Reg64, b: U64)           { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Fasm, a: Reg64, b: Reg64)         { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Fasm, a: Reg64, b: Memory[Str])   { asm."  mov {a}, {b.mangle()}{newline}" }
+fun mov(asm: &Fasm, a: Reg64, b: Memory[Reg64]) { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Fasm, a: Memory[Str], b: Reg64)   { asm."  mov {a.mangle()}, {b}{newline}" }
+fun mov(asm: &Fasm, a: Memory[Reg64], b: Reg8)  { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Fasm, a: Memory[Reg64], b: Reg16) { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Fasm, a: Memory[Reg64], b: Reg32) { asm."  mov {a}, {b}{newline}" }
+fun mov(asm: &Fasm, a: Memory[Reg64], b: Reg64) { asm."  mov {a}, {b}{newline}" }
+fun neg(asm: &Fasm, a: Reg64)                   { asm."  neg {a}{newline}" }
+fun pop(asm: &Fasm, a: Reg64)                   { asm."  pop {a}{newline}" }
+fun popcnt(asm: &Fasm, a: Reg64, b: Reg64)      { asm."  popcnt {a}, {b}{newline}" }
+fun push(asm: &Fasm, a: U64)                    { asm."  push {a}{newline}" }
+fun push(asm: &Fasm, a: Reg64)                  { asm."  push {a}{newline}" }
+fun push(asm: &Fasm, a: Str)                    { asm."  push {a.mangle()}{newline}" }
+fun ret(asm: &Fasm)                             { asm."  ret{newline}" }
+fun shl(asm: &Fasm, a: Reg64, amount: U64)      { asm."  shl {a}, {amount}{newline}" }
+fun sub(asm: &Fasm, a: Reg64, b: U64)           { asm."  sub {a}, {b}{newline}" }
+fun sub(asm: &Fasm, a: Reg64, b: Reg64)         { asm."  sub {a}, {b}{newline}" }
+fun syscall(asm: &Fasm)                         { asm."  syscall{newline}" }
+
+fun fasm(mono: Mono, layouts: Map[Type, MemLayout]): Str {
+  var text   = Fasm { builder = string_builder() }
+  var bss    = Fasm { builder = string_builder() }
+  var rodata = Fasm { builder = string_builder() }
+  mono.assemble(layouts, text.&, rodata.&, bss.&)
+  "format ELF64 executable{newline}
+  '{newline}
+  'segment readable executable{newline}
+  '{text.builder}{newline}
+  'segment readable{newline}{rodata.builder}{newline}
+  'segment readable writable{newline}{bss.builder}{newline}"
+}
+
 | File Watching  
 | Here, we implement watching files usign a crude, blocking version.
 | If there are problems in this part of the code, these are two good resources:
@@ -4032,7 +4112,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   mono.&.compile_builtins(layouts)
 
   print_on_same_line("Assembling")
-  var nasm = mono.nasm(layouts)
+  var nasm = mono.fasm(layouts)
 
   if command is asm then {
     print_on_same_line("Writing assembly")
@@ -4049,8 +4129,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
     if file_path.ends_with(".mar")
     then file_path.without_last(4)
     else file_path
-  var asm_file = "{file_path_without_extension}.s"
-  var object_file = "{file_path_without_extension}.o"
+  var asm_file = "{file_path_without_extension}.asm"
   var exe_file = file_path_without_extension
 
   print_on_same_line("Writing assembly to file")
@@ -4059,11 +4138,11 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   | TODO: make sure that the external commands succeed before calling the next
   | one
 
-  print_on_same_line("Compiling assembly using nasm")
-  run("nasm -f elf64 -o {object_file} {asm_file}")
+  print_on_same_line("Compiling assembly using fasm")
+  run("fasm {asm_file} {exe_file}")
 
-  print_on_same_line("Linking object file using ld")
-  run("ld -o {exe_file} {object_file}")
+  | print_on_same_line("Linking object file using ld")
+  | run("ld -o {exe_file} {object_file}")
 
   | TODO: remove generated asm and object file?
 
@@ -4095,6 +4174,7 @@ fun main(args: Slice[Str]): Never {
   | - martinaise asm <file>
   | - martinaise compile <file>
   | - martinaise run <file> [-- <additonal args>]
+  | - martinaise watch <file> [-- <additonal args>]
   | Note the program name itself is also an additional argument at the front.
   if args.len < 2 then wrong_usage()
   var command = parse_command(args.get(1)) orelse wrong_usage()
