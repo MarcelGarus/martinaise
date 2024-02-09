@@ -1503,7 +1503,7 @@ fun pop(context: &Context) {
 }
 
 fun print_status(context: Context) {
-  return {} | FIXME
+  | return {} | FIXME
   var out = string_builder().&
   out.write("Monoing ")
   var first = true
@@ -4062,23 +4062,23 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   print_on_same_line("Compiling assembly using nasm")
   run("nasm -f elf64 -o {object_file} {asm_file}")
 
-  println("Linking object file using ld")
+  print_on_same_line("Linking object file using ld")
   run("ld -o {exe_file} {object_file}")
 
   | TODO: remove generated asm and object file?
 
   if command is compile then {
-    println("Compiled to {exe_file}. Enjoy!")
+    print_on_same_line("Compiled to {exe_file}. Enjoy!")
     return true
   }
 
-  println("Running {exe_file}")
+  print_on_same_line("Running {exe_file}")
   run(exe_file, vec(exe_file).to_slice())
 
   | TODO: time it
   | TODO: print exit status of the program
 
-  println("{exe_file} finished")
+  println("{exe_file} exited")
 
   true
 }
