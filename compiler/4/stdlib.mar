@@ -417,6 +417,7 @@ fun syscall_fork(): U64                                                 {  57.sy
 fun syscall_execve(filename: U64, argv: U64, envp: U64): U64            {  59.syscall(filename, argv, envp) }
 fun syscall_exit(error_code: U64): U64                                  {  60.syscall(error_code) }
 fun syscall_wait4(pid: U64, stat_addr: U64, options: U64, ru: U64): U64 {  61.syscall(pid, stat_addr, options, ru) }
+fun syscall_kill(pid: U64, sig: U64): U64                               {  62.syscall(pid, sig) }
 fun syscall_creat(pathname: U64, mode: U64): U64                        {  85.syscall(pathname, mode) }
 fun syscall_time(tloc: U64): U64                                        { 201.syscall(tloc) }
 fun syscall_inotify_add_watch(fd: U64, path: U64, mask: U64): U64       { 254.syscall(fd, path, mask) }
@@ -1199,29 +1200,31 @@ fun write[W, T](writer: W, slice: Slice[T]) {
 }
 
 fun iter[T](slice: Slice[T]): Iter[T, _] {
-  SliceIter[T] { slice, index = 0 }.wrap_in_iter[T, SliceIter[T]]()
+  Iter[T, SliceIter[T]] { state = SliceIter { slice, index = 0 } }
 }
 struct SliceIter[T] { slice: Slice[T], index: U64 }
-fun next[T](iter: &SliceIter[T]): Maybe[T] {
+fun next[T](iter: &Iter[T, SliceIter[T]]): Maybe[T] {
+  var state = iter.state.&
   var item =
-    if iter.index < iter.slice.len
-    then some(iter.slice.get(iter.index))
+    if state.index < state.slice.len
+    then some(state.slice.get(state.index))
     else none[T]()
-  iter.index = iter.index + 1
+  state.index = state.index + 1
   item
 }
 
 fun rev_iter[T](slice: Slice[T]): Iter[T, _] {
-  SliceRevIter { slice, index = slice.len }.wrap_in_iter[T, SliceRevIter[T]]()
+  Iter[T, SliceRevIter[T]] { state = SliceRevIter { slice, index = slice.len } }
 }
 struct SliceRevIter[T] {
   slice: Slice[T],
   index: U64, | last yielded item
 }
-fun next[T](iter: &SliceRevIter[T]): Maybe[T] {
-  if iter.index > 0 then {
-    iter.index = iter.index - 1
-    some[T](iter.slice.get(iter.index))
+fun next[T](iter: &Iter[T, SliceRevIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  if state.index > 0 then {
+    state.index = state.index - 1
+    some[T](state.slice.get(state.index))
   } else none[T]()
 }
 
@@ -1367,9 +1370,8 @@ fun truncate_to_len(builder: &StringBuilder, len: U64) {
   assert(len <= builder.chars.len)
   builder.chars.len = len
 }
-fun to_str(builder: StringBuilder): Str {
-  builder.chars.to_slice().to_str()
-}
+fun write[W](writer: W, sb: StringBuilder) { writer.write(sb.to_str()) }
+fun to_str(builder: StringBuilder): Str { builder.chars.to_slice().to_str() }
 
 fun is_empty(str: Str): Bool { str.len == 0 }
 fun get(str: Str, index: U64): Char { str.get_ref(index).* }
@@ -1397,17 +1399,16 @@ fun hash(hasher: &Hasher, str: Str) { hasher.hash(str.chars()) }
 fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }
 
 fun iter(str: Str): Iter[Char, _] {
-  StrIter { str, index = 0 }.wrap_in_iter[Char, StrIter]()
+  Iter[Char, StrIter] { state = StrIter { str, index = 0 } }
 }
 struct StrIter { str: Str, index: U64 }
-fun next(iter: &StrIter): Maybe[Char] {
-  if iter.index < iter.str.len
-  then {
-    var char = iter.str.chars().get(iter.index)
-    iter.index = iter.index.inc()
+fun next(iter: &Iter[Char, StrIter]): Maybe[Char] {
+  var state = iter.state.&
+  if state.index >= state.str.len then none[Char]() else {
+    var char = state.str.chars().get(state.index)
+    state.index = state.index.inc()
     some(char)
   }
-  else none[Char]()
 }
 
 fun substr(str: Str, from: U64, to: U64): Str {
@@ -1483,13 +1484,14 @@ fun contains[T](range: Range[T], value: T): Bool {
 fun is_empty[T](range: Range[T]): Bool { range.start >= range.end }
 
 fun iter[T](range: Range[T]): Iter[T, _] {
-  RangeIter { rest = range }.wrap_in_iter[T, RangeIter[T]]()
+  Iter[T, RangeIter[T]] { state = RangeIter { rest = range } }
 }
 struct RangeIter[T] { rest: Range[T] }
-fun next[T](iter: &RangeIter[T]): Maybe[T] {
-  if iter.rest.is_empty() then none[T]() else {
-    var current = iter.rest.start
-    iter.rest.start = current.inc()
+fun next[T](iter: &Iter[T, RangeIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  if state.rest.is_empty() then none[T]() else {
+    var current = state.rest.start
+    state.rest.start = current.inc()
     some(current)
   }
 }
@@ -1515,8 +1517,6 @@ fun next[T](iter: &RangeIter[T]): Maybe[T] {
 | iterator implementation and delegates next() to it. The T is not used or
 | constrained by the type system, but things fail if I.next() doesn't return a
 | Maybe[T] – the T is a poor man's associated type, if you will.
-| Methods that return an iterator can use the wrap_in_iter() function to make
-| all the iterator functions available.
 |
 | When you chain iterators together, you actually just nest the types. Take this
 | example:
@@ -1531,65 +1531,67 @@ fun next[T](iter: &RangeIter[T]): Maybe[T] {
 | 
 | Iter[
 |   Tuple2[Enumerated[Char], Char],
-|   ZipIter[Enumerated[Char], Char, EnumeratedIter[Char, StrIter], StrIter],
+|   ZipIter[EnumeratedIter[StrIter], StrIter],
 | ]
 
-struct Iter[T, I] { inner: I }
+struct Iter[T, S] { state: S }
 
-fun wrap_in_iter[T, I](inner: I): Iter[T, I] {
-  | TODO: typecheck once you can write types on vars
-  | if false then var t: Maybe[T] = inner.next()
-  Iter[T, I] { inner }
-}
 fun iter[T, I](iter: Iter[T, I]): Iter[T, I] { iter }
-fun next[T, I](iter: &Iter[T, I]): Maybe[T] { iter.inner.&.next() }
-
 fun is_empty[T, I](iter: &Iter[T, I]): Bool { iter.next().is_none() }
+fun next_from_iter_state[T, I](state: &I): Maybe[T] {
+  var iter = Iter[T, I] { state = state.* }
+  var item = iter.&.next()
+  state.* = iter.state
+  item
+}
 
 | Skips the given amount of elements on the inner iter, then acts like the inner
 | iter.
 fun skip[T, I](iter: Iter[T, I], amount: U64): Iter[T, _] {
-  SkipIter[T, I] { inner = iter.inner, amount }.wrap_in_iter[T, SkipIter[T]]()
+  Iter { state = SkipIter[T, I] { inner = iter.state, amount } }
 }
 struct SkipIter[T, I] { inner: I, amount: U64 }
-fun next[T, I](iter: &SkipIter[T, I]): Maybe[T] {
-  for i in 0..iter.amount do {
-    var next = iter.inner.&.next()
-    if next is none then return next
+fun next[T, I](iter: &Iter[T, SkipIter[I]]): Maybe[T] {
+  var state = iter.state.&
+  for i in 0..state.amount do {
+    var next = state.inner.&.next_from_iter_state[T, I]()
+    if next is none then return none[T]()
   }
-  iter.amount = 0
-  iter.inner.&.next()
+  state.amount = 0
+  state.inner.&.next_from_iter_state[T, I]()
 }
 
 | Takes the given amount of elements, then ends.
 fun take[T, I](iter: Iter[T, I]): Iter[T, _] {
-  TakeIter[T, I] { inner = iter.inner, amount }.wrap_in_iter[T, TakeIter[T]]()
+  Iter[T, _] { state = TakeIter[I] { inner = iter.state, amount } }
 }
 struct TakeIter[T, I] { inner: I, amount: U64 }
-fun next[T, I](iter: &TakeIter[T, I]): Maybe[T] {
-  if iter.amount > 0
-  then {
-    iter.amount = iter.amount.dec()
-    iter.inner.&.next()
+fun next[T, I](iter: &Iter[T, TakeIter[I]]): Maybe[T] {
+  var state = iter.state.&
+  if state.amount < 0 then none[T]() else {
+    state.amount = state.amount.dec()
+    state.inner.&.next_from_iter_state[T, I]()
   }
-  else none[T]()
 }
 
 | Zips two iters of equal length.
 fun zip[A, B, IA, IB](a: Iter[A, IA], b: Iter[B, IB]): Iter[Tuple2[A, B], _] {
-  ZipIter[A, B, IA, IB] { a = a.inner, b = b.inner }
-    .wrap_in_iter[Tuple2[A, B], ZipIter[A, B, IA, IB]]()
+  Iter[Tuple2[A, B], ZipIter[IA, IB]] {
+    state = ZipIter[IA, IB] { a = a.state, b = b.state }
+  }
 }
-struct ZipIter[A, B, IA, IB] { a: IA, b: IB }
-fun next[A, B, IA, IB](iter: &ZipIter[A, B, IA, IB]): Maybe[Tuple2[A, B]] {
-  switch iter.a.&.next()
+struct ZipIter[IA, IB] { a: IA, b: IB }
+fun next[A, B, IA, IB](
+  iter: &Iter[Tuple2[A, B], ZipIter[IA, IB]],
+): Maybe[Tuple2[A, B]] {
+  switch iter.state.a.&.next_from_iter_state[A, IA]()
   case some(a) {
-    switch iter.b.&.next()
+    switch iter.state.b.&.next_from_iter_state[B, IB]()
     case none panic("zip iters have unequal length")
     case some(b) some(tuple(a, b))
   }
   case none {
-    switch iter.b.&.next()
+    switch iter.state.b.&.next_from_iter_state[B, IB]()
     case some panic("zip iters have unequal length")
     case none none[Tuple2[A, B]]()
   }
@@ -1597,16 +1599,20 @@ fun next[A, B, IA, IB](iter: &ZipIter[A, B, IA, IB]): Maybe[Tuple2[A, B]] {
 
 | Wraps items in Enumerated[T], which also has an index.
 fun enumerate[T, I](iter: Iter[T, I]): Iter[Enumerated[T], _] {
-  EnumeratedIter[T, I] { inner = iter.inner, index = 0 }
-    .wrap_in_iter[Enumerated[T], EnumeratedIter[T, I]]()
+  Iter[Enumerated[T], EnumeratedIter[I]] {
+    state = EnumeratedIter[I] { inner = iter.state, index = 0 }
+  }
 }
 struct Enumerated[T] { index: U64, item: T }
-struct EnumeratedIter[T, I] { inner: I, index: U64 }
-fun next[T, I](iter: &EnumeratedIter[T, I]): Maybe[Enumerated[T]] {
-  switch iter.inner.&.next()
+struct EnumeratedIter[S] { inner: S, index: U64 }
+fun next[T, I](
+  iter: &Iter[Enumerated[T], EnumeratedIter[I]],
+): Maybe[Enumerated[T]] {
+  var state = iter.state.&
+  switch state.inner.&.next_from_iter_state[T, I]()
   case some(item) {
-    var index = iter.index
-    iter.index = iter.index.inc()
+    var index = state.index
+    state.index = state.index.inc()
     some(Enumerated { index, item })
   }
   case none none[Enumerated[T]]()
@@ -1631,22 +1637,22 @@ fun find[T, I](iter: &Iter[T, I], needle: T): Maybe[U64] {
 
 | Splits an Iter at the given items forming a separator.
 fun split[T, I](iter: Iter[T, I], separator: Slice[T]): Iter[Slice[T], _] {
-  SplitIter { inner = iter.inner, separator }
-    .wrap_in_iter[Slice[T], SplitIter[T, I]]()
+  Iter[T, SplitIter[I]] { state = SplitIter { inner = iter.inner, separator } }
 }
 struct SplitIter[T, I] { inner: I, separator: Slice[T] }
-fun next[T, I](self: &SplitIter[T, I]): Maybe[Slice[T]] {
+fun next[T, I](iter: &Iter[T, SplitIter[T, I]]): Maybe[Slice[T]] {
+  var state = iter.state.&
   var current = vec[T]()
   loop
-    switch self.inner.&.next()
+    switch state.inner.&.next()
     case none
       if current.len > 0
       then return some(current.to_slice())
       else return none[Slice[T]]()
     case some(item) {
       current.&.push(item)
-      if current.to_slice().ends_with(self.separator)
-      then return some(current.to_slice().without_last(self.separator.len))
+      if current.to_slice().ends_with(state.separator)
+      then return some(current.to_slice().without_last(state.separator.len))
     }
 }
 
@@ -2153,16 +2159,20 @@ fun write[W, K, V](writer: W, map: Map[K, V]) {
 }
 
 fun iter[K, V](map: Map[K, V]): Iter[MapEntry[K, V], _] {
-  MapIter { buckets = map.buckets, index = 0 }
-    .wrap_in_iter[MapEntry[K, V], MapIter[K, V]]()
+  Iter[MapEntry[K, V], MapIter[K, V]] {
+    state = MapIter { buckets = map.buckets, index = 0 }
+  }
 }
 struct MapIter[K, V] { buckets: Slice[MapBucket[K, V]], index: U64 }
-fun next[K, V](map: &MapIter[K, V]): Maybe[MapEntry[K, V]] {
+fun next[K, V](
+  iter: &Iter[MapEntry[K, V], MapIter[K, V]],
+): Maybe[MapEntry[K, V]] {
+  var state = iter.state.&
   loop {
-    if map.index >= map.buckets.len
+    if state.index >= state.buckets.len
     then return none[MapEntry[K, V]]()
-    map.index = map.index + 1
-    if map.buckets.get(map.index - 1) is filled(entry)
+    state.index = state.index + 1
+    if state.buckets.get(state.index - 1) is filled(entry)
     then return some(entry)
   }
 }
@@ -2193,15 +2203,17 @@ fun write[W, T](writer: W, set: Set[T]) {
 }
 
 fun iter[T](set: Set[T]): Iter[T, _] {
-  SetIter { buckets = set.map.buckets, index = 0 }
-    .wrap_in_iter[T, SetIter[T]]()
+  Iter[T, SetIter[T]] {
+    state = SetIter { buckets = set.map.buckets, index = 0 }
+  }
 }
 struct SetIter[T] { buckets: Slice[MapBucket[T, Nothing]], index: U64 }
-fun next[T](set: &SetIter[T]): Maybe[T] {
+fun next[T](iter: &Iter[T, SetIter[T]]): Maybe[T] {
+  var state = iter.state.&
   loop {
-    if set.index >= set.buckets.len then return none[T]()
-    set.index = set.index + 1
-    if set.buckets.get(set.index - 1) is filled(entry)
+    if state.index >= state.buckets.len then return none[T]()
+    state.index = state.index + 1
+    if state.buckets.get(state.index - 1) is filled(entry)
     then return some(entry.key)
   }
 }
@@ -2257,6 +2269,12 @@ fun fork(): Forked {
 | https://man7.org/linux/man-pages/man2/wait4.2.html
 | https://man7.org/linux/man-pages/man2/waitid.2.html
 fun wait(pid: Pid) { syscall_wait4(pid.value, 0, 0, 0).ignore() }
+
+fun kill(pid: Pid, signal: U64): Result[Nothing, Str] {
+  if syscall_kill(pid.value, signal) == 0
+  then ok[Nothing, Str]({})
+  else error[Nothing, Str]("couldn't send signal")
+}
 
 fun exec(program: Str, args: Slice[Str]): Never {
   var program = program.to_os_str().address.to_U64()
