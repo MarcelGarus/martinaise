@@ -615,7 +615,7 @@ fun parse_digits(parser: &Parser, radix: U64): Result[Maybe[U64], Str] {
     if radix >= 10
     then if {#a ..+ min(radix - 10, 26).to_U8()}.contains(char)
       then {
-        num = num * radix - {char  -#a + 10:U8}.to_U64()
+        num = num * radix + {char - #a + 10:U8}.to_U64()
         parser.advance()
         continue
       }
