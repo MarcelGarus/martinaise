@@ -3385,6 +3385,7 @@ fun assemble[Assembler](
   text: &Assembler,   | readable, executable (for code)
   rodata: &Assembler, | readable (for string literals)
   bss: &Assembler,    | readable, writable, uninitialized (for heap and globals)
+  use_libc_malloc: Bool,
 ) {
   var arg_layouts = map[Str, MemLayout]() | maps fun signature to arg struct mem layout
   var string_literals = vec[Str]() | will be put into rodata section at the end
@@ -3402,7 +3403,6 @@ fun assemble[Assembler](
     ))
   }
 
-  text.global("_start") | make _start public
   text.label("_start") {
     text.call("_init_heap")
     text.call("_init_globals")
@@ -3467,70 +3467,78 @@ fun assemble[Assembler](
   }
 
   text.label("_malloc") {
-    | Note: This function doesn't follow the Martinaise calling convention. It
-    | expects the amount to allocate in r8 and the alignment in r9. Returns the
-    | address in rax.
-    var amount = r8
-    var alignment = r9
-    var new_address = r10
-    text.mov(new_address, memory("_heap_head"))
-    { | Check that alignment is 1, 2, 4, or 8.
-      text.cmp(alignment, 8)
-      text.jg("_malloc.error") | alignment must be <= 8
-      text.popcnt(r11, alignment)
-      text.cmp(r11, 1)
-      text.jne("_malloc.error") | alignment must be 1, 2, 4, or 8
-    }
-    { | Round up the new_address to a multiple of the alignment. Rounding up to
-      | the alignment means:
-      |
-      | new_address = (new_address + (r9 - 1)) & bitmask for lower bits
-      |
-      | For example, for alignment 4:
-      |
-      | new_address = (new_address + 3) & ...1111100
-      text.add(new_address, alignment)
-      text.dec(new_address)
-      text.neg(alignment) | ...1111 or ...1110 or ...1100 or ...1000
-      text.and(new_address, alignment)
-    }
-    var end_of_allocation = r11
-    text.mov(end_of_allocation, new_address)
-    text.add(end_of_allocation, amount)
-    text.cmp(end_of_allocation, memory("_heap_end"))
-    text.jge("_malloc.realloc")
-    text.label("_malloc.actually_allocate") {
-      | Here, we assume there is enough memory for the allocation.
-      text.mov(memory("_heap_head"), end_of_allocation)
-      text.mov(rax, r10)
+    if use_libc_malloc then {
+      | libc malloc guarantees to only give out memory that is properly aligned
+      | for any type. It just uses the maximum alignment on the system.
+      text.mov(rdi, r8)
+      text.call("malloc")
       text.ret()
-    }
-    text.label("_malloc.realloc") {
-      var new_brk = r12
-      text.mov(new_brk, memory("_heap_end"))
-      text.label("_malloc.find_new_brk")
-      text.add(new_brk, 4096) | page size on Linux
-      text.cmp(new_brk, end_of_allocation)
-      text.jl("_malloc.find_new_brk")
-      { | Do the brk(new_brk) syscall.
-        text.push(new_address)
-        text.push(end_of_allocation)
-        text.push(new_brk)
-        text.mov(rax, 12)      | brk
-        text.mov(rdi, new_brk) | brk(new_brk) moves the break to new_brk
-        text.syscall()
-        text.pop(new_brk)
-        text.pop(end_of_allocation)
-        text.pop(new_address)
+    } else {
+      var amount = r8
+      var alignment = r9
+      var new_address = r10
+      | Note: This function doesn't follow the Martinaise calling convention. It
+      | expects the amount to allocate in r8 and the alignment in r9. Returns the
+      | address in rax.
+      text.mov(new_address, memory("_heap_head"))
+      { | Check that alignment is 1, 2, 4, or 8.
+        text.cmp(alignment, 8)
+        text.jg("_malloc.error") | alignment must be <= 8
+        text.popcnt(r11, alignment)
+        text.cmp(r11, 1)
+        text.jne("_malloc.error") | alignment must be 1, 2, 4, or 8
       }
-      text.cmp(rax, new_brk)
-      text.jl("_malloc.error") | setting the brk failed TODO: describe why this can happen
-      text.mov(memory("_heap_end"), rax)
-      text.jmp("_malloc.actually_allocate")
-    }
-    text.label("_malloc.error") {
-      text.mov(rax, 0)
-      text.ret()
+      { | Round up the new_address to a multiple of the alignment. Rounding up to
+        | the alignment means:
+        |
+        | new_address = (new_address + (r9 - 1)) & bitmask for lower bits
+        |
+        | For example, for alignment 4:
+        |
+        | new_address = (new_address + 3) & ...1111100
+        text.add(new_address, alignment)
+        text.dec(new_address)
+        text.neg(alignment) | ...1111 or ...1110 or ...1100 or ...1000
+        text.and(new_address, alignment)
+      }
+      var end_of_allocation = r11
+      text.mov(end_of_allocation, new_address)
+      text.add(end_of_allocation, amount)
+      text.cmp(end_of_allocation, memory("_heap_end"))
+      text.jge("_malloc.realloc")
+      text.label("_malloc.actually_allocate") {
+        | Here, we assume there is enough memory for the allocation.
+        text.mov(memory("_heap_head"), end_of_allocation)
+        text.mov(rax, r10)
+        text.ret()
+      }
+      text.label("_malloc.realloc") {
+        var new_brk = r12
+        text.mov(new_brk, memory("_heap_end"))
+        text.label("_malloc.find_new_brk")
+        text.add(new_brk, 4096) | page size on Linux
+        text.cmp(new_brk, end_of_allocation)
+        text.jl("_malloc.find_new_brk")
+        { | Do the brk(new_brk) syscall.
+          text.push(new_address)
+          text.push(end_of_allocation)
+          text.push(new_brk)
+          text.mov(rax, 12)      | brk
+          text.mov(rdi, new_brk) | brk(new_brk) moves the break to new_brk
+          text.syscall()
+          text.pop(new_brk)
+          text.pop(end_of_allocation)
+          text.pop(new_address)
+        }
+        text.cmp(rax, new_brk)
+        text.jl("_malloc.error") | setting the brk failed TODO: describe why this can happen
+        text.mov(memory("_heap_end"), rax)
+        text.jmp("_malloc.actually_allocate")
+      }
+      text.label("_malloc.error") {
+        text.mov(rax, 0)
+        text.ret()
+      }
     }
   }
 
@@ -3854,8 +3862,6 @@ fun disambiguated_label(asm: &Nasm, prefix: Str): Str {
   label
 }
 
-fun global(asm: &Nasm, label: Str) { asm."global {label.mangle()}{newline}" }
-
 fun align(asm: &Nasm, alignment: U64) { asm."  align {alignment}{newline}" }
 fun resb(asm: &Nasm, amount: U64)     { asm."  resb {amount}{newline}" }
 fun db(asm: &Nasm, bytes: Slice[U8])  { asm."  db {comma_separated(bytes)}{newline}" }
@@ -3902,14 +3908,45 @@ fun sub(asm: &Nasm, a: Reg64, b: U64)           { asm."  sub {a}, {b}{newline}" 
 fun sub(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  sub {a}, {b}{newline}" }
 fun syscall(asm: &Nasm)                         { asm."  syscall{newline}" }
 
-fun nasm(mono: Mono, layouts: Map[Type, MemLayout]): Str {
+fun nasm(mono: Mono, layouts: Map[Type, MemLayout], use_sdl: Bool): Str {
   var text   = Nasm { builder = string_builder() }
   var bss    = Nasm { builder = string_builder() }
   var rodata = Nasm { builder = string_builder() }
-  mono.assemble(layouts, text.&, rodata.&, bss.&)
-  "section .text{newline}{text.builder}{newline}
-  'section .rodata{newline}{rodata.builder}{newline}
-  'section .bss{newline}{bss.builder}{newline}"
+  mono.assemble(layouts, text.&, rodata.&, bss.&, use_sdl)
+
+  if use_sdl
+  then "
+    'section .text{newline}
+    'global _start{newline}
+    '{newline}
+    'extern malloc{newline}
+    'extern SDL_Init{newline}
+    'extern SDL_CreateWindow{newline}
+    'extern SDL_CreateRenderer{newline}
+    'extern SDL_LoadBMP_RW{newline}
+    'extern SDL_RWFromFile{newline}
+    'extern SDL_CreateTextureFromSurface{newline}
+    'extern SDL_FreeSurface{newline}
+    'extern SDL_SetRenderDrawColor{newline}
+    'extern SDL_RenderClear{newline}
+    'extern SDL_RenderCopy{newline}
+    'extern SDL_RenderPresent{newline}
+    'extern SDL_Delay{newline}
+    'extern SDL_DestroyTexture{newline}
+    'extern SDL_DestroyRenderer{newline}
+    'extern SDL_DestroyWindow{newline}
+    'extern SDL_Quit{newline}
+    'extern SDL_GetError{newline}
+    '{newline}
+    '{text.builder}{newline}
+    'section .rodata{newline}{rodata.builder}{newline}
+    'section .bss{newline}{bss.builder}{newline}"
+  else "
+    'section .text{newline}
+    'global _start{newline}
+    '{text.builder}{newline}
+    'section .rodata{newline}{rodata.builder}{newline}
+    'section .bss{newline}{bss.builder}{newline}"
 }
 
 | Textual FASM Assembler  
@@ -3930,8 +3967,6 @@ fun disambiguated_label(asm: &Fasm, prefix: Str): Str {
   asm.label(label)
   label
 }
-
-fun global(asm: &Fasm, label: Str) { asm."public {label.mangle()}{newline}" }
 
 fun align(asm: &Fasm, alignment: U64) { asm."  align {alignment}{newline}" }
 fun resb(asm: &Fasm, amount: U64)     { asm."  rb {amount}{newline}" }
@@ -3983,15 +4018,16 @@ fun fasm(mono: Mono, layouts: Map[Type, MemLayout], use_sdl: Bool): Str {
   var text   = Fasm { builder = string_builder() }
   var bss    = Fasm { builder = string_builder() }
   var rodata = Fasm { builder = string_builder() }
-  mono.assemble(layouts, text.&, rodata.&, bss.&)
+  mono.assemble(layouts, text.&, rodata.&, bss.&, use_sdl)
 
   if use_sdl
   then "
     'format ELF64{newline}
     '{newline}
     'section '.text' executable{newline}
+    'public _start{newline}
     '{newline}
-    'extrn printf{newline}
+    'extrn malloc{newline}
     'extrn SDL_Init{newline}
     'extrn SDL_CreateWindow{newline}
     'extrn SDL_CreateRenderer{newline}
@@ -3999,6 +4035,7 @@ fun fasm(mono: Mono, layouts: Map[Type, MemLayout], use_sdl: Bool): Str {
     'extrn SDL_RWFromFile{newline}
     'extrn SDL_CreateTextureFromSurface{newline}
     'extrn SDL_FreeSurface{newline}
+    'extrn SDL_SetRenderDrawColor{newline}
     'extrn SDL_RenderClear{newline}
     'extrn SDL_RenderCopy{newline}
     'extrn SDL_RenderPresent{newline}
@@ -4089,12 +4126,13 @@ fun wait_for_change(watcher: FileWatcher) {
 | The command line interface which you use to interact with the Martinaise
 | compiler.
 
-enum Command { help, ast, mono, asm, compile, run, watch }
+enum Command { help, ast, mono, nasm, fasm, compile, run, watch }
 fun parse_command(command: Str): Maybe[Command] {
   if command == "help" then return some(Command.help)
   if command == "ast" then return some(Command.ast)
   if command == "mono" then return some(Command.mono)
-  if command == "asm" then return some(Command.asm)
+  if command == "nasm" then return some(Command.nasm)
+  if command == "fasm" then return some(Command.fasm)
   if command == "compile" then return some(Command.compile)
   if command == "run" then return some(Command.run)
   if command == "watch" then return some(Command.watch)
@@ -4108,7 +4146,8 @@ fun print_usage_info(out: File) {
     '  help     prints this help{newline}
     '  ast      shows the abstract syntax tree{newline}
     '  mono     shows the monomorphized code{newline}
-    '  asm      compiles to assembly{newline}
+    '  nasm     compiles to NASM-style assembly{newline}
+    '  fasm     compiles to FASM-style assembly{newline}
     '  compile  compiles to an executable{newline}
     '  run      compiles and runs{newline}
     '  watch    watches, compiles, and runs{newline}"
@@ -4117,7 +4156,7 @@ fun print_usage_info(out: File) {
 | Runs the pipeline that matches the command. Errors are handled internally
 | (stuff is printed to stderr). Returns whether it ran through successfully.
 fun run_pipeline(command: Command, file_path: Str, use_sdl: Bool): Bool {
-  println("Reading {file_path}")
+  eprintln("Reading {file_path}")
   var stdlib = read_file("stdlib.mar").unwrap("couldn't read stdlib").to_str()
   var file = read_file(file_path).unwrap("couldn't read {file_path}").to_str()
   var input = "{stdlib}{newline}{file}{newline}"
@@ -4141,16 +4180,25 @@ fun run_pipeline(command: Command, file_path: Str, use_sdl: Bool): Bool {
   mono.&.compile_builtins(layouts)
 
   print_on_same_line("Assembling")
-  var fasm = mono.fasm(layouts, use_sdl)
-
-  if command is asm then {
+  if command is nasm then {
+    var asm = mono.nasm(layouts, use_sdl)
     print_on_same_line("Writing assembly")
     var buffered = stdout.buffered_writer(1024).&
-    buffered.writeln(fasm)
+    buffered.writeln(asm)
     buffered.flush()
     print_on_same_line("Compiled to assembly. Enjoy!")
     return true
   }
+  if command is fasm then {
+    var asm = mono.fasm(layouts, use_sdl)
+    print_on_same_line("Writing assembly")
+    var buffered = stdout.buffered_writer(1024).&
+    buffered.writeln(asm)
+    buffered.flush()
+    print_on_same_line("Compiled to assembly. Enjoy!")
+    return true
+  }
+  var asm = mono.fasm(layouts, use_sdl)
 
   | TODO: compile to machine code in memory (in Martinaise)
   | TODO: assert that the file ends with .mar?
@@ -4163,7 +4211,7 @@ fun run_pipeline(command: Command, file_path: Str, use_sdl: Bool): Bool {
   var exe_file = file_path_without_extension
 
   print_on_same_line("Writing assembly to file")
-  write_file(asm_file, fasm.bytes()).unwrap()
+  write_file(asm_file, asm.bytes()).unwrap()
 
   | TODO: make sure that the external commands succeed before calling the next
   | one
