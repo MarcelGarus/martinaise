@@ -3940,6 +3940,7 @@ fun nasm(mono: Mono, layouts: Map[Type, MemLayout], use_sdl: Bool): Str {
     'extern SDL_DestroyWindow{newline}
     'extern SDL_Quit{newline}
     'extern SDL_GetError{newline}
+    'extern SDL_PollEvent{newline}
     '{newline}
     '{text.builder}{newline}
     'section .rodata{newline}{rodata.builder}{newline}
@@ -4049,6 +4050,7 @@ fun fasm(mono: Mono, layouts: Map[Type, MemLayout], use_sdl: Bool): Str {
     'extrn SDL_DestroyWindow{newline}
     'extrn SDL_Quit{newline}
     'extrn SDL_GetError{newline}
+    'extrn SDL_PollEvent{newline}
     '{newline}
     '{text.builder}{newline}
     'section '.rodata'{newline}{rodata.builder}{newline}

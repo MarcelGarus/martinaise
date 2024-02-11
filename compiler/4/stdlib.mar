@@ -690,7 +690,8 @@ fun remainder(a: U8, b: U8): U8 asm {
   mov r8b, [rsp + 17] ; b
   div r8b             ; ax / r8b = al, remainder ah
   mov r9, [rsp + 8]   ; return address
-  mov [r9], ah
+  shr ax, 8           ; shift ah into al
+  mov [r9], al
   ret
 }
 fun remainder(a: U16, b: U16): U16 asm {
@@ -757,6 +758,19 @@ fun <=>(a: U8, b: U8): Ordering asm {
   mov r12, 2 ; greater
   mov r8b, [rsp + 16]
   cmp r8b, [rsp + 17]
+  cmovb r9, r10 ; conditional move below -> less
+  cmove r9, r11 ; conditional move equal -> equal
+  cmova r9, r12 ; conditional move above -> greater
+  mov r8, [rsp + 8]
+  mov [r8], r9b
+  ret
+}
+fun <=>(a: U32, b: U32): Ordering asm {
+  mov r10, 0 ; less
+  mov r11, 1 ; equal
+  mov r12, 2 ; greater
+  mov r8d, [rsp + 16]
+  cmp r8d, [rsp + 20]
   cmovb r9, r10 ; conditional move below -> less
   cmove r9, r11 ; conditional move equal -> equal
   cmova r9, r12 ; conditional move above -> greater
@@ -873,6 +887,12 @@ fun to_I32(n: U64): I32 asm {
   mov r8, [rsp + 16] ; n
   mov r9, [rsp + 8]   ; return address
   mov [r9], r8d
+  ret
+}
+fun to_I64(n: U64): I64 asm {
+  mov r8, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8
   ret
 }
 fun to_U64(n: I32): U64 asm {
@@ -1077,6 +1097,7 @@ fun to_address(number: U64): Address { number.cast[U64, Address]() }
 var null = 0.to_address() | Million dollar mistake?
 
 fun ==(a: Address, b: Address): Bool { a.to_U64() == b.to_U64() }
+fun +(a: Address, offset: U64): Address { {a.to_U64() + offset}.to_address() }
 
 fun write[W](writer: W, address: Address) {
   | max U64 is 18_446_744_073_709_551_615
@@ -1100,8 +1121,7 @@ fun swap[T](a: &T, b: &T) {
 | at an offset of their stride size, return a reference to the item at the
 | offset.
 fun add_stride_offset[T](ref: &T, offset: U64): &T {
-  {ref.to_address().to_U64() + {stride_size_of[T]() * offset}}
-    .to_address().to_reference[T]()
+  {ref.to_address() + {stride_size_of[T]() * offset}}.to_reference[T]()
 }
 
 | Heap & Memory Allocations  
@@ -1341,7 +1361,7 @@ fun to_os_str(str: Str): OsStr {
 fun to_str(str: OsStr): Str {
   var len = 0
   loop
-    if str.address.to_reference[U8]().add_stride_offset(len) == 0
+    if str.address.to_reference[U8]().add_stride_offset(len).* == 0:U8
     then break
     else len = len.inc()
   Slice { data = str.address.to_reference[Char](), len }.to_str()
