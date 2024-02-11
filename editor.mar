@@ -226,6 +226,13 @@ var white      = color(16#ffffff)
 var red        = color(16#ff0000)
 var background = color(16#1c1c1e)
 var foreground = color(16#f2f2f7)
+var blue       = color(16#1a94ff)
+var purple     = color(16#d189f5)
+var green      = color(16#41d496)
+var lime       = color(16#7dd70f)
+var yellow     = color(16#ffd60a)
+var light_yellow = color(16#ffea80)
+var orange     = color(16#ff9f0a)
 
 | Offset  
 
@@ -328,7 +335,6 @@ fun poll_event(): Maybe[Event] {
       |   }
       | }
       var keycode = {event_buffer + 16}.cast[Address, &U8]().*
-      println("keycode = {keycode}")
       return some(Event.key_down(keycode))
     }
     else {
@@ -343,16 +349,114 @@ fun poll_event(): Maybe[Event] {
 
 struct Editor {
   text: Vec[Char],
+  lines: Vec[U64],
+  cursor: U64,
+}
+
+fun editor(text: Str): Editor {
+  var editor = Editor {
+    text = vec[Char](),
+    lines = vec[U64](),
+    cursor = 0,
+  }
+  for char in text do editor.text.&.push(char)
+  editor.&.text_updated()
+  editor
+}
+
+fun text_updated(editor: &Editor) {
+  editor.lines.len = 0
+  var line = 0
+  for char in editor.text.iter().enumerate() do {
+    editor.lines.&.push(line)
+    if char.item == newline then line = line + 1
+  }
+}
+fun line_start(editor: Editor, cursor: U64): U64 {
+  var line = editor.lines.get(cursor)
+  if line == 0 then return 0
+  var index = cursor - 1
+  loop if editor.lines.get(index) < line then break else index = index - 1
+  index + 1
+}
+fun line_end(editor: Editor, cursor: U64): Maybe[U64] {
+  if editor.lines.is_empty() then return none[U64]()
+  var line = editor.lines.get(cursor)
+  if line == editor.lines.get(editor.lines.len - 1) then return none[U64]()
+  var index = cursor + 1
+  loop
+    if index > editor.lines.len then break
+    else if editor.lines.get(index) > line then break else index = index + 1
+  some(index)
 }
 
 fun input(editor: &Editor, str: Str) {
   for char in str do editor.text.&.push(char)
+  var index = editor.text.len - 1
+  loop
+    if index >= {editor.cursor + str.len}
+    then {
+      editor.text.get_ref(index).* = editor.text.get(index - str.len)
+      index = index - 1
+    }
+    else break
+  for char in str.iter().enumerate() do
+    editor.text.get_ref(editor.cursor + char.index).* = char.item
+  editor.text_updated()
+  editor.cursor = editor.cursor + str.len
 }
-fun enter(editor: &Editor) {
-  editor.text.&.push(newline)
-}
+fun enter(editor: &Editor) { editor.input("{newline}") }
 fun backspace(editor: &Editor) {
-  editor.text.&.pop().ignore()
+  if editor.cursor > 0 then {
+    for i in {editor.cursor - 1}..{editor.text.len - 1} do
+      editor.text.get_ref(i).* = editor.text.get(i + 1)
+    editor.text.len = editor.text.len - 1
+    editor.text_updated()
+    editor.cursor = editor.cursor - 1
+  }
+}
+fun delete(editor: &Editor) {
+  if editor.cursor == editor.text.len then return {}
+  editor.cursor = editor.cursor + 1
+  editor.backspace()
+}
+
+fun move_up(editor: &Editor) {
+  if editor.lines.is_empty() then return {}
+  var start_of_line = editor
+    .line_start(editor.cursor.clamp(0, editor.text.len - 1))
+  if start_of_line == 0 then return {}
+  var chars_before = editor.cursor - start_of_line
+  var start_of_previous_line = editor.line_start(start_of_line - 1)
+  var end_of_previous_line = start_of_line - 1
+  editor.cursor = {start_of_previous_line + chars_before}
+    .clamp(0, end_of_previous_line)
+}
+fun move_down(editor: &Editor) {
+  println("moving down")
+  if editor.lines.is_empty() then return {}
+  println("calculating start")
+  var start_of_line = editor
+    .line_start(editor.cursor.clamp(0, editor.text.len - 1))
+  println("start of line: {start_of_line}")
+  var chars_before = editor.cursor - start_of_line
+  println("chars before: {chars_before}")
+  var start_of_next_line = editor
+    .line_end(editor.cursor.clamp(0, editor.text.len - 1))
+    orelse return {}
+  println("start of next line: {start_of_next_line}")
+  var end_of_next_line =
+    switch editor.line_end(start_of_next_line)
+    case some(end) end - 1
+    case none editor.text.len
+  println("end of next line: {end_of_next_line}")
+  editor.cursor = {start_of_next_line + chars_before}.clamp(0, end_of_next_line)
+}
+fun move_left(editor: &Editor) {
+  if editor.cursor > 0 then editor.cursor = editor.cursor - 1
+}
+fun move_right(editor: &Editor) {
+  if editor.cursor < editor.text.len then editor.cursor = editor.cursor + 1
 }
 
 | Rendering  
@@ -491,9 +595,19 @@ fun render(renderer: Renderer, editor: Editor) {
 
   var row = 0
   var col = 0
-  for char in editor.text do {
+  for char in editor.text.iter().enumerate() do {
+    var index = char.index
+    var char = char.item
     var base_x = {col * 6 * pixel_size} + 20
     var base_y = {row * 10 * pixel_size} + 20
+
+    if index == editor.cursor then {
+      renderer.set_color(blue)
+      renderer.draw(
+        {base_x @ {base_y - 2}} @ {{2 * pixel_size} @ {10 * pixel_size}})
+    }
+
+    renderer.set_color(foreground)
     if char == newline then {
       row = row + 1
       col = 0
@@ -517,8 +631,7 @@ fun main(args: Slice[Str]): Never {
   var window = create_window("Martinaise Editor", 500 @ 100, 1080 @ 920)
   var renderer = window.create_renderer()
 
-  var editor = Editor { text = vec[Char]() }
-  for char in content do editor.text.&.push(char)
+  var editor = editor(content)
 
   loop {
     switch poll_event()
@@ -531,9 +644,14 @@ fun main(args: Slice[Str]): Never {
         editor.&.input(text)
       }
       case key_down(keycode) {
-        stderr."Key down {keycode}{newline}"
         if keycode == 40:U8 then editor.&.enter()
-        if keycode == 42:U8 then editor.&.backspace()
+        else if keycode == 42:U8 then editor.&.backspace()
+        else if keycode == 76:U8 then editor.&.delete()
+        else if keycode == 79:U8 then editor.&.move_right()
+        else if keycode == 80:U8 then editor.&.move_left()
+        else if keycode == 81:U8 then editor.&.move_down()
+        else if keycode == 82:U8 then editor.&.move_up()
+        else stderr."Key down {keycode}{newline}"
       }
 
     renderer.render(editor)

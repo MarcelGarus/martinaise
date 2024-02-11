@@ -1012,6 +1012,7 @@ fun <=[T](a: T, b: T): Bool { switch a <=> b case greater false default true }
 
 fun min[T](a: T, b: T): T { if a < b then a else b }
 fun max[T](a: T, b: T): T { if a > b then a else b }
+fun clamp[T](a: T, low: T, high: T): T { max(low, min(high, a)) }
 
 | Type Information  
 | Using some builtin functions that only take type arguments (no value
