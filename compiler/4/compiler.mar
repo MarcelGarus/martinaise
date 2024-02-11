@@ -3931,7 +3931,7 @@ fun disambiguated_label(asm: &Fasm, prefix: Str): Str {
   label
 }
 
-fun global(asm: &Fasm, label: Str) { asm."entry {label.mangle()}{newline}" }
+fun global(asm: &Fasm, label: Str) { asm."public {label.mangle()}{newline}" }
 
 fun align(asm: &Fasm, alignment: U64) { asm."  align {alignment}{newline}" }
 fun resb(asm: &Fasm, amount: U64)     { asm."  rb {amount}{newline}" }
@@ -3979,17 +3979,46 @@ fun sub(asm: &Fasm, a: Reg64, b: U64)           { asm."  sub {a}, {b}{newline}" 
 fun sub(asm: &Fasm, a: Reg64, b: Reg64)         { asm."  sub {a}, {b}{newline}" }
 fun syscall(asm: &Fasm)                         { asm."  syscall{newline}" }
 
-fun fasm(mono: Mono, layouts: Map[Type, MemLayout]): Str {
+fun fasm(mono: Mono, layouts: Map[Type, MemLayout], use_sdl: Bool): Str {
   var text   = Fasm { builder = string_builder() }
   var bss    = Fasm { builder = string_builder() }
   var rodata = Fasm { builder = string_builder() }
   mono.assemble(layouts, text.&, rodata.&, bss.&)
-  "format ELF64 executable{newline}
-  '{newline}
-  'segment readable executable{newline}
-  '{text.builder}{newline}
-  'segment readable{newline}{rodata.builder}{newline}
-  'segment readable writable{newline}{bss.builder}{newline}"
+
+  if use_sdl
+  then "
+    'format ELF64{newline}
+    '{newline}
+    'section '.text' executable{newline}
+    '{newline}
+    'extrn printf{newline}
+    'extrn SDL_Init{newline}
+    'extrn SDL_CreateWindow{newline}
+    'extrn SDL_CreateRenderer{newline}
+    'extrn SDL_LoadBMP_RW{newline}
+    'extrn SDL_RWFromFile{newline}
+    'extrn SDL_CreateTextureFromSurface{newline}
+    'extrn SDL_FreeSurface{newline}
+    'extrn SDL_RenderClear{newline}
+    'extrn SDL_RenderCopy{newline}
+    'extrn SDL_RenderPresent{newline}
+    'extrn SDL_Delay{newline}
+    'extrn SDL_DestroyTexture{newline}
+    'extrn SDL_DestroyRenderer{newline}
+    'extrn SDL_DestroyWindow{newline}
+    'extrn SDL_Quit{newline}
+    'extrn SDL_GetError{newline}
+    '{newline}
+    '{text.builder}{newline}
+    'section '.rodata'{newline}{rodata.builder}{newline}
+    'section '.data' writable{newline}{bss.builder}{newline}"
+  else "
+    'format ELF64 executable{newline}
+    '{newline}
+    'segment readable executable{newline}
+    '{text.builder}{newline}
+    'segment readable{newline}{rodata.builder}{newline}
+    'segment readable writable{newline}{bss.builder}{newline}"
 }
 
 | File Watching  
@@ -4087,7 +4116,7 @@ fun print_usage_info(out: File) {
 
 | Runs the pipeline that matches the command. Errors are handled internally
 | (stuff is printed to stderr). Returns whether it ran through successfully.
-fun run_pipeline(command: Command, file_path: Str): Bool {
+fun run_pipeline(command: Command, file_path: Str, use_sdl: Bool): Bool {
   println("Reading {file_path}")
   var stdlib = read_file("stdlib.mar").unwrap("couldn't read stdlib").to_str()
   var file = read_file(file_path).unwrap("couldn't read {file_path}").to_str()
@@ -4112,12 +4141,12 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   mono.&.compile_builtins(layouts)
 
   print_on_same_line("Assembling")
-  var nasm = mono.fasm(layouts)
+  var fasm = mono.fasm(layouts, use_sdl)
 
   if command is asm then {
     print_on_same_line("Writing assembly")
     var buffered = stdout.buffered_writer(1024).&
-    buffered.writeln(nasm)
+    buffered.writeln(fasm)
     buffered.flush()
     print_on_same_line("Compiled to assembly. Enjoy!")
     return true
@@ -4130,19 +4159,20 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
     then file_path.without_last(4)
     else file_path
   var asm_file = "{file_path_without_extension}.asm"
+  var object_file = "{file_path_without_extension}.o"
   var exe_file = file_path_without_extension
 
   print_on_same_line("Writing assembly to file")
-  write_file(asm_file, nasm.bytes()).unwrap()
+  write_file(asm_file, fasm.bytes()).unwrap()
 
   | TODO: make sure that the external commands succeed before calling the next
   | one
 
   print_on_same_line("Compiling assembly using fasm")
-  run("fasm {asm_file} {exe_file}")
-
-  | print_on_same_line("Linking object file using ld")
-  | run("ld -o {exe_file} {object_file}")
+  if use_sdl then {
+    run("fasm {asm_file} {object_file}")
+    run("ld -o {exe_file} {object_file} -dynamic-linker /lib64/ld-linux-x86-64.so.2 -lc -lSDL2")
+  } else run("fasm {asm_file} {exe_file}")
 
   | TODO: remove generated asm and object file?
 
@@ -4185,7 +4215,8 @@ fun main(args: Slice[Str]): Never {
   if args.len < 3 then wrong_usage()
   var file_path = args.get(2)
 
-  | TODO: support -O <output>
+  var use_sdl = if args.len > 3 then args.get(3) == "-sdl" else false
+
   | TODO: throw if additional args are given
   | TODO: support -- and additional args for the run command
 
@@ -4201,7 +4232,7 @@ fun main(args: Slice[Str]): Never {
       case child {
         run("clear")
         eprintln("=====")
-        var was_successful = run_pipeline(command, file_path)
+        var was_successful = run_pipeline(command, file_path, use_sdl)
         exit(if was_successful then 0:U8 else 1:U8)
       }
       case parent(child) {
@@ -4212,7 +4243,7 @@ fun main(args: Slice[Str]): Never {
       }
     }
   } else {
-    var was_successful = run_pipeline(command, file_path)
+    var was_successful = run_pipeline(command, file_path, use_sdl)
     exit(if was_successful then 0:U8 else 1:U8)
   }
 }

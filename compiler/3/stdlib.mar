@@ -1566,6 +1566,11 @@ fun next_from_iter_state[T, I](state: &I): Maybe[T] {
   item
 }
 
+fun contains[T, I](iter: &Iter[T, I], item: T): Bool {
+  for item_ in iter do if item_.equals(item) then return true
+  return false
+}
+
 | Skips the given amount of elements on the inner iter, then acts like the inner
 | iter.
 fun skip[T, I](iter: Iter[T, I], amount: U64): Iter[T, _] {

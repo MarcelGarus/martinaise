@@ -1537,12 +1537,16 @@ fun next[T](iter: &Iter[T, RangeIter[T]]): Maybe[T] {
 struct Iter[T, S] { state: S }
 
 fun iter[T, I](iter: Iter[T, I]): Iter[T, I] { iter }
-fun is_empty[T, I](iter: &Iter[T, I]): Bool { iter.next().is_none() }
 fun next_from_iter_state[T, I](state: &I): Maybe[T] {
   var iter = Iter[T, I] { state = state.* }
   var item = iter.&.next()
   state.* = iter.state
   item
+}
+fun is_empty[T, I](iter: &Iter[T, I]): Bool { iter.next().is_none() }
+fun contains[T, I](iter: &Iter[T, I], item: T): Bool {
+  for item_ in iter do if item_ == item then return true
+  return false
 }
 
 | Skips the given amount of elements on the inner iter, then acts like the inner
