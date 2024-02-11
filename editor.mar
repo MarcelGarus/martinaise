@@ -20,6 +20,46 @@ fun raw_sdl_init(flags: U64): U64 asm {
   mov [r8], rax
   ret
 }
+fun raw_sdl_quit() asm {
+  ; make the call with a 16-bytes-aligned stack
+  mov rbp, rsp
+  and rsp, 0xfffffffffffffff0
+  push rbp
+  sub rsp, 8
+  call SDL_Quit
+  add rsp, 8
+  pop rsp
+	; return
+  ret
+}
+fun raw_sdl_get_error(): U64 asm {
+  ; make the call with a 16-bytes-aligned stack
+  mov rbp, rsp
+  and rsp, 0xfffffffffffffff0
+  push rbp
+  sub rsp, 8
+  call SDL_GetError
+  add rsp, 8
+  pop rsp
+	; return
+  mov r8, [rsp + 8]
+  mov [r8], rax
+  ret
+}
+fun raw_sdl_delay(millis: U64) asm {
+  mov rdi, [rsp + 16]
+  ; make the call with a 16-bytes-aligned stack
+  mov rbp, rsp
+  and rsp, 0xfffffffffffffff0
+  push rbp
+  sub rsp, 8
+  call SDL_Delay
+  add rsp, 8
+  pop rsp
+	; return
+  ret
+}
+
 fun raw_sdl_create_window(
   title: OsStr, x: U64, y: U64, width: U64, height: U64
 ): Address asm {
@@ -42,6 +82,20 @@ fun raw_sdl_create_window(
   mov [r8], rax
   ret
 }
+fun raw_sdl_destroy_window(window: Address) asm {
+  mov rdi, [rsp + 16]
+  ; make the call with a 16-bytes-aligned stack
+  mov rbp, rsp
+  and rsp, 0xfffffffffffffff0
+  push rbp
+  sub rsp, 8
+  call SDL_DestroyWindow
+  add rsp, 8
+  pop rsp
+	; return
+  ret
+}
+
 fun raw_sdl_create_renderer(window: Address): Address asm {
   mov rdi, [rsp + 16]
   mov rsi, -1
@@ -59,6 +113,20 @@ fun raw_sdl_create_renderer(window: Address): Address asm {
   mov [r8], rax
   ret
 }
+fun raw_sdl_destroy_renderer(renderer: Address) asm {
+  mov rdi, [rsp + 16]
+  ; make the call with a 16-bytes-aligned stack
+  mov rbp, rsp
+  and rsp, 0xfffffffffffffff0
+  push rbp
+  sub rsp, 8
+  call SDL_DestroyRenderer
+  add rsp, 8
+  pop rsp
+	; return
+  ret
+}
+
 fun raw_sdl_set_render_draw_color(
   renderer: Address, r: U64, g: U64, b: U64, a: U64
 ) asm {
@@ -116,71 +184,6 @@ fun raw_sdl_render_present(renderer: Address) asm {
   add rsp, 8
   pop rsp
   ; return
-  ret
-}
-fun raw_sdl_delay(millis: U64) asm {
-  mov rdi, [rsp + 16]
-  ; make the call with a 16-bytes-aligned stack
-  mov rbp, rsp
-  and rsp, 0xfffffffffffffff0
-  push rbp
-  sub rsp, 8
-  call SDL_Delay
-  add rsp, 8
-  pop rsp
-	; return
-  ret
-}
-fun raw_sdl_destroy_renderer(renderer: Address) asm {
-  mov rdi, [rsp + 16]
-  ; make the call with a 16-bytes-aligned stack
-  mov rbp, rsp
-  and rsp, 0xfffffffffffffff0
-  push rbp
-  sub rsp, 8
-  call SDL_DestroyRenderer
-  add rsp, 8
-  pop rsp
-	; return
-  ret
-}
-fun raw_sdl_destroy_window(window: Address) asm {
-  mov rdi, [rsp + 16]
-  ; make the call with a 16-bytes-aligned stack
-  mov rbp, rsp
-  and rsp, 0xfffffffffffffff0
-  push rbp
-  sub rsp, 8
-  call SDL_DestroyWindow
-  add rsp, 8
-  pop rsp
-	; return
-  ret
-}
-fun raw_sdl_quit() asm {
-  ; make the call with a 16-bytes-aligned stack
-  mov rbp, rsp
-  and rsp, 0xfffffffffffffff0
-  push rbp
-  sub rsp, 8
-  call SDL_Quit
-  add rsp, 8
-  pop rsp
-	; return
-  ret
-}
-fun raw_sdl_get_error(): U64 asm {
-  ; make the call with a 16-bytes-aligned stack
-  mov rbp, rsp
-  and rsp, 0xfffffffffffffff0
-  push rbp
-  sub rsp, 8
-  call SDL_GetError
-  add rsp, 8
-  pop rsp
-	; return
-  mov r8, [rsp + 8]
-  mov [r8], rax
   ret
 }
 
