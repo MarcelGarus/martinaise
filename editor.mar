@@ -221,9 +221,11 @@ fun write[W](writer: W, color: Color) {
     '{if color.b >= 16:U8 then "" else "0"}{color.b.radix(16)}"
 }
 
-var black = color(16#000000)
-var white = color(16#ffffff)
-var red   = color(16#ff0000)
+var black      = color(16#000000)
+var white      = color(16#ffffff)
+var red        = color(16#ff0000)
+var background = color(16#1c1c1e)
+var foreground = color(16#f2f2f7)
 
 | Offset  
 
@@ -343,6 +345,16 @@ struct Editor {
   text: Vec[Char],
 }
 
+fun input(editor: &Editor, str: Str) {
+  for char in str do editor.text.&.push(char)
+}
+fun enter(editor: &Editor) {
+  editor.text.&.push(newline)
+}
+fun backspace(editor: &Editor) {
+  editor.text.&.pop().ignore()
+}
+
 | Rendering  
 | All letters are sized 5x8 pixels.
 
@@ -454,7 +466,7 @@ var font = {
   map.*
 }
 
-fun render_char(renderer: Renderer, offset: Offset, char: Char) {
+fun render(renderer: Renderer, char: Char, offset: Offset) {
   switch font.get_maybe(char)
   case none
     renderer.draw({offset.x @ offset.y} @ {{5 * pixel_size} @ {8 * pixel_size}})
@@ -470,6 +482,26 @@ fun render_char(renderer: Renderer, offset: Offset, char: Char) {
         {{offset.x + {pixel_size * x}} @ {offset.y + {pixel_size * y}}} @
         {pixel_size @ pixel_size})
     }
+}
+
+fun render(renderer: Renderer, editor: Editor) {
+  renderer.set_color(background)
+  renderer.clear()
+  renderer.set_color(foreground)
+
+  var row = 0
+  var col = 0
+  for char in editor.text do {
+    var base_x = {col * 6 * pixel_size} + 20
+    var base_y = {row * 10 * pixel_size} + 20
+    if char == newline then {
+      row = row + 1
+      col = 0
+    } else {
+      col = col + 1
+      renderer.render(char, base_x @ base_y)
+    }
+  }
 }
 
 fun main(args: Slice[Str]): Never {
@@ -496,34 +528,15 @@ fun main(args: Slice[Str]): Never {
       case quit break
       case text_input(text) {
         stderr."Text input {text}{newline}"
-        for char in text do editor.text.&.push(char)
+        editor.&.input(text)
       }
       case key_down(keycode) {
         stderr."Key down {keycode}{newline}"
-        if keycode == 40:U8 then {
-          println("Newline!")
-          editor.text.&.push(newline)
-        }
+        if keycode == 40:U8 then editor.&.enter()
+        if keycode == 42:U8 then editor.&.backspace()
       }
 
-    renderer.set_color(black)
-    renderer.clear()
-    renderer.set_color(red)
-
-    var row = 0
-    var col = 0
-    for char in editor.text do {
-      var base_x = {col * 6 * pixel_size} + 20
-      var base_y = {row * 9 * pixel_size} + 20
-      if char == newline then {
-        row = row + 1
-        col = 0
-      } else {
-        col = col + 1
-        renderer.render_char(base_x @ base_y, char)
-      }
-    }
-
+    renderer.render(editor)
     renderer.present()
   }
 
