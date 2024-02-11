@@ -3404,7 +3404,7 @@ fun assemble[Assembler](
   }
 
   text.label("_start") {
-    text.call("_init_heap")
+    if not(use_libc_malloc) then text.call("_init_heap")
     text.call("_init_globals")
     | The C-style args need to be converted into Martinaise-style args, aka a
     | Slice[Str].
@@ -3453,17 +3453,19 @@ fun assemble[Assembler](
     }
   }
 
-  bss.align(8)
-  bss.label("_heap_head") bss.resb(8)
-  bss.label("_heap_end")  bss.resb(8)
+  if not(use_libc_malloc) then {
+    bss.align(8)
+    bss.label("_heap_head") bss.resb(8)
+    bss.label("_heap_end")  bss.resb(8)
 
-  text.label("_init_heap") {
-    text.mov(rax, 12) | brk syscall number
-    text.mov(rdi, 0)  | brk(0) returns the break (where the data segment ends)
-    text.syscall()
-    text.mov(memory("_heap_head"), rax)
-    text.mov(memory("_heap_end"), rax)
-    text.ret()
+    text.label("_init_heap") {
+      text.mov(rax, 12) | brk syscall number
+      text.mov(rdi, 0)  | brk(0) returns the break (where the data segment ends)
+      text.syscall()
+      text.mov(memory("_heap_head"), rax)
+      text.mov(memory("_heap_end"), rax)
+      text.ret()
+    }
   }
 
   text.label("_malloc") {
