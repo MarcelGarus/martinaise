@@ -869,6 +869,12 @@ fun to_U32(n: U64): U32 asm {
   mov [r9], r8d
   ret
 }
+fun to_I32(n: U64): I32 asm {
+  mov r8, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
 fun to_U64(n: I32): U64 asm {
   ; TODO: assert that n is positive
   mov r8, 0           ; sign extension (always zero for positive ints)

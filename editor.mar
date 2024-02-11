@@ -20,12 +20,14 @@ fun raw_sdl_init(flags: U64): U64 asm {
   mov [r8], rax
   ret
 }
-fun raw_sdl_create_window(title: OsStr): U64 asm {
-  mov rdi, [rsp + 16]
-  mov rsi, 200 ; x
-  mov rdx, 100 ; y
-  mov rcx, 960 ; width
-  mov r8, 720  ; height
+fun raw_sdl_create_window(
+  title: OsStr, x: U64, y: U64, width: U64, height: U64
+): Address asm {
+  mov rdi, [rsp + 16] ; title
+  mov rsi, [rsp + 24] ; x
+  mov rdx, [rsp + 32] ; y
+  mov rcx, [rsp + 40] ; width
+  mov r8, [rsp + 48]  ; height
   mov r9, 4
   ; make the call with a 16-bytes-aligned stack
   mov rbp, rsp
@@ -40,7 +42,7 @@ fun raw_sdl_create_window(title: OsStr): U64 asm {
   mov [r8], rax
   ret
 }
-fun raw_sdl_create_renderer(window: U64): U64 asm {
+fun raw_sdl_create_renderer(window: Address): Address asm {
   mov rdi, [rsp + 16]
   mov rsi, -1
   mov rdx, 6
@@ -57,82 +59,8 @@ fun raw_sdl_create_renderer(window: U64): U64 asm {
   mov [r8], rax
   ret
 }
-fun raw_sdl_rw_from_file(bmp_path: OsStr, readbin: OsStr): U64 asm {
-  mov rdi, [rsp + 16]
-  mov rsi, [rsp + 24]
-  ; make the call with a 16-bytes-aligned stack
-  mov rbp, rsp
-  and rsp, 0xfffffffffffffff0
-  push rbp
-  sub rsp, 8
-  call SDL_RWFromFile
-  add rsp, 8
-  pop rsp
-  ; return
-  mov r8, [rsp + 8]
-  mov [r8], rax
-  ret
-}
-fun raw_sdl_load_bmp(file_contents: U64): U64 asm {
-  mov rdi, [rsp + 16]
-	mov rsi, 1
-  ; make the call with a 16-bytes-aligned stack
-  mov rbp, rsp
-  and rsp, 0xfffffffffffffff0
-  push rbp
-  sub rsp, 8
-  call SDL_LoadBMP_RW
-  add rsp, 8
-  pop rsp
-  ; return
-  mov r8, [rsp + 8]
-  mov [r8], rax
-  ret
-}
-fun raw_sdl_create_texture_from_surface(renderer: U64, surface: U64): U64 asm {
-	mov rdi, [rsp + 16]
-	mov rsi, [rsp + 24]
-  ; make the call with a 16-bytes-aligned stack
-  mov rbp, rsp
-  and rsp, 0xfffffffffffffff0
-  push rbp
-  sub rsp, 8
-  call SDL_CreateTextureFromSurface
-  add rsp, 8
-  pop rsp
-  ; return
-	mov r8, [rsp + 8]
-  mov [r8], rax
-  ret
-}
-fun raw_sdl_free_surface(surface: U64) asm {
-	mov rdi, [rsp + 16]
-  ; make the call with a 16-bytes-aligned stack
-  mov rbp, rsp
-  and rsp, 0xfffffffffffffff0
-  push rbp
-  sub rsp, 8
-  call SDL_FreeSurface
-  add rsp, 8
-  pop rsp
-  ; return
-  ret
-}
-fun raw_sdl_render_clear(renderer: U64) asm {
-  mov rdi, [rsp + 16]
-  ; make the call with a 16-bytes-aligned stack
-  mov rbp, rsp
-  and rsp, 0xfffffffffffffff0
-  push rbp
-  sub rsp, 8
-  call SDL_RenderClear
-  add rsp, 8
-  pop rsp
-  ; return
-  ret
-}
 fun raw_sdl_set_render_draw_color(
-  renderer: U64, r: U64, g: U64, b: U64, a: U64
+  renderer: Address, r: U64, g: U64, b: U64, a: U64
 ) asm {
   mov rdi, [rsp + 16]
   mov rsi, [rsp + 24]
@@ -150,23 +78,34 @@ fun raw_sdl_set_render_draw_color(
   ; return
   ret
 }
-fun raw_sdl_render_copy(renderer: U64, texture: U64) asm {
+fun raw_sdl_render_clear(renderer: Address) asm {
   mov rdi, [rsp + 16]
-	mov rsi, [rsp + 24]
-	mov rdx, 0
-	mov rcx, 0
   ; make the call with a 16-bytes-aligned stack
   mov rbp, rsp
   and rsp, 0xfffffffffffffff0
   push rbp
   sub rsp, 8
-  call SDL_RenderCopy
+  call SDL_RenderClear
   add rsp, 8
   pop rsp
   ; return
   ret
 }
-fun raw_sdl_render_present(renderer: U64) asm {
+fun raw_sdl_render_fill_rect(renderer: Address, rect: Address) asm {
+  mov rdi, [rsp + 16] ; renderer
+  mov rsi, [rsp + 24] ; rect
+  ; make the call with a 16-bytes-aligned stack
+  mov rbp, rsp
+  and rsp, 0xfffffffffffffff0
+  push rbp
+  sub rsp, 8
+  call SDL_RenderFillRect
+  add rsp, 8
+  pop rsp
+  ; return
+  ret
+}
+fun raw_sdl_render_present(renderer: Address) asm {
   mov rdi, [rsp + 16]
   ; make the call with a 16-bytes-aligned stack
   mov rbp, rsp
@@ -192,20 +131,7 @@ fun raw_sdl_delay(millis: U64) asm {
 	; return
   ret
 }
-fun raw_sdl_destroy_texture(texture: U64) asm {
-  mov rdi, [rsp + 16]
-  ; make the call with a 16-bytes-aligned stack
-  mov rbp, rsp
-  and rsp, 0xfffffffffffffff0
-  push rbp
-  sub rsp, 8
-  call SDL_DestroyTexture
-  add rsp, 8
-  pop rsp
-	; return
-  ret
-}
-fun raw_sdl_destroy_renderer(renderer: U64) asm {
+fun raw_sdl_destroy_renderer(renderer: Address) asm {
   mov rdi, [rsp + 16]
   ; make the call with a 16-bytes-aligned stack
   mov rbp, rsp
@@ -218,7 +144,7 @@ fun raw_sdl_destroy_renderer(renderer: U64) asm {
 	; return
   ret
 }
-fun raw_sdl_destroy_window(window: U64) asm {
+fun raw_sdl_destroy_window(window: Address) asm {
   mov rdi, [rsp + 16]
   ; make the call with a 16-bytes-aligned stack
   mov rbp, rsp
@@ -270,55 +196,88 @@ fun color(hex: U64): Color {
   }
 }
 fun write[W](writer: W, color: Color) {
-  writer."#{color.r.radix(16)}{color.g.radix(16)}{color.b.radix(16)}"
+  writer."#
+    '{if color.r >= 16:U8 then "" else "0"}{color.r.radix(16)}
+    '{if color.g >= 16:U8 then "" else "0"}{color.g.radix(16)}
+    '{if color.b >= 16:U8 then "" else "0"}{color.b.radix(16)}"
 }
 
 var black = color(16#000000)
 var white = color(16#ffffff)
 var red   = color(16#ff0000)
 
+| Offset  
+
+struct Offset { x: U64, y: U64 }
+
+fun @(x: U64, y: U64): Offset { Offset { x, y } }
+var origin = 0 @ 0
+fun +(a: Offset, b: Offset): Offset { {a.x + b.x} @ {a.y + b.y} }
+fun -(a: Offset, b: Offset): Offset { {a.x - b.x} @ {a.y - b.y} }
+fun *(a: Offset, b: U64): Offset { b * a }
+fun *(a: U64, b: Offset): Offset { {a * b.x} @ {a * b.y} }
+
+| Rectangle  
+
+struct Rect { offset: Offset, size: Offset }
+
+fun @(offset: Offset, size: Offset): Rect { Rect { offset, size } }
+
 | SDL wrappers  
 | These are some type-safe wrappers around the SDL functions.
 
-struct Window { handle: U64 }
-struct Renderer { handle: U64 }
-
 fun init_sdl(): Result[Nothing, U64] {
   var result = raw_sdl_init(62001)
-  if result == 0
-  then ok[Nothing, U64]({})
-  else error[Nothing, U64](result)
+  if result == 0 then ok[Nothing, U64]({}) else error[Nothing, U64](result)
 }
-fun create_window(title: Str): Window {
-  var handle = raw_sdl_create_window(title.to_os_str())
+fun quit_sdl() { raw_sdl_quit() }
+fun delay(millis: U64) { raw_sdl_delay(millis) }
+
+| A handle to an actual window that is opened.
+struct Window { handle: Address }
+
+fun create_window(title: Str, position: Offset, size: Offset): Window {
+  var handle = raw_sdl_create_window(
+    title.to_os_str(), position.x, position.y, size.x, size.y)
   Window { handle }
 }
+fun destroy(window: Window) { window.handle.raw_sdl_destroy_window() }
+
+| A renderer is a stateful entity linked to a window. It is double-buffered, so
+| all operations are hidden until you call renderer.present().
+struct Renderer { handle: Address }
+
 fun create_renderer(window: Window): Renderer {
   var handle = window.handle.raw_sdl_create_renderer()
   Renderer { handle }
 }
+fun destroy(renderer: Renderer) { renderer.handle.raw_sdl_destroy_renderer() }
+
 fun set_color(renderer: Renderer, color: Color) {
   renderer.handle.raw_sdl_set_render_draw_color(
-    color.r.to_U64(), color.g.to_U64(), color.b.to_U64(), 16#ff
-  )
+    color.r.to_U64(), color.g.to_U64(), color.b.to_U64(), 16#ff)
 }
-fun delay(millis: U64) { raw_sdl_delay(millis) }
 fun clear(renderer: Renderer) { renderer.handle.raw_sdl_render_clear() }
+fun draw(renderer: Renderer, rect: Rect) {
+  var sdl_rect = SdlRect {
+    x = rect.offset.x.to_I32(), y = rect.offset.y.to_I32(),
+    w = rect.size.x.to_I32(),   h = rect.size.y.to_I32(),
+  }
+  renderer.handle.raw_sdl_render_fill_rect(sdl_rect.&.to_address())
+}
+struct SdlRect { x: I32, y: I32, w: I32, h: I32 }
 fun present(renderer: Renderer) { renderer.handle.raw_sdl_render_present() }
-fun destroy(renderer: Renderer) { renderer.handle.raw_sdl_destroy_renderer() }
-fun destroy(window: Window) { window.handle.raw_sdl_destroy_window() }
-fun quit_sdl() { raw_sdl_quit() }
-
 
 fun main(args: Slice[Str]): Never {
   init_sdl().unwrap()
-  var window = create_window("Martinaise Editor")
+  var window = create_window("Martinaise Editor", 500 @ 100, 1080 @ 920)
   var renderer = window.create_renderer()
-  println(16#ff)
   println(red)
   println(white)
-  renderer.set_color(red)
+  renderer.set_color(black)
   renderer.clear()
+  renderer.set_color(red)
+  renderer.draw({10 @ 10} @ {100 @ 100})
   renderer.present()
 
   println("looping")

@@ -3931,6 +3931,7 @@ fun nasm(mono: Mono, layouts: Map[Type, MemLayout], use_sdl: Bool): Str {
     'extern SDL_FreeSurface{newline}
     'extern SDL_SetRenderDrawColor{newline}
     'extern SDL_RenderClear{newline}
+    'extern SDL_RenderFillRect{newline}
     'extern SDL_RenderCopy{newline}
     'extern SDL_RenderPresent{newline}
     'extern SDL_Delay{newline}
@@ -4039,6 +4040,7 @@ fun fasm(mono: Mono, layouts: Map[Type, MemLayout], use_sdl: Bool): Str {
     'extrn SDL_FreeSurface{newline}
     'extrn SDL_SetRenderDrawColor{newline}
     'extrn SDL_RenderClear{newline}
+    'extrn SDL_RenderFillRect{newline}
     'extrn SDL_RenderCopy{newline}
     'extrn SDL_RenderPresent{newline}
     'extrn SDL_Delay{newline}
