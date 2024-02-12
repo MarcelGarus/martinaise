@@ -221,11 +221,9 @@ fun write[W](writer: W, color: Color) {
     '{if color.b >= 16:U8 then "" else "0"}{color.b.radix(16)}"
 }
 
-var black      = color(16#000000)
-var white      = color(16#ffffff)
-var red        = color(16#ff0000)
 var background = color(16#1c1c1e)
 var foreground = color(16#f2f2f7)
+var grey       = color(16#999999)
 var blue       = color(16#1a94ff)
 var purple     = color(16#d189f5)
 var green      = color(16#41d496)
@@ -345,11 +343,114 @@ fun poll_event(): Maybe[Event] {
   return none[Event]()
 }
 
+| Tokenizer  
+| Instead of a full parser, syntax highlighting works with a simple tokenizer,
+| making it more robust.
+
+enum Token {
+  comment,
+  comment_title,
+  name,
+  declaration,
+  control,
+  type,
+  function,
+  number,
+  operator,
+  punctuation,
+  default_,
+}
+
+var declaration_keywords = vec("fun", "var", "struct", "enum", "opaque")
+var control_keywords = vec("if", "then", "else", "switch", "case", "default",
+  "orelse", "loop", "for", "in", "do", "break", "continue", "return")
+
+fun tokenize(input: Slice[Char], out: &Vec[Token]) {
+  out.len = 0
+
+  var cursor = 0
+  loop {
+    if cursor >= input.len then break
+    var char = input.get(cursor)
+
+    if char == #| then {
+      var end = cursor
+      loop {
+        var c = input.get_maybe(end) orelse break
+        if c == newline then break else end = end + 1
+      }
+      var comment = input.subslice(cursor, end).to_str()
+      var token =
+        if comment.ends_with("  ") then Token.comment_title else Token.comment
+      for i in cursor..end do out.push(token)
+      cursor = end
+      continue
+    }
+
+    if {#A..=#Z}.contains(char) / {#a..=#z}.contains(char) / {char == #_} then {
+      var is_type = {#A..=#Z}.contains(char) / {char == #_}
+      var end = cursor
+      loop {
+        var c = input.get_maybe(end) orelse break
+        if {#A..=#Z}.contains(c) / {#a..=#z}.contains(c) / {c == #_}
+          / {#0..=#9}.contains(c)
+        then end = end + 1
+        else break
+      }
+      var word = input.subslice(cursor, end).to_str()
+      var char_after_end = input.get_maybe(end) orelse #.
+      var token =
+        if is_type then Token.type else
+          if {char_after_end == #(} / {char_after_end == #[}
+          then Token.function
+          else if declaration_keywords.iter().&.contains(word)
+            then Token.declaration
+            else if control_keywords.iter().&.contains(word)
+              then Token.control
+              else if {word == "="} / {word == "."}
+                then Token.punctuation
+                else Token.name
+      for i in cursor..end do out.push(token)
+      cursor = end
+      continue
+    }
+
+    if {#0..=#9}.contains(char) then {
+      var end = cursor
+      loop {
+        var c = input.get_maybe(end) orelse break
+        if {#0..=#9}.contains(c) / {c == #_} then end = end + 1 else break
+      }
+      for i in cursor..end do out.push(Token.number)
+      cursor = end
+      continue
+    }
+
+    if "%!~@\`.&*+$-<>=.".iter().&.contains(char) then {
+      out.push(Token.operator)
+      cursor = cursor + 1
+      continue
+    }
+
+    if {char == #(} / {char == #)} / {char == #[} / {char == #]} / {char == #{}
+      / {char == #}} / {char == #,} / {char == #.} / {char == #:}
+    then {
+      out.push(Token.punctuation)
+      cursor = cursor + 1
+      continue
+    }
+
+    out.push(Token.default_)
+    cursor = cursor + 1
+  }
+}
+
 | Editor  
 
 struct Editor {
   text: Vec[Char],
   lines: Vec[U64],
+  tokens: Vec[Token],
   cursor: U64,
 }
 
@@ -357,6 +458,7 @@ fun editor(text: Str): Editor {
   var editor = Editor {
     text = vec[Char](),
     lines = vec[U64](),
+    tokens = vec[Token](),
     cursor = 0,
   }
   for char in text do editor.text.&.push(char)
@@ -367,10 +469,11 @@ fun editor(text: Str): Editor {
 fun text_updated(editor: &Editor) {
   editor.lines.len = 0
   var line = 0
-  for char in editor.text.iter().enumerate() do {
+  for char in editor.text do {
     editor.lines.&.push(line)
-    if char.item == newline then line = line + 1
+    if char == newline then line = line + 1
   }
+  tokenize(editor.text.to_slice(), editor.tokens.&)
 }
 fun line_start(editor: Editor, cursor: U64): U64 {
   var line = editor.lines.get(cursor)
@@ -607,7 +710,20 @@ fun render(renderer: Renderer, editor: Editor) {
         {base_x @ {base_y - 2}} @ {{2 * pixel_size} @ {10 * pixel_size}})
     }
 
-    renderer.set_color(foreground)
+    renderer.set_color(
+      switch editor.tokens.get(index)
+      case comment lime
+      case comment_title green
+      case number lime
+      case declaration blue
+      case control purple
+      case type green
+      case function orange
+      case name light_yellow
+      case operator orange
+      case punctuation grey
+      case default_ foreground
+    )
     if char == newline then {
       row = row + 1
       col = 0
@@ -628,7 +744,7 @@ fun main(args: Slice[Str]): Never {
   var content = file.read_file().unwrap().to_str()
 
   init_sdl().unwrap()
-  var window = create_window("Martinaise Editor", 500 @ 100, 1080 @ 920)
+  var window = create_window("Martinaise Editor", 500 @ 100, 2000 @ 3000)
   var renderer = window.create_renderer()
 
   var editor = editor(content)

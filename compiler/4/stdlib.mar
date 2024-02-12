@@ -1993,6 +1993,40 @@ fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T): Vec[T] {
   var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
   v.push(g) v.push(h) v.*
 }
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.*
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.*
+}
+fun vec[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T,
+): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.*
+}
+fun vec[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T,
+): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.push(l) v.*
+}
+fun vec[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.push(l) v.push(m) v.*
+}
+fun vec[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T,
+): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.push(l) v.push(m)
+  v.push(n) v.*
+}
 
 fun push[T](vec: &Vec[T], item: T) {
   if vec.data.len == 0 then vec.data = uninitialized_slice[T](8)
