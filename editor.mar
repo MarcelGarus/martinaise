@@ -1,5 +1,53 @@
 | Editor  
 
+| Colors  
+
+struct Color { r: U8, g: U8, b: U8 }
+
+fun color(hex: U64): Color {
+  Color {
+    r = {hex / 16#10000}.and(16#ff).to_U8(),
+    g = {hex / 16#100}.and(16#ff).to_U8(),
+    b = {hex / 16#1}.and(16#ff).to_U8(),
+  }
+}
+fun write[W](writer: W, color: Color) {
+  writer."#
+    '{if color.r >= 16:U8 then "" else "0"}{color.r.radix(16)}
+    '{if color.g >= 16:U8 then "" else "0"}{color.g.radix(16)}
+    '{if color.b >= 16:U8 then "" else "0"}{color.b.radix(16)}"
+}
+
+| Thank you to @antoniusnaumann for the color theme!
+var background   = color(16#1c1c1e)
+var foreground   = color(16#f2f2f7)
+var grey         = color(16#999999)
+var blue         = color(16#1a94ff)
+var purple       = color(16#d189f5)
+var green        = color(16#41d496)
+var lime         = color(16#7dd70f)
+var yellow       = color(16#ffd60a)
+var light_yellow = color(16#ffea80)
+var orange       = color(16#ff9f0a)
+var red          = color(16#ff5959)
+
+| Offset  
+
+struct Offset { x: I32, y: I32 }
+
+fun @(x: I32, y: I32): Offset { Offset { x, y } }
+var origin = 0:I32 @ 0:I32
+fun +(a: Offset, b: Offset): Offset { {a.x + b.x} @ {a.y + b.y} }
+fun -(a: Offset, b: Offset): Offset { {a.x - b.x} @ {a.y - b.y} }
+fun *(a: Offset, b: I32): Offset { b * a }
+fun *(a: I32, b: Offset): Offset { {a * b.x} @ {a * b.y} }
+
+| Rectangle  
+
+struct Rect { offset: Offset, size: Offset }
+
+fun @(offset: Offset, size: Offset): Rect { Rect { offset, size } }
+
 | SDL2 Bindings  
 | SDL2 has to be linked together with this program. Here are some wrappers that
 | call the linked SDL functions. All SDL functions follow the system V calling
@@ -202,54 +250,6 @@ fun raw_sdl_poll_event(event: Address): U64 asm {
   mov [r8], rax
   ret
 }
-
-| Colors  
-
-struct Color { r: U8, g: U8, b: U8 }
-
-fun color(hex: U64): Color {
-  Color {
-    r = {hex / 16#10000}.and(16#ff).to_U8(),
-    g = {hex / 16#100}.and(16#ff).to_U8(),
-    b = {hex / 16#1}.and(16#ff).to_U8(),
-  }
-}
-fun write[W](writer: W, color: Color) {
-  writer."#
-    '{if color.r >= 16:U8 then "" else "0"}{color.r.radix(16)}
-    '{if color.g >= 16:U8 then "" else "0"}{color.g.radix(16)}
-    '{if color.b >= 16:U8 then "" else "0"}{color.b.radix(16)}"
-}
-
-| Thank you to @antoniusnaumann for the color theme!
-var background   = color(16#1c1c1e)
-var foreground   = color(16#f2f2f7)
-var grey         = color(16#999999)
-var blue         = color(16#1a94ff)
-var purple       = color(16#d189f5)
-var green        = color(16#41d496)
-var lime         = color(16#7dd70f)
-var yellow       = color(16#ffd60a)
-var light_yellow = color(16#ffea80)
-var orange       = color(16#ff9f0a)
-var red          = color(16#ff5959)
-
-| Offset  
-
-struct Offset { x: I32, y: I32 }
-
-fun @(x: I32, y: I32): Offset { Offset { x, y } }
-var origin = 0:I32 @ 0:I32
-fun +(a: Offset, b: Offset): Offset { {a.x + b.x} @ {a.y + b.y} }
-fun -(a: Offset, b: Offset): Offset { {a.x - b.x} @ {a.y - b.y} }
-fun *(a: Offset, b: I32): Offset { b * a }
-fun *(a: I32, b: Offset): Offset { {a * b.x} @ {a * b.y} }
-
-| Rectangle  
-
-struct Rect { offset: Offset, size: Offset }
-
-fun @(offset: Offset, size: Offset): Rect { Rect { offset, size } }
 
 | SDL wrappers  
 | These are some type-safe wrappers around the SDL functions.
