@@ -445,6 +445,20 @@ fun tokenize(input: Slice[Char], out: &Vec[Token]) {
         var c = input.get_maybe(end) orelse break
         if {#0..=#9}.contains(c) / {c == #_} then end = end + 1 else break
       }
+      var is_radix =
+        switch input.get_maybe(end)
+        case none false
+        case some(char) char == ##
+      if is_radix then {
+        end = end + 1
+        loop {
+          var c = input.get_maybe(end) orelse break
+          if {#0..=#9}.contains(c) / {c == #_}
+            / {#a..=#z}.contains(c) / {#A..=#Z}.contains(c)
+          then end = end + 1
+          else break
+        }
+      }
       for i in cursor..end do out.push(Token.number)
       cursor = end
       continue
