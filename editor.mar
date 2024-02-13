@@ -236,14 +236,14 @@ var red          = color(16#ff5959)
 
 | Offset  
 
-struct Offset { x: U64, y: U64 }
+struct Offset { x: I32, y: I32 }
 
-fun @(x: U64, y: U64): Offset { Offset { x, y } }
-var origin = 0 @ 0
+fun @(x: I32, y: I32): Offset { Offset { x, y } }
+var origin = 0:I32 @ 0:I32
 fun +(a: Offset, b: Offset): Offset { {a.x + b.x} @ {a.y + b.y} }
 fun -(a: Offset, b: Offset): Offset { {a.x - b.x} @ {a.y - b.y} }
-fun *(a: Offset, b: U64): Offset { b * a }
-fun *(a: U64, b: Offset): Offset { {a * b.x} @ {a * b.y} }
+fun *(a: Offset, b: I32): Offset { b * a }
+fun *(a: I32, b: Offset): Offset { {a * b.x} @ {a * b.y} }
 
 | Rectangle  
 
@@ -266,7 +266,12 @@ struct Window { handle: Address }
 
 fun create_window(title: Str, position: Offset, size: Offset): Window {
   var handle = raw_sdl_create_window(
-    title.to_os_str(), position.x, position.y, size.x, size.y)
+    title.to_os_str(),
+    position.x.cast[I32, U32]().to_U64(),
+    position.y.cast[I32, U32]().to_U64(),
+    size.x.cast[I32, U32]().to_U64(),
+    size.y.cast[I32, U32]().to_U64(),
+  )
   Window { handle }
 }
 fun destroy(window: Window) { window.handle.raw_sdl_destroy_window() }
@@ -288,8 +293,8 @@ fun set_color(renderer: Renderer, color: Color) {
 fun clear(renderer: Renderer) { renderer.handle.raw_sdl_render_clear() }
 fun draw(renderer: Renderer, rect: Rect) {
   var sdl_rect = SdlRect {
-    x = rect.offset.x.to_I32(), y = rect.offset.y.to_I32(),
-    w = rect.size.x.to_I32(),   h = rect.size.y.to_I32(),
+    x = rect.offset.x, y = rect.offset.y,
+    w = rect.size.x,   h = rect.size.y,
   }
   renderer.handle.raw_sdl_render_fill_rect(sdl_rect.&.to_address())
 }
@@ -478,7 +483,7 @@ struct Editor {
   text: Vec[Char],
   lines: Vec[U64],
   tokens: Vec[Token],
-  scroll: U64,
+  scroll: I32,
   cursor: U64,
 }
 
@@ -487,7 +492,7 @@ fun editor(text: Str): Editor {
     text = vec[Char](),
     lines = vec[U64](),
     tokens = vec[Token](),
-    scroll = 0,
+    scroll = 0:I32,
     cursor = 0,
   }
   for char in text do editor.text.&.push(char)
@@ -594,13 +599,14 @@ fun move_end(editor: &Editor) { editor.cursor = editor.line_end(editor.cursor) }
 
 fun scroll(editor: &Editor, amount: I32) {
   println("scrolling")
-  | editor.scroll = {editor.scroll.to_I32() + amount}.max(0:I32).to_U64()
+  editor.scroll = editor.scroll + amount
+  println("scroll = {editor.scroll.to_U64()}")
 }
 
 | Rendering  
 | All letters are sized 5x8 pixels.
 
-var pixel_size = 4
+var pixel_size = 4:I32
 
 struct Glyph { a: U8, b: U8, c: U8, d: U8, e: U8 }
 fun glyph(a: U64, b: U64, c: U64, d: U64, e: U64): Glyph {
@@ -710,8 +716,8 @@ var font = {
 
 fun render(renderer: Renderer, char: Char, offset: Offset) {
   switch font.get_maybe(char)
-  case none
-    renderer.draw({offset.x @ offset.y} @ {{5 * pixel_size} @ {8 * pixel_size}})
+  case none renderer.draw(
+    {offset.x @ offset.y} @ {{5:I32 * pixel_size} @ {8:I32 * pixel_size}})
   case some(glyph)
     for x in 0..5 do for y in 0..8 do {
       var glyph_col =
@@ -720,9 +726,10 @@ fun render(renderer: Renderer, char: Char, offset: Offset) {
       var bit = glyph_col
       for i in 0..y do bit = bit / 2:U8
       var is_set = bit.modulo(2:U8) == 1:U8
-      if is_set then renderer.draw(
-        {{offset.x + {pixel_size * x}} @ {offset.y + {pixel_size * y}}} @
-        {pixel_size @ pixel_size})
+      if is_set then renderer.draw({
+        {offset.x + {pixel_size * x.to_I32()}} @
+        {offset.y + {pixel_size * y.to_I32()}}
+        } @ {pixel_size @ pixel_size})
     }
 }
 
@@ -733,15 +740,15 @@ fun render(renderer: Renderer, editor: Editor) {
 
   var row = 0
   var col = 0
-  var y = 20 + editor.scroll
+  var y = 20:I32 + editor.scroll
 
   for char in editor.text.iter().enumerate() do {
     var index = char.index
     var char = char.item
-    var x = {col * 6 * pixel_size} + 20
+    var x = {col.to_I32() * 6:I32 * pixel_size} + 20:I32
 
     var is_abstract = row < 0
-    var height = {if is_abstract then 2 else 9} * pixel_size
+    var height = {if is_abstract then 2:I32 else 9:I32} * pixel_size
 
     var color =
       switch editor.tokens.get(index)
@@ -760,7 +767,7 @@ fun render(renderer: Renderer, editor: Editor) {
     if index == editor.cursor then {
       renderer.set_color(grey)
       renderer.draw(
-        {x @ {y - pixel_size}} @ {{2 * pixel_size} @ {9 * pixel_size}})
+        {x @ {y - pixel_size}} @ {{2:I32 * pixel_size} @ {9:I32 * pixel_size}})
     }
 
     renderer.set_color(color)
@@ -773,7 +780,7 @@ fun render(renderer: Renderer, editor: Editor) {
       if is_abstract
       then {
         if not({char == space} / {char == newline} / {char == tab})
-        then renderer.draw({x @ y} @ {{6 * pixel_size} @ height})
+        then renderer.draw({x @ y} @ {{6:I32 * pixel_size} @ height})
       }
       else renderer.render(char, x @ y)
     }
@@ -790,7 +797,8 @@ fun main(args: Slice[Str]): Never {
   var content = file.read_file().unwrap().to_str()
 
   init_sdl().unwrap()
-  var window = create_window("Martinaise Editor", 500 @ 100, 2000 @ 3000)
+  var window = create_window("Martinaise Editor",
+    500:I32 @ 100:I32, 2000:I32 @ 3000:I32)
   var renderer = window.create_renderer()
 
   var editor = editor(content)
