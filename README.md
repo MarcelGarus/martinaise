@@ -32,7 +32,17 @@ So, you first need to bootstrap Martinaise.
    **Option B (TODO: support this):** Run `make skip-zig`. The first compiler written in Martinaise was compiled into C and is included in this repo. This command compiles this (generated, unreadable) C code instead of compiling all the way from the original compiler written in Zig.
 3. Run `make`. This builds all compiler generations. The newest compiler will be placed into the project root as the `martinaise` executable.
 4. Run `./martinaise help` for help and go from there.  
-   Martinaise programs can be compiled and run using `./martinaise c path/to/program.mar > output.c && cc output.c -o output && ./output`
+   Martinaise programs can be compiled and run using `./martinaise compile tour.mar && ./tour`
+
+## Editor
+
+> [!IMPORTANT]
+> The editor is still a work in progress.
+
+There's an editor for Martinaise written in Martinaise.
+Run `./martinaise compile editor.mar` to get the `editor`.
+Then run `./editor some-file.mar` to edit a file.
+Special thanks to @antoniusnaumann for the color theme.
 
 ## Language History
 
@@ -61,3 +71,10 @@ It's designed to compile the compiler 1 stdlib.
   - produces the exact same C output as compiler 1
   - adds buffered stdout stream for writing the C output faster
   - can compile itself
+- 3: Another compiler written in Martinaise.
+  - Replace the C backend with an x86_64 assembly backend.
+  - Add opaque types and asm functions.
+  - The integer types and their operations are no longer built-into the language, but implemented as opaque types.
+  - Add support for operators.
+- 4: Another compiler written in Martinaise.
+  - Support FASM as well as NASM.

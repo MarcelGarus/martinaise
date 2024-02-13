@@ -221,6 +221,7 @@ fun write[W](writer: W, color: Color) {
     '{if color.b >= 16:U8 then "" else "0"}{color.b.radix(16)}"
 }
 
+| Thank you to @antoniusnaumann for the color theme!
 var background   = color(16#1c1c1e)
 var foreground   = color(16#f2f2f7)
 var grey         = color(16#999999)
