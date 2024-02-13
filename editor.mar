@@ -305,9 +305,10 @@ fun present(renderer: Renderer) { renderer.handle.raw_sdl_render_present() }
 enum Event {
   quit,
   text_input: Str,
-  key_down: U8,
+  key_down: KeyDown,
   mouse_wheel: I32,
 }
+struct KeyDown { keycode: U8, modifiers: U16 }
 var event_buffer = uninitialized_slice[U8](2048).data.to_address()
 fun poll_event(): Maybe[Event] {
   loop {
@@ -317,45 +318,46 @@ fun poll_event(): Maybe[Event] {
     | Event types: https://github.com/libsdl-org/SDL/blob/cacac6cc341d5856d1857bdcf7390551eed54865/include/SDL3/SDL_events.h
     if type == 16#100:U32 then return some(Event.quit)
     else if type == 16#303:U32 then {
-      | TextInput {
-      |   type: U32
-      |   timestamp: U32
-      |   windowId: U32
-      |   text: char[32] (null terminated)
-      | }
+      | offset | TextInput {
+      |      0 |   type: U32
+      |      4 |   timestamp: U32
+      |      8 |   windowId: U32
+      |     12 |   text: char[32] (null terminated)
+      |        | }
       var text = {event_buffer + 12}.cast[Address, OsStr]().to_str()
       return some(Event.text_input(text))
     }
     else if type == 16#300:U32 then {
-      | KeyDown {
-      |   type: U32
-      |   timestamp: U32
-      |   windowId: U32
-      |   state: U8
-      |   repeat: U8
-      |   keysym: Keysym {
-      |     scancode: Scancode: U32
-      |     sym: Keycode: U8
-      |     mod: U16
-      |     _unused: U32
-      |   }
-      | }
+      | offset | KeyDown {
+      |      0 |   type: U32
+      |      4 |   timestamp: U32
+      |      8 |   windowId: U32
+      |     12 |   state: U8
+      |     13 |   repeat: U8
+      |        |   keysym: Keysym {
+      |     14 |     scancode: Scancode: U32
+      |     18 |     sym: Keycode: U8
+      |     19 |     mod: U16
+      |     21 |     _unused: U32
+      |        |   }
+      |        | }
       var keycode = {event_buffer + 16}.cast[Address, &U8]().*
-      return some(Event.key_down(keycode))
+      var mod = {event_buffer + 17}.cast[Address, &U16]().*
+      return some(Event.key_down(KeyDown { keycode, modifiers = mod }))
     }
     else if type == 16#403:U32 then {
-      | MouseWheel {
-      |   type: U32
-      |   timestamp: U32
-      |   windowId: U32
-      |   which: U32
-      |   x: I32
-      |   y: I32
-      |   direction: U32 (normal or flipped)
-      |   preciseX: Float
-      |   preciseY: Float
-      | }
-      var y = {event_buffer + 16}.cast[Address, &I32]().*
+      | offset | MouseWheel {
+      |      0 |   type: U32
+      |      4 |   timestamp: U32
+      |      8 |   windowId: U32
+      |     12 |   which: U32
+      |     16 |   x: I32
+      |     20 |   y: I32
+      |     24 |   direction: U32 (normal or flipped)
+      |     28 |   preciseX: Float
+      |        |   preciseY: Float
+      |        | }
+      var y = {event_buffer + 20}.cast[Address, &I32]().*
       return some(Event.mouse_wheel(y))
     }
     else {
@@ -584,10 +586,10 @@ fun move_up(editor: &Editor) {
     .clamp(0, end_of_previous_line)
 }
 fun move_down(editor: &Editor) {
-  var start_of_line = editor.line_start(editor.cursor)
-  var chars_before = editor.cursor - start_of_line
   var end_of_line = editor.line_end(editor.cursor)
   if end_of_line == editor.text.len then return {}
+  var start_of_line = editor.line_start(editor.cursor)
+  var chars_before = editor.cursor - start_of_line
   var start_of_next_line = end_of_line + 1
   var end_of_next_line = editor.line_end(start_of_next_line)
   editor.cursor = {start_of_next_line + chars_before}.clamp(0, end_of_next_line)
@@ -599,7 +601,7 @@ fun move_end(editor: &Editor) { editor.cursor = editor.line_end(editor.cursor) }
 
 fun scroll(editor: &Editor, amount: I32) {
   println("scrolling")
-  editor.scroll = editor.scroll + amount
+  editor.scroll = editor.scroll + {30:I32 * pixel_size * amount}
   println("scroll = {editor.scroll.to_U64()}")
 }
 
@@ -803,32 +805,49 @@ fun main(args: Slice[Str]): Never {
 
   var editor = editor(content)
 
+  renderer.render(editor)
+  renderer.present()
   loop {
-    switch poll_event()
-    case none delay(100)
-    case some(event)
-      switch event
-      case quit break
-      case text_input(text) {
-        stderr."Text input {text}{newline}"
-        editor.&.input(text)
+    var quit = false
+    var event_happened = false
+    loop {
+      switch poll_event()
+      case none break
+      case some(event) {
+        event_happened = true
+        switch event
+        case quit { quit = true break }
+        case text_input(text) {
+          stderr."Text input {text}{newline}"
+          editor.&.input(text)
+        }
+        case key_down(keydown) {
+          var keycode = keydown.keycode
+          var modifiers = keydown.modifiers
+          println("modifiers: {modifiers.radix(2)}")
+          if keycode == 40:U8 then editor.&.enter()
+          else if keycode == 42:U8 then editor.&.backspace()
+          else if keycode == 74:U8 then editor.&.move_start()
+          else if keycode == 76:U8 then editor.&.delete()
+          else if keycode == 77:U8 then editor.&.move_end()
+          else if keycode == 79:U8 then editor.&.move_right()
+          else if keycode == 80:U8 then editor.&.move_left()
+          else if keycode == 81:U8 then editor.&.move_down()
+          else if keycode == 82:U8 then editor.&.move_up()
+          else stderr."Key down {keycode}{newline}"
+        }
+        case mouse_wheel(amount) editor.&.scroll(amount)
       }
-      case key_down(keycode) {
-        if keycode == 40:U8 then editor.&.enter()
-        else if keycode == 42:U8 then editor.&.backspace()
-        else if keycode == 74:U8 then editor.&.move_start()
-        else if keycode == 76:U8 then editor.&.delete()
-        else if keycode == 77:U8 then editor.&.move_end()
-        else if keycode == 79:U8 then editor.&.move_right()
-        else if keycode == 80:U8 then editor.&.move_left()
-        else if keycode == 81:U8 then editor.&.move_down()
-        else if keycode == 82:U8 then editor.&.move_up()
-        else stderr."Key down {keycode}{newline}"
-      }
-      case mouse_wheel(amount) editor.&.scroll(amount)
+    }
+    if quit then break
+    if not(event_happened) then {
+      delay(16)
+      continue
+    }
 
     renderer.render(editor)
     renderer.present()
+    delay(1)
   }
 
   println("destroying stuff")
