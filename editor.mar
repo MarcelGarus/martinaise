@@ -389,7 +389,7 @@ enum Token {
 var declaration_keywords = vec("fun", "var", "struct", "enum", "opaque")
 var control_keywords = vec("if", "then", "else", "switch", "case", "default",
   "orelse", "loop", "for", "in", "do", "break", "continue", "return")
-var operator_chars = "%!~@^\`.&*+$-<>="
+var operator_chars = "%!~@^\/`.&*+$-<>="
 
 fun tokenize(input: Slice[Char], out: &Vec[Token]) {
   out.len = 0
