@@ -536,6 +536,7 @@ struct Editor {
   text: Vec[Char],
   lines: Vec[U64],
   tokens: Vec[Token],
+  needs_tokenization: Bool,
   scroll: I32,
   cursor: U64,
 }
@@ -545,6 +546,7 @@ fun editor(text: Str): Editor {
     text = vec[Char](),
     lines = vec[U64](),
     tokens = vec[Token](),
+    needs_tokenization = false,
     scroll = 0:I32,
     cursor = 0,
   }
@@ -559,6 +561,7 @@ fun text_updated(editor: &Editor) {
   for char in editor.text.iter().enumerate() do
     if char.item == newline then editor.lines.&.push(char.index)
   tokenize(editor.text.to_slice(), editor.tokens.&)
+  editor.needs_tokenization = false
 }
 
 | Given a cursor between 0 and text.len (inclusive), returns the start of the
@@ -590,14 +593,32 @@ fun line_end(editor: Editor, cursor: U64): U64 {
 fun input(editor: &Editor, str: Str) {
   editor.text.&.make_space_at(editor.cursor, str.len, 0:U8.to_char())
   str.chars().copy_to(editor.text.to_slice().subslice(editor.cursor..+str.len))
-  editor.text_updated()
+  if not(str.chars().iter().&.contains(newline)) then {
+    editor.tokens.&.make_space_at(editor.cursor, str.len, Token.default_)
+    for line in editor.lines.iter().enumerate() do
+      editor.lines.get_ref(line.index).* =
+        if line.item >= editor.cursor
+        then line.item + str.len
+        else line.item
+    editor.needs_tokenization = true
+  } else editor.text_updated()
   editor.cursor = editor.cursor + str.len
 }
 fun enter(editor: &Editor) { editor.input("{newline}") }
 fun backspace(editor: &Editor) {
   if editor.cursor == 0 then return {}
-  editor.text.&.remove({editor.cursor - 1}..editor.cursor)
-  editor.text_updated()
+  var index = editor.cursor - 1
+  var removed = editor.text.get(index)
+  editor.text.&.remove(index..+1)
+  if removed == newline then editor.text_updated() else {
+    editor.tokens.&.remove(index..+1)
+    for line in editor.lines.iter().enumerate() do
+      editor.lines.get_ref(line.index).* =
+        if line.item >= editor.cursor
+        then line.item - 1
+        else line.item
+    editor.needs_tokenization = true
+  }
   editor.cursor = editor.cursor - 1
 }
 fun delete(editor: &Editor) {
@@ -886,14 +907,16 @@ fun main(args: Slice[Str]): Never {
       }
     }
     if quit then break
-    if not(event_happened) then {
-      delay(16)
-      continue
-    }
 
     renderer.render(editor)
     renderer.present()
-    delay(1)
+
+    if not(event_happened) then {
+      if editor.needs_tokenization
+      then editor.&.text_updated()
+      else delay(16)
+      continue
+    }
   }
 
   println("destroying stuff")
