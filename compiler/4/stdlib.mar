@@ -19,7 +19,9 @@
 | TODO:   funs as values, function types, higher-order funs?
 | TODO:   slice literals? array literals?
 | TODO: stdlib
-| TODO:   infinity, minus infinity?
+| TODO:   threads
+| TODO:   mutex
+| TODO:   semaphore
 | TODO: catch more errors
 | TODO:   enforce that statement-like expressions evaluate to Nothing
 | TODO:   disallow _ in type args, structs, enums, and recursive functions
@@ -1174,6 +1176,41 @@ fun put_on_heap[T](value: T): &T {
   ref
 }
 
+fun memcopy(from: Address, to: Address, size: U64) asm {
+    mov r8, [rsp + 16]  ; from
+    mov r9, [rsp + 24]  ; to
+    mov r10, [rsp + 32] ; size (amount that's still left to copy)
+    cmp r8, r9
+    ; je .done
+    jl .right_to_left
+  .left_to_right:
+  .left_to_right_loop:
+    cmp r10, 0
+    je .done
+    mov r11b, [r8]
+    mov [r9], r11b
+    inc r8
+    inc r9
+    dec r10
+    jmp .left_to_right_loop
+  .right_to_left:
+    add r8, r10
+    add r9, r10
+    dec r8
+    dec r9
+  .right_to_left_loop:
+    cmp r10, 0
+    je .done
+    mov r11b, [r8]
+    mov [r9], r11b
+    dec r8
+    dec r9
+    dec r10
+    jmp .right_to_left_loop
+  .done:
+    ret
+}
+
 | Slice  
 | A slice refers to a memory region where values of the same type are right next
 | to each other. A slice has a pointer to the first element as well as a length.
@@ -1270,11 +1307,24 @@ fun next[T](iter: &Iter[T, SliceRevIter[T]]): Maybe[T] {
 
 fun copy_to[T](from: Slice[T], to: Slice[T]) {
   assert(from.len == to.len, "copy_to slice lens don't match")
-  for i in 0..from.len do to.get_ref(i).* = from.get(i)
+
+  | for i in 0..from.len do to.get_ref(i).* = from.get(i)
+
+  stderr."Using memcopy from {from.data.to_address()} to {to.data.to_address()} using len {from.len * stride_size_of[T]()}{newline}"
+  memcopy(
+    from.data.to_address(),
+    to.data.to_address(),
+    from.len * stride_size_of[T](),
+  )
 }
-fun subslice[T](slice: Slice[T], from: U64, to: U64): Slice[T] {
-  assert(to <= slice.len, "subslice needs to be inside original slice")
-  Slice { data = slice.data.add_stride_offset(from), len = to - from }
+fun subslice[T](slice: Slice[T], range: Range[U64]): Slice[T] {
+  assert(range.end <= slice.len, "subslice needs to be inside original slice")
+  Slice { data = slice.data.add_stride_offset(range.start), len = range.len() }
+}
+fun remove[T](slice: &Slice[T], range: Range[U64]) {
+  slice.subslice(range.end..slice.len)
+    .copy_to(slice.subslice(range.start..{slice.len - range.len()}))
+  slice.len = slice.len - range.len()
 }
 fun first[T](slice: Slice[T]): T {
   assert(slice.is_not_empty(), "first only works on non-empty slices")
@@ -1282,7 +1332,7 @@ fun first[T](slice: Slice[T]): T {
 }
 fun first[T](slice: Slice[T], amount: U64): Slice[T] {
   assert(amount <= slice.len, "first amount too big")
-  slice.subslice(0, amount)
+  slice.subslice(0..amount)
 }
 fun last[T](slice: Slice[T]): T {
   assert(slice.is_not_empty(), "last only works on non-empty slices")
@@ -1290,17 +1340,17 @@ fun last[T](slice: Slice[T]): T {
 }
 fun last[T](slice: Slice[T], amount: U64): Slice[T] {
   assert(amount <= slice.len, "last amount too big")
-  slice.subslice(slice.len - amount, slice.len)
+  slice.subslice({slice.len - amount}..slice.len)
 }
 fun without_first[T](slice: Slice[T]): Slice[T] { slice.without_first(1) }
 fun without_first[T](slice: Slice[T], amount: U64): Slice[T] {
   assert(amount <= slice.len, "without_first amount too big")
-  slice.subslice(amount, slice.len)
+  slice.subslice(amount..slice.len)
 }
 fun without_last[T](slice: Slice[T]): Slice[T] { slice.without_last(1) }
 fun without_last[T](slice: Slice[T], amount: U64): Slice[T] {
   assert(amount <= slice.len, "without_last amount too big")
-  slice.subslice(0, slice.len - amount)
+  slice.subslice(0..{slice.len - amount})
 }
 fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
   slice.len >= prefix.len orelse return false
@@ -1332,8 +1382,8 @@ fun sort[T](slice: &Slice[T]) {
       swap(slice.get_ref(i.dec()), slice.get_ref(j))
     }
   swap(slice.get_ref(i), slice.get_ref(slice.len.dec()))
-  sort(slice.subslice(0, i).&)
-  sort(slice.subslice(min(i.inc(), slice.len.dec()), slice.len).&)
+  sort(slice.subslice(0..i).&)
+  sort(slice.subslice(min(i.inc(), slice.len.dec())..slice.len).&)
 }
 
 | Strings & Chars  
@@ -1367,8 +1417,8 @@ fun bytes(str: Str): Slice[U8] { str.cast[Str, Slice[U8]]() }
 
 fun to_os_str(str: Str): OsStr {
   | make it null-terminated
-  var bytes = uninitialized_slice[U8](str.len.inc())
-  str.bytes().copy_to(bytes.subslice(0, str.len))
+  var bytes = uninitialized_slice[U8](str.len + 1)
+  str.bytes().copy_to(bytes.subslice(0..str.len))
   bytes.get_ref(str.len).* = 0:U8
   OsStr { address = bytes.data.to_address() }
 }
@@ -1453,7 +1503,7 @@ fun next(iter: &Iter[Char, StrIter]): Maybe[Char] {
 
 fun substr(str: Str, from: U64, to: U64): Str {
   to <= str.len orelse panic("substr needs to be inside original str")
-  str.chars().subslice(from, to).to_str()
+  str.chars().subslice(from..to).to_str()
 }
 fun first(str: Str): Char {
   assert(str.is_not_empty(), "first only works on non-empty strs")
@@ -1518,6 +1568,7 @@ fun ..+=[T, D](start: T, len: D): Range[T] {
   Range { start, end = start + len.inc() }
 }
 
+fun len[T](range: Range[T]): U64 { range.end - range.start }
 fun contains[T](range: Range[T], value: T): Bool {
   {value >= range.start} & {value < range.end}
 }
@@ -2048,7 +2099,7 @@ fun push[T](vec: &Vec[T], item: T) {
   if vec.data.len == 0 then vec.data = uninitialized_slice[T](8)
   if vec.data.len == vec.len then {
     var new_data = uninitialized_slice[T](2 * vec.data.len)
-    vec.data.copy_to(new_data.subslice(0, vec.data.len))
+    vec.data.copy_to(new_data.subslice(0..vec.data.len))
     vec.data = new_data
   }
   vec.data.get_ref(vec.len).* = item
@@ -2074,7 +2125,18 @@ fun last_maybe[T](vec: Vec[T]): Maybe[T] {
   if vec.is_empty() then none[T]() else some(vec.data.get(vec.len - 1))
 }
 fun is_empty[T](vec: Vec[T]): Bool { vec.len == 0 }
-fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0, vec.len) }
+fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0..vec.len) }
+
+fun make_space_at[T](vec: &Vec[T], pos: U64, amount: U64, fill: T) {
+  for i in 0..amount do vec.push(fill)
+  vec.to_slice().subslice(pos..{vec.len - amount})
+    .copy_to(vec.to_slice().subslice({pos + amount}..vec.len))
+}
+fun remove[T](vec: &Vec[T], range: Range[U64]) {
+  var slice = vec.to_slice()
+  slice.&.remove(range)
+  vec.len = slice.len
+}
 
 fun ==[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice() == b.to_slice() }
 fun iter[T](vec: Vec[T]): Iter[T, _] { vec.to_slice().iter() }
@@ -2125,8 +2187,8 @@ fun reserve[T](deque: &Deque[T], size: U64) {
   var slices = deque.to_slices()
   var total_len = deque.len()
   deque.data = uninitialized_slice[T](size)
-  slices.a.copy_to(deque.data.subslice(0, slices.a.len))
-  slices.b.copy_to(deque.data.subslice(slices.a.len, total_len))
+  slices.a.copy_to(deque.data.subslice(0..slices.a.len))
+  slices.b.copy_to(deque.data.subslice(slices.a.len .. total_len))
   deque.start = 0
   deque.end = total_len
 }
@@ -2163,10 +2225,10 @@ fun get_ref[T](deque: Deque[T], index: U64): &T {
 }
 fun to_slices[T](deque: Deque[T]): Tuple[Slice[T], Slice[T]] {
   if deque.end >= deque.start
-  then tuple(deque.data.subslice(deque.start, deque.end), empty_slice[T]())
+  then tuple(deque.data.subslice(deque.start .. deque.end), empty_slice[T]())
   else tuple(
-    deque.data.subslice(deque.start, deque.data.len),
-    deque.data.subslice(0, deque.start)
+    deque.data.subslice(deque.start .. deque.data.len),
+    deque.data.subslice(0 .. deque.start)
   )
 }
 fun ==[T](a: Deque[T], b: Deque[T]): Bool {

@@ -405,7 +405,7 @@ fun tokenize(input: Slice[Char], out: &Vec[Token]) {
         var c = input.get_maybe(end) orelse break
         if c == newline then break else end = end + 1
       }
-      var comment = input.subslice(cursor, end).to_str()
+      var comment = input.subslice(cursor..end).to_str()
       var token =
         if comment.ends_with("  ") then Token.comment_title else Token.comment
       for i in cursor..end do out.push(token)
@@ -423,7 +423,7 @@ fun tokenize(input: Slice[Char], out: &Vec[Token]) {
         then end = end + 1
         else break
       }
-      var word = input.subslice(cursor, end).to_str()
+      var word = input.subslice(cursor..end).to_str()
       var char_after_end = input.get_maybe(end) orelse #.
       var token =
         if is_type then Token.type else
@@ -470,7 +470,7 @@ fun tokenize(input: Slice[Char], out: &Vec[Token]) {
         var c = input.get_maybe(end) orelse break
         if operator_chars.iter().&.contains(c) then end = end + 1 else break
       }
-      var name = input.subslice(cursor, end).to_str()
+      var name = input.subslice(cursor..end).to_str()
       var token =
         if {name == "."} / {name == "="}
         then Token.punctuation
@@ -552,14 +552,12 @@ fun editor(text: Str): Editor {
   editor.&.text_updated()
   editor
 }
-
+| Calculates lines and tokens based on the text. Is pretty expensive.
 fun text_updated(editor: &Editor) {
   editor.lines.len = 0
-  var line = 0
-  for char in editor.text do {
-    editor.lines.&.push(line)
-    if char == newline then line = line + 1
-  }
+  editor.lines.&.push(0)
+  for char in editor.text.iter().enumerate() do
+    if char.item == newline then editor.lines.&.push(char.index)
   tokenize(editor.text.to_slice(), editor.tokens.&)
 }
 
@@ -590,26 +588,15 @@ fun line_end(editor: Editor, cursor: U64): U64 {
 }
 
 fun input(editor: &Editor, str: Str) {
-  for char in str do editor.text.&.push(char)
-  var index = editor.text.len - 1
-  loop
-    if index >= {editor.cursor + str.len}
-    then {
-      editor.text.get_ref(index).* = editor.text.get(index - str.len)
-      index = index - 1
-    }
-    else break
-  for char in str.iter().enumerate() do
-    editor.text.get_ref(editor.cursor + char.index).* = char.item
+  editor.text.&.make_space_at(editor.cursor, str.len, 0:U8.to_char())
+  str.chars().copy_to(editor.text.to_slice().subslice(editor.cursor..+str.len))
   editor.text_updated()
   editor.cursor = editor.cursor + str.len
 }
 fun enter(editor: &Editor) { editor.input("{newline}") }
 fun backspace(editor: &Editor) {
   if editor.cursor == 0 then return {}
-  for i in {editor.cursor - 1}..{editor.text.len - 1} do
-    editor.text.get_ref(i).* = editor.text.get(i + 1)
-  editor.text.len = editor.text.len - 1
+  editor.text.&.remove({editor.cursor - 1}..editor.cursor)
   editor.text_updated()
   editor.cursor = editor.cursor - 1
 }
@@ -802,17 +789,13 @@ fun render(renderer: Renderer, editor: Editor) {
       .max(0:I32).to_U64() / line_height.to_U64()}
     ..
     {{0:I32 - 20:I32 - editor.scroll + editor_size.y}
-      .max(0:I32).to_U64() / line_height.to_U64()}
-        .clamp(0, editor.lines.last_maybe() orelse 0)
+      .max(0:I32).to_U64() / line_height.to_U64()}.clamp(0, editor.lines.len)
   println("lines {visible_lines} are visible ({visible_lines.end - visible_lines.start} lines)")
 
-  var visible_chars = {editor.text.len}..0
-  for line in editor.lines.iter().enumerate() do
-    if line.item >= visible_lines.start
-    then { visible_chars.start = line.index break }
-  for line in editor.lines.to_slice().rev_iter().enumerate() do
-    if line.item <= visible_lines.end
-    then { visible_chars.end = editor.lines.len - 1 - line.index break }
+  var visible_chars = {editor.lines.get(visible_lines.start)}
+    ..{if visible_lines.end == editor.lines.len
+       then editor.text.len
+       else editor.lines.get(visible_lines.end)}
   println("chars {visible_chars} are visible")
 
   var y = 20:I32 + editor.scroll + {line_height * visible_lines.start.to_I32()}
