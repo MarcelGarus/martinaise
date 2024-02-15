@@ -2054,6 +2054,9 @@ fun get_ref[T](vec: Vec[T], index: U64): &T { vec.data.get_ref(index) }
 fun get_maybe_ref[T](vec: Vec[T], index: U64): Maybe[&T] {
   vec.data.get_maybe_ref(index)
 }
+fun last_maybe[T](vec: Vec[T]): Maybe[T] {
+  if vec.is_empty() then none[T]() else some(vec.data.get(vec.len - 1))
+}
 fun is_empty[T](vec: Vec[T]): Bool { vec.len == 0 }
 fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0, vec.len) }
 

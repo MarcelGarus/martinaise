@@ -380,7 +380,7 @@ enum Token {
   control,
   type,
   function,
-  number,
+  literal,
   operator,
   punctuation,
   default_,
@@ -391,8 +391,10 @@ var control_keywords = vec("if", "then", "else", "switch", "case", "default",
   "orelse", "loop", "for", "in", "do", "break", "continue", "return")
 var operator_chars = "%!~@^\/`.&*+$-<>="
 
+var tokenizing_string_metanesses = vec[U64]()
 fun tokenize(input: Slice[Char], out: &Vec[Token]) {
   out.len = 0
+  tokenizing_string_metanesses.len = 0
 
   var cursor = 0
   loop {
@@ -459,7 +461,7 @@ fun tokenize(input: Slice[Char], out: &Vec[Token]) {
           else break
         }
       }
-      for i in cursor..end do out.push(Token.number)
+      for i in cursor..end do out.push(Token.literal)
       cursor = end
       continue
     }
@@ -486,6 +488,48 @@ fun tokenize(input: Slice[Char], out: &Vec[Token]) {
       out.push(Token.punctuation)
       cursor = cursor + 1
       continue
+    }
+
+    var metaness = 0
+    var in_string = false
+    loop
+      if {input.get_maybe(cursor) orelse break} == #'
+      then {
+        metaness = metaness + 1
+        cursor = cursor + 1
+        out.push(Token.literal)
+      }
+      else break
+    if input.get_maybe(cursor) == some(#") then {
+      tokenizing_string_metanesses.&.push(metaness)
+      cursor = cursor + 1
+      in_string = true
+    } else if tokenizing_string_metanesses.last_maybe() is some(metaness) then {
+      var interpolation_ends = true
+      for i in 0..{metaness + 1} do {
+        var char = input.get_maybe(cursor + i)
+          orelse { interpolation_ends = false break }
+        if char != #} then { interpolation_ends = false break }
+      }
+      if interpolation_ends then {
+        for i in 0..{metaness + 1} do out.push(Token.literal)
+        cursor = cursor + metaness + 1
+        in_string = true
+      }
+    }
+    if in_string then loop {
+      var interpolation_begins = true
+      for i in 0..{metaness + 1} do {
+        var char = input.get_maybe(cursor + i)
+          orelse {interpolation_begins = false break }
+        if char != #{ then interpolation_begins = false
+      }
+      if interpolation_begins then {
+        for i in 0..metaness do out.push(Token.literal)
+        break
+      }
+      out.push(Token.literal)
+      cursor = cursor + 1
     }
 
     out.push(Token.default_)
@@ -770,7 +814,7 @@ fun render(renderer: Renderer, editor: Editor) {
       switch editor.tokens.get(index)
       case comment lime
       case comment_title yellow
-      case number red
+      case literal red
       case declaration blue
       case control purple
       case type green
