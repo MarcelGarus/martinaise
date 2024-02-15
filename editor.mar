@@ -488,6 +488,13 @@ fun tokenize(input: Slice[Char], out: &Vec[Token]) {
       continue
     }
 
+    if char == ## then {
+      out.push(Token.literal)
+      out.push(Token.literal)
+      cursor = cursor + 2
+      continue
+    }
+
     var metaness = 0
     loop
       if {input.get_maybe(cursor) orelse break} == #'
