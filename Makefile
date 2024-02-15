@@ -48,6 +48,9 @@ skip-zig:
 		cc compiler.c -o martinaise && \
 		touch stdlib.mar
 
+editor: martinaise editor.mar
+	./martinaise compile editor.mar -sdl
+
 clean:
 	rm -rf compiler/0/zig-out;
 	rm -rf compiler/0/zig-cache;

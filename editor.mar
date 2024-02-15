@@ -391,10 +391,8 @@ var control_keywords = vec("if", "then", "else", "switch", "case", "default",
   "orelse", "loop", "for", "in", "do", "break", "continue", "return")
 var operator_chars = "%!~@^\/`.&*+$-<>="
 
-var tokenizing_string_metanesses = vec[U64]()
 fun tokenize(input: Slice[Char], out: &Vec[Token]) {
   out.len = 0
-  tokenizing_string_metanesses.len = 0
 
   var cursor = 0
   loop {
@@ -491,7 +489,6 @@ fun tokenize(input: Slice[Char], out: &Vec[Token]) {
     }
 
     var metaness = 0
-    var in_string = false
     loop
       if {input.get_maybe(cursor) orelse break} == #'
       then {
@@ -501,35 +498,24 @@ fun tokenize(input: Slice[Char], out: &Vec[Token]) {
       }
       else break
     if input.get_maybe(cursor) == some(#") then {
-      tokenizing_string_metanesses.&.push(metaness)
       cursor = cursor + 1
-      in_string = true
-    } else if tokenizing_string_metanesses.last_maybe() is some(metaness) then {
-      var interpolation_ends = true
-      for i in 0..{metaness + 1} do {
-        var char = input.get_maybe(cursor + i)
-          orelse { interpolation_ends = false break }
-        if char != #} then { interpolation_ends = false break }
-      }
-      if interpolation_ends then {
-        for i in 0..{metaness + 1} do out.push(Token.literal)
-        cursor = cursor + metaness + 1
-        in_string = true
-      }
-    }
-    if in_string then loop {
-      var interpolation_begins = true
-      for i in 0..{metaness + 1} do {
-        var char = input.get_maybe(cursor + i)
-          orelse {interpolation_begins = false break }
-        if char != #{ then interpolation_begins = false
-      }
-      if interpolation_begins then {
-        for i in 0..metaness do out.push(Token.literal)
-        break
-      }
       out.push(Token.literal)
-      cursor = cursor + 1
+      loop {
+        var string_ends = {input.get_maybe(cursor) orelse break} == #"
+        for i in 0..metaness do {
+          var char = input.get_maybe(cursor + i + 1)
+            orelse {string_ends = false break }
+          if char != #' then string_ends = false
+        }
+        if string_ends then {
+          cursor = cursor + metaness + 1
+          for i in 0..{metaness + 1} do out.push(Token.literal)
+          break
+        }
+        out.push(Token.literal)
+        cursor = cursor + 1
+      }
+      continue
     }
 
     out.push(Token.default_)
@@ -666,7 +652,7 @@ fun scroll(editor: &Editor, amount: I32) {
 | Rendering  
 | All letters are sized 5x8 pixels.
 
-var pixel_size = 4:I32
+var pixel_size = 2:I32
 
 struct Glyph { a: U8, b: U8, c: U8, d: U8, e: U8 }
 fun glyph(a: U64, b: U64, c: U64, d: U64, e: U64): Glyph {
@@ -858,7 +844,7 @@ fun main(args: Slice[Str]): Never {
 
   init_sdl().unwrap()
   var window = create_window("Martinaise Editor",
-    500:I32 @ 100:I32, 2000:I32 @ 3000:I32)
+    500:I32 @ 100:I32, 1000:I32 @ 2000:I32)
   var renderer = window.create_renderer()
 
   var editor = editor(content)
