@@ -1,14 +1,9 @@
 fun main(args: Slice[Str]): Never {
   println(2 + 3 + 4)
-
   if 1 < 2 then println("Whoa")
-
   for i in 0..5 do println("Hello, {i}!")
-
   println(3 %!~@^\`/&*+$-<>=. 4)
-
   print_name[Slice[U8]]()
-
   exit(0:U8)
 }
 
