@@ -779,6 +779,8 @@ fun render(renderer: Renderer, char: Char, offset: Offset) {
     }
 }
 
+var editor_size = 1000:I32 @ 1000:I32
+
 fun render(renderer: Renderer, editor: Editor) {
   renderer.set_color(background)
   renderer.clear()
@@ -786,15 +788,31 @@ fun render(renderer: Renderer, editor: Editor) {
 
   var row = 0
   var col = 0
-  var y = 20:I32 + editor.scroll
+  var line_height = 9:I32 * pixel_size
 
-  for char in editor.text.iter().enumerate() do {
-    var index = char.index
-    var char = char.item
+  var visible_lines =
+    {{0:I32 - 20:I32 - editor.scroll}
+      .max(0:I32).to_U64() / line_height.to_U64()}
+    ..
+    {{0:I32 - 20:I32 - editor.scroll + editor_size.y}
+      .max(0:I32).to_U64() / line_height.to_U64()}
+        .clamp(0, editor.lines.last_maybe() orelse 0)
+  println("lines {visible_lines} are visible ({visible_lines.end - visible_lines.start} lines)")
+
+  var visible_chars = {editor.text.len}..0
+  for line in editor.lines.iter().enumerate() do
+    if line.item >= visible_lines.start
+    then { visible_chars.start = line.index break }
+  for line in editor.lines.to_slice().rev_iter().enumerate() do
+    if line.item <= visible_lines.end
+    then { visible_chars.end = editor.lines.len - 1 - line.index break }
+  println("chars {visible_chars} are visible")
+
+  var y = 20:I32 + editor.scroll + {line_height * visible_lines.start.to_I32()}
+
+  for index in visible_chars do {
+    var char = editor.text.get(index)
     var x = {col.to_I32() * 6:I32 * pixel_size} + 20:I32
-
-    var is_abstract = row < 0
-    var height = {if is_abstract then 2:I32 else 9:I32} * pixel_size
 
     var color =
       switch editor.tokens.get(index)
@@ -820,15 +838,10 @@ fun render(renderer: Renderer, editor: Editor) {
     if char == newline then {
       row = row + 1
       col = 0
-      y = y + height
+      y = y + line_height
     } else {
       col = col + 1
-      if is_abstract
-      then {
-        if not({char == space} / {char == newline} / {char == tab})
-        then renderer.draw({x @ y} @ {{6:I32 * pixel_size} @ height})
-      }
-      else renderer.render(char, x @ y)
+      renderer.render(char, x @ y)
     }
   }
 }
@@ -843,8 +856,7 @@ fun main(args: Slice[Str]): Never {
   var content = file.read_file().unwrap().to_str()
 
   init_sdl().unwrap()
-  var window = create_window("Martinaise Editor",
-    500:I32 @ 100:I32, 1000:I32 @ 2000:I32)
+  var window = create_window("Martinaise Editor", 50:I32 @ 50:I32, editor_size)
   var renderer = window.create_renderer()
 
   var editor = editor(content)

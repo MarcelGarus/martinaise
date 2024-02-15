@@ -791,6 +791,19 @@ fun <=>(a: U64, b: U64): Ordering asm {
   mov [r8], r9b
   ret
 }
+fun <=>(a: I32, b: I32): Ordering asm {
+  mov r10, 0 ; less
+  mov r11, 1 ; equal
+  mov r12, 2 ; greater
+  mov r8d, [rsp + 16]
+  cmp r8d, [rsp + 20]
+  cmovl r9, r10 ; conditional move less -> less
+  cmove r9, r11 ; conditional move equal -> equal
+  cmovg r9, r12 ; conditional move greater -> greater
+  mov r8, [rsp + 8]
+  mov [r8], r9b
+  ret
+}
 fun <=>(a: I64, b: I64): Ordering asm {
   mov r10, 0 ; less
   mov r11, 1 ; equal
@@ -1509,6 +1522,9 @@ fun contains[T](range: Range[T], value: T): Bool {
   {value >= range.start} & {value < range.end}
 }
 fun is_empty[T](range: Range[T]): Bool { range.start >= range.end }
+fun write[W, T](writer: W, range: Range[T]) {
+  writer."{range.start}..{range.end}"
+}
 
 fun iter[T](range: Range[T]): Iter[T, _] {
   Iter[T, RangeIter[T]] { state = RangeIter { rest = range } }
