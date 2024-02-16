@@ -618,6 +618,7 @@ fun input(editor: &Editor, str: Str) {
     editor.needs_tokenization = true
   } else editor.text_updated()
   editor.cursor = editor.cursor + str.len
+  editor.scroll_to_cursor()
 }
 fun enter(editor: &Editor) { editor.input("{newline}") }
 fun backspace(editor: &Editor) {
@@ -635,6 +636,7 @@ fun backspace(editor: &Editor) {
     editor.needs_tokenization = true
   }
   editor.cursor = editor.cursor - 1
+  editor.scroll_to_cursor()
 }
 fun delete(editor: &Editor) {
   if editor.cursor == editor.text.len then return {}
@@ -645,10 +647,12 @@ fun delete(editor: &Editor) {
 fun move_left(editor: &Editor) {
   if editor.cursor == 0 then return {}
   editor.cursor = editor.cursor - 1
+  editor.scroll_to_cursor()
 }
 fun move_right(editor: &Editor) {
   if editor.cursor == editor.text.len then return {}
   editor.cursor = editor.cursor + 1
+  editor.scroll_to_cursor()
 }
 fun move_up(editor: &Editor) {
   var start_of_line = editor.line_start(editor.cursor)
@@ -658,6 +662,7 @@ fun move_up(editor: &Editor) {
   var start_of_previous_line = editor.line_start(end_of_previous_line)
   editor.cursor = {start_of_previous_line + chars_before}
     .clamp(0, end_of_previous_line)
+  editor.scroll_to_cursor()
 }
 fun move_down(editor: &Editor) {
   var end_of_line = editor.line_end(editor.cursor)
@@ -667,16 +672,33 @@ fun move_down(editor: &Editor) {
   var start_of_next_line = end_of_line + 1
   var end_of_next_line = editor.line_end(start_of_next_line)
   editor.cursor = {start_of_next_line + chars_before}.clamp(0, end_of_next_line)
+  editor.scroll_to_cursor()
 }
 fun move_start(editor: &Editor) {
   editor.cursor = editor.line_start(editor.cursor)
+  editor.scroll_to_cursor()
 }
-fun move_end(editor: &Editor) { editor.cursor = editor.line_end(editor.cursor) }
+fun move_end(editor: &Editor) {
+  editor.cursor = editor.line_end(editor.cursor)
+  editor.scroll_to_cursor()
+}
 
 fun scroll(editor: &Editor, amount: I32) {
-  println("scrolling")
   editor.scroll = editor.scroll + {30:I32 * pixel_size * amount}
-  println("scroll = {editor.scroll.to_U64()}")
+}
+
+fun scroll_to_cursor(editor: &Editor) {
+  var line = 0
+  for l in editor.lines.iter().enumerate() do
+    if l.item > editor.cursor then { line = l.index break }
+  var scroll_so_line_is_at_center = 0:I32 - 20:I32
+    - {9:I32 * pixel_size * line.to_I32()}
+    + {editor_size.y.to_U64() / 2}.to_I32()
+  var leeway = {editor_size.y.to_U64() / 4}.to_I32()
+  editor.scroll = editor.scroll.clamp(
+    scroll_so_line_is_at_center - leeway,
+    scroll_so_line_is_at_center + leeway,
+  )
 }
 
 | Rendering  
