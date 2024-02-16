@@ -22,6 +22,7 @@ fun write[W](writer: W, color: Color) {
 var background   = color(16#1c1c1e)
 var foreground   = color(16#f2f2f7)
 var grey         = color(16#999999)
+var dark_grey    = color(16#555555)
 var blue         = color(16#1a94ff)
 var purple       = color(16#d189f5)
 var green        = color(16#41d496)
@@ -831,9 +832,33 @@ fun render(renderer: Renderer, editor: Editor) {
 
   var y = 20:I32 + editor.scroll + {line_height * visible_lines.start.to_I32()}
 
+  | Line numbers
+  {
+    var biggest = editor.lines.len
+    var divisor = 1
+    loop if biggest / divisor < 10 then break else divisor = divisor * 10
+
+    renderer.set_color(dark_grey)
+    for line in visible_lines.iter().enumerate() do {
+      var divisor = divisor
+      var index = 0
+      loop {
+        var char = {line.item / divisor}.modulo(10).to_U8().digit_to_char()
+        renderer.render(char,
+          {20:I32 + {{6 * index}.to_I32() * pixel_size}}
+            @ {y + {line.index.to_I32() * line_height}})
+        if divisor == 1 then break
+        divisor = divisor / 10
+        index = index + 1
+      }
+    }
+  }
+
+  | Characters
   for index in visible_chars do {
     var char = editor.text.get(index)
-    var x = {col.to_I32() * 6:I32 * pixel_size} + 20:I32
+    var x = 20:I32 + {4:I32 * 6:I32 * pixel_size} + 10:I32
+      + {col.to_I32() * 6:I32 * pixel_size}
 
     var color =
       switch editor.tokens.get(index)
