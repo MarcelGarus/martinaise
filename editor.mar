@@ -311,10 +311,10 @@ enum Event {
 struct KeyDown { keycode: U8, modifiers: Modifiers }
 struct Modifiers { value: U16 }
 fun ctrl(mod: Modifiers): Bool {
-  {mod.value.and(64) != 0} / {mod.value.and(128) != 0}
+  {mod.value.to_U64().and(64) != 0} / {mod.value.to_U64().and(128) != 0}
 }
 fun shift(mod: Modifiers): Bool {
-  {mod.value.and(1) != 0} / {mod.value.and(2) != 0}
+  {mod.value.to_U64().and(1) != 0} / {mod.value.to_U64().and(2) != 0}
 }
 
 var event_buffer = uninitialized_slice[U8](2048).data.to_address()
@@ -351,7 +351,9 @@ fun poll_event(): Maybe[Event] {
       |        | }
       var keycode = {event_buffer + 20}.cast[Address, &U8]().*
       var mod = {event_buffer + 24}.cast[Address, &U16]().*
-      return some(Event.key_down(KeyDown { keycode, modifiers = mod }))
+      return some(Event.key_down(KeyDown {
+        keycode, modifiers = Modifiers { value = mod }
+      }))
     }
     else if type == 16#403:U32 then {
       | offset | MouseWheel {
@@ -899,12 +901,7 @@ fun main(args: Slice[Str]): Never {
         case key_down(keydown) {
           var keycode = keydown.keycode
           var modifiers = keydown.modifiers
-          println("modifiers: {modifiers}")
-          if modifiers.to_U64() >= 10000000 then {
-            println("too big!")
-          } else {
-            println("this is fine")
-          }
+
           if keycode == 8:U8 then editor.&.backspace()
           else if keycode == 13:U8 then editor.&.enter()
           else if keycode == 74:U8 then editor.&.move_start()
