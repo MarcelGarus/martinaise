@@ -683,6 +683,62 @@ fun move_end(editor: &Editor) {
   editor.scroll_to_cursor()
 }
 
+| Control + arrow keys move one word.
+| Concretely:
+| 1. Skip spaces
+| 2. How many characters of punctuation follow?
+|    0: Skip all letters
+|    1: Skip the punctuation, then all letters after it
+|    2: Skip all punctutation
+fun is_word(char: Char): Bool {
+  {#a..=#z}.contains(char) / {#A..=#Z}.contains(char) / {char == #_}
+    / {#0..=#9}.contains(char)
+}
+fun is_punctuation(char: Char): Bool { {char != space} & not(char.is_word()) }
+fun find_word_boundary[I](iter: &Iter[Char, I]): U64 {
+  var consumed = 0
+  var char = loop {
+    var char = iter.next() orelse return consumed
+    if char != space then break(char)
+    consumed = consumed + 1
+  }
+  consumed = consumed + 1
+  if char.is_punctuation()
+  then {
+    var char = iter.next() orelse return consumed
+    if char == space then return consumed
+    consumed = consumed + 1
+    if char.is_word()
+    then loop {
+      if {iter.next() orelse return consumed}.is_word().not()
+      then return consumed
+      consumed = consumed + 1
+    }
+    else loop {
+      if {iter.next() orelse return consumed}.is_punctuation().not()
+      then return consumed
+      consumed = consumed + 1
+    }
+  }
+  else loop {
+    if {iter.next() orelse return consumed}.is_word().not()
+    then return consumed
+    consumed = consumed + 1
+  }
+}
+fun move_ctrl_left(editor: &Editor) {
+  var amount_to_move = editor.text.to_slice()
+    .subslice(0..editor.cursor).rev_iter().&.find_word_boundary()
+  editor.cursor = editor.cursor - amount_to_move
+  editor.scroll_to_cursor()
+}
+fun move_ctrl_right(editor: &Editor) {
+  var amount_to_move = editor.text.to_slice()
+    .subslice(editor.cursor..editor.text.len).iter().&.find_word_boundary()
+  editor.cursor = editor.cursor + amount_to_move
+  editor.scroll_to_cursor()
+}
+
 fun scroll(editor: &Editor, amount: I32) {
   editor.scroll = editor.scroll + {30:I32 * pixel_size * amount}
 }
@@ -958,8 +1014,16 @@ fun main(args: Slice[Str]): Never {
           else if keycode == 13:U8 then editor.&.enter()
           else if keycode == 74:U8 then editor.&.move_start()
           else if keycode == 77:U8 then editor.&.move_end()
-          else if keycode == 79:U8 then editor.&.move_right()
-          else if keycode == 80:U8 then editor.&.move_left()
+          else if keycode == 79:U8 then {
+            if modifiers.ctrl()
+            then editor.&.move_ctrl_right()
+            else editor.&.move_right()
+          }
+          else if keycode == 80:U8 then {
+            if modifiers.ctrl()
+            then editor.&.move_ctrl_left()
+            else editor.&.move_left()
+          }
           else if keycode == 81:U8 then editor.&.move_down()
           else if keycode == 82:U8 then editor.&.move_up()
           else if keycode == 127:U8 then editor.&.delete()
