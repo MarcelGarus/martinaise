@@ -31,6 +31,7 @@ var yellow       = color(16#ffd60a)
 var light_yellow = color(16#ffea80)
 var orange       = color(16#ff9f0a)
 var red          = color(16#ff5959)
+var dark_red     = color(16#992222)
 
 | Offset  
 
@@ -392,6 +393,7 @@ enum Token {
   type,
   function,
   literal,
+  literal_support,
   operator,
   punctuation,
   default_,
@@ -462,6 +464,8 @@ fun tokenize(input: Slice[Char], out: &Vec[Token]) {
         case some(char) char == ##
       if is_radix then {
         end = end + 1
+        for i in cursor..end do out.push(Token.literal_support)
+        cursor = end
         loop {
           var c = input.get_maybe(end) orelse break
           if {#0..=#9}.contains(c) / {c == #_}
@@ -500,7 +504,7 @@ fun tokenize(input: Slice[Char], out: &Vec[Token]) {
     }
 
     if char == ## then {
-      out.push(Token.literal)
+      out.push(Token.literal_support)
       out.push(Token.literal)
       cursor = cursor + 2
       continue
@@ -865,6 +869,7 @@ fun render(renderer: Renderer, editor: Editor) {
       case comment lime
       case comment_title yellow
       case literal red
+      case literal_support dark_red
       case declaration blue
       case control purple
       case type green
