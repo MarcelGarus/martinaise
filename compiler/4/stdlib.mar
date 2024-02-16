@@ -858,7 +858,7 @@ fun to_U64(n: U16): U64 asm {
   mov r8, 0           ; sign extension (always zero for unsigned ints)
   mov r8w, [rsp + 16] ; n
   mov r9, [rsp + 8]   ; return address
-  mov [r9], r8d
+  mov [r9], r8
   ret
 }
 fun to_U8(n: U32): U8 asm {
@@ -1307,10 +1307,6 @@ fun next[T](iter: &Iter[T, SliceRevIter[T]]): Maybe[T] {
 
 fun copy_to[T](from: Slice[T], to: Slice[T]) {
   assert(from.len == to.len, "copy_to slice lens don't match")
-
-  | for i in 0..from.len do to.get_ref(i).* = from.get(i)
-
-  stderr."Using memcopy from {from.data.to_address()} to {to.data.to_address()} using len {from.len * stride_size_of[T]()}{newline}"
   memcopy(
     from.data.to_address(),
     to.data.to_address(),

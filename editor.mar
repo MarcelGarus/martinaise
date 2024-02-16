@@ -308,7 +308,15 @@ enum Event {
   key_down: KeyDown,
   mouse_wheel: I32,
 }
-struct KeyDown { keycode: U8, modifiers: U16 }
+struct KeyDown { keycode: U8, modifiers: Modifiers }
+struct Modifiers { value: U16 }
+fun ctrl(mod: Modifiers): Bool {
+  {mod.value.and(64) != 0} / {mod.value.and(128) != 0}
+}
+fun shift(mod: Modifiers): Bool {
+  {mod.value.and(1) != 0} / {mod.value.and(2) != 0}
+}
+
 var event_buffer = uninitialized_slice[U8](2048).data.to_address()
 fun poll_event(): Maybe[Event] {
   loop {
@@ -334,15 +342,15 @@ fun poll_event(): Maybe[Event] {
       |      8 |   windowId: U32
       |     12 |   state: U8
       |     13 |   repeat: U8
-      |        |   keysym: Keysym {
-      |     14 |     scancode: Scancode: U32
-      |     18 |     sym: Keycode: U8
-      |     19 |     mod: U16
-      |     21 |     _unused: U32
+      |     16 |   keysym: Keysym {
+      |     16 |     scancode: Scancode: U32
+      |     20 |     sym: Keycode: U8
+      |     24 |     mod: U16
+      |     28 |     _unused: U32
       |        |   }
       |        | }
-      var keycode = {event_buffer + 16}.cast[Address, &U8]().*
-      var mod = {event_buffer + 17}.cast[Address, &U16]().*
+      var keycode = {event_buffer + 20}.cast[Address, &U8]().*
+      var mod = {event_buffer + 24}.cast[Address, &U16]().*
       return some(Event.key_down(KeyDown { keycode, modifiers = mod }))
     }
     else if type == 16#403:U32 then {
@@ -687,7 +695,7 @@ var font = {
   map.put(#', glyph(2#00000000, 2#00000000, 2#00000111, 2#00000000, 2#00000000))
   map.put(#(, glyph(2#00000000, 2#00111110, 2#01000001, 2#01000001, 2#00000000))
   map.put(#), glyph(2#00000000, 2#01000001, 2#01000001, 2#00111110, 2#00000000))
-  map.put(#*, glyph(2#00100010, 2#00010100, 2#00001000, 2#00010100, 2#00100010))
+  map.put(#*, glyph(2#00000000, 2#00010100, 2#00001000, 2#00010100, 2#00000000))
   map.put(#+, glyph(2#00001000, 2#00001000, 2#00111110, 2#00001000, 2#00001000))
   map.put(#,, glyph(2#00000000, 2#10000000, 2#01100000, 2#00000000, 2#00000000))
   map.put(#-, glyph(2#00001000, 2#00001000, 2#00001000, 2#00001000, 2#00001000))
@@ -811,13 +819,13 @@ fun render(renderer: Renderer, editor: Editor) {
     ..
     {{0:I32 - 20:I32 - editor.scroll + editor_size.y}
       .max(0:I32).to_U64() / line_height.to_U64()}.clamp(0, editor.lines.len)
-  println("lines {visible_lines} are visible ({visible_lines.end - visible_lines.start} lines)")
+  | println("lines {visible_lines} are visible ({visible_lines.end - visible_lines.start} lines)")
 
   var visible_chars = {editor.lines.get(visible_lines.start)}
     ..{if visible_lines.end == editor.lines.len
        then editor.text.len
        else editor.lines.get(visible_lines.end)}
-  println("chars {visible_chars} are visible")
+  | println("chars {visible_chars} are visible")
 
   var y = 20:I32 + editor.scroll + {line_height * visible_lines.start.to_I32()}
 
@@ -891,16 +899,24 @@ fun main(args: Slice[Str]): Never {
         case key_down(keydown) {
           var keycode = keydown.keycode
           var modifiers = keydown.modifiers
-          println("modifiers: {modifiers.radix(2)}")
-          if keycode == 40:U8 then editor.&.enter()
-          else if keycode == 42:U8 then editor.&.backspace()
+          println("modifiers: {modifiers}")
+          if modifiers.to_U64() >= 10000000 then {
+            println("too big!")
+          } else {
+            println("this is fine")
+          }
+          if keycode == 8:U8 then editor.&.backspace()
+          else if keycode == 13:U8 then editor.&.enter()
           else if keycode == 74:U8 then editor.&.move_start()
-          else if keycode == 76:U8 then editor.&.delete()
           else if keycode == 77:U8 then editor.&.move_end()
           else if keycode == 79:U8 then editor.&.move_right()
           else if keycode == 80:U8 then editor.&.move_left()
           else if keycode == 81:U8 then editor.&.move_down()
           else if keycode == 82:U8 then editor.&.move_up()
+          else if keycode == 127:U8 then editor.&.delete()
+          else if modifiers.ctrl() & {keycode == 115:U8} then {
+            file.write_file(editor.text.to_slice().to_str().bytes()).unwrap()
+          }
           else stderr."Key down {keycode}{newline}"
         }
         case mouse_wheel(amount) editor.&.scroll(amount)
