@@ -1,4 +1,4 @@
-| Editor  
+| Whirling  
 
 | Colors  
 
@@ -545,9 +545,10 @@ fun tokenize(input: Slice[Char], out: &Vec[Token]) {
   }
 }
 
-| Editor  
+| Whirling  
+| This is the name of the text area itself.
 
-struct Editor {
+struct Whirling {
   text: Vec[Char],
   lines: Vec[U64],
   tokens: Vec[Token],
@@ -556,39 +557,39 @@ struct Editor {
   cursor: U64,
 }
 
-fun editor(text: Str): Editor {
-  var editor = Editor {
-    text = vec[Char](),
-    lines = vec[U64](),
-    tokens = vec[Token](),
+fun whirling(text: Str): Whirling {
+  var whirling = Whirling {
+    text    = vec[Char](),
+    lines   = vec[U64](),
+    tokens  = vec[Token](),
     needs_tokenization = false,
-    scroll = 0:I32,
-    cursor = 0,
+    scroll  = 0:I32,
+    cursor  = 0,
   }
-  for char in text do editor.text.&.push(char)
-  editor.&.text_updated()
-  editor
+  for char in text do whirling.text.&.push(char)
+  whirling.&.text_updated()
+  whirling
 }
 | Calculates lines and tokens based on the text. Is pretty expensive.
-fun text_updated(editor: &Editor) {
-  editor.lines.len = 0
-  editor.lines.&.push(0)
-  for char in editor.text.iter().enumerate() do
-    if char.item == newline then editor.lines.&.push(char.index)
-  tokenize(editor.text.to_slice(), editor.tokens.&)
-  editor.needs_tokenization = false
+fun text_updated(whirling: &Whirling) {
+  whirling.lines.len = 0
+  whirling.lines.&.push(0)
+  for char in whirling.text.iter().enumerate() do
+    if char.item == newline then whirling.lines.&.push(char.index)
+  tokenize(whirling.text.to_slice(), whirling.tokens.&)
+  whirling.needs_tokenization = false
 }
 
 | Given a cursor between 0 and text.len (inclusive), returns the start of the
 | line that the cursor is in. This position is either 0 or right after a newline
 | character.
-fun line_start(editor: Editor, cursor: U64): U64 {
+fun line_start(whirling: Whirling, cursor: U64): U64 {
   loop {
     if cursor == 0 then break
     cursor = cursor - 1
     var is_at_end = false
-    if cursor == editor.text.len then is_at_end = true
-    else if editor.text.get(cursor) == newline then is_at_end = true
+    if cursor == whirling.text.len then is_at_end = true
+    else if whirling.text.get(cursor) == newline then is_at_end = true
     if is_at_end then { cursor = cursor + 1 break }
   }
   cursor
@@ -596,91 +597,92 @@ fun line_start(editor: Editor, cursor: U64): U64 {
 | Given a cursor between 0 and text.len (inclusive), returns the end of the line
 | that the cursor is in. This position is either text.len or it contains a
 | newline character.
-fun line_end(editor: Editor, cursor: U64): U64 {
+fun line_end(whirling: Whirling, cursor: U64): U64 {
   loop {
-    if cursor == editor.text.len then break
-    if editor.text.get(cursor) == newline then break
+    if cursor == whirling.text.len then break
+    if whirling.text.get(cursor) == newline then break
     cursor = cursor + 1
   }
   cursor
 }
 
-fun input(editor: &Editor, str: Str) {
-  editor.text.&.make_space_at(editor.cursor, str.len, 0:U8.to_char())
-  str.chars().copy_to(editor.text.to_slice().subslice(editor.cursor..+str.len))
+fun input(whirling: &Whirling, str: Str) {
+  whirling.text.&.make_space_at(whirling.cursor, str.len, 0:U8.to_char())
+  str.chars().copy_to(
+    whirling.text.to_slice().subslice(whirling.cursor ..+ str.len))
   if not(str.chars().iter().&.contains(newline)) then {
-    editor.tokens.&.make_space_at(editor.cursor, str.len, Token.default_)
-    for line in editor.lines.iter().enumerate() do
-      editor.lines.get_ref(line.index).* =
-        if line.item >= editor.cursor
+    whirling.tokens.&.make_space_at(whirling.cursor, str.len, Token.default_)
+    for line in whirling.lines.iter().enumerate() do
+      whirling.lines.get_ref(line.index).* =
+        if line.item >= whirling.cursor
         then line.item + str.len
         else line.item
-    editor.needs_tokenization = true
-  } else editor.text_updated()
-  editor.cursor = editor.cursor + str.len
-  editor.scroll_to_cursor()
+    whirling.needs_tokenization = true
+  } else whirling.text_updated()
+  whirling.cursor = whirling.cursor + str.len
+  whirling.scroll_to_cursor()
 }
-fun enter(editor: &Editor) { editor.input("{newline}") }
-fun backspace(editor: &Editor) {
-  if editor.cursor == 0 then return {}
-  var index = editor.cursor - 1
-  var removed = editor.text.get(index)
-  editor.text.&.remove(index..+1)
-  if removed == newline then editor.text_updated() else {
-    editor.tokens.&.remove(index..+1)
-    for line in editor.lines.iter().enumerate() do
-      editor.lines.get_ref(line.index).* =
-        if line.item >= editor.cursor
+fun enter(whirling: &Whirling) { whirling.input("{newline}") }
+fun backspace(whirling: &Whirling) {
+  if whirling.cursor == 0 then return {}
+  var index = whirling.cursor - 1
+  var removed = whirling.text.get(index)
+  whirling.text.&.remove(index..+1)
+  if removed == newline then whirling.text_updated() else {
+    whirling.tokens.&.remove(index..+1)
+    for line in whirling.lines.iter().enumerate() do
+      whirling.lines.get_ref(line.index).* =
+        if line.item >= whirling.cursor
         then line.item - 1
         else line.item
-    editor.needs_tokenization = true
+    whirling.needs_tokenization = true
   }
-  editor.cursor = editor.cursor - 1
-  editor.scroll_to_cursor()
+  whirling.cursor = whirling.cursor - 1
+  whirling.scroll_to_cursor()
 }
-fun delete(editor: &Editor) {
-  if editor.cursor == editor.text.len then return {}
-  editor.cursor = editor.cursor + 1
-  editor.backspace()
+fun delete(whirling: &Whirling) {
+  if whirling.cursor == whirling.text.len then return {}
+  whirling.cursor = whirling.cursor + 1
+  whirling.backspace()
 }
 
-fun move_left(editor: &Editor) {
-  if editor.cursor == 0 then return {}
-  editor.cursor = editor.cursor - 1
-  editor.scroll_to_cursor()
+fun move_left(whirling: &Whirling) {
+  if whirling.cursor == 0 then return {}
+  whirling.cursor = whirling.cursor - 1
+  whirling.scroll_to_cursor()
 }
-fun move_right(editor: &Editor) {
-  if editor.cursor == editor.text.len then return {}
-  editor.cursor = editor.cursor + 1
-  editor.scroll_to_cursor()
+fun move_right(whirling: &Whirling) {
+  if whirling.cursor == whirling.text.len then return {}
+  whirling.cursor = whirling.cursor + 1
+  whirling.scroll_to_cursor()
 }
-fun move_up(editor: &Editor) {
-  var start_of_line = editor.line_start(editor.cursor)
+fun move_up(whirling: &Whirling) {
+  var start_of_line = whirling.line_start(whirling.cursor)
   if start_of_line == 0 then return {}
-  var chars_before = editor.cursor - start_of_line
+  var chars_before = whirling.cursor - start_of_line
   var end_of_previous_line = start_of_line - 1
-  var start_of_previous_line = editor.line_start(end_of_previous_line)
-  editor.cursor = {start_of_previous_line + chars_before}
+  var start_of_previous_line = whirling.line_start(end_of_previous_line)
+  whirling.cursor = {start_of_previous_line + chars_before}
     .clamp(0, end_of_previous_line)
-  editor.scroll_to_cursor()
+  whirling.scroll_to_cursor()
 }
-fun move_down(editor: &Editor) {
-  var end_of_line = editor.line_end(editor.cursor)
-  if end_of_line == editor.text.len then return {}
-  var start_of_line = editor.line_start(editor.cursor)
-  var chars_before = editor.cursor - start_of_line
+fun move_down(whirling: &Whirling) {
+  var end_of_line = whirling.line_end(whirling.cursor)
+  if end_of_line == whirling.text.len then return {}
+  var start_of_line = whirling.line_start(whirling.cursor)
+  var chars_before = whirling.cursor - start_of_line
   var start_of_next_line = end_of_line + 1
-  var end_of_next_line = editor.line_end(start_of_next_line)
-  editor.cursor = {start_of_next_line + chars_before}.clamp(0, end_of_next_line)
-  editor.scroll_to_cursor()
+  var end_of_next_line = whirling.line_end(start_of_next_line)
+  whirling.cursor = {start_of_next_line + chars_before}.clamp(0, end_of_next_line)
+  whirling.scroll_to_cursor()
 }
-fun move_start(editor: &Editor) {
-  editor.cursor = editor.line_start(editor.cursor)
-  editor.scroll_to_cursor()
+fun move_start(whirling: &Whirling) {
+  whirling.cursor = whirling.line_start(whirling.cursor)
+  whirling.scroll_to_cursor()
 }
-fun move_end(editor: &Editor) {
-  editor.cursor = editor.line_end(editor.cursor)
-  editor.scroll_to_cursor()
+fun move_end(whirling: &Whirling) {
+  whirling.cursor = whirling.line_end(whirling.cursor)
+  whirling.scroll_to_cursor()
 }
 
 | Control + arrow keys move one word.
@@ -726,42 +728,40 @@ fun find_word_boundary[I](iter: &Iter[Char, I]): U64 {
     consumed = consumed + 1
   }
 }
-fun move_ctrl_left(editor: &Editor) {
-  var amount_to_move = editor.text.to_slice()
-    .subslice(0..editor.cursor).rev_iter().&.find_word_boundary()
-  editor.cursor = editor.cursor - amount_to_move
-  editor.scroll_to_cursor()
+fun move_ctrl_left(whirling: &Whirling) {
+  var amount_to_move = whirling.text.to_slice()
+    .subslice(0..whirling.cursor).rev_iter().&.find_word_boundary()
+  whirling.cursor = whirling.cursor - amount_to_move
+  whirling.scroll_to_cursor()
 }
-fun move_ctrl_right(editor: &Editor) {
-  var amount_to_move = editor.text.to_slice()
-    .subslice(editor.cursor..editor.text.len).iter().&.find_word_boundary()
-  editor.cursor = editor.cursor + amount_to_move
-  editor.scroll_to_cursor()
-}
-
-fun scroll(editor: &Editor, amount: I32) {
-  editor.scroll = editor.scroll + {30:I32 * pixel_size * amount}
+fun move_ctrl_right(whirling: &Whirling) {
+  var amount_to_move = whirling.text.to_slice()
+    .subslice(whirling.cursor..whirling.text.len).iter().&.find_word_boundary()
+  whirling.cursor = whirling.cursor + amount_to_move
+  whirling.scroll_to_cursor()
 }
 
-fun scroll_to_cursor(editor: &Editor) {
+fun scroll(whirling: &Whirling, amount: I32) {
+  whirling.scroll = whirling.scroll + {30:I32 * pixel_size * amount}
+}
+
+fun scroll_to_cursor(whirling: &Whirling) {
   var line = 0
-  for l in editor.lines.iter().enumerate() do
-    if l.item > editor.cursor then { line = l.index break }
+  for l in whirling.lines.iter().enumerate() do
+    if l.item > whirling.cursor then { line = l.index break }
   var scroll_so_line_is_at_center = 0:I32 - 20:I32
     - {9:I32 * pixel_size * line.to_I32()}
     + {editor_size.y.to_U64() / 2}.to_I32()
   var leeway = {editor_size.y.to_U64() / 4}.to_I32()
-  editor.scroll = editor.scroll.clamp(
+  whirling.scroll = whirling.scroll.clamp(
     scroll_so_line_is_at_center - leeway,
     scroll_so_line_is_at_center + leeway,
   )
 }
 
-| Rendering  
-| All letters are sized 5x8 pixels.
-
 var pixel_size = 2:I32
 
+| All letters are sized 5x8 pixels.
 struct Glyph { a: U8, b: U8, c: U8, d: U8, e: U8 }
 fun glyph(a: U64, b: U64, c: U64, d: U64, e: U64): Glyph {
   Glyph { a = a.to_U8(), b = b.to_U8(), c = c.to_U8(), d = d.to_U8(), e = e.to_U8() }
@@ -889,7 +889,7 @@ fun render(renderer: Renderer, char: Char, offset: Offset) {
 
 var editor_size = 1100:I32 @ 900:I32
 
-fun render(renderer: Renderer, editor: Editor) {
+fun render(renderer: Renderer, whirling: Whirling) {
   renderer.set_color(background)
   renderer.clear()
   renderer.set_color(foreground)
@@ -899,24 +899,24 @@ fun render(renderer: Renderer, editor: Editor) {
   var line_height = 9:I32 * pixel_size
 
   var visible_lines =
-    {{0:I32 - 20:I32 - editor.scroll}
+    {{0:I32 - 20:I32 - whirling.scroll}
       .max(0:I32).to_U64() / line_height.to_U64()}
     ..
-    {{0:I32 - 20:I32 - editor.scroll + editor_size.y}
-      .max(0:I32).to_U64() / line_height.to_U64()}.clamp(0, editor.lines.len)
+    {{0:I32 - 20:I32 - whirling.scroll + editor_size.y}
+      .max(0:I32).to_U64() / line_height.to_U64()}.clamp(0, whirling.lines.len)
   | println("lines {visible_lines} are visible ({visible_lines.end - visible_lines.start} lines)")
 
-  var visible_chars = {editor.lines.get(visible_lines.start)}
-    ..{if visible_lines.end == editor.lines.len
-       then editor.text.len
-       else editor.lines.get(visible_lines.end)}
+  var visible_chars = {whirling.lines.get(visible_lines.start)}
+    ..{if visible_lines.end == whirling.lines.len
+       then whirling.text.len
+       else whirling.lines.get(visible_lines.end)}
   | println("chars {visible_chars} are visible")
 
-  var y = 20:I32 + editor.scroll + {line_height * visible_lines.start.to_I32()}
+  var y = 20:I32 + whirling.scroll + {line_height * visible_lines.start.to_I32()}
 
   | Line numbers
   {
-    var biggest = editor.lines.len
+    var biggest = whirling.lines.len
     var divisor = 1
     loop if biggest / divisor < 10 then break else divisor = divisor * 10
 
@@ -938,12 +938,12 @@ fun render(renderer: Renderer, editor: Editor) {
 
   | Characters
   for index in visible_chars do {
-    var char = editor.text.get(index)
+    var char = whirling.text.get(index)
     var x = 20:I32 + {4:I32 * 6:I32 * pixel_size} + 10:I32
       + {col.to_I32() * 6:I32 * pixel_size}
 
     var color =
-      switch editor.tokens.get(index)
+      switch whirling.tokens.get(index)
       case comment         lime
       case comment_title   yellow
       case literal         red
@@ -957,7 +957,7 @@ fun render(renderer: Renderer, editor: Editor) {
       case punctuation     grey
       case default_        foreground
 
-    if index == editor.cursor then {
+    if index == whirling.cursor then {
       renderer.set_color(grey)
       renderer.draw(
         {x @ {y - pixel_size}} @ {{2:I32 * pixel_size} @ {9:I32 * pixel_size}})
@@ -972,6 +972,50 @@ fun render(renderer: Renderer, editor: Editor) {
       col = col + 1
       renderer.render(char, x @ y)
     }
+  }
+}
+
+| Rags  
+| This is the entire editor.
+
+struct Rags {
+  whirling: Whirling,
+  overlay: Overlay,
+}
+enum Overlay { none, outline }
+
+fun rags(text: Str): Rags {
+  Rags { whirling = whirling(text), overlay = Overlay.none }
+}
+
+fun outline(rags: &Rags) {
+  rags.overlay =
+    if rags.overlay is outline then Overlay.none else Overlay.outline
+}
+
+fun input(rags: &Rags, str: Str) { rags.whirling.&.input(str) }
+fun enter(rags: &Rags) { rags.whirling.&.enter() }
+fun backspace(rags: &Rags) { rags.whirling.&.backspace() }
+fun delete(rags: &Rags) { rags.whirling.&.delete() }
+fun move_left(rags: &Rags) { rags.whirling.&.move_left() }
+fun move_right(rags: &Rags) { rags.whirling.&.move_right() }
+fun move_up(rags: &Rags) { rags.whirling.&.move_up() }
+fun move_down(rags: &Rags) { rags.whirling.&.move_down() }
+fun move_start(rags: &Rags) { rags.whirling.&.move_start() }
+fun move_end(rags: &Rags) { rags.whirling.&.move_end() }
+fun move_ctrl_left(rags: &Rags) { rags.whirling.&.move_ctrl_left() }
+fun move_ctrl_right(rags: &Rags) { rags.whirling.&.move_ctrl_right() }
+fun scroll(rags: &Rags, amount: I32) { rags.whirling.&.scroll(amount) }
+
+fun render(renderer: Renderer, rags: Rags) {
+  renderer.render(rags.whirling)
+
+  switch rags.overlay
+  case none {}
+  case outline {
+    renderer.set_color(yellow)
+    renderer.draw(
+      {0:I32 @ 0:I32} @ {{5:I32 * pixel_size} @ {8:I32 * pixel_size}})
   }
 }
 
@@ -991,9 +1035,9 @@ fun main(args: Slice[Str]): Never {
   )
   var renderer = window.create_renderer()
 
-  var editor = editor(content)
+  var rags = rags(content)
 
-  renderer.render(editor)
+  renderer.render(rags)
   renderer.present()
   loop {
     var quit = false
@@ -1007,45 +1051,51 @@ fun main(args: Slice[Str]): Never {
         case quit { quit = true break }
         case text_input(text) {
           stderr."Text input {text}{newline}"
-          editor.&.input(text)
+          rags.&.input(text)
         }
         case key_down(keydown) {
           var keycode = keydown.keycode
           var modifiers = keydown.modifiers
 
-          if keycode == 8:U8 then editor.&.backspace()
-          else if keycode == 13:U8 then editor.&.enter()
-          else if keycode == 74:U8 then editor.&.move_start()
-          else if keycode == 77:U8 then editor.&.move_end()
+          if keycode == 8:U8 then rags.&.backspace()
+          else if keycode == 13:U8 then rags.&.enter()
+          else if keycode == 74:U8 then rags.&.move_start()
+          else if keycode == 77:U8 then rags.&.move_end()
           else if keycode == 79:U8 then {
             if modifiers.ctrl()
-            then editor.&.move_ctrl_right()
-            else editor.&.move_right()
+            then rags.&.move_ctrl_right()
+            else rags.&.move_right()
           }
           else if keycode == 80:U8 then {
             if modifiers.ctrl()
-            then editor.&.move_ctrl_left()
-            else editor.&.move_left()
+            then rags.&.move_ctrl_left()
+            else rags.&.move_left()
           }
-          else if keycode == 81:U8 then editor.&.move_down()
-          else if keycode == 82:U8 then editor.&.move_up()
-          else if keycode == 127:U8 then editor.&.delete()
+          else if keycode == 81:U8 then rags.&.move_down()
+          else if keycode == 82:U8 then rags.&.move_up()
+          else if keycode == 103:U8 then {
+            |if modifiers.ctrl() then rags.&.go_to()
+          }
+          else if keycode == 111:U8 then {
+            if modifiers.ctrl() then rags.&.outline()
+          }
+          else if keycode == 127:U8 then rags.&.delete()
           else if modifiers.ctrl() & {keycode == 115:U8} then {
-            file.write_file(editor.text.to_slice().to_str().bytes()).unwrap()
+            file.write_file(rags.whirling.text.to_slice().to_str().bytes()).unwrap()
           }
           else stderr."Key down {keycode}{newline}"
         }
-        case mouse_wheel(amount) editor.&.scroll(amount)
+        case mouse_wheel(amount) rags.&.scroll(amount)
       }
     }
     if quit then break
 
-    renderer.render(editor)
+    renderer.render(rags)
     renderer.present()
 
     if not(event_happened) then {
-      if editor.needs_tokenization
-      then editor.&.text_updated()
+      if rags.whirling.needs_tokenization
+      then rags.whirling.&.text_updated()
       else delay(16)
       continue
     }
