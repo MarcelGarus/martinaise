@@ -3473,7 +3473,14 @@ fun assemble[Assembler](
       | libc malloc guarantees to only give out memory that is properly aligned
       | for any type. It just uses the maximum alignment on the system.
       text.mov(rdi, r8)
+      | make the call with a 16-bytes aligned stack
+      text.mov(rbp, rsp)
+      text.and(rsp, 16#fffffffffffffff0)
+      text.push(rbp)
+      text.sub(rsp, 8)
       text.call("malloc")
+      text.add(rsp, 8)
+      text.pop(rsp)
       text.ret()
     } else {
       var amount = r8
@@ -3871,6 +3878,7 @@ fun db(asm: &Nasm, bytes: Slice[U8])  { asm."  db {comma_separated(bytes)}{newli
 | Instructions
 fun add(asm: &Nasm, a: Reg64, b: U64)           { asm."  add {a}, {b}{newline}" }
 fun add(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  add {a}, {b}{newline}" }
+fun and(asm: &Nasm, a: Reg64, b: U64)           { asm."  and {a}, {b}{newline}" }
 fun and(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  and {a}, {b}{newline}" }
 fun call(asm: &Nasm, label: Str)                { asm."  call {label.mangle()}{newline}" }
 fun cmp(asm: &Nasm, a: Reg8, b: U8)             { asm."  cmp {a}, {b}{newline}" }
@@ -3979,6 +3987,7 @@ fun db(asm: &Fasm, bytes: Slice[U8])  { asm."  db {comma_separated(bytes)}{newli
 | Instructions
 fun add(asm: &Fasm, a: Reg64, b: U64)           { asm."  add {a}, {b}{newline}" }
 fun add(asm: &Fasm, a: Reg64, b: Reg64)         { asm."  add {a}, {b}{newline}" }
+fun and(asm: &Fasm, a: Reg64, b: U64)           { asm."  and {a}, {b}{newline}" }
 fun and(asm: &Fasm, a: Reg64, b: Reg64)         { asm."  and {a}, {b}{newline}" }
 fun call(asm: &Fasm, label: Str)                { asm."  call {label.mangle()}{newline}" }
 fun cmp(asm: &Fasm, a: Reg8, b: U8)             { asm."  cmp {a}, {b}{newline}" }
