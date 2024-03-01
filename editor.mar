@@ -79,7 +79,7 @@ fun raw_sdl_quit() asm {
   call SDL_Quit
   add rsp, 8
   pop rsp
-	; return
+  ; return
   ret
 }
 fun raw_sdl_get_error(): U64 asm {
@@ -91,7 +91,7 @@ fun raw_sdl_get_error(): U64 asm {
   call SDL_GetError
   add rsp, 8
   pop rsp
-	; return
+  ; return
   mov r8, [rsp + 8]
   mov [r8], rax
   ret
@@ -106,7 +106,7 @@ fun raw_sdl_delay(millis: U64) asm {
   call SDL_Delay
   add rsp, 8
   pop rsp
-	; return
+  ; return
   ret
 }
 
@@ -142,7 +142,7 @@ fun raw_sdl_destroy_window(window: Address) asm {
   call SDL_DestroyWindow
   add rsp, 8
   pop rsp
-	; return
+  ; return
   ret
 }
 
@@ -173,7 +173,7 @@ fun raw_sdl_destroy_renderer(renderer: Address) asm {
   call SDL_DestroyRenderer
   add rsp, 8
   pop rsp
-	; return
+  ; return
   ret
 }
 
@@ -247,7 +247,7 @@ fun raw_sdl_poll_event(event: Address): U64 asm {
   call SDL_PollEvent
   add rsp, 8
   pop rsp
-	; return
+  ; return
   mov r8, [rsp + 8]
   mov [r8], rax
   ret
@@ -887,7 +887,7 @@ fun render(renderer: Renderer, char: Char, offset: Offset) {
     }
 }
 
-var editor_size = 1000:I32 @ 1000:I32
+var editor_size = 1100:I32 @ 900:I32
 
 fun render(renderer: Renderer, editor: Editor) {
   renderer.set_color(background)
