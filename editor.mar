@@ -944,18 +944,18 @@ fun render(renderer: Renderer, editor: Editor) {
 
     var color =
       switch editor.tokens.get(index)
-      case comment lime
-      case comment_title yellow
-      case literal red
+      case comment         lime
+      case comment_title   yellow
+      case literal         red
       case literal_support dark_red
-      case declaration blue
-      case control purple
-      case type green
-      case function orange
-      case name light_yellow
-      case operator orange
-      case punctuation grey
-      case default_ foreground
+      case declaration     blue
+      case control         purple
+      case type            green
+      case function        orange
+      case name            light_yellow
+      case operator        orange
+      case punctuation     grey
+      case default_        foreground
 
     if index == editor.cursor then {
       renderer.set_color(grey)
@@ -985,7 +985,10 @@ fun main(args: Slice[Str]): Never {
   var content = file.read_file().unwrap().to_str()
 
   init_sdl().unwrap()
-  var window = create_window("Martinaise Editor", 50:I32 @ 50:I32, editor_size)
+  var window = create_window(
+    "{file} - Martinaise Editor",
+    50:I32 @ 50:I32, editor_size
+  )
   var renderer = window.create_renderer()
 
   var editor = editor(content)
