@@ -2109,6 +2109,7 @@ fun pop[T](vec: &Vec[T]): T {
   vec.len = vec.len.dec()
   vec.data.get(vec.len)
 }
+fun clear[T](vec: &Vec[T]) { vec.len = 0 }
 fun get[T](vec: Vec[T], index: U64): T { vec.data.get(index) }
 fun get_maybe[T](vec: Vec[T], index: U64): Maybe[T] {
   vec.data.get_maybe(index)

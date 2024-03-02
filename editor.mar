@@ -856,11 +856,7 @@ fun move_ctrl_right(whirling: &Whirling) {
 fun scroll(whirling: &Whirling, amount: I32) {
   whirling.scroll = whirling.scroll + {30:I32 * pixel_size * amount}
 }
-
-fun scroll_to_cursor(whirling: &Whirling) {
-  var line = 0
-  for l in whirling.lines.iter().enumerate() do
-    if l.item > whirling.cursor then { line = l.index break }
+fun scroll_to_line(whirling: &Whirling, line: U64) {
   var scroll_so_line_is_at_center = 0:I32 - 20:I32
     - {9:I32 * pixel_size * line.to_I32()}
     + {editor_size.y.to_U64() / 2}.to_I32()
@@ -869,6 +865,45 @@ fun scroll_to_cursor(whirling: &Whirling) {
     scroll_so_line_is_at_center - leeway,
     scroll_so_line_is_at_center + leeway,
   )
+}
+fun scroll_to_cursor(whirling: &Whirling) {
+  var line = 0
+  for l in whirling.lines.iter().enumerate() do
+    if l.item > whirling.cursor then { line = l.index break }
+  whirling.scroll_to_line(line)
+}
+
+fun handle_event(whirling: &Whirling, event: Event) {
+  switch event
+  case text_input(text) whirling.&.input(text)
+  case key_down(keydown) {
+    var keycode = keydown.keycode
+    var modifiers = keydown.modifiers
+
+    if keycode == 8:U8 then whirling.&.backspace()
+    else if keycode == 13:U8 then whirling.&.enter()
+    else if keycode == 74:U8 then whirling.&.move_start()
+    else if keycode == 77:U8 then whirling.&.move_end()
+    else if keycode == 79:U8 then {
+      if modifiers.ctrl()
+      then whirling.&.move_ctrl_right()
+      else whirling.&.move_right()
+    }
+    else if keycode == 80:U8 then {
+      if modifiers.ctrl()
+      then whirling.&.move_ctrl_left()
+      else whirling.&.move_left()
+    }
+    else if keycode == 81:U8 then whirling.&.move_down()
+    else if keycode == 82:U8 then whirling.&.move_up()
+    else if keycode == 103:U8 then {
+      |if modifiers.ctrl() then whirling.&.go_to()
+    }
+    else if keycode == 127:U8 then whirling.&.delete()
+    else stderr."Key down {keycode}{newline}"
+  }
+  case mouse_wheel(amount) whirling.&.scroll(amount)
+  default {}
 }
 
 var pixel_size = 2:I32
@@ -1087,49 +1122,183 @@ fun render(renderer: Renderer, whirling: Whirling) {
   }
 }
 
+| Goto  
+| Mode where you can enter a line number and you jump to that line. Press enter
+| to move the cursor to the line, or escape to stay where you are.
+
+struct Goto { whirling: &Whirling, line: U64, active: Bool }
+
+fun goto(whirling: &Whirling): Goto {
+  Goto { whirling, line = 0, active = false }
+}
+fun reset(goto: &Goto) {
+  goto.line   = 0
+  goto.active = false
+}
+| returns whether this mode should be exited
+fun handle_event(goto: &Goto, event: Event): Bool {
+  goto.active = true
+  switch event
+  case key_down(keydown) {
+    var keycode = keydown.keycode
+    var modifiers = keydown.modifiers
+
+    if {48:U8 ..= 57:U8}.contains(keycode) then {
+      | a digit key was pressed
+      var digit = {keycode - 48:U8}.to_U64()
+      goto.line = goto.line * 10 + digit
+      goto.whirling.scroll_to_line(goto.line.clamp(0, goto.whirling.lines.len - 1))
+    }
+    if keycode == 8:U8 then {
+      | backspace was pressed
+      goto.line = goto.line / 10
+      goto.whirling.scroll_to_line(goto.line.clamp(0, goto.whirling.lines.len - 1))
+    }
+    if keycode == 13:U8 then {
+      | enter was pressed
+      var line = goto.line.clamp(0, goto.whirling.lines.len - 1)
+      goto.whirling.cursor = goto.whirling.lines.get(line)
+      return true
+    }
+    stderr."Key down {keycode}{newline}"
+  }
+  case mouse_wheel goto.whirling.&.handle_event(event)
+  default {}
+  return false
+}
+
+fun render(renderer: Renderer, goto: Goto) {
+  renderer.render(goto.whirling.*)
+}
+
+| Outline  
+| An outline view containing all definitions and header comments so you can move
+| a great distance quickly.
+
+struct Outline {
+  whirling: &Whirling,
+  parts: Vec[OutlinePart],
+}
+struct OutlinePart { offset: U64, text: Str }
+
+fun outline(whirling: &Whirling): Outline {
+  Outline { whirling, parts = vec[OutlinePart]() }
+}
+fun reset(outline: &Outline) {
+  outline.parts.&.clear()
+  for i in 0..outline.whirling.text.len do {
+    var is_start_of_line = i == 0
+    if not(is_start_of_line) then
+      if outline.whirling.text.get(i - 1) == newline then is_start_of_line = true
+    if not(is_start_of_line) then continue
+    var rest = outline.whirling.text.to_slice().without_first(i).to_str()
+
+    var is_def = rest.starts_with("fun ") / rest.starts_with("var ")
+      / rest.starts_with("struct ") / rest.starts_with("enum ")
+      / rest.starts_with("opaque ")
+    if not(is_def) then continue
+
+    var end = i
+    loop if end >= outline.whirling.text.len then break else {
+      var char = outline.whirling.text.get(end)
+      if {char == #=} / {char == #{} then break
+      end = end + 1
+    }
+    outline.parts.&.push(OutlinePart {
+      offset = i,
+      text = outline.whirling.text.to_str().substr(i, end),
+    })
+  }
+}
+
+fun handle_event(outline: &Outline, event: Event) {}
+
+fun render(renderer: Renderer, outline: Outline) {
+  renderer.set_color(foreground)
+  renderer.draw({0:I32 @ 0:I32} @ {{5:I32 * pixel_size} @ {8:I32 * pixel_size}})
+
+  for part in outline.parts.iter().enumerate() do {
+    var y = part.index.to_I32() * 9:I32 * pixel_size
+    for char in part.item.text.iter().enumerate() do {
+      var x = 20:I32 + {4:I32 * 6:I32 * pixel_size} + 10:I32
+        + {char.index.to_I32() * 6:I32 * pixel_size}
+      renderer.render(char.item, x @ y)
+    }
+    | if index == whirling.cursor then {
+    |   renderer.set_color(grey)
+    |   renderer.draw(
+    |     {x @ {y - pixel_size}} @ {{2:I32 * pixel_size} @ {9:I32 * pixel_size}})
+    | }
+  }
+}
+
 | Rags  
 | This is the entire editor.
 
 struct Rags {
-  whirling: Whirling,
-  overlay: Overlay,
+  file: Str,
+  whirling: &Whirling,
+  goto: Goto,
+  outline: Outline,
+  mode: RagsMode,
 }
-enum Overlay { none, outline }
+enum RagsMode { edit, goto, outline }
 
-fun rags(text: Str): Rags {
-  Rags { whirling = whirling(text), overlay = Overlay.none }
-}
-
-fun outline(rags: &Rags) {
-  rags.overlay =
-    if rags.overlay is outline then Overlay.none else Overlay.outline
-}
-
-fun input(rags: &Rags, str: Str) { rags.whirling.&.input(str) }
-fun enter(rags: &Rags) { rags.whirling.&.enter() }
-fun backspace(rags: &Rags) { rags.whirling.&.backspace() }
-fun delete(rags: &Rags) { rags.whirling.&.delete() }
-fun move_left(rags: &Rags) { rags.whirling.&.move_left() }
-fun move_right(rags: &Rags) { rags.whirling.&.move_right() }
-fun move_up(rags: &Rags) { rags.whirling.&.move_up() }
-fun move_down(rags: &Rags) { rags.whirling.&.move_down() }
-fun move_start(rags: &Rags) { rags.whirling.&.move_start() }
-fun move_end(rags: &Rags) { rags.whirling.&.move_end() }
-fun move_ctrl_left(rags: &Rags) { rags.whirling.&.move_ctrl_left() }
-fun move_ctrl_right(rags: &Rags) { rags.whirling.&.move_ctrl_right() }
-fun scroll(rags: &Rags, amount: I32) { rags.whirling.&.scroll(amount) }
-
-fun render(renderer: Renderer, rags: Rags) {
-  renderer.render(rags.whirling)
-
-  switch rags.overlay
-  case none {}
-  case outline {
-    renderer.set_color(yellow)
-    renderer.draw(
-      {0:I32 @ 0:I32} @ {{5:I32 * pixel_size} @ {8:I32 * pixel_size}})
+fun rags(file: Str, text: Str): Rags {
+  var whirling = whirling(text).put_on_heap()
+  Rags {
+    file,
+    whirling,
+    goto = goto(whirling),
+    outline = outline(whirling),
+    mode = RagsMode.edit,
   }
 }
+
+fun handle_event(rags: &Rags, event: Event) {
+  if event is key_down(keydown) then {
+    var keycode = keydown.keycode
+    var modifiers = keydown.modifiers
+
+    | Ctrl + G enters goto mode
+    if keycode == 103:U8 & modifiers.ctrl() then {
+      rags.mode = if rags.mode is goto then RagsMode.edit else {
+        rags.goto.&.reset()
+        RagsMode.goto
+      }
+      return {}
+    }
+    | Ctrl + O enters outline mode
+    if keycode == 111:U8 & modifiers.ctrl() then {
+      rags.mode = if rags.mode is outline then RagsMode.edit else {
+        rags.outline.&.reset()
+        RagsMode.outline
+      }
+      return {}
+    }
+    | Ctrl + S saves
+    if keycode == 115:U8 & modifiers.ctrl() then {
+      var content = rags.whirling.text.to_slice().to_str().bytes()
+      rags.file.write_file(content).unwrap()
+      return {}
+    }
+    stderr."Key down {keycode}{newline}"
+  }
+
+  switch rags.mode
+  case edit rags.whirling.&.handle_event(event)
+  case goto if rags.goto.&.handle_event(event) then rags.mode = RagsMode.edit
+  case outline rags.outline.&.handle_event(event)
+}
+
+fun render(renderer: Renderer, rags: Rags) {
+  switch rags.mode
+  case edit renderer.render(rags.whirling.*)
+  case goto renderer.render(rags.goto)
+  case outline renderer.render(rags.outline)
+}
+
+| The Main Part  
 
 fun main(args: Slice[Str]): Never {
   if args.len < 2 then {
@@ -1147,28 +1316,7 @@ fun main(args: Slice[Str]): Never {
   )
   var renderer = window.create_renderer()
 
-  | var texture = renderer.create_texture(TextureAccess.target, 8, 8)
-  | loop {
-  |   | println("Setting target")
-  |   renderer.set_target(texture)
-  |   | println("Setting color")
-  |   | println("Drawing")
-  |   renderer.set_color(background)
-  |   renderer.clear()
-  |   renderer.set_color(foreground)
-  |   renderer.draw(0:I32 @ 0:I32)
-  |   renderer.draw(1:I32 @ 1:I32)
-  |   renderer.draw(7:I32 @ 7:I32)
-  |   | println("Resetting target")
-  |   renderer.reset_target_to_window()
-  |   | println("Drawing")
-  |   renderer.draw(texture)
-  |   renderer.present()
-  |   delay(20)
-  |   if poll_event() is some(event) then if event is quit then break
-  | }
-
-  var rags = rags(content)
+  var rags = rags(file, content)
 
   renderer.render(rags)
   renderer.present()
@@ -1182,43 +1330,7 @@ fun main(args: Slice[Str]): Never {
         event_happened = true
         switch event
         case quit { quit = true break }
-        case text_input(text) {
-          stderr."Text input {text}{newline}"
-          rags.&.input(text)
-        }
-        case key_down(keydown) {
-          var keycode = keydown.keycode
-          var modifiers = keydown.modifiers
-
-          if keycode == 8:U8 then rags.&.backspace()
-          else if keycode == 13:U8 then rags.&.enter()
-          else if keycode == 74:U8 then rags.&.move_start()
-          else if keycode == 77:U8 then rags.&.move_end()
-          else if keycode == 79:U8 then {
-            if modifiers.ctrl()
-            then rags.&.move_ctrl_right()
-            else rags.&.move_right()
-          }
-          else if keycode == 80:U8 then {
-            if modifiers.ctrl()
-            then rags.&.move_ctrl_left()
-            else rags.&.move_left()
-          }
-          else if keycode == 81:U8 then rags.&.move_down()
-          else if keycode == 82:U8 then rags.&.move_up()
-          else if keycode == 103:U8 then {
-            |if modifiers.ctrl() then rags.&.go_to()
-          }
-          else if keycode == 111:U8 then {
-            if modifiers.ctrl() then rags.&.outline()
-          }
-          else if keycode == 127:U8 then rags.&.delete()
-          else if modifiers.ctrl() & {keycode == 115:U8} then {
-            file.write_file(rags.whirling.text.to_slice().to_str().bytes()).unwrap()
-          }
-          else stderr."Key down {keycode}{newline}"
-        }
-        case mouse_wheel(amount) rags.&.scroll(amount)
+        default rags.&.handle_event(event)
       }
     }
     if quit then break
