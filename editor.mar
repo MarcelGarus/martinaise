@@ -177,6 +177,57 @@ fun raw_sdl_destroy_renderer(renderer: Address) asm {
   ret
 }
 
+fun raw_sdl_create_texture(
+  renderer: Address, format: U32, access: I32, width: I32, height: I32
+): Address asm {
+  mov rdi, [rsp + 16] ; renderer
+  mov rsi, [rsp + 24] ; format
+  mov rdx, [rsp + 32] ; access
+  mov rcx, [rsp + 40] ; width
+  mov r8, [rsp + 48]  ; height
+  mov r9, 4
+  ; make the call with a 16-bytes-aligned stack
+  mov rbp, rsp
+  and rsp, 0xfffffffffffffff0
+  push rbp
+  sub rsp, 8
+  call SDL_CreateTexture
+  add rsp, 8
+  pop rsp
+  ; return
+  mov r8, [rsp + 8]
+  mov [r8], rax
+  ret
+}
+fun raw_sdl_destroy_texture(texture: Address) asm {
+  mov rdi, [rsp + 16]
+  ; make the call with a 16-bytes-aligned stack
+  mov rbp, rsp
+  and rsp, 0xfffffffffffffff0
+  push rbp
+  sub rsp, 8
+  call SDL_DestroyTexture
+  add rsp, 8
+  pop rsp
+  ; return
+  ret
+}
+
+fun raw_sdl_set_render_target(renderer: Address, texture: Address) asm {
+  mov rdi, [rsp + 16]
+  mov rsi, [rsp + 24] ; format
+  ; make the call with a 16-bytes-aligned stack
+  mov rbp, rsp
+  and rsp, 0xfffffffffffffff0
+  push rbp
+  sub rsp, 8
+  call SDL_SetRenderTarget
+  add rsp, 8
+  pop rsp
+  ; return
+  ret
+}
+
 fun raw_sdl_set_render_draw_color(
   renderer: Address, r: U64, g: U64, b: U64, a: U64
 ) asm {
@@ -204,6 +255,39 @@ fun raw_sdl_render_clear(renderer: Address) asm {
   push rbp
   sub rsp, 8
   call SDL_RenderClear
+  add rsp, 8
+  pop rsp
+  ; return
+  ret
+}
+fun raw_sdl_render_copy(
+  renderer: Address, texture: Address, src: Address, dest: Address
+) asm {
+  mov rdi, [rsp + 16] ; renderer
+  mov rsi, [rsp + 24] ; texture
+  mov rdx, [rsp + 32] ; src
+  mov rcx, [rsp + 40] ; dst
+  ; make the call with a 16-bytes-aligned stack
+  mov rbp, rsp
+  and rsp, 0xfffffffffffffff0
+  push rbp
+  sub rsp, 8
+  call SDL_RenderCopy
+  add rsp, 8
+  pop rsp
+  ; return
+  ret
+}
+fun raw_sdl_render_draw_point(renderer: Address, x: I32, y: I32) asm {
+  mov rdi, [rsp + 16] ; renderer
+  mov rsi, [rsp + 24] ; x
+  mov rdx, [rsp + 28] ; y
+  ; make the call with a 16-bytes-aligned stack
+  mov rbp, rsp
+  and rsp, 0xfffffffffffffff0
+  push rbp
+  sub rsp, 8
+  call SDL_RenderDrawPoint
   add rsp, 8
   pop rsp
   ; return
@@ -288,19 +372,47 @@ fun create_renderer(window: Window): Renderer {
 }
 fun destroy(renderer: Renderer) { renderer.handle.raw_sdl_destroy_renderer() }
 
+| A texture is a buffer for pixel data.
+struct Texture { handle: Address }
+enum TextureAccess { static, streaming, target }
+
+fun create_texture(
+  renderer: Renderer, access: TextureAccess, width: U64, height: U64
+): Texture {
+  var handle = renderer.handle.raw_sdl_create_texture(
+    372645892:U32, | SDL_PIXELFORMAT_ARGB8888
+    switch access
+    case static 0:I32
+    case streaming 1:I32
+    case target 2:I32,
+    width.to_I32(),
+    height.to_I32(),
+  )
+  Texture { handle }
+}
+fun destroy(texture: Texture) { texture.handle.raw_sdl_destroy_texture() }
+
+fun set_target(renderer: Renderer, texture: Texture) {
+  renderer.handle.raw_sdl_set_render_target(texture.handle)
+}
+fun reset_target_to_window(renderer: Renderer) {
+  renderer.handle.raw_sdl_set_render_target(null)
+}
+
 fun set_color(renderer: Renderer, color: Color) {
   renderer.handle.raw_sdl_set_render_draw_color(
     color.r.to_U64(), color.g.to_U64(), color.b.to_U64(), 16#ff)
 }
 fun clear(renderer: Renderer) { renderer.handle.raw_sdl_render_clear() }
-fun draw(renderer: Renderer, rect: Rect) {
-  var sdl_rect = SdlRect {
-    x = rect.offset.x, y = rect.offset.y,
-    w = rect.size.x,   h = rect.size.y,
-  }
-  renderer.handle.raw_sdl_render_fill_rect(sdl_rect.&.to_address())
+fun draw(renderer: Renderer, point: Offset) {
+  renderer.handle.raw_sdl_render_draw_point(point.x, point.y)
 }
-struct SdlRect { x: I32, y: I32, w: I32, h: I32 }
+fun draw(renderer: Renderer, rect: Rect) {
+  renderer.handle.raw_sdl_render_fill_rect(rect.&.to_address())
+}
+fun draw(renderer: Renderer, texture: Texture) {
+  renderer.handle.raw_sdl_render_copy(texture.handle, null, null)
+}
 fun present(renderer: Renderer) { renderer.handle.raw_sdl_render_present() }
 
 | Event handling.
@@ -1034,6 +1146,27 @@ fun main(args: Slice[Str]): Never {
     50:I32 @ 50:I32, editor_size
   )
   var renderer = window.create_renderer()
+
+  | var texture = renderer.create_texture(TextureAccess.target, 8, 8)
+  | loop {
+  |   | println("Setting target")
+  |   renderer.set_target(texture)
+  |   | println("Setting color")
+  |   | println("Drawing")
+  |   renderer.set_color(background)
+  |   renderer.clear()
+  |   renderer.set_color(foreground)
+  |   renderer.draw(0:I32 @ 0:I32)
+  |   renderer.draw(1:I32 @ 1:I32)
+  |   renderer.draw(7:I32 @ 7:I32)
+  |   | println("Resetting target")
+  |   renderer.reset_target_to_window()
+  |   | println("Drawing")
+  |   renderer.draw(texture)
+  |   renderer.present()
+  |   delay(20)
+  |   if poll_event() is some(event) then if event is quit then break
+  | }
 
   var rags = rags(content)
 

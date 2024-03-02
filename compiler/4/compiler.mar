@@ -3931,24 +3931,23 @@ fun nasm(mono: Mono, layouts: Map[Type, MemLayout], use_sdl: Bool): Str {
     '{newline}
     'extern malloc{newline}
     'extern SDL_Init{newline}
+    'extern SDL_Quit{newline}
+    'extern SDL_GetError{newline}
+    'extern SDL_Delay{newline}
     'extern SDL_CreateWindow{newline}
+    'extern SDL_DestroyWindow{newline}
+    'extern SDL_PollEvent{newline}
     'extern SDL_CreateRenderer{newline}
-    'extern SDL_LoadBMP_RW{newline}
-    'extern SDL_RWFromFile{newline}
-    'extern SDL_CreateTextureFromSurface{newline}
-    'extern SDL_FreeSurface{newline}
+    'extern SDL_DestroyRenderer{newline}
+    'extern SDL_CreateTexture{newline}
+    'extern SDL_DestroyTexture{newline}
+    'extern SDL_SetRenderTarget{newline}
     'extern SDL_SetRenderDrawColor{newline}
     'extern SDL_RenderClear{newline}
+    'extern SDL_RenderDrawPoint{newline}
     'extern SDL_RenderFillRect{newline}
     'extern SDL_RenderCopy{newline}
     'extern SDL_RenderPresent{newline}
-    'extern SDL_Delay{newline}
-    'extern SDL_DestroyTexture{newline}
-    'extern SDL_DestroyRenderer{newline}
-    'extern SDL_DestroyWindow{newline}
-    'extern SDL_Quit{newline}
-    'extern SDL_GetError{newline}
-    'extern SDL_PollEvent{newline}
     '{newline}
     '{text.builder}{newline}
     'section .rodata{newline}{rodata.builder}{newline}
@@ -4042,24 +4041,23 @@ fun fasm(mono: Mono, layouts: Map[Type, MemLayout], use_sdl: Bool): Str {
     '{newline}
     'extrn malloc{newline}
     'extrn SDL_Init{newline}
+    'extrn SDL_Quit{newline}
+    'extrn SDL_GetError{newline}
+    'extrn SDL_Delay{newline}
     'extrn SDL_CreateWindow{newline}
+    'extrn SDL_DestroyWindow{newline}
+    'extrn SDL_PollEvent{newline}
     'extrn SDL_CreateRenderer{newline}
-    'extrn SDL_LoadBMP_RW{newline}
-    'extrn SDL_RWFromFile{newline}
-    'extrn SDL_CreateTextureFromSurface{newline}
-    'extrn SDL_FreeSurface{newline}
+    'extrn SDL_DestroyRenderer{newline}
+    'extrn SDL_CreateTexture{newline}
+    'extrn SDL_DestroyTexture{newline}
+    'extrn SDL_SetRenderTarget{newline}
     'extrn SDL_SetRenderDrawColor{newline}
     'extrn SDL_RenderClear{newline}
+    'extrn SDL_RenderDrawPoint{newline}
     'extrn SDL_RenderFillRect{newline}
     'extrn SDL_RenderCopy{newline}
     'extrn SDL_RenderPresent{newline}
-    'extrn SDL_Delay{newline}
-    'extrn SDL_DestroyTexture{newline}
-    'extrn SDL_DestroyRenderer{newline}
-    'extrn SDL_DestroyWindow{newline}
-    'extrn SDL_Quit{newline}
-    'extrn SDL_GetError{newline}
-    'extrn SDL_PollEvent{newline}
     '{newline}
     '{text.builder}{newline}
     'section '.rodata'{newline}{rodata.builder}{newline}
