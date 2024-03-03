@@ -1,5 +1,10 @@
 | Whirling  
 
+| How Rendering Works  
+| We create an SDL texture and render everything to that. This corresponds to
+| the pixely design. This texture is then rendered to the window, scaled up to
+| fill it.
+
 | Colors  
 
 struct Color { r: U8, g: U8, b: U8 }
@@ -182,9 +187,9 @@ fun raw_sdl_create_texture(
 ): Address asm {
   mov rdi, [rsp + 16] ; renderer
   mov rsi, [rsp + 24] ; format
-  mov rdx, [rsp + 32] ; access
-  mov rcx, [rsp + 40] ; width
-  mov r8, [rsp + 48]  ; height
+  mov rdx, [rsp + 28] ; access
+  mov rcx, [rsp + 32] ; width
+  mov r8, [rsp + 36]  ; height
   mov r9, 4
   ; make the call with a 16-bytes-aligned stack
   mov rbp, rsp
@@ -214,8 +219,8 @@ fun raw_sdl_destroy_texture(texture: Address) asm {
 }
 
 fun raw_sdl_set_render_target(renderer: Address, texture: Address) asm {
-  mov rdi, [rsp + 16]
-  mov rsi, [rsp + 24] ; format
+  mov rdi, [rsp + 16] ; renderer
+  mov rsi, [rsp + 24] ; texture
   ; make the call with a 16-bytes-aligned stack
   mov rbp, rsp
   and rsp, 0xfffffffffffffff0
@@ -377,7 +382,7 @@ struct Texture { handle: Address }
 enum TextureAccess { static, streaming, target }
 
 fun create_texture(
-  renderer: Renderer, access: TextureAccess, width: U64, height: U64
+  renderer: Renderer, access: TextureAccess, size: Offset
 ): Texture {
   var handle = renderer.handle.raw_sdl_create_texture(
     372645892:U32, | SDL_PIXELFORMAT_ARGB8888
@@ -385,8 +390,8 @@ fun create_texture(
     case static 0:I32
     case streaming 1:I32
     case target 2:I32,
-    width.to_I32(),
-    height.to_I32(),
+    size.x,
+    size.y,
   )
   Texture { handle }
 }
@@ -657,6 +662,12 @@ fun tokenize(input: Slice[Char], out: &Vec[Token]) {
   }
 }
 
+| The Actual Editor  
+
+var editor_size = 200:I32 @ 450:I32
+var pixel_size = 2:I32
+var window_size = editor_size * pixel_size
+
 | Whirling  
 | This is the name of the text area itself.
 
@@ -854,11 +865,11 @@ fun move_ctrl_right(whirling: &Whirling) {
 }
 
 fun scroll(whirling: &Whirling, amount: I32) {
-  whirling.scroll = whirling.scroll + {30:I32 * pixel_size * amount}
+  whirling.scroll = whirling.scroll + {30:I32 * amount}
 }
 fun scroll_to_line(whirling: &Whirling, line: U64) {
   var scroll_so_line_is_at_center = 0:I32 - 20:I32
-    - {9:I32 * pixel_size * line.to_I32()}
+    - {9:I32 * line.to_I32()}
     + {editor_size.y.to_U64() / 2}.to_I32()
   var leeway = {editor_size.y.to_U64() / 4}.to_I32()
   whirling.scroll = whirling.scroll.clamp(
@@ -905,8 +916,6 @@ fun handle_event(whirling: &Whirling, event: Event) {
   case mouse_wheel(amount) whirling.&.scroll(amount)
   default {}
 }
-
-var pixel_size = 2:I32
 
 | All letters are sized 5x8 pixels.
 struct Glyph { a: U8, b: U8, c: U8, d: U8, e: U8 }
@@ -1017,8 +1026,7 @@ var font = {
 
 fun render(renderer: Renderer, char: Char, offset: Offset) {
   switch font.get_maybe(char)
-  case none renderer.draw(
-    {offset.x @ offset.y} @ {{5:I32 * pixel_size} @ {8:I32 * pixel_size}})
+  case none renderer.draw({offset.x @ offset.y} @ {5:I32 @ 8:I32})
   case some(glyph)
     for x in 0..5 do for y in 0..8 do {
       var glyph_col =
@@ -1027,17 +1035,13 @@ fun render(renderer: Renderer, char: Char, offset: Offset) {
       var bit = glyph_col
       for i in 0..y do bit = bit / 2:U8
       var is_set = bit.modulo(2:U8) == 1:U8
-      if is_set then renderer.draw({
-        {offset.x + {pixel_size * x.to_I32()}} @
-        {offset.y + {pixel_size * y.to_I32()}}
-        } @ {pixel_size @ pixel_size})
+      if is_set then renderer.draw(
+        {offset.x + x.to_I32()} @ {offset.y + y.to_I32()})
     }
 }
 
-var editor_size = 1100:I32 @ 900:I32
-
 fun y_of_line(whirling: Whirling, line: U64): I32 {
-  9:I32 * pixel_size * line.to_I32() + {2:I32 * pixel_size} + whirling.scroll
+  9:I32 * line.to_I32() + 2:I32 + whirling.scroll
 }
 fun num_line_number_digits(whirling: Whirling): U64 {
   var biggest = whirling.lines.len
@@ -1050,7 +1054,7 @@ fun num_line_number_digits(whirling: Whirling): U64 {
   digits
 }
 fun x_of_line_start(whirling: Whirling): I32 {
-  {6:I32 * whirling.num_line_number_digits().to_I32() + 2:I32} * pixel_size
+  6:I32 * whirling.num_line_number_digits().to_I32() + 2:I32
 }
 
 fun render(renderer: Renderer, whirling: Whirling) {
@@ -1060,10 +1064,10 @@ fun render(renderer: Renderer, whirling: Whirling) {
 
   var visible_lines =
     {{0:I32 - 20:I32 - whirling.scroll}
-      .max(0:I32).to_U64() / pixel_size.to_U64() / 9}
+      .max(0:I32).to_U64() / 9}
     ..
     {{0:I32 - 20:I32 - whirling.scroll + editor_size.y}
-      .max(0:I32).to_U64() / pixel_size.to_U64() / 9}.clamp(0, whirling.lines.len)
+      .max(0:I32).to_U64() / 9}.clamp(0, whirling.lines.len)
   | println("lines {visible_lines} are visible ({visible_lines.end - visible_lines.start} lines)")
 
   var visible_chars = {whirling.lines.get(visible_lines.start)}
@@ -1084,8 +1088,7 @@ fun render(renderer: Renderer, whirling: Whirling) {
       loop {
         var char = {line / divisor}.modulo(10).to_U8().digit_to_char()
         renderer.render(char,
-          {2:I32 * pixel_size + {{6 * index}.to_I32() * pixel_size}}
-            @ whirling.y_of_line(line))
+          {2:I32 + {6 * index}.to_I32()} @ whirling.y_of_line(line))
         if divisor == 1 then break
         divisor = divisor / 10
         index = index + 1
@@ -1100,13 +1103,12 @@ fun render(renderer: Renderer, whirling: Whirling) {
   for index in visible_chars do {
     var char = whirling.text.get(index)
 
-    var x = x_of_line_start + {col.to_I32() * 6:I32 * pixel_size}
+    var x = x_of_line_start + {6:I32 * col.to_I32()}
     var y = whirling.y_of_line(row)
 
     if index == whirling.cursor then {
       renderer.set_color(grey)
-      renderer.draw(
-        {x @ {y - pixel_size}} @ {{2:I32 * pixel_size} @ {9:I32 * pixel_size}})
+      renderer.draw({x @ {y - 1:I32}} @ {2:I32 @ 9:I32})
     }
 
     if char == newline then {
@@ -1229,19 +1231,18 @@ fun handle_event(outline: &Outline, event: Event) {}
 
 fun render(renderer: Renderer, outline: Outline) {
   renderer.set_color(foreground)
-  renderer.draw({0:I32 @ 0:I32} @ {{5:I32 * pixel_size} @ {8:I32 * pixel_size}})
+  renderer.draw({0:I32 @ 0:I32} @ {5:I32 @ 8:I32})
 
   for part in outline.parts.iter().enumerate() do {
-    var y = part.index.to_I32() * 9:I32 * pixel_size
+    var y = part.index.to_I32() * 9:I32
     for char in part.item.text.iter().enumerate() do {
-      var x = 20:I32 + {4:I32 * 6:I32 * pixel_size} + 10:I32
-        + {char.index.to_I32() * 6:I32 * pixel_size}
+      var x = 20:I32 + {4:I32 * 6:I32} + 10:I32
+        + {char.index.to_I32() * 6:I32}
       renderer.render(char.item, x @ y)
     }
     | if index == whirling.cursor then {
     |   renderer.set_color(grey)
-    |   renderer.draw(
-    |     {x @ {y - pixel_size}} @ {{2:I32 * pixel_size} @ {9:I32 * pixel_size}})
+    |   renderer.draw({x @ {y - 1}} @ {2:I32 @ 9:I32})
     | }
   }
 }
@@ -1326,14 +1327,13 @@ fun main(args: Slice[Str]): Never {
   init_sdl().unwrap()
   var window = create_window(
     "{file} - Martinaise Editor",
-    50:I32 @ 50:I32, editor_size
+    50:I32 @ 50:I32, window_size
   )
   var renderer = window.create_renderer()
+  var texture = renderer.create_texture(TextureAccess.target, editor_size)
 
   var rags = rags(file, content)
 
-  renderer.render(rags)
-  renderer.present()
   loop {
     var quit = false
     var event_happened = false
@@ -1349,7 +1349,10 @@ fun main(args: Slice[Str]): Never {
     }
     if quit then break
 
+    renderer.set_target(texture)
     renderer.render(rags)
+    renderer.reset_target_to_window()
+    renderer.draw(texture)
     renderer.present()
 
     if not(event_happened) then {
@@ -1361,6 +1364,7 @@ fun main(args: Slice[Str]): Never {
   }
 
   println("destroying stuff")
+  texture.destroy()
   renderer.destroy()
   window.destroy()
 
