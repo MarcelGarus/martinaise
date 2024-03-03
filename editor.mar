@@ -1201,6 +1201,27 @@ fun handle_event(goto: &Goto, event: Event): Bool {
 
 fun render(renderer: Renderer, goto: Goto) {
   renderer.render(goto.whirling.*)
+  if goto.active then {
+    var y = goto.whirling.y_of_line(goto.line)
+
+    var divisor = 1
+    for i in 1..goto.whirling.num_line_number_digits() do divisor = divisor * 10
+
+    renderer.set_color(red)
+    var index = 0
+    var had_non_zero = false
+    loop {
+      var digit = {goto.line / divisor}.modulo(10)
+      if had_non_zero / {digit != 0} / {divisor == 1} then {
+        had_non_zero = true
+        var char = digit.to_U8().digit_to_char()
+        renderer.render(char, {2:I32 + {6 * index}.to_I32()} @ y)
+      }
+      if divisor == 1 then break
+      divisor = divisor / 10
+      index = index + 1
+    }
+  }
 }
 
 | Outline  
