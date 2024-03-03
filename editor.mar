@@ -1036,21 +1036,34 @@ fun render(renderer: Renderer, char: Char, offset: Offset) {
 
 var editor_size = 1100:I32 @ 900:I32
 
+fun y_of_line(whirling: Whirling, line: U64): I32 {
+  9:I32 * pixel_size * line.to_I32() + {2:I32 * pixel_size} + whirling.scroll
+}
+fun num_line_number_digits(whirling: Whirling): U64 {
+  var biggest = whirling.lines.len
+  var digits = 1
+  var divisor = 1
+  loop if biggest / divisor < 10 then break else {
+    digits  = digits + 1
+    divisor = divisor * 10
+  }
+  digits
+}
+fun x_of_line_start(whirling: Whirling): I32 {
+  {6:I32 * whirling.num_line_number_digits().to_I32() + 2:I32} * pixel_size
+}
+
 fun render(renderer: Renderer, whirling: Whirling) {
   renderer.set_color(background)
   renderer.clear()
   renderer.set_color(foreground)
 
-  var row = 0
-  var col = 0
-  var line_height = 9:I32 * pixel_size
-
   var visible_lines =
     {{0:I32 - 20:I32 - whirling.scroll}
-      .max(0:I32).to_U64() / line_height.to_U64()}
+      .max(0:I32).to_U64() / pixel_size.to_U64() / 9}
     ..
     {{0:I32 - 20:I32 - whirling.scroll + editor_size.y}
-      .max(0:I32).to_U64() / line_height.to_U64()}.clamp(0, whirling.lines.len)
+      .max(0:I32).to_U64() / pixel_size.to_U64() / 9}.clamp(0, whirling.lines.len)
   | println("lines {visible_lines} are visible ({visible_lines.end - visible_lines.start} lines)")
 
   var visible_chars = {whirling.lines.get(visible_lines.start)}
@@ -1059,23 +1072,20 @@ fun render(renderer: Renderer, whirling: Whirling) {
        else whirling.lines.get(visible_lines.end)}
   | println("chars {visible_chars} are visible")
 
-  var y = 20:I32 + whirling.scroll + {line_height * visible_lines.start.to_I32()}
-
   | Line numbers
   {
-    var biggest = whirling.lines.len
     var divisor = 1
-    loop if biggest / divisor < 10 then break else divisor = divisor * 10
+    for i in 1..whirling.num_line_number_digits() do divisor = divisor * 10
 
     renderer.set_color(dark_grey)
-    for line in visible_lines.iter().enumerate() do {
+    for line in visible_lines do {
       var divisor = divisor
       var index = 0
       loop {
-        var char = {line.item / divisor}.modulo(10).to_U8().digit_to_char()
+        var char = {line / divisor}.modulo(10).to_U8().digit_to_char()
         renderer.render(char,
-          {20:I32 + {{6 * index}.to_I32() * pixel_size}}
-            @ {y + {line.index.to_I32() * line_height}})
+          {2:I32 * pixel_size + {{6 * index}.to_I32() * pixel_size}}
+            @ whirling.y_of_line(line))
         if divisor == 1 then break
         divisor = divisor / 10
         index = index + 1
@@ -1084,10 +1094,26 @@ fun render(renderer: Renderer, whirling: Whirling) {
   }
 
   | Characters
+  var row = visible_lines.start
+  var col = 0
+  var x_of_line_start = whirling.x_of_line_start()
   for index in visible_chars do {
     var char = whirling.text.get(index)
-    var x = 20:I32 + {4:I32 * 6:I32 * pixel_size} + 10:I32
-      + {col.to_I32() * 6:I32 * pixel_size}
+
+    var x = x_of_line_start + {col.to_I32() * 6:I32 * pixel_size}
+    var y = whirling.y_of_line(row)
+
+    if index == whirling.cursor then {
+      renderer.set_color(grey)
+      renderer.draw(
+        {x @ {y - pixel_size}} @ {{2:I32 * pixel_size} @ {9:I32 * pixel_size}})
+    }
+
+    if char == newline then {
+      row = row + 1
+      col = 0
+      continue
+    }
 
     var color =
       switch whirling.tokens.get(index)
@@ -1103,22 +1129,10 @@ fun render(renderer: Renderer, whirling: Whirling) {
       case operator        orange
       case punctuation     grey
       case default_        foreground
-
-    if index == whirling.cursor then {
-      renderer.set_color(grey)
-      renderer.draw(
-        {x @ {y - pixel_size}} @ {{2:I32 * pixel_size} @ {9:I32 * pixel_size}})
-    }
-
     renderer.set_color(color)
-    if char == newline then {
-      row = row + 1
-      col = 0
-      y = y + line_height
-    } else {
-      col = col + 1
-      renderer.render(char, x @ y)
-    }
+    renderer.render(char, x @ y)
+
+    col = col + 1
   }
 }
 
