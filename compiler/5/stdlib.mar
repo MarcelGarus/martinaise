@@ -1,0 +1,2445 @@
+| Welcome to Martinaise!  
+| Martinaise is a language that's designed for solving simple puzzles such as
+| advent of code. Making a language that is widely-used is _not_ the goal.
+| Instead, this is a fun, recreational project.
+|
+| The language is quite small, so it only has a handful of builtin functions.
+| Most of the functionality is defined in Martinaise code, even basic things
+| like Bool or integers. The compiler relies on some of these definitions, so be
+| careful when deleting code in this file.
+
+| Todos  
+| TODO: language features
+| TODO:   var bool = foo is some?
+| TODO:   enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
+| TODO:   support getting reference to enum payload
+| TODO:   provide way to get memory layouts of types as runtime values
+| TODO:   allow types on vars
+| TODO:   break and continue with targets
+| TODO:   funs as values, function types, higher-order funs?
+| TODO:   slice literals? array literals?
+| TODO: stdlib
+| TODO:   threads
+| TODO:   mutex
+| TODO:   semaphore
+| TODO: catch more errors
+| TODO:   enforce that statement-like expressions evaluate to Nothing
+| TODO:   disallow _ in type args, structs, enums, and recursive functions
+| TODO:   improve int parsing: be strict about whitespace
+| TODO:   catch circular global definitions
+| TODO: tooling
+| TODO:   use g++ name mangling for automatic gdb demangling
+| TODO:   watching files
+| TODO:   breakpoint
+| TODO:   stack traces
+
+| Nothing (aka Unit or Void)  
+| Nothing is a type with only one instance. From an information theoretical
+| perspective, being given an instance of a Nothing type gives you no
+| information whatsoever. The size of a Nothing instance is zero – it disappears
+| at compile time! Like a ghost!
+| Functions without an explicit return type return Nothing by default. Functions
+| that don't have anything useful to return (such as print) return Nothing
+| instead. Empty bodies return Nothing. If you really need a Nothing, you can
+| just write {}.
+
+struct Nothing {}
+
+fun write[W](writer: W, nothing: Nothing) { writer."nothing" }
+fun ==(a: Nothing, b: Nothing): Bool { true }
+fun ignore[T](value: T) {}
+
+| Never  
+| Never is a type with zero instances. If you write a function that accepts an
+| argument of Never, it can never be called (otherwise, the caller would have
+| a Never instance).
+| Why do we need something like this? Some expressions always abort control
+| flow, for example `return 3` or `continue` or `break(your_leg)`. These
+| evaluate to the Never type. Because Never is never instantiated, it can be
+| assigned to anything:
+|
+| foo.some_bool = return "Hi"
+| 2.add(if condition then 3 else break)
+| Maybe[U64].some(todo())
+
+enum Never {}
+
+| Equality  
+| You should implement an ==(T, T): Bool function for types that can be compared
+| for equality.
+
+fun !=[T](a: T, b: T): Bool { not(a == b) }
+
+| Hashing  
+| You should implement a hash(&Hasher, T) function for types that can be hashed.
+| In this function, they can contribute some uniqueness/entropy to the Hasher by
+| calling other hash functions on it. In the end, all hash functions boil down
+| to hash(&Hasher, U64). The Hasher uses the djb2 algorithm.
+
+fun hash[T](value: T): U64 {
+  var hasher = Hasher { state = 5381 }
+  hasher.&.hash(value)
+  hasher.state
+}
+
+struct Hasher { state: U64 }
+fun hash(hasher: &Hasher, val: U64) { hasher.state = hasher.state * 33 + val }
+fun hash_all[I](hasher: &Hasher, iter: I) {
+  for item in iter do hasher.hash(item)
+}
+
+| Emptiness  
+| Do you sometimes feel empty inside? Some collections in the stdlib do so as
+| well! In fact, many have an is_empty function. For convencience, we also
+| define an is_not_empty function.
+
+fun is_not_empty[T](container: T): Bool { not(container.is_empty()) }
+
+| Bool  
+| After the Never type with zero instances and the Nothing type with one
+| instance, Norwegian scientists discovered a groundbreaking concept: A type
+| with two instances!
+| Like with Never and Nothing, the Martinaise compiler depends on this type
+| existing. Please don't remove it. And pretty please don't reassign the global
+| true and false variables.
+
+| The variants ordered this way so that true is represented as a 1 in the
+| assembly.
+enum Bool { false, true }
+
+var true = Bool.true
+var false = Bool.false
+
+fun ==(a: Bool, b: Bool): Bool { if a then b else not(b) }
+fun not(a: Bool): Bool { if a then false else true }
+fun &(a: Bool, b: Bool): Bool { if a then b else false }
+fun /(a: Bool, b: Bool): Bool { if a then true else b }
+fun xor(a: Bool, b: Bool): Bool { if a then not(b) else b }
+fun implies(a: Bool, b: Bool): Bool { if a then b else true }
+
+fun write[W](writer: W, b: Bool) {
+  writer.write(if b then "true" else "false")
+}
+fun hash(hasher: &Hasher, value: Bool) { hasher.hash(if value then 0 else 1) }
+
+| Maybe  
+| Represents optional values. Like Option in Rust, but with the cooler Haskell
+| name.
+
+enum Maybe[T] { some: T, none }
+
+fun some[T](value: T): Maybe[T] { Maybe.some(value) }
+fun none[T](): Maybe[T] { Maybe[T].none }
+
+fun unwrap[T](maybe: Maybe[T], message: Str): T { maybe orelse panic(message) }
+fun unwrap[T](maybe: Maybe[T]): T { maybe.unwrap("called none.unwrap") }
+fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { maybe orelse none[T]() }
+fun is_some[T](maybe: Maybe[T]): Bool { if maybe is some then true else false }
+fun is_none[T](maybe: Maybe[T]): Bool { if maybe is none then true else false }
+
+fun write[W, T](writer: W, maybe: Maybe[T]) {
+  switch maybe
+  case some(val) writer."some({val})"
+  case none writer."none"
+}
+fun ==[T](a: Maybe[T], b: Maybe[T]): Bool {
+  switch a
+  case some(aa) { switch b case some(bb) aa == bb case none false }
+  case none b.is_none()
+}
+fun hash[T](hasher: &Hasher, value: Maybe[T]) {
+  switch value
+  case some(inner) {
+    hasher.hash(#s)
+    hasher.hash(inner)
+  }
+  case none hasher.hash(#n)
+}
+
+| Result  
+| The result of something that can either work or fail.
+enum Result[O, E] { ok: O, error: E }
+
+fun ok[O, E](o: O): Result[O, E] { Result[O, E].ok(o) }
+fun error[O, E](e: E): Result[O, E] { Result[O, E].error(e) }
+
+fun unwrap[O, E](result: Result[O, E], message: Str): O {
+  switch result case ok(o) o case error panic(message)
+}
+fun unwrap[O, E](result: Result[O, E]): O {
+  switch result case ok(o) o case error(e) panic("called error.unwrap: {e}")
+}
+
+fun write[W, O, E](writer: W, result: Result[O, E]) {
+  switch result
+  case ok(o) writer."ok({o})"
+  case error(e) writer."error({e})"
+}
+fun ==[O, E](a: Result[O, E], b: Result[O, E]): Bool {
+  switch a
+  case ok(ao) { switch b case ok(bo) ao == bo case error false }
+  case error(ae) { switch b case error(be) ae == be case ok false }
+}
+fun hash[O, E](hasher: &Hasher, result: Result[O, E]) {
+  switch result
+  case ok(o) { hasher.hash(#o) hasher.hash(o) }
+  case error(e) { hasher.hash(#e) hasher.hash(e) }
+}
+
+| Orelse  
+| Martinaise has an orelse keyword, which you can write after a Maybe[T] or
+| "something similar" to get underlying value if everything is okay, and to run
+| an alternative expression if it's not. For example, you can write the
+| following code:
+|
+| some(2) orelse 3      | this is 2
+| none[U64]() orelse 3  | this is 3
+|
+| vec.is_empty() orelse panic("expected list to be empty")
+| var int = result_of_int orelse(error) error.len
+|
+| About that "something similar to Maybe": Internally, the orelse keyword calls
+| a to_orelse() function on the expression on the left. This should return an
+| Orelse[P, S]. If it's a primary P, that P is just the result of the orelse.
+| If it's a secondary S, alternative expression on the right of the orelse is
+| evaluated.
+|
+| You might wonder if this keyword is stolen from Zig. Yes, it is.
+
+enum Orelse[P, S] { primary: P, secondary: S }
+
+fun to_orelse(bool: Bool): Orelse[Nothing, Nothing] {
+  if bool
+  then Orelse[Nothing, Nothing].primary({})
+  else Orelse[Nothing, Nothing].secondary({})
+}
+fun to_orelse[T](maybe: Maybe[T]): Orelse[T, Nothing] {
+  if maybe is some(t)
+  then Orelse[T, Nothing].primary(t)
+  else Orelse[T, Nothing].secondary({})
+}
+fun to_orelse[O, E](result: Result[O, E]): Orelse[O, E] {
+  switch result
+  case ok(o) Orelse[O, E].primary(o)
+  case error(e) Orelse[O, E].secondary(e)
+}
+
+| Assembly  
+| In the end, all Martinaise code is lowered to x86_64 NASM-style assembly. A
+| big downside of this is that Martinaise is not portable. An upside is that you
+| can easily switch back and forth between Martinaise and assembly. Using the
+| asm keyword, you can implement functions in assembly language. Because
+| Martinaise is so low-level, it also implements its own memory layout and
+| calling convention.
+|
+| Memory Layout  
+| The memory layout depends on the type:
+|
+| - Opaque types define exactly how they are aligned.
+| 
+|   opaque U8 = 1 byte big, 1 byte aligned
+|
+|  - Struct types have an alignment equal to the biggest alignment of their
+|   fields. All fields with a size that is a multiple of this alignment are
+|   moved to the front. All other fields are ordered in a way to minimize the
+|   overall size. You should not depend on the order of these other fields.
+|
+|  - Enum types contain the payload followed by a single byte indicating which
+|   variant is active. The size reserved for the payload is the biggest size of
+|   all the possible variant payloads.
+|
+| Here's an example of a more complex type:
+|
+| enum CType { char: U8, short: U16, int: U32, long: U64 }
+| struct Foo {
+|   value: U32,
+|   flup: CType,
+|   foo: &Foo,
+|   baz: Maybe[Maybe[Str]],
+|   blub: Map[Str, U64],
+| }
+|
+| ▏0      ▏8      ▏16     ▏24     ▏32     ▏40     ▏48     ▏56     ▏64
+| ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 65
+| Foo
+| foo     blub                    baz                 val…flup
+| ▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓..▓▓▓▓░░░░░░░░░
+| &Foo    Map[Str, U64]           Maybe[Maybe[Str]…│  U32 CType   │
+|         buckets         size    some─────────────┤      char────┤
+|         ░░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░│      ░.......│
+|         Slice[MapBucket…U64     Maybe[Str]      ││      …       │
+|         data    len             some────────────┤│      short───┤
+|         ░░░░░░░░▓▓▓▓▓▓▓▓        ░░░░░░░░░░░░░░░░││      ░░......│
+|         &MapBuc…U64             Str             ││      U…      │
+|                                 chars           ││      int─────┤
+|                                 ░░░░░░░░░░░░░░░░││      ░░░░....│
+|                                 Slice[Char]     ││      U32     │
+|                                 data    len     ││      long────┘
+|                                 ░░░░░░░░▓▓▓▓▓▓▓▓││      ░░░░░░░░
+|                                 &Char   U64     ││      U64
+|                                 none────────────┘│
+|                                 ................ │
+|                                 none─────────────┘
+|                                 .................
+|
+| Calling Convention  
+| Martinaise has its own calling convention. It is often less efficient than the
+| cdecl and RISC-V calling conventions, but way simpler.
+|
+| - Registers  
+|   Calling a function may change any register contents except the rsp (stack
+|   pointer register). This means that functions are free to use any registers
+|   they want for whatever purpose without first pushing contents onto the stack
+|   and restoring them later on.
+|
+| - Arguments  
+|   All arguments are passed on the stack. When a function starts executing, the
+|   last value on the stack is the callee (the call instruction automatically
+|   pushes it onto the stack). Below that is an address that indicates where the
+|   return value should be saved to. Below that are the arguments, layed out as
+|   if they were in an anonymous struct that is 8-byte aligned.
+|
+|   Example: foo(a: U16, b: U32, c: U32, d: U8) is called. When layouting a
+|   struct containing a, b, c, and d its layout would look like this:
+|
+|   bbbbccccaad
+|
+|   This value is padded to a multiple of 8 bytes, so at the beginning of the
+|   function execution, the stack looks like this:
+|
+|   [callee][return]bbbbccccaad.....[other stuff on the stack]
+|   ▏       ▏       ▏       ▏       ▏
+|   rsp    +8      +16     +24     +32
+|
+|   More notes about this:
+|   - 1 character in this visualization represents one byte.
+|   - The stack grows down to lower addresses, so the relevant parts are at the
+|     lower addresses.
+|   - The arguments all fulfill their alignment requirements.
+|   - The arguments can be accessed like this:
+|     - a: [rsp + 24]
+|     - b: [rsp + 16]
+|     - c: [rsp + 20]
+|     - d: [rsp + 26]
+|   - You can rely on the fact that all arguments with a size that is a multiple
+|     of the highest alignment (4) are at the beginning in the order they were
+|     declared (in this example, b and c). You should NOT depend on the order of
+|     the other fields. This restrictions effectively prohibits you from
+|     manually implementing asm functions that take multiple arguments with a
+|     size that is not a multiple of the biggest alignment (such as this foo).
+|     Instead, consider writing asm functions with arguments that are explicitly
+|     of the same length and wrapping them with nicer-typed functions when
+|     necessary.
+
+| Syscalls  
+
+fun syscall(number: U64): U64 asm {
+  mov rax, [rsp + 16] ; syscall number
+  syscall             ; writes result into rax
+  mov r8, [rsp + 8]   ; return address
+  mov [r8], rax
+  ret
+}
+fun syscall(number: U64, arg0: U64): U64 asm {
+  mov rax, [rsp + 16] ; syscall number
+  mov rdi, [rsp + 24] ; arg0
+  syscall             ; writes result into rax
+  mov r8, [rsp + 8]   ; return address
+  mov [r8], rax
+  ret
+}
+fun syscall(number: U64, arg0: U64, arg1: U64): U64 asm {
+  mov rax, [rsp + 16] ; syscall number
+  mov rdi, [rsp + 24] ; arg0
+  mov rsi, [rsp + 32] ; arg1
+  syscall             ; writes result into rax
+  mov r8, [rsp + 8]   ; return address
+  mov [r8], rax
+  ret
+}
+fun syscall(number: U64, arg0: U64, arg1: U64, arg2: U64): U64 asm {
+  mov rax, [rsp + 16] ; syscall number
+  mov rdi, [rsp + 24] ; arg0
+  mov rsi, [rsp + 32] ; arg1
+  mov rdx, [rsp + 40] ; arg2
+  syscall             ; writes result into rax
+  mov r8, [rsp + 8]   ; return address
+  mov [r8], rax
+  ret
+}
+fun syscall(number: U64, arg0: U64, arg1: U64, arg2: U64, arg3: U64): U64 asm {
+  mov rax, [rsp + 16] ; syscall number
+  mov rdi, [rsp + 24] ; arg0
+  mov rsi, [rsp + 32] ; arg1
+  mov rdx, [rsp + 40] ; arg2
+  mov rcx, [rsp + 48] ; arg3
+  syscall             ; writes result into rax
+  mov r8, [rsp + 8]   ; return address
+  mov [r8], rax
+  ret
+}
+fun syscall(
+  number: U64, arg0: U64, arg1: U64, arg2: U64, arg3: U64, arg4: U64,
+): U64 asm {
+  mov rax, [rsp + 16] ; syscall number
+  mov rdi, [rsp + 24] ; arg0
+  mov rsi, [rsp + 32] ; arg1
+  mov rdx, [rsp + 40] ; arg2
+  mov rcx, [rsp + 48] ; arg3
+  mov r8, [rsp + 56]  ; arg4
+  syscall             ; writes result into rax
+  mov r8, [rsp + 8]   ; return address
+  mov [r8], rax
+  ret
+}
+fun syscall(
+  number: U64, arg0: U64, arg1: U64, arg2: U64, arg3: U64, arg4: U64, arg5: U64,
+): U64 asm {
+  mov rax, [rsp + 16] ; syscall number
+  mov rdi, [rsp + 24] ; arg0
+  mov rsi, [rsp + 32] ; arg1
+  mov rdx, [rsp + 40] ; arg2
+  mov rcx, [rsp + 48] ; arg3
+  mov r8, [rsp + 56]  ; arg4
+  mov r9, [rsp + 64]  ; arg5
+  syscall             ; writes result into rax
+  mov r8, [rsp + 8]   ; return address
+  mov [r8], rax
+  ret
+}
+
+| Syscall table
+| https://chromium.googlesource.com/chromiumos/docs/+/master/constants/syscalls.md
+
+fun syscall_read(fd: U64, buf: U64, count: U64): U64                    {   0.syscall(fd, buf, count) }
+fun syscall_write(fd: U64, buf: U64, count: U64): U64                   {   1.syscall(fd, buf, count) }
+fun syscall_open(filename: U64, flags: U64, mode: U64): U64             {   2.syscall(filename, flags, mode) }
+fun syscall_close(fd: U64): U64                                         {   3.syscall(fd) }
+fun syscall_fork(): U64                                                 {  57.syscall() }
+fun syscall_execve(filename: U64, argv: U64, envp: U64): U64            {  59.syscall(filename, argv, envp) }
+fun syscall_exit(error_code: U64): U64                                  {  60.syscall(error_code) }
+fun syscall_wait4(pid: U64, stat_addr: U64, options: U64, ru: U64): U64 {  61.syscall(pid, stat_addr, options, ru) }
+fun syscall_kill(pid: U64, sig: U64): U64                               {  62.syscall(pid, sig) }
+fun syscall_creat(pathname: U64, mode: U64): U64                        {  85.syscall(pathname, mode) }
+fun syscall_time(tloc: U64): U64                                        { 201.syscall(tloc) }
+fun syscall_inotify_add_watch(fd: U64, path: U64, mask: U64): U64       { 254.syscall(fd, path, mask) }
+fun syscall_inotify_init1(flags: U64): U64                              { 294.syscall(flags) }
+
+| Many syscalls return 0 or -1 if an operation didn't work. Here are helpers for
+| dealing with that.
+fun error_if_zero(value: U64, message: Str): Result[U64, Str] {
+  if value.cast[U64, I64]() == 0:I64
+  then error[U64, Str](message)
+  else ok[U64, Str](value)
+}
+fun error_if_minus_one(value: U64, message: Str): Result[U64, Str] {
+  if value.cast[U64, I64]() == {0:I64 - 1:I64} | TODO: add a minus method
+  then error[U64, Str](message)
+  else ok[U64, Str](value)
+}
+
+| Halting, Exiting, and Panicking  
+
+fun halt(): Never { loop {} }
+fun exit(status: U8): Never { syscall_exit(status.to_U64()) halt() }
+fun panic(message: Str): Never { stderr.writeln(message) exit(1:U8) }
+fun panic(): Never { panic("panicked") }
+fun unreachable(): Never { panic("unreachable") }
+fun unreachable(reason: Str): Never { panic("unreachable: {reason}") }
+fun todo(): Never { panic("todo") }
+fun assert(condition: Bool) { assert(condition, "assert failed") }
+fun assert(condition: Bool, message: Str) { condition orelse panic(message) }
+
+| Int  
+| There are several integer types with different signedness and bit amount.
+|
+| If you just write a number such as 3 in the code, it's a U64 by default. You
+| can be explicit about the type by using a suffix: 3:U8
+|
+| TODO: not all operations implemented for all integers
+| All integers also support the following mathematical operations:
+| - +(Int, Int): Int
+| - -(Int, Int): Int
+| - *(Int, Int): Int
+| - /(Int, Int): Int
+| - remainder(Int, Int): Int
+| - modulo(Int, Int): Int
+| - and(Int, Int): Int
+| - or(Int, Int): Int
+| - xor(Int, Int): Int
+| - <=>(Int, Int): Ordering
+| - to_<OtherInt>(Int): OtherInt, e.g. to_U8() for non-U8 ints
+
+opaque U8  = 1 byte big,  1 byte aligned
+opaque U16 = 2 bytes big, 2 bytes aligned
+opaque U32 = 4 bytes big, 4 bytes aligned
+opaque U64 = 8 bytes big, 8 bytes aligned
+opaque I8  = 1 byte big,  1 byte aligned
+opaque I16 = 2 bytes big, 2 bytes aligned
+opaque I32 = 4 bytes big, 4 bytes aligned
+opaque I64 = 8 bytes big, 8 bytes aligned
+
+fun +(a: U8, b: U8): U8 asm {
+  mov r8b, [rsp + 16] ; a
+  add r8b, [rsp + 17] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8b
+  ret
+}
+fun +(a: U16, b: U16): U16 asm {
+  mov r8w, [rsp + 16] ; a
+  add r8w, [rsp + 18] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8w
+  ret
+}
+fun +(a: U32, b: U32): U32 asm {
+  mov r8d, [rsp + 16] ; a
+  add r8d, [rsp + 20] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
+fun +(a: U64, b: U64): U64 asm {
+  mov r8, [rsp + 16] ; a
+  add r8, [rsp + 24] ; b
+  mov r9, [rsp + 8]  ; return address
+  mov [r9], r8
+  ret
+}
+fun +(a: I8, b: I8): I8 asm {
+  mov r8b, [rsp + 16] ; a
+  add r8b, [rsp + 17] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8b
+  ret
+}
+fun +(a: I16, b: I16): I16 asm {
+  mov r8w, [rsp + 16] ; a
+  add r8w, [rsp + 18] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8w
+  ret
+}
+fun +(a: I32, b: I32): I32 asm {
+  mov r8d, [rsp + 16] ; a
+  add r8d, [rsp + 20] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
+fun +(a: I64, b: I64): I64 asm {
+  mov r8, [rsp + 16] ; a
+  add r8, [rsp + 24] ; b
+  mov r9, [rsp + 8]  ; return address
+  mov [r9], r8
+  ret
+}
+
+| TODO: is this guaranteed to underflow correctly?
+fun -(a: U8, b: U8): U8 asm {
+  mov r8b, [rsp + 16] ; a
+  sub r8b, [rsp + 17] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8b
+  ret
+}
+fun -(a: U16, b: U16): U16 asm {
+  mov r8w, [rsp + 16] ; a
+  sub r8w, [rsp + 18] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8w
+  ret
+}
+fun -(a: U32, b: U32): U32 asm {
+  mov r8d, [rsp + 16] ; a
+  sub r8d, [rsp + 20] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
+fun -(a: U64, b: U64): U64 asm {
+  mov r8, [rsp + 16] ; a
+  sub r8, [rsp + 24] ; b
+  mov r9, [rsp + 8]  ; return address
+  mov [r9], r8
+  ret
+}
+fun -(a: I8, b: I8): I8 asm {
+  mov r8b, [rsp + 16] ; a
+  sub r8b, [rsp + 17] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8b
+  ret
+}
+fun -(a: I16, b: I16): I16 asm {
+  mov r8w, [rsp + 16] ; a
+  sub r8w, [rsp + 18] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8w
+  ret
+}
+fun -(a: I32, b: I32): I32 asm {
+  mov r8d, [rsp + 16] ; a
+  sub r8d, [rsp + 20] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
+fun -(a: I64, b: I64): I64 asm {
+  mov r8, [rsp + 16] ; a
+  sub r8, [rsp + 24] ; b
+  mov r9, [rsp + 8]  ; return address
+  mov [r9], r8
+  ret
+}
+
+fun *(a: U8, b: U8): U8 asm {
+  mov al, [rsp + 16]  ; a
+  mov r8b, [rsp + 17] ; b
+  mul r8b             ; al * r8b = ax
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], al
+  ret
+}
+fun *(a: U16, b: U16): U16 asm {
+  mov ax, [rsp + 16]  ; a
+  mov r8w, [rsp + 18] ; b
+  mul r8w             ; ax * r8w = dx:ax
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], ax
+  ret
+}
+fun *(a: U32, b: U32): U32 asm {
+  mov eax, [rsp + 16] ; a
+  mov r8d, [rsp + 20] ; b
+  mul r8d             ; eax * r8d = edx:eax
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], eax
+  ret
+}
+fun *(a: U64, b: U64): U64 asm {
+  mov rax, [rsp + 16] ; a
+  mov r8, [rsp + 24]  ; b
+  mul r8              ; rax * r8 = rdx:rax
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], rax
+  ret
+}
+| TODO: fun *(a: I8, b: I8): I8 asm
+fun *(a: I16, b: I16): I16 asm {
+  mov r8w, [rsp + 16]  ; a
+  imul r8w, [rsp + 18] ; b
+  mov r9, [rsp + 8]    ; return address
+  mov [r9], r8w
+  ret
+}
+fun *(a: I32, b: I32): I32 asm {
+  mov r8d, [rsp + 16]  ; a
+  imul r8d, [rsp + 20] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
+fun *(a: I64, b: I64): I64 asm {
+  mov r8, [rsp + 16]  ; a
+  imul r8, [rsp + 24] ; b
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8
+  ret
+}
+
+fun /(a: U8, b: U8): U8 asm {
+  mov ah, 0           ; sign extension (always zero for unsigned ints)
+  mov al, [rsp + 16]  ; a
+  mov r8b, [rsp + 17] ; b
+  div r8b             ; ax / r8b = al, remainder ah
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], al
+  ret
+}
+fun /(a: U16, b: U16): U16 asm {
+  mov dx, 0           ; sign extension (always zero for unsigned ints)
+  mov ax, [rsp + 16]  ; a
+  mov r8w, [rsp + 18] ; b
+  div r8w             ; dx:ax / r8w = ax, remainder dx
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], ax
+  ret
+}
+fun /(a: U32, b: U32): U32 asm {
+  mov edx, 0          ; sign extension (always zero for unsigned ints)
+  mov eax, [rsp + 16] ; a
+  mov r8d, [rsp + 20] ; b
+  div r8d             ; edx:eax / r8d = eax, remainder edx
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], eax
+  ret
+}
+fun /(a: U64, b: U64): U64 asm {
+  mov rdx, 0          ; sign extension (always zero for unsigned ints)
+  mov rax, [rsp + 16] ; a
+  mov r8, [rsp + 24]  ; b
+  div r8              ; rdx:rax / r8 = rax, remainder rdx
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], rax
+  ret
+}
+
+fun remainder(a: U8, b: U8): U8 asm {
+  mov ah, 0           ; sign extension (always zero for unsigned ints)
+  mov al, [rsp + 16]  ; a
+  mov r8b, [rsp + 17] ; b
+  div r8b             ; ax / r8b = al, remainder ah
+  mov r9, [rsp + 8]   ; return address
+  shr ax, 8           ; shift ah into al
+  mov [r9], al
+  ret
+}
+fun remainder(a: U16, b: U16): U16 asm {
+  mov dx, 0           ; sign extension (always zero for unsigned ints)
+  mov ax, [rsp + 16]  ; a
+  mov r8w, [rsp + 18] ; b
+  div r8w             ; dx:ax / r8w = ax, remainder dx
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], dx
+  ret
+}
+fun remainder(a: U32, b: U32): U32 asm {
+  mov edx, 0          ; sign extension (always zero for unsigned ints)
+  mov eax, [rsp + 16] ; a
+  mov r8d, [rsp + 20] ; b
+  div r8d             ; edx:eax / r8d = eax, remainder edx
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], edx
+  ret
+}
+fun remainder(a: U64, b: U64): U64 asm {
+  mov rdx, 0          ; sign extension (always zero for unsigned ints)
+  mov rax, [rsp + 16] ; a
+  mov r8, [rsp + 24]  ; b
+  div r8              ; rdx:rax / r8 = rax, remainder rdx
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], rdx
+  ret
+}
+
+| For unsigned integers, modulo is the same as remainder.
+fun modulo(a: U8, b: U8): U8 { a.remainder(b) }
+fun modulo(a: U16, b: U16): U16 { a.remainder(b) }
+fun modulo(a: U32, b: U32): U32 { a.remainder(b) }
+fun modulo(a: U64, b: U64): U64 { a.remainder(b) }
+
+fun and(a: U64, b: U64): U64 asm {
+  mov r8, [rsp + 16] ; a
+  and r8, [rsp + 24] ; b
+  mov r9, [rsp + 8]  ; return address
+  mov [r9], r8
+  ret
+}
+
+fun or(a: U64, b: U64): U64 asm {
+  mov r8, [rsp + 16] ; a
+  or r8, [rsp + 24]  ; b
+  mov r9, [rsp + 8]  ; return address
+  mov [r9], r8
+  ret
+}
+
+fun xor(a: U64, b: U64): U64 asm {
+  mov r8, [rsp + 16] ; a
+  xor r8, [rsp + 24] ; b
+  mov r9, [rsp + 8]  ; return address
+  mov [r9], r8
+  ret
+}
+
+fun <=>(a: U8, b: U8): Ordering asm {
+  mov r10, 0 ; less
+  mov r11, 1 ; equal
+  mov r12, 2 ; greater
+  mov r8b, [rsp + 16]
+  cmp r8b, [rsp + 17]
+  cmovb r9, r10 ; conditional move below -> less
+  cmove r9, r11 ; conditional move equal -> equal
+  cmova r9, r12 ; conditional move above -> greater
+  mov r8, [rsp + 8]
+  mov [r8], r9b
+  ret
+}
+fun <=>(a: U32, b: U32): Ordering asm {
+  mov r10, 0 ; less
+  mov r11, 1 ; equal
+  mov r12, 2 ; greater
+  mov r8d, [rsp + 16]
+  cmp r8d, [rsp + 20]
+  cmovb r9, r10 ; conditional move below -> less
+  cmove r9, r11 ; conditional move equal -> equal
+  cmova r9, r12 ; conditional move above -> greater
+  mov r8, [rsp + 8]
+  mov [r8], r9b
+  ret
+}
+fun <=>(a: U64, b: U64): Ordering asm {
+  mov r10, 0 ; less
+  mov r11, 1 ; equal
+  mov r12, 2 ; greater
+  mov r8, [rsp + 16]
+  cmp r8, [rsp + 24]
+  cmovb r9, r10 ; conditional move below -> less
+  cmove r9, r11 ; conditional move equal -> equal
+  cmova r9, r12 ; conditional move above -> greater
+  mov r8, [rsp + 8]
+  mov [r8], r9b
+  ret
+}
+fun <=>(a: I32, b: I32): Ordering asm {
+  mov r10, 0 ; less
+  mov r11, 1 ; equal
+  mov r12, 2 ; greater
+  mov r8d, [rsp + 16]
+  cmp r8d, [rsp + 20]
+  cmovl r9, r10 ; conditional move less -> less
+  cmove r9, r11 ; conditional move equal -> equal
+  cmovg r9, r12 ; conditional move greater -> greater
+  mov r8, [rsp + 8]
+  mov [r8], r9b
+  ret
+}
+fun <=>(a: I64, b: I64): Ordering asm {
+  mov r10, 0 ; less
+  mov r11, 1 ; equal
+  mov r12, 2 ; greater
+  mov r8, [rsp + 16]
+  cmp r8, [rsp + 24]
+  cmovl r9, r10 ; conditional move less -> less
+  cmove r9, r11 ; conditional move equal -> equal
+  cmovg r9, r12 ; conditional move greater -> greater
+  mov r8, [rsp + 8]
+  mov [r8], r9b
+  ret
+}
+
+fun to_U16(n: U8): U16 asm {
+  mov r8, 0           ; sign extension (always zero for unsigned ints)
+  mov r8b, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8w
+  ret
+}
+fun to_U32(n: U8): U32 asm {
+  mov r8, 0           ; sign extension (always zero for unsigned ints)
+  mov r8b, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
+fun to_U64(n: U8): U64 asm {
+  mov r8, 0           ; sign extension (always zero for unsigned ints)
+  mov r8b, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8
+  ret
+}
+fun to_U8(n: U16): U8 asm {
+  mov r8w, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8b
+  ret
+}
+fun to_U32(n: U16): U32 asm {
+  mov r8, 0           ; sign extension (always zero for unsigned ints)
+  mov r8w, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
+fun to_U64(n: U16): U64 asm {
+  mov r8, 0           ; sign extension (always zero for unsigned ints)
+  mov r8w, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8
+  ret
+}
+fun to_U8(n: U32): U8 asm {
+  mov r8d, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8b
+  ret
+}
+fun to_U16(n: U32): U16 asm {
+  mov r8d, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8w
+  ret
+}
+fun to_U64(n: U32): U64 asm {
+  mov r8, 0           ; sign extension (always zero for unsigned ints)
+  mov r8d, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8
+  ret
+}
+fun to_U8(n: U64): U8 asm {
+  mov r8, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8b
+  ret
+}
+fun to_U16(n: U64): U16 asm {
+  mov r8, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8w
+  ret
+}
+fun to_U32(n: U64): U32 asm {
+  mov r8, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
+fun to_I32(n: U64): I32 asm {
+  mov r8, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8d
+  ret
+}
+fun to_I64(n: U64): I64 asm {
+  mov r8, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8
+  ret
+}
+fun to_U64(n: I32): U64 asm {
+  ; TODO: assert that n is positive
+  mov r8, 0           ; sign extension (always zero for positive ints)
+  mov r8d, [rsp + 16] ; n
+  mov r9, [rsp + 8]   ; return address
+  mov [r9], r8
+  ret
+}
+
+fun inc(a: U8): U8   { a + 1:U8 }
+fun inc(a: U16): U16 { a + 1:U16 }
+fun inc(a: U32): U32 { a + 1:U32 }
+fun inc(a: U64): U64 { a + 1:U64 }
+fun inc(a: I8): I8   { a + 1:I8 }
+fun inc(a: I16): I16 { a + 1:I16 }
+fun inc(a: I32): I32 { a + 1:I32 }
+fun inc(a: I64): I64 { a + 1:I64 }
+fun dec(a: U8): U8   { a - 1:U8 }
+fun dec(a: U16): U16 { a - 1:U16 }
+fun dec(a: U32): U32 { a - 1:U32 }
+fun dec(a: U64): U64 { a - 1:U64 }
+fun dec(a: I8): I8   { a - 1:I8 }
+fun dec(a: I16): I16 { a - 1:I16 }
+fun dec(a: I32): I32 { a - 1:I32 }
+fun dec(a: I64): I64 { a - 1:I64 }
+
+fun round_up_to_multiple_of(number: U64, factor: U64): U64 {
+  {number + factor.dec()} / factor * factor
+}
+
+fun ==(a: U8, b: U8): Bool   { if a <=> b is equal then true else false }
+fun ==(a: U16, b: U16): Bool { if a <=> b is equal then true else false }
+fun ==(a: U32, b: U32): Bool { if a <=> b is equal then true else false }
+fun ==(a: U64, b: U64): Bool { if a <=> b is equal then true else false }
+fun ==(a: I8, b: I8): Bool   { if a <=> b is equal then true else false }
+fun ==(a: I16, b: I16): Bool { if a <=> b is equal then true else false }
+fun ==(a: I32, b: I32): Bool { if a <=> b is equal then true else false }
+fun ==(a: I64, b: I64): Bool { if a <=> b is equal then true else false }
+fun hash(hasher: &Hasher, int: U8)  { hasher.hash(int.to_U64()) }
+fun hash(hasher: &Hasher, int: U16) { hasher.hash(int.to_U64()) }
+fun hash(hasher: &Hasher, int: U32) { hasher.hash(int.to_U64()) }
+fun hash(hasher: &Hasher, int: I8)  { hasher.hash(int.to_U64()) }
+fun hash(hasher: &Hasher, int: I16) { hasher.hash(int.to_U64()) }
+fun hash(hasher: &Hasher, int: I32) { hasher.hash(int.to_U64()) }
+fun hash(hasher: &Hasher, int: I64) { hasher.hash(int.to_U64()) }
+
+fun write[W](writer: W, int: U8)  { writer.write(radix(int, 10)) }
+fun write[W](writer: W, int: U16) { writer.write(radix(int, 10)) }
+fun write[W](writer: W, int: U32) { writer.write(radix(int, 10)) }
+fun write[W](writer: W, int: U64) { writer.write(radix(int, 10)) }
+fun write[W](writer: W, int: I64) {
+  if int < 0:I64
+  then writer."-{ {0:I64 - int}.to_U64()}" | TODO: minus
+  else writer."+{radix(int.to_U64(), 10)}"
+}
+fun radix(int: U64, radix: U64): RadixFormat { RadixFormat { radix, int } }
+fun radix(int: U8, radix: U64): RadixFormat { radix(int.to_U64(), radix) }
+fun radix(int: U16, radix: U64): RadixFormat { radix(int.to_U64(), radix) }
+fun radix(int: U32, radix: U64): RadixFormat { radix(int.to_U64(), radix) }
+struct RadixFormat { radix: U64, int: U64 }
+fun write[W](writer: W, format: RadixFormat) {
+  var divisor = 1
+  loop {
+    if format.int / divisor < format.radix then break
+    divisor = divisor * format.radix
+  }
+  loop {
+    writer.write(
+      {format.int / divisor}.modulo(format.radix).to_U8().digit_to_char())
+    if divisor == 1 then break
+    divisor = divisor / format.radix
+  }
+}
+fun digit_to_char(digit: U8): Char {
+  if digit > 9:U8
+  then {digit - 10:U8 + #a.byte}.to_char()
+  else {digit + #0.byte}.to_char()
+}
+fun parse_U64(str: Str): U64 {
+  var num = 0
+  for char in str do {
+    if not({#0..=#9}.contains(char))
+    then panic("non-digit in supposed number")
+    num = num * 10 + {char - #0}.to_U64()
+  }
+  num
+}
+
+| Comparisons  
+| You should implement the spaceship operator <=>(T, T): Ordering for types that
+| can be compared. This allows you to use operators such as <= or functions such
+| as min.
+
+enum Ordering { less, equal, greater }
+
+fun ==(a: Ordering, b: Ordering): Bool {
+  switch a
+  case less b.is_less()
+  case equal b.is_equal()
+  case greater b.is_greater()
+}
+fun hash(hasher: &Hasher, ord: Ordering) {
+  hasher.hash(switch ord case less #l case equal #e case greater #g)
+}
+fun write[W](writer: W, ord: Ordering) {
+  writer.write(
+    switch ord case less "less" case equal "equal" case greater "greater"
+  )
+}
+
+fun <[T](a: T, b: T): Bool { switch a <=> b case less true default false }
+fun >[T](a: T, b: T): Bool { switch a <=> b case greater true default false }
+fun >=[T](a: T, b: T): Bool { switch a <=> b case less false default true }
+fun <=[T](a: T, b: T): Bool { switch a <=> b case greater false default true }
+
+fun min[T](a: T, b: T): T { if a < b then a else b }
+fun max[T](a: T, b: T): T { if a > b then a else b }
+fun clamp[T](a: T, low: T, high: T): T { max(low, min(high, a)) }
+
+| Type Information  
+| Using some builtin functions that only take type arguments (no value
+| arguments), you can use information about types at runtime.
+
+fun size_of[T](): U64 { ... }
+fun alignment_of[T](): U64 { ... } | chaotic
+
+| The size you need to use if you want to store multiple instances of the type
+| after each other in memory.
+fun stride_size_of[T](): U64 {
+  size_of[T]().round_up_to_multiple_of(alignment_of[T]())
+}
+
+| Makes the name of the type available at runtime.
+fun type[T](): Type { ... }
+
+struct Type { name: Str, args: Vec[Type] }
+
+fun type(name: Str): Type { type(name, vec[Type]()) }
+fun type(name: Str, args: Vec[Type]): Type { Type { name, args } }
+fun is_never(type: Type): Bool { type == type("Never") }
+
+fun write[W](writer: W, type: Type) {
+  if type.name == "&"
+  then writer."&{type.args.get(0)}"
+  else writer."{type.name}{type_args(type.args)}"
+}
+fun type_args[T](args: Vec[T]): TypeArgsFormat[T] { TypeArgsFormat { args } }
+struct TypeArgsFormat[T] { args: Vec[T] }
+fun write[W, T](writer: W, type_args: TypeArgsFormat[T]) {
+  if type_args.args.is_not_empty()
+  then writer."[{comma_separated(type_args.args)}]"
+}
+
+fun ==(a: Type, b: Type): Bool {
+  a.name == b.name orelse return false
+  a.args.len == b.args.len orelse return false
+  for zip in zip(a.args.iter(), b.args.iter()) do
+    zip.a == zip.b orelse return false
+  true
+}
+fun hash(hasher: &Hasher, type: Type) {
+  hasher.hash(type.name)
+  hasher.hash_all(type.args)
+}
+
+| References & Addresses  
+| Martinaise supports references: &T is a reference to a T. You can get a
+| reference to a value using the expr.& syntax. You can follow a reference
+| using the expr.* syntax.
+| Addresses are like references, but they don't have any information about what
+| kind of object is stored at the address.
+
+opaque Address = 8 bytes big, 8 bytes aligned
+
+fun to_address[T](ref: &T): Address asm {
+  mov r8, [rsp + 16] ; ref
+  mov r9, [rsp + 8]  ; return address
+  mov [r9], r8
+  ret
+}
+fun to_reference[T](address: Address): &T asm {
+  mov r8, [rsp + 16] ; address
+  mov r9, [rsp + 8]  ; return address
+  mov [r9], r8
+  ret
+}
+
+| Casts an A to a B by reinterpreting the memory of A. This is very unsafe, so
+| only use it if you know what you're doing.
+fun cast[A, B](a: A): B {
+  | at least a small sanity check
+  assert(
+    size_of[A]() == size_of[B](), "cast between types of different sizes",
+  )
+  a.&.to_address().to_reference[B]().*
+}
+
+fun to_U64(address: Address): U64 { address.cast[Address, U64]() }
+fun to_address(number: U64): Address { number.cast[U64, Address]() }
+
+var null = 0.to_address() | Million dollar mistake?
+
+fun ==(a: Address, b: Address): Bool { a.to_U64() == b.to_U64() }
+fun +(a: Address, offset: U64): Address { {a.to_U64() + offset}.to_address() }
+
+fun write[W](writer: W, address: Address) {
+  | max U64 is 18_446_744_073_709_551_615
+  var divisor = 1_152_921_504_606_846_976 | 16 ^ something
+  var address = address.to_U64()
+  writer."0x"
+  loop {
+    writer.write({address / divisor}.modulo(16).to_U8().digit_to_char())
+    if divisor == 1 then break
+    divisor = divisor / 16
+  }
+}
+
+fun swap[T](a: &T, b: &T) {
+  var tmp = a.*
+  a.* = b.*
+  b.* = tmp
+}
+
+| Assuming multiple instances of T are saved in memory right next to each other,
+| at an offset of their stride size, return a reference to the item at the
+| offset.
+fun add_stride_offset[T](ref: &T, offset: U64): &T {
+  {ref.to_address() + {stride_size_of[T]() * offset}}.to_reference[T]()
+}
+
+| Heap & Memory Allocations  
+| Sometimes you need to allocate memory on the heap – for example, if you want
+| to return a value from a function, but you don't know its size before calling
+| it.
+| For those cases, Martinaise has a built-in heap. It's uses very basic bump
+| allocation: It keeps a simple pointer to the end of the heap and increases it
+| each time new memory is allocated.
+| Memory in Martinaise can never be freed. Because Martinaise targets only
+| short-lived puzzle-solving programs, we let the operating system free all
+| memory at once when the program ends. That simplifies things for Martinaise
+| code and generally leads to better runtime performance.
+
+fun unchecked_malloc(size: U64, alignment: U64): Address asm {
+  ; There's a  built-in _malloc function that accepts the size to allocate in r8
+  ; and the alignment in r9.
+  mov r8, [rsp + 16] ; size
+  mov r9, [rsp + 24] ; alignment
+  call _malloc ; provided by the Martinaise runtime
+  mov r10, [rsp + 8]
+  mov [r10], rax
+  ret
+}
+fun malloc(size: U64, alignment: U64): Address {
+  var address = unchecked_malloc(size, alignment)
+  if address == null then panic("out of memory")
+  address
+}
+fun uninitialized[T](): &T {
+  malloc(size_of[T](), alignment_of[T]()).to_reference[T]()
+}
+fun put_on_heap[T](value: T): &T {
+  var ref = uninitialized[T]()
+  ref.* = value
+  ref
+}
+
+fun memcopy(from: Address, to: Address, size: U64) asm {
+    mov r8, [rsp + 16]  ; from
+    mov r9, [rsp + 24]  ; to
+    mov r10, [rsp + 32] ; size (amount that's still left to copy)
+    cmp r8, r9
+    ; je .done
+    jl .right_to_left
+  .left_to_right:
+  .left_to_right_loop:
+    cmp r10, 0
+    je .done
+    mov r11b, [r8]
+    mov [r9], r11b
+    inc r8
+    inc r9
+    dec r10
+    jmp .left_to_right_loop
+  .right_to_left:
+    add r8, r10
+    add r9, r10
+    dec r8
+    dec r9
+  .right_to_left_loop:
+    cmp r10, 0
+    je .done
+    mov r11b, [r8]
+    mov [r9], r11b
+    dec r8
+    dec r9
+    dec r10
+    jmp .right_to_left_loop
+  .done:
+    ret
+}
+
+| Slice  
+| A slice refers to a memory region where values of the same type are right next
+| to each other. A slice has a pointer to the first element as well as a length.
+|
+| [  item  ][  item  ][  item  ][  item  ]
+| ^
+| len 4
+
+struct Slice[T] { data: &T, len: U64 }
+
+fun empty_slice[T](): Slice[T] {
+  | Storing a reference that is effectively a null pointer is an antipattern.
+  | Here, we still do that because storing a Maybe[&T] would make the Slice type
+  | bigger. If the len is 0, we know not to follow the data reference.
+  Slice { data = null.to_reference[T](), len = 0 }
+}
+fun uninitialized_slice[T](len: U64): Slice[T] {
+  if len == 0 then return empty_slice[T]()
+  var data = malloc(len * stride_size_of[T](), alignment_of[T]())
+    .to_reference[T]()
+  Slice { data, len }
+}
+fun filled_slice[T](len: U64, fill: T): Slice[T] {
+  var slice = uninitialized_slice[T](len)
+  for i in 0..len do slice.get_ref(i).* = fill
+  slice
+}
+
+fun is_empty[T](slice: Slice[T]): Bool { slice.len == 0 }
+fun get[T](slice: Slice[T], index: U64): T { slice.get_ref(index).* }
+fun get_maybe[T](slice: Slice[T], index: U64): Maybe[T] {
+  switch slice.get_maybe_ref(index)
+  case some(item) some(item.*)
+  case none none[T]()
+}
+fun get_ref[T](slice: Slice[T], index: U64): &T {
+  slice.get_maybe_ref(index).unwrap("index out of bounds")
+}
+fun get_maybe_ref[T](slice: Slice[T], index: U64): Maybe[&T] {
+  if {0..slice.len}.contains(index)
+  then some(slice.data.add_stride_offset(index))
+  else none[&T]()
+}
+
+fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
+  var i = 0
+  loop {
+    if {i == a.len} & {i == b.len} then return Ordering.equal
+    if i == a.len then return Ordering.less
+    if i == b.len then return Ordering.greater
+    var ord = a.get(i) <=> b.get(i)
+    if ord is equal then {} else return ord
+    i = i.inc()
+  }
+}
+fun ==[T](a: Slice[T], b: Slice[T]): Bool {
+  a.len == b.len orelse return false
+  | TODO: support types that only have ==, not <=>
+  if a <=> b is equal then true else false
+}
+fun hash[T](hasher: &Hasher, slice: Slice[T]) { hasher.hash_all(slice) }
+fun write[W, T](writer: W, slice: Slice[T]) {
+  writer.write("[{comma_separated(slice)}]")
+}
+
+fun iter[T](slice: Slice[T]): Iter[T, _] {
+  Iter[T, SliceIter[T]] { state = SliceIter { slice, index = 0 } }
+}
+struct SliceIter[T] { slice: Slice[T], index: U64 }
+fun next[T](iter: &Iter[T, SliceIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  var item =
+    if state.index < state.slice.len
+    then some(state.slice.get(state.index))
+    else none[T]()
+  state.index = state.index + 1
+  item
+}
+
+fun rev_iter[T](slice: Slice[T]): Iter[T, _] {
+  Iter[T, SliceRevIter[T]] { state = SliceRevIter { slice, index = slice.len } }
+}
+struct SliceRevIter[T] {
+  slice: Slice[T],
+  index: U64, | last yielded item
+}
+fun next[T](iter: &Iter[T, SliceRevIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  if state.index > 0 then {
+    state.index = state.index - 1
+    some[T](state.slice.get(state.index))
+  } else none[T]()
+}
+
+fun copy_to[T](from: Slice[T], to: Slice[T]) {
+  assert(from.len == to.len, "copy_to slice lens don't match")
+  memcopy(
+    from.data.to_address(),
+    to.data.to_address(),
+    from.len * stride_size_of[T](),
+  )
+}
+fun subslice[T](slice: Slice[T], range: Range[U64]): Slice[T] {
+  assert(range.end <= slice.len, "subslice needs to be inside original slice")
+  Slice { data = slice.data.add_stride_offset(range.start), len = range.len() }
+}
+fun remove[T](slice: &Slice[T], range: Range[U64]) {
+  slice.subslice(range.end..slice.len)
+    .copy_to(slice.subslice(range.start..{slice.len - range.len()}))
+  slice.len = slice.len - range.len()
+}
+fun first[T](slice: Slice[T]): T {
+  assert(slice.is_not_empty(), "first only works on non-empty slices")
+  slice.get(0)
+}
+fun first[T](slice: Slice[T], amount: U64): Slice[T] {
+  assert(amount <= slice.len, "first amount too big")
+  slice.subslice(0..amount)
+}
+fun last[T](slice: Slice[T]): T {
+  assert(slice.is_not_empty(), "last only works on non-empty slices")
+  slice.get(slice.len.dec())
+}
+fun last[T](slice: Slice[T], amount: U64): Slice[T] {
+  assert(amount <= slice.len, "last amount too big")
+  slice.subslice({slice.len - amount}..slice.len)
+}
+fun without_first[T](slice: Slice[T]): Slice[T] { slice.without_first(1) }
+fun without_first[T](slice: Slice[T], amount: U64): Slice[T] {
+  assert(amount <= slice.len, "without_first amount too big")
+  slice.subslice(amount..slice.len)
+}
+fun without_last[T](slice: Slice[T]): Slice[T] { slice.without_last(1) }
+fun without_last[T](slice: Slice[T], amount: U64): Slice[T] {
+  assert(amount <= slice.len, "without_last amount too big")
+  slice.subslice(0..{slice.len - amount})
+}
+fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
+  slice.len >= prefix.len orelse return false
+  slice.first(prefix.len) == prefix
+}
+fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
+  slice.len >= suffix.len orelse return false
+  slice.last(suffix.len) == suffix
+}
+fun trim_prefix[T](slice: &Slice[T], prefix: Slice[T]): Bool {
+  var matches = slice.starts_with(prefix)
+  if matches then slice.* = slice.without_first(prefix.len)
+  matches
+}
+fun trim_suffix[T](slice: &Slice[T], suffix: Slice[T]): Bool {
+  var matches = slice.ends_with(suffix)
+  if matches then slice.* = slice.without_last(suffix.len)
+  matches
+}
+
+fun sort[T](slice: &Slice[T]) {
+  | quick sort
+  if slice.len <= 1 then return {}
+  var pivot = slice.get(slice.len.dec())
+  var i = 0
+  for j in 0..slice.len do
+    if slice.get(j) < pivot then {
+      i = i.inc()
+      swap(slice.get_ref(i.dec()), slice.get_ref(j))
+    }
+  swap(slice.get_ref(i), slice.get_ref(slice.len.dec()))
+  sort(slice.subslice(0..i).&)
+  sort(slice.subslice(min(i.inc(), slice.len.dec())..slice.len).&)
+}
+
+| Strings & Chars  
+| A Char (short for Character) is a wrapper around a U8. When you write
+| something like #a in your code, that gets turned into a Char. Don't confuse
+| the Char with a Unicode code point, grapheme cluster, or anything like that.
+| This is as much a "character" as the C char. But who are we to judge?
+| Character is a heavily overloaded term anyways.
+| Similarly, a Str (short for String) is just a wrapper around a Slice[U8] and
+| it's what you get from string literals such as "blub". Try printing it! It
+| formatted nicely.
+| Finally, OsStr is a string useful for operating system APIs – basically a
+| char*. You can't efficiently get the length or do many interesting operations
+| on it. It's null-terminated.
+
+struct Char { byte: U8 }
+struct Str { data: &Char, len: U64 }
+struct OsStr { address: Address } | null-terminated
+
+var space = # 
+var newline = 10:U8.to_char()
+var tab = 9:U8.to_char()
+
+fun to_char(byte: U8): Char { Char { byte } }
+
+fun to_str(chars: Slice[Char]): Str { chars.cast[Slice[Char], Str]() }
+fun to_str(bytes: Slice[U8]): Str { bytes.cast[Slice[U8], Str]() }
+fun to_str(chars: Vec[Char]): Str { chars.to_slice().to_str() }
+fun chars(str: Str): Slice[Char] { str.cast[Str, Slice[Char]]() }
+fun bytes(str: Str): Slice[U8] { str.cast[Str, Slice[U8]]() }
+
+fun to_os_str(str: Str): OsStr {
+  | make it null-terminated
+  var bytes = uninitialized_slice[U8](str.len + 1)
+  str.bytes().copy_to(bytes.subslice(0..str.len))
+  bytes.get_ref(str.len).* = 0:U8
+  OsStr { address = bytes.data.to_address() }
+}
+fun to_str(str: OsStr): Str {
+  var len = 0
+  loop
+    if str.address.to_reference[U8]().add_stride_offset(len).* == 0:U8
+    then break
+    else len = len.inc()
+  Slice { data = str.address.to_reference[Char](), len }.to_str()
+}
+
+fun parse_digit(char: Char): U8 {
+  if {#0..=#9}.contains(char.byte) then return char.byte - #0.byte
+  if {#a..=#z}.contains(char.byte) then return char.byte - #a.byte + 16
+  if {#A..=#Z}.contains(char.byte) then return char.byte - #A.byte + 16
+  panic("not a digit")
+}
+fun <=>(a: Char, b: Char): Ordering { a.byte <=> b.byte }
+fun ==(a: Char, b: Char): Bool { a.byte == b.byte }
+fun hash(hasher: &Hasher, char: Char) { hasher.hash(char.byte) }
+fun write[W](writer: W, char: Char) { writer.write_byte(char.byte) }
+fun inc(char: Char): Char { Char { byte = char.byte.inc() } }
+fun dec(char: Char): Char { Char { byte = char.byte.dec() } }
+fun +(char: Char, delta: U8): Char { Char { byte = char.byte + delta } }
+fun -(char: Char, delta: U8): Char { Char { byte = char.byte - delta } }
+fun -(char: Char, other: Char): U8 { char.byte - other.byte }
+
+fun string_builder(): StringBuilder { StringBuilder { chars = vec[Char]() } }
+struct StringBuilder { chars: Vec[Char] }
+fun write_byte(builder: &StringBuilder, byte: U8) {
+  builder.chars.&.push(Char { byte })
+}
+fun write_bytes(builder: &StringBuilder, bytes: Slice[U8]) {
+  for byte in bytes do builder.write_byte(byte)
+}
+fun len(builder: StringBuilder): U64 { builder.chars.len }
+fun truncate_to_len(builder: &StringBuilder, len: U64) {
+  assert(len <= builder.chars.len)
+  builder.chars.len = len
+}
+fun write[W](writer: W, sb: StringBuilder) { writer.write(sb.to_str()) }
+fun to_str(builder: StringBuilder): Str { builder.chars.to_slice().to_str() }
+
+fun is_empty(str: Str): Bool { str.len == 0 }
+fun get(str: Str, index: U64): Char { str.get_ref(index).* }
+fun get_ref(str: Str, index: U64): &Char {
+  {0..str.len}.contains(index) orelse panic("index out of bounds")
+  str.chars().get_ref(index)
+}
+
+fun <=>(a: Str, b: Str): Ordering {
+  var i = 0
+  loop {
+    if {i == a.len} & {i == b.len} then return Ordering.equal
+    if i == a.len then return Ordering.less
+    if i == b.len then return Ordering.greater
+    var ord = a.get(i) <=> b.get(i)
+    if ord is equal then {} else return ord
+    i = i.inc()
+  }
+}
+fun ==(a: Str, b: Str): Bool {
+  a.len == b.len orelse return false
+  if a <=> b is equal then true else false
+}
+fun hash(hasher: &Hasher, str: Str) { hasher.hash(str.chars()) }
+fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }
+
+fun iter(str: Str): Iter[Char, _] {
+  Iter[Char, StrIter] { state = StrIter { str, index = 0 } }
+}
+struct StrIter { str: Str, index: U64 }
+fun next(iter: &Iter[Char, StrIter]): Maybe[Char] {
+  var state = iter.state.&
+  if state.index >= state.str.len then none[Char]() else {
+    var char = state.str.chars().get(state.index)
+    state.index = state.index.inc()
+    some(char)
+  }
+}
+
+fun substr(str: Str, from: U64, to: U64): Str {
+  to <= str.len orelse panic("substr needs to be inside original str")
+  str.chars().subslice(from..to).to_str()
+}
+fun first(str: Str): Char {
+  assert(str.is_not_empty(), "first only works on non-empty strs")
+  str.get(0)
+}
+fun first(str: Str, amount: U64): Str {
+  assert(amount <= str.len, "first amount too big")
+  str.substr(0, amount)
+}
+fun last(str: Str): T {
+  assert(str.is_not_empty(), "last only works on non-empty strs")
+  str.get(str.len.dec())
+}
+fun last(str: Str, amount: U64): Str {
+  assert(amount <= str.len, "last amount too big")
+  str.substr(str.len - amount, str.len)
+}
+fun without_first(str: Str, amount: U64): Str {
+  assert(amount <= str.len, "without_first amount too big")
+  str.substr(amount, str.len)
+}
+fun without_last(str: Str, amount: U64): Str {
+  assert(amount <= str.len, "without_last amount too big")
+  str.substr(0, str.len - amount)
+}
+fun starts_with(str: Str, prefix: Str): Bool {
+  str.chars().starts_with(prefix.chars())
+}
+fun ends_with(str: Str, suffix: Str): Bool {
+  str.chars().ends_with(suffix.chars())
+}
+fun trim_prefix(str: &Str, prefix: Str) {
+  assert(str.starts_with(prefix), "trim_prefix doesn't match prefix")
+  str.* = str.without_first(prefix.len)
+}
+fun trim_suffix(str: &Str, suffix: Str) {
+  assert(str.ends_with(suffix), "trim_suffix doesn't match suffix")
+  str.* = str.without_last(suffix.len)
+}
+fun split(str: Str, separator: Str): Slice[Str] {
+  var parts = vec[Str]()
+  for part in str.iter().split(separator.chars()) do parts.&.push(part.to_str())
+  parts.to_slice()
+}
+fun lines(slice: Str): Slice[Str] { slice.split("{newline}") }
+fun pad_right(str: Str, len: U64, char: Char): Str {
+  var string = string_builder().&
+  string.write(str)
+  loop if string.len() < len then string.write(char) else break
+  string.to_str()
+}
+
+| Range  
+| Ranges have an inclusive start and exclusive end value.
+
+struct Range[T] { start: T, end: T }
+
+fun ..[T](start: T, end: T): Range[T] { Range { start, end } }
+fun ..=[T](start: T, end: T): Range[T] { Range { start, end = end.inc() } }
+fun ..+[T, D](start: T, len: D): Range[T] { Range { start, end = start + len } }
+fun ..+=[T, D](start: T, len: D): Range[T] {
+  Range { start, end = start + len.inc() }
+}
+
+fun len[T](range: Range[T]): U64 { range.end - range.start }
+fun contains[T](range: Range[T], value: T): Bool {
+  {value >= range.start} & {value < range.end}
+}
+fun is_empty[T](range: Range[T]): Bool { range.start >= range.end }
+fun write[W, T](writer: W, range: Range[T]) {
+  writer."{range.start}..{range.end}"
+}
+
+fun iter[T](range: Range[T]): Iter[T, _] {
+  Iter[T, RangeIter[T]] { state = RangeIter { rest = range } }
+}
+struct RangeIter[T] { rest: Range[T] }
+fun next[T](iter: &Iter[T, RangeIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  if state.rest.is_empty() then none[T]() else {
+    var current = state.rest.start
+    state.rest.start = current.inc()
+    some(current)
+  }
+}
+
+| Iterating  
+| Martinaise supports for loops for iterating. They are just syntactic sugar for
+| calling an iter() function and then repeatedly calling next() on the result:
+|
+| for a in b do ...
+|
+| $iter = b.iter().&
+| loop switch $iter.next() case none break case some(a) {
+|   ...
+| }
+|
+| Because Martinaise has no concept of traits or constraints, defining methods
+| for iterators becomes difficult: You want it to work on all iterators, but
+| defining a method such as split[I](iter: I) means that you can call split on
+| every single type now, polluting the namespace. Also, you can't constrain the
+| item type: What if you want to offer a new function only on iterators which
+| yield U8s?
+| That's why there's a wrapper struct Iter[T, I], which just wraps an actual
+| iterator implementation and delegates next() to it. The T is not used or
+| constrained by the type system, but things fail if I.next() doesn't return a
+| Maybe[T] – the T is a poor man's associated type, if you will.
+|
+| When you chain iterators together, you actually just nest the types. Take this
+| example:
+| 
+| zip("Hello".iter().enumerate(), "world".iter())
+| 
+| Here, "Hello".iter() and "world".iter() return an Iter[Char, StrIter]. The
+| enumerate() gets the inner StrIter, wraps it in an EnumeratedIter and re-wraps
+| it in an Iter to an Iter[Enumerated[Char], EnumeratedIter[Char, StrIter]].
+| Finally, the zip() unwraps both Iters and creates an Iter with a ZipIter,
+| resulting in this:
+| 
+| Iter[
+|   Tuple2[Enumerated[Char], Char],
+|   ZipIter[EnumeratedIter[StrIter], StrIter],
+| ]
+
+struct Iter[T, S] { state: S }
+
+fun iter[T, I](iter: Iter[T, I]): Iter[T, I] { iter }
+fun next_from_iter_state[T, I](state: &I): Maybe[T] {
+  var iter = Iter[T, I] { state = state.* }
+  var item = iter.&.next()
+  state.* = iter.state
+  item
+}
+fun is_empty[T, I](iter: &Iter[T, I]): Bool { iter.next().is_none() }
+fun contains[T, I](iter: &Iter[T, I], item: T): Bool {
+  for item_ in iter do if item_ == item then return true
+  return false
+}
+
+| Skips the given amount of elements on the inner iter, then acts like the inner
+| iter.
+fun skip[T, I](iter: Iter[T, I], amount: U64): Iter[T, _] {
+  Iter { state = SkipIter[T, I] { inner = iter.state, amount } }
+}
+struct SkipIter[T, I] { inner: I, amount: U64 }
+fun next[T, I](iter: &Iter[T, SkipIter[I]]): Maybe[T] {
+  var state = iter.state.&
+  for i in 0..state.amount do {
+    var next = state.inner.&.next_from_iter_state[T, I]()
+    if next is none then return none[T]()
+  }
+  state.amount = 0
+  state.inner.&.next_from_iter_state[T, I]()
+}
+
+| Takes the given amount of elements, then ends.
+fun take[T, I](iter: Iter[T, I]): Iter[T, _] {
+  Iter[T, _] { state = TakeIter[I] { inner = iter.state, amount } }
+}
+struct TakeIter[T, I] { inner: I, amount: U64 }
+fun next[T, I](iter: &Iter[T, TakeIter[I]]): Maybe[T] {
+  var state = iter.state.&
+  if state.amount < 0 then none[T]() else {
+    state.amount = state.amount.dec()
+    state.inner.&.next_from_iter_state[T, I]()
+  }
+}
+
+| Zips two iters of equal length.
+fun zip[A, B, IA, IB](a: Iter[A, IA], b: Iter[B, IB]): Iter[Tuple2[A, B], _] {
+  Iter[Tuple2[A, B], ZipIter[IA, IB]] {
+    state = ZipIter[IA, IB] { a = a.state, b = b.state }
+  }
+}
+struct ZipIter[IA, IB] { a: IA, b: IB }
+fun next[A, B, IA, IB](
+  iter: &Iter[Tuple2[A, B], ZipIter[IA, IB]],
+): Maybe[Tuple2[A, B]] {
+  switch iter.state.a.&.next_from_iter_state[A, IA]()
+  case some(a) {
+    switch iter.state.b.&.next_from_iter_state[B, IB]()
+    case none panic("zip iters have unequal length")
+    case some(b) some(tuple(a, b))
+  }
+  case none {
+    switch iter.state.b.&.next_from_iter_state[B, IB]()
+    case some panic("zip iters have unequal length")
+    case none none[Tuple2[A, B]]()
+  }
+}
+
+| Wraps items in Enumerated[T], which also has an index.
+fun enumerate[T, I](iter: Iter[T, I]): Iter[Enumerated[T], _] {
+  Iter[Enumerated[T], EnumeratedIter[I]] {
+    state = EnumeratedIter[I] { inner = iter.state, index = 0 }
+  }
+}
+struct Enumerated[T] { index: U64, item: T }
+struct EnumeratedIter[S] { inner: S, index: U64 }
+fun next[T, I](
+  iter: &Iter[Enumerated[T], EnumeratedIter[I]],
+): Maybe[Enumerated[T]] {
+  var state = iter.state.&
+  switch state.inner.&.next_from_iter_state[T, I]()
+  case some(item) {
+    var index = state.index
+    state.index = state.index.inc()
+    some(Enumerated { index, item })
+  }
+  case none none[Enumerated[T]]()
+}
+fun write[W, T](writer: W, enumerated: Enumerated[T]) {
+  writer."({enumerated.index}: {enumerated.item})"
+}
+
+| Gets the element at the given index.
+fun get[T, I](iter: &Iter[T, I], index: U64): T {
+  iter.get_maybe(index).unwrap()
+}
+fun get_maybe[T, I](iter: &Iter[T, I], index: U64): Maybe[T] {
+  iter.skip(index).get()
+}
+
+| Finds the needle in the iter, returning its position.
+fun find[T, I](iter: &Iter[T, I], needle: T): Maybe[U64] {
+  for en in iter.enumerated() do if en.item == needle then return some(en.index)
+  none[U64]()
+}
+
+| Splits an Iter at the given items forming a separator.
+fun split[T, I](iter: Iter[T, I], separator: Slice[T]): Iter[Slice[T], _] {
+  Iter[T, SplitIter[I]] { state = SplitIter { inner = iter.inner, separator } }
+}
+struct SplitIter[T, I] { inner: I, separator: Slice[T] }
+fun next[T, I](iter: &Iter[T, SplitIter[T, I]]): Maybe[Slice[T]] {
+  var state = iter.state.&
+  var current = vec[T]()
+  loop
+    switch state.inner.&.next()
+    case none
+      if current.len > 0
+      then return some(current.to_slice())
+      else return none[Slice[T]]()
+    case some(item) {
+      current.&.push(item)
+      if current.to_slice().ends_with(state.separator)
+      then return some(current.to_slice().without_last(state.separator.len))
+    }
+}
+
+| Splits an Iter at the given separator.
+fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
+  iter.split(vec(separator).to_slice())
+}
+
+| fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
+|   if prefix.len.is_greater_than(slice.len) then return false
+|   for i in 0..prefix.len do
+|     if slice.get(i) != prefix.get(i) then return false
+|   true
+| }
+
+| fun split(str: Str, separator: Str): Slice[Str] {
+|   var parts = vec[Str]()
+|   for part in str.iter().iter_split(separator) do parts.&.push(part)
+|   parts.to_slice()
+| }
+| fun lines(slice: Str): Slice[Str] { slice.split("
+| ") }
+| fun trim_prefix(str: &Str, prefix: Str) {
+|   str.starts_with(prefix) orelse panic("str doesn't start with prefix")
+|   str.* = str.substr(prefix.len)
+| }
+
+| Files, Input & Output  
+| In C, a common way to work with files is with fopen, fclose, and similar
+| functions, which work with FILE* pointers. The FILE struct internally contains
+| a file descriptor, a small integer that's a handle to the file object in the
+| operating system kernel.
+| Martinaise doesn't use the FILE functions and instead works with file
+| descriptors using some libc functions (open, read, write, close). To make the
+| API type-safe, Martinaise has it's own wrapper around a file descriptor, the
+| File type.
+|
+| Files can also be opened in an asynchronous mode where you can poll the
+| operating system for reads and writes. But then you have to maintain an event
+| loop yourself and everything gets much more complicated. Here, I only use the
+| blocking version.
+| 
+| The mode below refers to the access bits that you see with `ls -l`. 8#666 is
+| read and write access for everyone.
+|
+| The flag constants are taken from the Zig implementation. The open-time flags
+| and I/O operating modes flags are specific to x86.
+|
+| https://www.gnu.org/software/libc/manual/html_node/Opening-and-Closing-Files.html
+
+struct File { descriptor: U64 }
+
+enum OpenFileFlag { read, write, create, truncate, append }
+fun hash(hasher: &Hasher, flag: OpenFileFlag) {
+  hasher.hash(
+    switch flag
+    case read 0
+    case write 1
+    case create 2
+    case truncate 3
+    case append 4
+  )
+}
+fun ==(a: OpenFileFlag, b: OpenFileFlag): Bool {
+  switch a
+  case read if b is read then true else false
+  case write if b is write then true else false
+  case create if b is create then true else false
+  case truncate if b is truncate then true else false
+  case append if b is append then true else false
+}
+fun to_os_flags(flags: Set[OpenFileFlag]): U64 {
+  var flag_rdonly = 8#0000
+  var flag_wronly = 8#0001
+  var flag_rdwr   = 8#0002
+  var flag_create = 8#0100
+  var flag_trunc  = 8#1000
+  var flag_append = 8#2000
+
+  | "The argument flags must include one of the following access modes:
+  |  O_RDONLY, O_WRONLY, or O_RDWR. These request opening the file read-only,
+  |  write-only, or read/write, respectively."
+  | https://man7.org/linux/man-pages/man2/open.2.html
+  var res =
+    if flags.contains(OpenFileFlag.read)
+    then if flags.contains(OpenFileFlag.write) then flag_rdwr else flag_rdonly
+    else {
+      flags.contains(OpenFileFlag.write) orelse panic("must read or write")
+      flag_wronly
+    }
+
+  | "In addition, zero or more file creation flags and file status flags can be
+  |  bitwise ORed in flags. The file creation flags are O_CLOEXEC, O_CREATE,
+  |  O_DIRECTORY, O_EXCL, O_NOCTTY, O_NOFOLLOW, O_TMPFILE, and O_TRUNC. The file
+  |  status flags are all of the remaining flags listed below. The distinction
+  |  between these two groups of flags is that the file creation flags affect
+  |  the semantics of the open operation itself, while the file status flags
+  |  affect the semantics of subsequent I/O operations."
+  | https://man7.org/linux/man-pages/man2/open.2.html
+  | TODO: support more flags
+  eprintln("create flag set? {flags.contains(OpenFileFlag.create)}")
+  if flags.contains(OpenFileFlag.create)   then res = res.or(flag_create)
+  if flags.contains(OpenFileFlag.truncate) then res = res.or(flag_trunc)
+  if flags.contains(OpenFileFlag.append)   then res = res.or(flag_append)
+  res
+}
+
+fun create_file(filename: Str, mode: U64): Result[File, Str] {
+  var descriptor = syscall_creat(filename.to_os_str().address.to_U64(), mode)
+    .error_if_zero("couldn't create file {filename}")?
+  ok[File, Str](File { descriptor })
+}
+
+fun open_file(
+  filename: Str, flags: Set[OpenFileFlag], mode: U64,
+): Result[File, Str] {
+  var descriptor =
+    syscall_open(
+      filename.to_os_str().address.to_U64(),
+      flags.to_os_flags(),
+      mode,
+    ).error_if_zero("couldn't open file {filename}")?
+  ok[File, Str](File { descriptor })
+}
+
+fun read(file: File, buffer: Slice[U8]): Result[U64, Str] {
+  var bytes_read =
+    syscall_read(file.descriptor, buffer.data.to_address().to_U64(), buffer.len)
+    .error_if_minus_one("couldn't read from file")?
+  ok[U64, Str](bytes_read)
+}
+fun read_byte(file: File): Result[Maybe[U8], Str] {
+  var c = 0:U8
+  var bytes_read = syscall_read(file.descriptor, c.&.to_address().to_U64(), 1)
+    .error_if_minus_one("couldn't read from file")?
+  if bytes_read == 0 then ok[Maybe[U8], Str](none[U8]())
+  else ok[Maybe[U8], Str](some(c))
+}
+
+fun write_bytes_safely(file: File, buffer: Slice[U8]): Result[Nothing, Str] {
+  loop {
+    if buffer.is_empty() then break
+    var bytes_written = syscall_write(
+      file.descriptor, buffer.data.to_address().to_U64(), buffer.len,
+    )
+    if bytes_written.cast[U64, I64]() <= 0:I64
+    then return error[Nothing, Str]("couldn't write to file")
+    buffer = buffer.without_first(bytes_written)
+  }
+  ok[Nothing, Str]({})
+}
+fun write_byte_safely(file: File, byte: U8): Result[Nothing, Str] {
+  var bytes_written = syscall_write(
+    file.descriptor, byte.&.to_address().to_U64(), 1,
+  )
+  if bytes_written.cast[U64, I64]() <= 0:I64
+  then error[Nothing, Str]("couldn't write to file")
+  else ok[Nothing, Str]({})
+}
+fun write_bytes(file: File, buffer: Slice[U8]) {
+  file.write_bytes_safely(buffer) orelse(e) panic(e)
+}
+fun write_byte(file: File, byte: U8) {
+  file.write_byte_safely(byte) orelse(e) panic(e)
+}
+
+fun close(file: File): Result[Nothing, Str] {
+  var returned = syscall_close(file.descriptor)
+  if returned.cast[U64, I64]() < 0:I64
+  then error[Nothing, Str]("couldn't close file")
+  else ok[Nothing, Str]({})
+}
+
+fun read_file(name: Str): Result[Slice[U8], Str] {
+  var file = open_file(name, vec(OpenFileFlag.read).to_set(), 0)?
+  var content = vec[U8]()
+  loop {
+    var byte = file.read_byte()? orelse break
+    content.&.push(byte)
+  }
+  file.close()?
+  ok[Slice[U8], Str](content.to_slice())
+}
+fun write_file(name: Str, content: Slice[U8]): Result[Nothing, Str] {
+  var file = open_file(
+    name,
+    vec(OpenFileFlag.write, OpenFileFlag.create, OpenFileFlag.truncate)
+      .to_set(),
+    8#666 | read and write access for everyone
+  )?
+  for byte in content do file.write_byte_safely(byte)?
+  file.close()?
+  ok[Nothing, Str]({})
+}
+
+| Printing  
+| You should implement a write[Writer](Writer, T) function for types that can be
+| printed. Writers are anything that has a write_byte(Writer, U8) function and a
+| write_bytes(Writer, Slice[U8]) function.
+
+var stdin = File { descriptor = 0 }
+var stdout = File { descriptor = 1 }
+var stderr = File { descriptor = 2 }
+
+fun format[T](value: T): Str { "{value}" }
+
+fun writeln[W](writer: W) { writer.write(newline) }
+fun writeln[W, T](writer: W, value: T) { writer.write(value) writer.writeln() }
+
+fun comma_separated[I](iter: I): CommaSeparatedFormat[I] {
+  CommaSeparatedFormat { iter }
+}
+struct CommaSeparatedFormat[I] { iter: I }
+fun write[W, T](writer: W, format: CommaSeparatedFormat[T]) {
+  var first = true
+  for item in format.iter do {
+    if first then first = false else writer.write(", ")
+    writer.write(item)
+  }
+}
+
+fun print[T](value: T) { stdout.write(value) }
+fun println() { print(newline) }
+fun println[T](value: T) { print(value) println() }
+
+fun eprint[T](value: T) { stderr.write(value) }
+fun eprintln() { eprint(newline) }
+fun eprintln[T](value: T) { eprint(value) eprintln() }
+
+fun buffered_writer[W](writer: W, capacity: U64): BufferedWriter[W] {
+  assert(capacity > 0)
+  BufferedWriter {
+    buffer = filled_slice(capacity, 0:U8), len = 0, inner = writer
+  }
+}
+struct BufferedWriter[W] { buffer: Slice[U8], len: U64, inner: W }
+fun flush[W](self: &BufferedWriter[W]) {
+  self.inner.write_bytes(self.buffer.first(self.len))
+  self.len = 0
+}
+fun amount_free[W](self: BufferedWriter[W]): U64 {
+  self.buffer.len - self.len
+}
+fun write_byte[W](self: &BufferedWriter[W], byte: U8) {
+  if self.amount_free() == 0 then self.flush()
+  self.buffer.get_ref(self.len).* = byte
+  self.len = self.len.inc()
+}
+fun write_bytes[W](self: &BufferedWriter[W], bytes: Slice[U8]) {
+  if bytes.len <= self.amount_free()
+  then for byte in bytes do self.write_byte(byte)
+  else {
+    self.flush()
+    if bytes.len <= self.amount_free()
+    then for byte in bytes do self.write_byte(byte)
+    else self.inner.write_bytes(bytes)
+  }
+}
+
+| Tuples  
+fun tuple[A, B](a: A, b: B): Tuple2[A, B] { Tuple2 { a, b } }
+fun tuple[A, B, C](a: A, b: B, c: C): Tuple3[A, B, C] { Tuple3 { a, b, c } }
+struct Tuple2[A, B] { a: A, b: B }
+struct Tuple3[A, B, C] { a: A, b: B, c: C }
+fun write[W, A, B](writer: W, tuple: Tuple2[A, B]) {
+  writer."({tuple.a}, {tuple.b})"
+}
+fun writer[W, A, B, C](writer: W, tuple: Tuple3[A, B, C]) {
+  writer."({tuple.a}, {tuple.b}, {tuple.c})"
+}
+
+| Point  
+struct Point[T] { x: T, y: T }
+fun write[W, T](writer: W, point: Point[T]) {
+  writer.write(tuple(point.x, point.y))
+}
+
+| Vec  
+| A growable array where you can efficiently push and pop data to/from the back.
+| This is implemented using a fixed-size slice. Once it fills up, a new slice is
+| allocated and the old items are copied over.
+
+struct Vec[T] { data: Slice[T], len: U64 }
+
+fun vec[T](): Vec[T] { Vec { data = empty_slice[T](), len = 0 } }
+| TODO: remove when there are slice literals
+fun vec[T](a: T): Vec[T] { var v = vec[T]().& v.push(a) v.* }
+fun vec[T](a: T, b: T): Vec[T] { var v = vec[T]().& v.push(a) v.push(b) v.* }
+fun vec[T](a: T, b: T, c: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.*
+}
+fun vec[T](a: T, b: T, c: T, d: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.*
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.*
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.*
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.*
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.*
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.*
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.*
+}
+fun vec[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T,
+): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.*
+}
+fun vec[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T,
+): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.push(l) v.*
+}
+fun vec[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.push(l) v.push(m) v.*
+}
+fun vec[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T,
+): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.push(l) v.push(m)
+  v.push(n) v.*
+}
+
+fun push[T](vec: &Vec[T], item: T) {
+  if vec.data.len == 0 then vec.data = uninitialized_slice[T](8)
+  if vec.data.len == vec.len then {
+    var new_data = uninitialized_slice[T](2 * vec.data.len)
+    vec.data.copy_to(new_data.subslice(0..vec.data.len))
+    vec.data = new_data
+  }
+  vec.data.get_ref(vec.len).* = item
+  vec.len = vec.len + 1
+}
+fun push_all[T](vec: &Vec[T], items: Slice[T]) {
+  for item in items do vec.push(item)
+}
+fun pop[T](vec: &Vec[T]): T {
+  if vec.len == 0 then panic("called pop on empty Vec")
+  vec.len = vec.len.dec()
+  vec.data.get(vec.len)
+}
+fun clear[T](vec: &Vec[T]) { vec.len = 0 }
+fun get[T](vec: Vec[T], index: U64): T { vec.data.get(index) }
+fun get_maybe[T](vec: Vec[T], index: U64): Maybe[T] {
+  vec.data.get_maybe(index)
+}
+fun get_ref[T](vec: Vec[T], index: U64): &T { vec.data.get_ref(index) }
+fun get_maybe_ref[T](vec: Vec[T], index: U64): Maybe[&T] {
+  vec.data.get_maybe_ref(index)
+}
+fun last_maybe[T](vec: Vec[T]): Maybe[T] {
+  if vec.is_empty() then none[T]() else some(vec.data.get(vec.len - 1))
+}
+fun is_empty[T](vec: Vec[T]): Bool { vec.len == 0 }
+fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0..vec.len) }
+
+fun make_space_at[T](vec: &Vec[T], pos: U64, amount: U64, fill: T) {
+  for i in 0..amount do vec.push(fill)
+  vec.to_slice().subslice(pos..{vec.len - amount})
+    .copy_to(vec.to_slice().subslice({pos + amount}..vec.len))
+}
+fun remove[T](vec: &Vec[T], range: Range[U64]) {
+  var slice = vec.to_slice()
+  slice.&.remove(range)
+  vec.len = slice.len
+}
+
+fun ==[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice() == b.to_slice() }
+fun iter[T](vec: Vec[T]): Iter[T, _] { vec.to_slice().iter() }
+fun write[W, T](writer: W, vec: Vec[T]) { writer.write(vec.to_slice()) }
+
+| Stack  
+| Something where you can push and pop items. Essentially just a Vec, but
+| sometimes this type expresses the intent more clearly.
+
+struct Stack[T] { vec: Vec[T] }
+fun stack[T](): Stack[T] { Stack { vec = vec[T]() } }
+fun len[T](stack: Stack[T]): U64 { stack.vec.len }
+fun is_empty[T](stack: Stack[T]): Bool { stack.vec.is_empty() }
+fun push[T](stack: &Stack[T], item: T) { stack.vec.&.push(item) }
+fun pop[T](stack: &Stack[T]): T { stack.vec.&.pop() }
+fun top[T](stack: Stack[T]): T { stack.top(0) }
+fun top[T](stack: Stack[T], n: U64): T {
+  stack.vec.get(stack.vec.len - n - 1)
+}
+fun top_ref[T](stack: Stack[T]): &T { stack.top_ref(0) }
+fun top_ref[T](stack: Stack[T], n: U64): &T {
+  stack.vec.get_ref(stack.vec.len - n - 1)
+}
+fun ==[T](a: Stack[T], b: Stack[T]): Bool { a.vec == b.vec }
+fun write[W, T](writer: W, stack: Stack[T]) { writer.write(stack.vec) }
+
+| Deque  
+| A growable array-like structure where you can push and pop from both ends.
+| It maintains an inclusive start and an exclusive end index. Basically, there
+| are two possibilities how this can be layed out:
+|
+| Start before end:           End before start:
+| [-][0][1][2][3][4][-][-]    [3][4][-][-][-][0][1][2]
+|     s              e               e        s
+
+struct Deque[T] { data: Slice[T], start: U64, end: U64 }
+fun deque[T](): Deque[T] {
+  Deque { data = uninitialized_slice[T](8), start = 0, end = 0 }
+}
+fun len[T](deque: Deque[T]): U64 {
+  if deque.end >= deque.start
+  then deque.end - deque.start
+  else deque.start + deque.data.len - deque.end
+}
+fun is_empty[T](deque: Deque[T]): Bool { deque.len() == 0 }
+fun reserve[T](deque: &Deque[T], size: U64) {
+  if deque.data.len >= size then return {}
+  var slices = deque.to_slices()
+  var total_len = deque.len()
+  deque.data = uninitialized_slice[T](size)
+  slices.a.copy_to(deque.data.subslice(0..slices.a.len))
+  slices.b.copy_to(deque.data.subslice(slices.a.len .. total_len))
+  deque.start = 0
+  deque.end = total_len
+}
+fun push_front[T](deque: &Deque[T], item: T) {
+  if deque.data.len == deque.len().dec()
+  then deque.reserve(deque.data.len * 2)
+  deque.start = if deque.start == 0
+    then deque.data.len
+    else deque.start.dec()
+  deque.data.get_ref(deque.start).* = item
+}
+fun pop_front[T](deque: &Deque[T]): T {
+  if deque.is_empty() then panic("pop_front on empty deque")
+  var item = deque.data.get(deque.start)
+  deque.start = deque.start.inc().modulo(deque.data.len)
+  item
+}
+fun push_back[T](deque: &Deque[T], item: T) {
+  if deque.data.len == deque.len().dec()
+  then deque.reserve(deque.data.len * 2)
+  deque.data.get_ref(deque.end).* = item
+  deque.end = deque.end.inc().modulo(deque.data.len)
+}
+fun pop_back[T](deque: &Deque[T]): T {
+  if deque.is_empty() then panic("pop_back on empty deque")
+  deque.end = if deque.end == 0
+    then deque.data.len
+    else deque.end.dec()
+  deque.data.get(deque.end)
+}
+fun get[T](deque: Deque[T], index: U64): T { deque.get_ref(index).* }
+fun get_ref[T](deque: Deque[T], index: U64): &T {
+  deque.data.get_ref({index + deque.start}.modulo(deque.data.len))
+}
+fun to_slices[T](deque: Deque[T]): Tuple2[Slice[T], Slice[T]] {
+  if deque.end >= deque.start
+  then tuple(deque.data.subslice(deque.start .. deque.end), empty_slice[T]())
+  else tuple(
+    deque.data.subslice(deque.start .. deque.data.len),
+    deque.data.subslice(0 .. deque.start)
+  )
+}
+fun ==[T](a: Deque[T], b: Deque[T]): Bool {
+  a.len() == b.len() orelse return false
+  for i in 0..a.len() do a.get(i) == b.get(i) orelse return false
+  true
+}
+
+| Map   
+| Stores key-value-pairs for efficient lookup. The key has to support hash and
+| ==.
+
+struct Map[K, V] { buckets: Slice[MapBucket[K, V]], size: U64 }
+enum MapBucket[K, V] { empty, filled: MapEntry[K, V] }
+struct MapEntry[K, V] { key: K, value: V }
+
+fun map[K, V](): Map[K, V] {
+  Map { buckets = filled_slice(8, MapBucket[K, V].empty), size = 0 }
+}
+
+fun is_empty[K, V](map: Map[K, V]): Bool { map.size == 0 }
+fun put[K, V](map: &Map[K, V], key: K, value: V) {
+  var fill_percentage = 100 * map.size / map.buckets.len
+  if fill_percentage >= 60 then {
+    var old_buckets = map.buckets
+    map.* = Map {
+      buckets = filled_slice(map.buckets.len * 2, MapBucket[K, V].empty),
+      size = 0,
+    }
+    for bucket in old_buckets do
+      if bucket is filled(entry) then map.raw_insert(entry.key, entry.value)
+  }
+  map.raw_insert(key, value)
+}
+fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
+  var i = key.hash().modulo(map.buckets.len)
+  loop {
+    var bucket = map.buckets.get_ref(i)
+    switch bucket.*
+    case empty {
+      bucket.* = MapBucket.filled(MapEntry { key, value })
+      map.size = map.size.inc()
+      break
+    }
+    case filled(entry)
+      if entry.key == key then {
+        bucket.* = MapBucket.filled(MapEntry { key, value })
+        break
+      } else i = i.inc().modulo(map.buckets.len)
+  }
+}
+fun contains[K, V](map: Map[K, V], key: K): Bool {
+  map.get_maybe(key).is_some()
+}
+fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
+  var i = key.hash().modulo(map.buckets.len)
+  loop {
+    var bucket = map.buckets.get(i)
+    switch bucket
+    case empty return none[V]()
+    case filled(entry)
+      if entry.key == key
+      then return some(entry.value)
+      else i = i.inc().modulo(map.buckets.len)
+  }
+}
+fun get[K, V](map: Map[K, V], key: K): V { map.get_maybe(key).unwrap() }
+
+fun write[W, K, V](writer: W, entry: MapEntry[K, V]) {
+  writer."{entry.key}: {entry.value}"
+}
+fun write[W, K, V](writer: W, map: Map[K, V]) {
+  writer."{{comma_separated(map.iter())}}"
+}
+
+fun iter[K, V](map: Map[K, V]): Iter[MapEntry[K, V], _] {
+  Iter[MapEntry[K, V], MapIter[K, V]] {
+    state = MapIter { buckets = map.buckets, index = 0 }
+  }
+}
+struct MapIter[K, V] { buckets: Slice[MapBucket[K, V]], index: U64 }
+fun next[K, V](
+  iter: &Iter[MapEntry[K, V], MapIter[K, V]],
+): Maybe[MapEntry[K, V]] {
+  var state = iter.state.&
+  loop {
+    if state.index >= state.buckets.len
+    then return none[MapEntry[K, V]]()
+    state.index = state.index + 1
+    if state.buckets.get(state.index - 1) is filled(entry)
+    then return some(entry)
+  }
+}
+
+| Set  
+
+struct Set[T] { map: Map[T, Nothing] }
+
+fun set[T](): Set[T] { Set[T] { map = map[T, Nothing]() } }
+fun to_set[T](vec: Vec[T]): Set[T] {
+  var set = set[T]()
+  for item in vec do set.&.put(item)
+  set
+}
+
+fun is_empty[T](set: Set[T]): Bool { set.map.size == 0 }
+fun put[T](set: &Set[T], value: T) { set.map.&.put(value, {}) }
+fun contains[T](set: Set[T], value: T): Bool { set.map.contains(value) }
+
+fun write[W, T](writer: W, set: Set[T]) {
+  writer.write(#{)
+  var first = true
+  for item in set do {
+    if first then first = false else writer.write(", ")
+    writer.write(item)
+  }
+  writer.write(#})
+}
+
+fun iter[T](set: Set[T]): Iter[T, _] {
+  Iter[T, SetIter[T]] {
+    state = SetIter { buckets = set.map.buckets, index = 0 }
+  }
+}
+struct SetIter[T] { buckets: Slice[MapBucket[T, Nothing]], index: U64 }
+fun next[T](iter: &Iter[T, SetIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  loop {
+    if state.index >= state.buckets.len then return none[T]()
+    state.index = state.index + 1
+    if state.buckets.get(state.index - 1) is filled(entry)
+    then return some(entry.key)
+  }
+}
+
+fun min[T](slice: Set[T]): Maybe[T] {
+  var candidate = none[T]()
+  for item in slice do
+    switch candidate
+    case some(c) candidate = some(min(c, item))
+    case none candidate = some(item)
+  return candidate
+}
+
+| TODO: segment tree, treap
+
+| Telling the Time  
+
+fun seconds_since_unix_epoch(): Result[U64, Str] {
+  var result = syscall_time(0).error_if_minus_one("couldn't get time")?
+  ok[U64, Str](result)
+}
+
+| Executing subprocesses  
+
+struct Pid { value: U64 }
+enum Forked {
+  child,       | We are the child process.
+  parent: Pid, | We are the parent process, child has the given PID.
+}
+
+fun write[W](writer: W, pid: Pid) { writer."PID({pid.value})" }
+
+| Forks the process. In the child process, returns Forked.child. In the parent
+| process, returns Forked.parent(child_pid). You should wait for the child in
+| the parent process. If you don't (you exit the parent process before waiting
+| on the child process), the child process enters a zombie mode and resources
+| are not freed.
+fun fork(): Forked {
+  var pid = syscall_fork()
+  if pid == 0 then Forked.child else Forked.parent(Pid { value = pid })
+}
+
+| Performs a wait4 syscall, which performs a superset of what waitpid does.
+|
+| The PID can be one of these:
+| < -1: wait for any child process whose process group ID is equal to the
+|       absolute value of the PID
+|   -1: wait for any child process
+|    0: wait for any child process whose process group ID is equal to that of
+|       the calling process at the time of the call
+|  > 0: wait for the child whose PID is equal to the value of the given PID
+|
+| https://man7.org/linux/man-pages/man2/wait4.2.html
+| https://man7.org/linux/man-pages/man2/waitid.2.html
+fun wait(pid: Pid) { syscall_wait4(pid.value, 0, 0, 0).ignore() }
+
+fun kill(pid: Pid, signal: U64): Result[Nothing, Str] {
+  if syscall_kill(pid.value, signal) == 0
+  then ok[Nothing, Str]({})
+  else error[Nothing, Str]("couldn't send signal")
+}
+
+fun exec(program: Str, args: Slice[Str]): Never {
+  var program = program.to_os_str().address.to_U64()
+  | The exec syscall expects the arguments to be arranged like this:
+  | [ptr to str][ptr to str][0         ]
+  var os_args = malloc(args.len.inc() * 8, 8).to_reference[U64]()
+  for arg in args.iter().enumerate() do
+    os_args.add_stride_offset(arg.index).* =
+      arg.item.to_os_str().address.to_U64()
+  syscall_execve(
+    program, os_args.to_address().to_U64(), 0.&.to_address().to_U64())
+  panic("exec didn't work")
+}
+
+| Note: The program needs to be the path to a concrete program. This does not
+| search the path.
+fun run(program: Str, args: Slice[Str]) {
+  switch fork() case child exec(program, args) case parent(child) child.wait()
+}
+fun run(shell_command: Str) {
+  | Using strace on a simple C program that uses the stdlib system function to
+  | run a command, we can see that it runs /bin/sh with sh -c <command>.
+  | Here, we do the same thing.
+  run("/bin/sh", vec("sh", "-c", shell_command).to_slice())
+}
