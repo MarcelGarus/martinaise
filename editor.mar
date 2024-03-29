@@ -1158,18 +1158,28 @@ fun render(renderer: Renderer, whirling: Whirling) {
 | Mode where you can enter a line number and you jump to that line. Press enter
 | to move the cursor to the line, or escape to stay where you are.
 
-struct Goto { whirling: &Whirling, line: U64, active: Bool }
+struct Goto {
+  whirling: &Whirling,
+  original_scroll: I32,
+  line: U64,
+  active: Bool,
+}
 
 fun goto(whirling: &Whirling): Goto {
-  Goto { whirling, line = 0, active = false }
+  Goto { whirling, original_scroll = 0:I32, line = 0, active = false }
 }
 fun reset(goto: &Goto) {
-  goto.line   = 0
-  goto.active = false
+  goto.original_scroll = goto.whirling.scroll
+  goto.line            = 0
+  goto.active          = false
+}
+fun scroll_to_target(goto: Goto) {
+  if goto.active
+  then goto.whirling.scroll_line_to_center(goto.line.clamp(0, goto.whirling.lines.len - 1))
+  else goto.whirling.scroll_to(goto.original_scroll)
 }
 | returns whether this mode should be exited
 fun handle_event(goto: &Goto, event: Event): Bool {
-  goto.active = true
   switch event
   case key_down(keydown) {
     var keycode = keydown.keycode
@@ -1177,19 +1187,23 @@ fun handle_event(goto: &Goto, event: Event): Bool {
 
     if {48:U8 ..= 57:U8}.contains(keycode) then {
       | a digit key was pressed
+      goto.active = true
       var digit = {keycode - 48:U8}.to_U64()
       goto.line = goto.line * 10 + digit
-      goto.whirling.scroll_line_to_center(goto.line.clamp(0, goto.whirling.lines.len - 1))
+      goto.scroll_to_target()
     }
     if keycode == 8:U8 then {
       | backspace was pressed
       goto.line = goto.line / 10
-      goto.whirling.scroll_line_to_center(goto.line.clamp(0, goto.whirling.lines.len - 1))
+      if goto.line == 0 then goto.active = false
+      goto.scroll_to_target()
     }
     if keycode == 13:U8 then {
       | enter was pressed
-      var line = goto.line.clamp(0, goto.whirling.lines.len - 1)
-      goto.whirling.cursor = goto.whirling.lines.get(line)
+      if goto.active then {
+        var line = goto.line.clamp(0, goto.whirling.lines.len - 1)
+        goto.whirling.cursor = goto.whirling.lines.get(line)
+      }
       return true
     }
     stderr."Key down {keycode}{newline}"
