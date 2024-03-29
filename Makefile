@@ -45,9 +45,9 @@ compiler/5/martinaise: compiler/5/compiler.mar compiler/4/martinaise compiler/4/
 	@echo "# Martinaise 5"
 	cd compiler/4; \
 		./martinaise fasm ../5/compiler.mar > compiler.s && \
-		fasm compiler.s && \
-		mv compiler martinaise && \
-		chmod a+x martinaise && \
+		fasm compiler.s -m 100000 && \
+		chmod a+x compiler && \
+		mv compiler ../5/martinaise && \
 		rm compiler.s
 
 skip-zig:
