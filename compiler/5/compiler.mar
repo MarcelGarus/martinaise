@@ -75,15 +75,6 @@ enum Signedness { signed, unsigned }
 struct IntConfig { signedness: Signedness, bits: U64 }
 struct Int { value: U64, config: IntConfig } | int literals can't be negative
 
-var all_signednesses = vec(Signedness.signed, Signedness.unsigned)
-var all_bits = vec(8, 16, 32, 64)
-var all_int_configs = {
-  var configs = vec[IntConfig]()
-  for signedness in all_signednesses do for bits in all_bits do
-    configs.&.push(IntConfig { signedness, bits })
-  configs
-}
-
 fun ==(a: Signedness, b: Signedness): Bool {
   switch a
   case signed { switch b case signed true case unsigned false }
@@ -203,7 +194,7 @@ enum Instruction {
   cjump: Word,
   call: Word,
   ret,
-  devicecall: Str,
+  syscall: U8,
   cmp: RegAndReg,
   isequal,
   isless,
@@ -400,7 +391,7 @@ fun write[W](writer: W, instruction: Instruction) {
   case cjump(word) writer."cjump {word}"
   case call(word) writer."call {word}"
   case ret writer."ret"
-  case devicecall(byte) writer."devicecall {byte}"
+  case syscall(byte) writer."syscall {byte}"
   case cmp(regs) writer."cmp {regs.first} {regs.second}"
   case isequal writer."isequal"
   case isless writer."isless"
@@ -1177,8 +1168,20 @@ fun parse_expr_suffix_try(
   parsed(AstExpr.try(current.put_on_heap()))
 }
 
+fun parse_asm_name(parser: &Parser): Maybe[Str] {
+  parser.consume_whitespace()
+  var start = parser.cursor
+  loop {
+    var c = parser.current()
+    if c.is_whitespace() / {c == #:} / {c == #}}
+    then break
+    else parser.advance()
+  }
+  if parser.cursor == start then return none[Str]()
+  some(parser.code.substr(start, parser.cursor))
+}
 fun parse_reg(parser: &Parser): Result[Reg, Str] {
-  var name = parser.parse_name()
+  var name = parser.parse_asm_name()
     orelse return error[Reg, Str]("Expected a register.")
   if name == "ip" then return ok[Reg, Str](Reg.ip)
   if name == "sp" then return ok[Reg, Str](Reg.sp)
@@ -1210,10 +1213,10 @@ fun parse_asm_num(parser: &Parser): Result[U64, Str] {
     orelse return error[U64, Str]("Expected a number."))
 }
 fun parse_asm_word(parser: &Parser): Result[Word, Str] {
-  if not({#0..=#9}.contains(parser.current()))
-  then return ok[Word, Str](Word.label(parser.parse_name()
+  if {#0..=#9}.contains(parser.current())
+  then return ok[Word, Str](Word.literal(parser.parse_asm_num()?))
+  ok[Word, Str](Word.label(parser.parse_asm_name()
     orelse return error[Word, Str]("Expected a number or label.")))
-  ok[Word, Str](Word.literal(parser.parse_asm_num()?))
 }
 fun parse_asm_byte(parser: &Parser): Result[U8, Str] {
   var num = parser.parse_asm_num()?
@@ -1222,7 +1225,7 @@ fun parse_asm_byte(parser: &Parser): Result[U8, Str] {
 }
 
 fun parse_instruction(parser: &Parser): Result[Maybe[Instruction], Str] {
-  var name = parser.parse_name() orelse return no_match[Instruction]()
+  var name = parser.parse_asm_name() orelse return no_match[Instruction]()
   if parser.consume_prefix(":") then return parsed(Instruction.label(name))
   if name == "str" then return parsed(Instruction.str(
     parser.parse_asm_str()
@@ -1256,8 +1259,8 @@ fun parse_instruction(parser: &Parser): Result[Maybe[Instruction], Str] {
   if name == "call" then return parsed(Instruction.call(
     parser.parse_asm_word()?))
   if name == "ret" then return parsed(Instruction.ret)
-  if name == "devicecall" then return parsed(Instruction.devicecall(
-    parser.parse_asm_str()?))
+  if name == "syscall" then return parsed(Instruction.syscall(
+    parser.parse_asm_byte()?))
   if name == "cmp" then return parsed(Instruction.cmp(
     parser.parse_reg()? @ parser.parse_reg()?))
   if name == "isequal" then return parsed(Instruction.isequal)
@@ -1304,7 +1307,8 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
     parser.consume_prefix(",") orelse break
   }
   parser.consume_prefix(")")
-    orelse return bad_input[AstFun]("Expected a closing parenthesis.")
+    orelse return bad_input[AstFun](
+      "Expected a parameter or closing parenthesis.")
   var returns = type("Nothing")
   if parser.consume_prefix(":")
   then returns = parser.parse_type()?
@@ -1314,8 +1318,8 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
     else if parser.consume_prefix('"asm {"') then {
       var instructions = vec[Instruction]()
       loop instructions.&.push(parser.parse_instruction()? orelse break)
-      parser.consume_prefix("}")
-        orelse return bad_input[AstFun]("Expected a closing brace.")
+      parser.consume_prefix("}") orelse return bad_input[AstFun](
+        "Expected an instruction or closing brace.")
       AstFunKind.asm_(instructions)
     }
     else if parser.parse_body()? is some(body) then AstFunKind.body(body)
@@ -2188,8 +2192,6 @@ fun compile(ast: PreparedAst): Result[Mono, Str] {
 
   type("Never").compile(map[Str, Type](), ast, mono.&)?
   type("Nothing").compile(map[Str, Type](), ast, mono.&)?
-  for config in all_int_configs do
-    config.to_type().compile(map[Str, Type](), ast, mono.&)?
 
   var main =
     switch ast.lookup_fun("main",
@@ -3532,6 +3534,11 @@ fun assemble[Assembler](
   var arg_layouts = map[Str, MemLayout]() | maps fun signature to arg struct mem layout
   var string_literals = vec[Str]() | will be put into rodata section at the end
 
+  asm.call("_heap.init")
+  asm.call("_globals.init")
+  asm.call("main(Slice[Str])")
+  asm.syscall(0:U8) | exit
+
   for fun_ in mono.funs do {
     var name = fun_.key
     var arg_struct = MonoStruct { fields = vec[MonoStructField]() }
@@ -3544,11 +3551,6 @@ fun assemble[Assembler](
       layouts.&, mono.type_defs,
     ))
   }
-
-  asm.call("_heap.init")
-  asm.call("_globals.init")
-  asm.call("main(Slice[Str])")
-  asm.devicecall("exit")
 
   asm.label("_heap") {
     asm.label(".head") asm.word(0)
@@ -3693,7 +3695,7 @@ fun assemble_body[Assembler](
     var locals_size = locals_layout.size.round_up_to_multiple_of(8)
 
     | Combine all slots – args and locals
-    var slot_offsets = map[MonoSlotRef, U64]() | relative to rsp
+    var slot_offsets = map[MonoSlotRef, U64]() | relative to sp
     for slot in body.slots.iter().enumerate() do {
       var offset =
         if slot.item.initial_value is arg
@@ -3780,7 +3782,7 @@ fun assemble_body[Assembler](
         var size = layouts.get(assign.value.type).size
         asm.save_address(Reg.a, assign.value, 0, slot_offsets, layouts, Reg.c)
         asm.save_address(Reg.b, assign.to, 0, slot_offsets, layouts, Reg.c)
-        asm.copy_memory(Reg.a, Reg.b, size)
+        asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
       }
       case set_enum(set) {
         var type = body.slots.get(set.slot.index).type
@@ -3794,16 +3796,15 @@ fun assemble_body[Assembler](
         var payload_size = layouts.get(set.value.type).size
         var variant_tag_offset = to_offset + layouts.get(type).size - 1
 
-        asm.moveib(Reg.a, variant)
+        asm.moveib(Reg.a, variant.to_U8())
         asm.movei(Reg.b, variant_tag_offset)
         asm.add(Reg.b, Reg.sp)
         asm.storeb(Reg.b, Reg.a)
 
-        asm.save_address(Reg.a, set.value, 0, slot_offsets, layouts, Reg.c)
-        asm.move(Reg.b, Reg.sp)
-        asm.movei(Reg.c, to_offset)
-        asm.add(Reg.b, Reg.c)
-        asm.copy_memory(Reg.a, Reg.b, payload_size)
+        asm.save_address(Reg.a, set.value, 0, slot_offsets, layouts, Reg.b)
+        asm.movei(Reg.b, to_offset)
+        asm.add(Reg.b, Reg.sp)
+        asm.copy_memory(Reg.a, Reg.b, payload_size, Reg.c)
       }
       case call(call) {
         var args_layout = arg_layouts.get_maybe(call.fun_)
@@ -3815,27 +3816,27 @@ fun assemble_body[Assembler](
         }.name_to_offset_map()
         var args_size = args_layout.size.round_up_to_multiple_of(8)
 
-        asm.sub(rsp, args_size)
+        asm.movei(Reg.a, args_size)
+        asm.sub(Reg.sp, Reg.a)
         for arg in call.args.iter().enumerate() do {
           var size = layouts.get(arg.item.type).size
           var offset_in_args = arg_offsets.get("arg_{arg.index}")
           asm.save_address(Reg.a, arg.item, args_size, slot_offsets, layouts, Reg.c)
           asm.move(Reg.b, Reg.sp)
           asm.movei(Reg.c, offset_in_args)
-          asm.add(Reg.c, Reg.b)
-          asm.copy_memory(Reg.b, Reg.c, size)
+          asm.add(Reg.b, Reg.c)
+          asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
         }
-        asm.moveib(Reg.a, 8)
-        asm.sub(Reg.sp, Reg.a)
-        asm.move(Reg.a, Reg.sp)
-        asm.movei(Reg.b, args_size + slot_offsets.get(call.to))
-        asm.add(Reg.a, Reg.b)
-        asm.store(Reg.rsp, Reg.a)
+        asm.movei(Reg.a, args_size + slot_offsets.get(call.to))
+        asm.add(Reg.a, Reg.sp)
+        asm.moveib(Reg.b, 8:U8)
+        asm.sub(Reg.sp, Reg.b)
+        asm.store(Reg.sp, Reg.a)
         asm.call(call.fun_)
-        asm.move(Reg.a, args_size + 8)
+        asm.movei(Reg.a, args_size + 8)
         asm.add(Reg.sp, Reg.a)
       }
-      case jump(jump) asm.jmp("{signature}.{jump.target}")
+      case jump(jump) asm.jump(".{jump.target}")
       case jump_if_variant(jump) {
         var type = jump.condition.type
         var variant_tag_offset = layouts.get(type).size - 1
@@ -3845,29 +3846,32 @@ fun assemble_body[Assembler](
             if v.item.name == jump.variant then checked_tag = v.index.to_U8()
         } else panic("is not an enum")
 
-        asm.save_address(r8, jump.condition, 0, slot_offsets, layouts)
-        asm.mov(r8b, memory(r8, variant_tag_offset))
-        asm.cmp(r8b, checked_tag)
-        asm.je("{signature}.{jump.target}")
+        asm.save_address(Reg.a, jump.condition, 0, slot_offsets, layouts, Reg.b)
+        asm.loadb(Reg.a, Reg.a)
+        asm.moveib(Reg.b, checked_tag)
+        asm.cmp(Reg.a, Reg.b)
+        asm.isequal()
+        asm.cjump(".{jump.target}")
       }
       case get_enum_value(get) {
         var variant_type = body.slots.get(get.to.index).type
         var size = layouts.get(variant_type).size
         var to_offset = slot_offsets.get(get.to)
 
-        asm.save_address(r8, get.of, 0, slot_offsets, layouts)
-        asm.copy_memory(memory(r8), memory(rsp, to_offset), size)
+        asm.save_address(Reg.a, get.of, 0, slot_offsets, layouts, Reg.b)
+        asm.movei(Reg.b, to_offset)
+        asm.add(Reg.b, Reg.sp)
+        asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
       }
       case return_(expr) {
         var size = layouts.get(expr.type).size
 
         asm.save_address(Reg.a, expr, 0, slot_offsets, layouts, Reg.b)
-        asm.move(Reg.b, Reg.sp)
-        asm.movei(Reg.c, locals_size + 8)
-        asm.add(Reg.b, Reg.c)
+        asm.movei(Reg.b, locals_size + 8)
+        asm.add(Reg.b, Reg.sp)
         asm.load(Reg.b, Reg.b)
         asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
-        asm.jmp("{signature}.end")
+        asm.jump("{signature}.end")
       }
       case ref(ref) {
         asm.save_address(Reg.a, ref.of, 0, slot_offsets, layouts, Reg.b)
@@ -3878,45 +3882,66 @@ fun assemble_body[Assembler](
       }
     }
     asm.label("{signature}.end")
-    asm.add(rsp, locals_size)
+    asm.movei(Reg.a, locals_size)
+    asm.add(Reg.sp, Reg.a)
     asm.ret()
   }
   case asm_(instructions) for instruction in instructions do {
     switch instruction
-    case label(label) asm.define_label(label)
-    case str(str) asm.str(str)
-    case byte(byte) asm.byte(byte)
-    case word(word) asm.word(word)
-    case nop asm.nop()
-    case panic asm.panic()
-    case move(regs) asm.move(regs.first, regs.second)
-    case movei(args) asm.movei(args.first, args.second)
-    case moveib(args) asm.moveib(args.first, args.second)
-    case load(regs) asm.load(regs.first, regs.second)
-    case loadb(regs) asm.loadb(regs.first, regs.second)
-    case store(regs) asm.store(regs.first, regs.second)
-    case storeb(regs) asm.storeb(regs.first, regs.second)
-    case push(reg) asm.push(reg)
-    case pop(reg) asm.pop(reg)
-    case jump(word) asm.jump(word)
-    case cjump(word) asm.cjump(word)
-    case call(word) asm.call(word)
-    case ret asm.ret()
-    case devicecall(byte) asm.devicecall(byte)
-    case cmp(regs) asm.cmp(regs.first, regs.second)
-    case isequal asm.isequal()
-    case isless asm.isless()
-    case isgreater asm.isgreater()
-    case islessequal asm.islessequal()
-    case isgreaterequal asm.isgreaterequal()
-    case add(regs) asm.add(regs.first, regs.second)
-    case sub(regs) asm.sub(regs.first, regs.second)
-    case mul(regs) asm.mul(regs.first, regs.second)
-    case div(regs) asm.div(regs.first, regs.second)
-    case and(regs) asm.and(regs.first, regs.second)
-    case or(regs) asm.or(regs.first, regs.second)
-    case xor(regs) asm.xor(regs.first, regs.second)
-    case negate(reg) asm.negate(reg)
+    case label(label)    asm.label(label)
+    case str(str)        asm.str(str)
+    case byte(byte)      asm.byte(byte)
+    case word(word) {
+      switch word
+      case label(word)   asm.word(word)
+      case literal(word) asm.word(word)
+    }
+    case nop             asm.nop()
+    case panic           asm.panic()
+    case move(regs)      asm.move(regs.first, regs.second)
+    case movei(args){
+      switch args.second
+      case label(word)   asm.movei(args.first, word)
+      case literal(word) asm.movei(args.first, word)
+    }
+    case moveib(args)    asm.moveib(args.first, args.second)
+    case load(regs)      asm.load(regs.first, regs.second)
+    case loadb(regs)     asm.loadb(regs.first, regs.second)
+    case store(regs)     asm.store(regs.first, regs.second)
+    case storeb(regs)    asm.storeb(regs.first, regs.second)
+    case push(reg)       asm.push(reg)
+    case pop(reg)        asm.pop(reg)
+    case jump(word) {
+      switch word
+      case label(word)   asm.jump(word)
+      case literal(word) asm.jump(word)
+    }
+    case cjump(word) {
+      switch word
+      case label(word)   asm.cjump(word)
+      case literal(word) asm.cjump(word)
+    }
+    case call(word){
+      switch word
+      case label(word)   asm.call(word)
+      case literal(word) asm.call(word)
+    }
+    case ret             asm.ret()
+    case syscall(byte)   asm.syscall(byte)
+    case cmp(regs)       asm.cmp(regs.first, regs.second)
+    case isequal         asm.isequal()
+    case isless          asm.isless()
+    case isgreater       asm.isgreater()
+    case islessequal     asm.islessequal()
+    case isgreaterequal  asm.isgreaterequal()
+    case add(regs)       asm.add(regs.first, regs.second)
+    case sub(regs)       asm.sub(regs.first, regs.second)
+    case mul(regs)       asm.mul(regs.first, regs.second)
+    case div(regs)       asm.div(regs.first, regs.second)
+    case and(regs)       asm.and(regs.first, regs.second)
+    case or(regs)        asm.or(regs.first, regs.second)
+    case xor(regs)       asm.xor(regs.first, regs.second)
+    case negate(reg)     asm.negate(reg)
   }
 }
 
@@ -3935,7 +3960,8 @@ fun save_address[Assembler](
     asm.add(register, Reg.sp)
   }
   case member(member) {
-    asm.save_address(register, member.of.*, locals_offset, slot_offsets, layouts)
+    asm.save_address(
+      register, member.of.*, locals_offset, slot_offsets, layouts, scratch)
     if member.name == "*"
     then asm.load(register, register)
     else {
@@ -3960,19 +3986,22 @@ fun copy_memory[Assembler](
     if amount - i >= 8 then {
       asm.load(scratch, from)
       asm.store(to, scratch)
-      asm.add(from, 8)
-      asm.add(to, 8)
+      asm.moveib(scratch, 8:U8)
+      asm.add(from, scratch)
+      asm.add(to, scratch)
       i = i + 8
     } else {
       asm.loadb(scratch, from)
       asm.storeb(to, scratch)
-      asm.add(from, 1)
-      asm.add(to, 1)
+      asm.moveib(scratch, 1:U8)
+      asm.add(from, scratch)
+      asm.add(to, scratch)
       i = i + 1
     }
   }
-  asm.sub(from, amount)
-  asm.sub(to, amount)
+  asm.movei(scratch, amount)
+  asm.sub(from, scratch)
+  asm.sub(to, scratch)
 }
 
 | Textual Assembler  
@@ -3996,7 +4025,8 @@ fun disambiguated_label(asm: &Recipe, prefix: Str): Str {
 
 fun str(asm: &Recipe, str: Str)   { asm.'"str "{str}"{newline}"' }
 fun byte(asm: &Recipe, byte: U8)  { asm."byte {byte}{newline}" }
-fun word(asm: &Recipe, word: U64) { asm."db {word}{newline}" }
+fun word(asm: &Recipe, word: U64) { asm."word {word}{newline}" }
+fun word(asm: &Recipe, word: Str) { asm."word {word}{newline}" }
 
 | Instructions
 fun nop(asm: &Recipe)                    { asm."  nop{newline}" }
@@ -4018,13 +4048,13 @@ fun cjump(asm: &Recipe, a: Str)          { asm."  cjump {a}{newline}" }
 fun call(asm: &Recipe, a: U64)           { asm."  call {a}{newline}" }
 fun call(asm: &Recipe, a: Str)           { asm."  call {a}{newline}" }
 fun ret(asm: &Recipe)                    { asm."  ret{newline}" }
-fun devicecall(asm: &Recipe, a: Str)     { asm."  devicecall {a}{newline}" }
+fun syscall(asm: &Recipe, a: U8)         { asm."  syscall {a}{newline}" }
 fun cmp(asm: &Recipe, a: Reg, b: Reg)    { asm."  cmp {a} {b}{newline}" }
 fun isequal(asm: &Recipe)                { asm."  isequal{newline}" }
 fun isless(asm: &Recipe)                 { asm."  isless{newline}" }
 fun isgreater(asm: &Recipe)              { asm."  isgreater{newline}" }
 fun islessequal(asm: &Recipe)            { asm."  islessequal{newline}" }
-fun isgreater(asm: &Recipe)              { asm."  isgreater{newline}" }
+fun isgreaterequal(asm: &Recipe)         { asm."  isgreaterequal{newline}" }
 fun add(asm: &Recipe, a: Reg, b: Reg)    { asm."  add {a} {b}{newline}" }
 fun sub(asm: &Recipe, a: Reg, b: Reg)    { asm."  sub {a} {b}{newline}" }
 fun mul(asm: &Recipe, a: Reg, b: Reg)    { asm."  mul {a} {b}{newline}" }
@@ -4098,6 +4128,7 @@ fun disambiguated_label(asm: &Soil, prefix: Str): Str {
 fun str(asm: &Soil, str: Str)   { asm.emit(str.bytes()) }
 fun byte(asm: &Soil, byte: U8)  { asm.emit(byte) }
 fun word(asm: &Soil, word: U64) { asm.emit(word) }
+fun word(asm: &Soil, word: Str) { asm.emit(word) }
 
 | Instructions
 fun nop(asm: &Soil)                    { asm.emit(16#00:U8) }
@@ -4119,7 +4150,7 @@ fun cjump(asm: &Soil, a: Str)          { asm.emit(16#f1:U8) asm.emit(a) }
 fun call(asm: &Soil, a: U64)           { asm.emit(16#f2:U8) asm.emit(a) }
 fun call(asm: &Soil, a: Str)           { asm.emit(16#f2:U8) asm.emit(a) }
 fun ret(asm: &Soil)                    { asm.emit(16#f3:U8) }
-fun devicecall(asm: &Soil, a: Str)     { asm.emit(16#f4:U8) asm.emit(0:U8) }
+fun syscall(asm: &Soil, a: U8)         { asm.emit(16#f4:U8) asm.emit(a) }
 fun cmp(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#c0:U8) asm.emit(a, b) }
 fun isequal(asm: &Soil)                { asm.emit(16#c1:U8) }
 fun isless(asm: &Soil)                 { asm.emit(16#c2:U8) }
@@ -4283,7 +4314,7 @@ fun run_pipeline(command: Command, file_path: Str, use_sdl: Bool): Bool {
   var recipe_file = "{file_path_without_extension}.recipe"
 
   print_on_same_line("Writing recipe to file")
-  write_file(recipe_file, asm.bytes()).unwrap()
+  write_file(recipe_file, recipe.bytes()).unwrap()
 
   | TODO: make sure that the external commands succeed before calling the next
   | one
