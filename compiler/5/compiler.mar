@@ -21,20 +21,16 @@
 |
 | Rough overview  
 | Like many compilers, the Martinaise compiler works in stages:
-| 
-|         parsing                   lowering                   ld
-| ┌──────┐      ┌─────┐      ┌──────┐      ┌────┐      ┌────┐      ┌─────┐
-| │ .mar │ ───> │ Ast │ ───> │ Mono | ───> │ .s │ ───> │ .o | ───> │ exe |
-| └──────┘      └─────┘      └──────┘      └────┘      └────┘      └─────┘
-|                 monomorphization                nasm
 |
-| - .mar: Source code, read as a string.
+| ┌──────┐  parsing  ┌─────┐  monomorphization  ┌──────┐  lowering  ┌───────┐
+| │ .mar │ ────────> │ Ast │ ─────────────────> │ Mono | ─────────> │ .soil │
+| └──────┘           └─────┘                    └──────┘            └───────┘
+|
+| - .mar: source code, read as a string
 | - Ast:  abstract syntax tree, roughly corresponding to the code
 | - Mono: monomorphized tree, containing only functions compiled for a
 |         concrete combination of type arguments
-| - .s:   x86_64 Assembly
-| - .o:   compiled object file
-| - exe:  linked executable
+| - .soil: Soil binary, which you can run in the Soil VM
 |
 | Glossary  
 | I'm not generally a fan of abbreviations, but for concepts that pop up all
@@ -73,9 +69,7 @@ fun print_on_same_line(message: Str) {
 }
 
 | Numbers  
-| Number types such such as U8 or I32 are special in Candy. These numbers and
-| mathematical functions for them are magically in scope. Here are some basic
-| concepts needed for representing numbers.
+| Here are some basic concepts needed for representing numbers.
 
 enum Signedness { signed, unsigned }
 struct IntConfig { signedness: Signedness, bits: U64 }
@@ -152,7 +146,7 @@ struct AstFun {
   kind: AstFunKind,
 }
 struct AstFunArg { name: Str, type: Type }
-enum AstFunKind { builtin, body: Vec[AstExpr], asm_: Str }
+enum AstFunKind { builtin, body: Vec[AstExpr], asm_: Vec[Instruction] }
 enum AstExpr {
   int: Int,                   | 0_U32
   str: Str,                   | "foo"
@@ -186,6 +180,57 @@ struct AstSwitch {
   value: &AstExpr, cases: Vec[AstCase], default_: Maybe[&AstExpr]
 }
 struct AstCase { variant: Str, binding: Maybe[Str], then_: &AstExpr }
+
+enum Instruction {
+  | Not really instructions, but meh:
+  label: Str,
+  str: Str,
+  byte: U8,
+  word: Word,
+  | These are the real instructions:
+  nop,
+  panic,
+  move: RegAndReg,
+  movei: RegAndWord,
+  moveib: RegAndByte,
+  load: RegAndReg,
+  loadb: RegAndReg,
+  store: RegAndReg,
+  storeb: RegAndReg,
+  push: Reg,
+  pop: Reg,
+  jump: Word,
+  cjump: Word,
+  call: Word,
+  ret,
+  devicecall: Str,
+  cmp: RegAndReg,
+  isequal,
+  isless,
+  isgreater,
+  islessequal,
+  isgreaterequal,
+  add: RegAndReg,
+  sub: RegAndReg,
+  mul: RegAndReg,
+  div: RegAndReg,
+  and: RegAndReg,
+  or: RegAndReg,
+  xor: RegAndReg,
+  negate: Reg,
+}
+
+enum Reg { ip, sp, st, a, b, c, d, e }
+
+enum Word { literal: U64, label: Str }
+
+struct RegAndReg { first: Reg, second: Reg }
+struct RegAndWord { first: Reg, second: Word }
+struct RegAndByte { first: Reg, second: U8 }
+
+fun @(first: Reg, second: Reg): RegAndReg { RegAndReg { first, second } }
+fun @(first: Reg, second: Word): RegAndWord { RegAndWord { first, second } }
+fun @(first: Reg, second: U8): RegAndByte { RegAndByte { first, second } }
 
 fun call(
   callee: AstExpr, type_args: Maybe[Vec[Type]], args: Vec[AstExpr]
@@ -266,7 +311,11 @@ fun write[W](writer: W, fun_: AstFun) {
   switch fun_.kind
   case builtin writer.'"{ ... }"'
   case body(body) writer.write_body(Indent { amount = 0 }, body)
-  case asm_(code) writer.'"asm {{{newline}}{{code}}{{newline}}}"'
+  case asm_(instructions) {
+    writer.'"asm {{{newline}}"'
+    for instruction in instructions do writer."  {instruction}{newline}"
+    writer.'"}"'
+  }
 }
 fun write_body[W](writer: W, indent: Indent, body: Vec[AstExpr]) {
   if body.is_empty() then { writer.'"{}"' return {} }
@@ -308,14 +357,18 @@ fun write[W](writer: W, indent: Indent, expr: AstExpr) {
   case assign(assign)
     writer."{assign.to.*.indented(indent)} = {assign.value.*.indented(indent)}"
   case switch_(switch_) {
-    writer."switch {switch_.value.*.indented(indent)}"
+    writer."switch { {switch_.value.*.indented(indent)} }"
     for case_ in switch_.cases do {
       writer."{newline}{indent}case {case_.variant}"
       if case_.binding is some(binding) then writer."({binding})"
-      writer." {case_.then_.*.indented(indent)}"
+      writer.'" { {{newline}}
+        '{{indent.inc()}}{{case_.then_.*.indented(indent.inc())}}{{newline}}
+        '{{indent}}}"'
     }
     if switch_.default_ is some(default_)
-    then writer."{newline}{indent}default {default_.*.indented(indent)}"
+    then writer.'"{{newline}}{{indent}}default { {{newline}}
+      '{{indent.inc()}}{{default_.*.indented(indent.inc())}}{{newline}}
+      '{{indent}}}"'
   }
   case loop_(expr) writer."loop {expr.*.indented(indent)}"
   case break_(arg) writer."break({arg.*.indented(indent)})"
@@ -325,6 +378,62 @@ fun write[W](writer: W, indent: Indent, expr: AstExpr) {
   case body(body) writer.write_body(indent, body)
 }
 fun write[W](writer: W, arg: AstFunArg) { writer."{arg.name}: {arg.type}" }
+
+fun write[W](writer: W, instruction: Instruction) {
+  switch instruction
+  case label(label) writer."{label}:"
+  case str(str) writer.'"str "{str}""'
+  case byte(byte) writer."byte {byte}"
+  case word(word) writer."word {word}"
+  case nop writer."nop"
+  case panic writer."panic"
+  case move(regs) writer."move {regs.first} {regs.second}"
+  case movei(args) writer."movei {args.first} {args.second}"
+  case moveib(args) writer."moveib {args.first} {args.second}"
+  case load(regs) writer."load {regs.first} {regs.second}"
+  case loadb(regs) writer."loadb {regs.first} {regs.second}"
+  case store(regs) writer."store {regs.first} {regs.second}"
+  case storeb(regs) writer."storeb {regs.first} {regs.second}"
+  case push(reg) writer."push {reg}"
+  case pop(reg) writer."pop {reg}"
+  case jump(word) writer."jump {word}"
+  case cjump(word) writer."cjump {word}"
+  case call(word) writer."call {word}"
+  case ret writer."ret"
+  case devicecall(byte) writer."devicecall {byte}"
+  case cmp(regs) writer."cmp {regs.first} {regs.second}"
+  case isequal writer."isequal"
+  case isless writer."isless"
+  case isgreater writer."isgreater"
+  case islessequal writer."islessequal"
+  case isgreaterequal writer."isgreaterequal"
+  case add(regs) writer."add {regs.first} {regs.second}"
+  case sub(regs) writer."sub {regs.first} {regs.second}"
+  case mul(regs) writer."mul {regs.first} {regs.second}"
+  case div(regs) writer."div {regs.first} {regs.second}"
+  case and(regs) writer."and {regs.first} {regs.second}"
+  case or(regs) writer."or {regs.first} {regs.second}"
+  case xor(regs) writer."xor {regs.first} {regs.second}"
+  case negate(reg) writer."negate {reg}"
+}
+
+fun write[W](writer: W, reg: Reg) {
+  switch reg
+  case ip writer."ip"
+  case sp writer."sp"
+  case st writer."st"
+  case a writer."a"
+  case b writer."b"
+  case c writer."c"
+  case d writer."d"
+  case e writer."e"
+}
+
+fun write[W](writer: W, word: Word) {
+  switch word
+  case literal(num) writer."{num}"
+  case label(str) writer."{str}"
+}
 
 fun signature(def: AstDef): AstSignature { AstSignature { def } }
 fun signature(fun_: AstFun): AstSignature {
@@ -407,7 +516,6 @@ fun current(parser: Parser): Char { parser.code.get(parser.cursor) }
 fun rest(parser: Parser): Str { parser.code.without_first(parser.cursor) }
 fun advance(parser: &Parser) { parser.advance_by(1) }
 fun advance_by(parser: &Parser, n: U64) { parser.cursor = parser.cursor + n }
-| TODO: move into stdlib?
 fun is_whitespace(char: Char): Bool {
   {char == space} / {char == tab} / {char == newline}
 }
@@ -1069,6 +1177,113 @@ fun parse_expr_suffix_try(
   parsed(AstExpr.try(current.put_on_heap()))
 }
 
+fun parse_reg(parser: &Parser): Result[Reg, Str] {
+  var name = parser.parse_name()
+    orelse return error[Reg, Str]("Expected a register.")
+  if name == "ip" then return ok[Reg, Str](Reg.ip)
+  if name == "sp" then return ok[Reg, Str](Reg.sp)
+  if name == "st" then return ok[Reg, Str](Reg.st)
+  if name == "a" then return ok[Reg, Str](Reg.a)
+  if name == "b" then return ok[Reg, Str](Reg.b)
+  if name == "c" then return ok[Reg, Str](Reg.c)
+  if name == "d" then return ok[Reg, Str](Reg.d)
+  if name == "e" then return ok[Reg, Str](Reg.e)
+  error[Reg, Str]("Expected a register.")
+}
+
+fun parse_asm_str(parser: &Parser): Result[Str, Str] {
+  parser.consume_prefix('"""') orelse return error[Str, Str]("Expected string.")
+  var start = parser.cursor
+  loop if parser.current() == #" then break else parser.advance()
+  parser.advance()
+  ok[Str, Str](parser.code.substr(start, parser.cursor))
+}
+
+fun parse_asm_num(parser: &Parser): Result[U64, Str] {
+  if parser.consume_prefix("0b")
+  then return ok[U64, Str](parser.parse_digits(2)?
+    orelse return error[U64, Str]("Expected a binary number."))
+  if parser.consume_prefix("0x")
+  then return ok[U64, Str](parser.parse_digits(16)?
+    orelse return error[U64, Str]("Expected a hexadecimal number."))
+  ok[U64, Str](parser.parse_digits(10)?
+    orelse return error[U64, Str]("Expected a number."))
+}
+fun parse_asm_word(parser: &Parser): Result[Word, Str] {
+  if not({#0..=#9}.contains(parser.current()))
+  then return ok[Word, Str](Word.label(parser.parse_name()
+    orelse return error[Word, Str]("Expected a number or label.")))
+  ok[Word, Str](Word.literal(parser.parse_asm_num()?))
+}
+fun parse_asm_byte(parser: &Parser): Result[U8, Str] {
+  var num = parser.parse_asm_num()?
+  if num >= 256 then return error[U8, Str]("Number doesn't fit in a byte.")
+  ok[U8, Str](num.to_U8())
+}
+
+fun parse_instruction(parser: &Parser): Result[Maybe[Instruction], Str] {
+  var name = parser.parse_name() orelse return no_match[Instruction]()
+  if parser.consume_prefix(":") then return parsed(Instruction.label(name))
+  if name == "str" then return parsed(Instruction.str(
+    parser.parse_asm_str()
+      orelse return bad_input[Instruction]("Expected string.")))
+  if name == "byte" then return parsed(Instruction.byte(
+      parser.parse_asm_byte()?))
+  if name == "word" then return parsed(Instruction.word(
+      parser.parse_asm_word()?))
+  if name == "nop" then return parsed(Instruction.nop)
+  if name == "panic" then return parsed(Instruction.panic)
+  if name == "move" then return parsed(Instruction.move(
+    parser.parse_reg()? @ parser.parse_reg()?))
+  if name == "movei" then return parsed(Instruction.movei(
+    parser.parse_reg()? @ parser.parse_asm_word()?))
+  if name == "moveib" then return parsed(Instruction.moveib(
+    parser.parse_reg()? @ parser.parse_asm_byte()?))
+  if name == "load" then return parsed(Instruction.load(
+    parser.parse_reg()? @ parser.parse_reg()?))
+  if name == "loadb" then return parsed(Instruction.loadb(
+    parser.parse_reg()? @ parser.parse_reg()?))
+  if name == "store" then return parsed(Instruction.store(
+    parser.parse_reg()? @ parser.parse_reg()?))
+  if name == "storeb" then return parsed(Instruction.storeb(
+    parser.parse_reg()? @ parser.parse_reg()?))
+  if name == "push" then return parsed(Instruction.push(parser.parse_reg()?))
+  if name == "pop" then return parsed(Instruction.pop(parser.parse_reg()?))
+  if name == "jump" then return parsed(Instruction.jump(
+    parser.parse_asm_word()?))
+  if name == "cjump" then return parsed(Instruction.cjump(
+    parser.parse_asm_word()?))
+  if name == "call" then return parsed(Instruction.call(
+    parser.parse_asm_word()?))
+  if name == "ret" then return parsed(Instruction.ret)
+  if name == "devicecall" then return parsed(Instruction.devicecall(
+    parser.parse_asm_str()?))
+  if name == "cmp" then return parsed(Instruction.cmp(
+    parser.parse_reg()? @ parser.parse_reg()?))
+  if name == "isequal" then return parsed(Instruction.isequal)
+  if name == "isless" then return parsed(Instruction.isless)
+  if name == "isgreater" then return parsed(Instruction.isgreater)
+  if name == "islessequal" then return parsed(Instruction.islessequal)
+  if name == "isgreaterequal" then return parsed(Instruction.isgreaterequal)
+  if name == "add" then return parsed(Instruction.add(
+    parser.parse_reg()? @ parser.parse_reg()?))
+  if name == "sub" then return parsed(Instruction.sub(
+    parser.parse_reg()? @ parser.parse_reg()?))
+  if name == "mul" then return parsed(Instruction.mul(
+    parser.parse_reg()? @ parser.parse_reg()?))
+  if name == "div" then return parsed(Instruction.div(
+    parser.parse_reg()? @ parser.parse_reg()?))
+  if name == "and" then return parsed(Instruction.and(
+    parser.parse_reg()? @ parser.parse_reg()?))
+  if name == "or" then return parsed(Instruction.or(
+    parser.parse_reg()? @ parser.parse_reg()?))
+  if name == "xor" then return parsed(Instruction.xor(
+    parser.parse_reg()? @ parser.parse_reg()?))
+  if name == "negate" then return parsed(Instruction.negate(
+    parser.parse_reg()?))
+  bad_input[Instruction]("Unknown command {name}.")
+}
+
 fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
   parser.consume_keyword("fun") orelse return no_match[AstFun]()
   var fun_name = parser.parse_lower_name()
@@ -1097,13 +1312,11 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
   var kind =
     if parser.consume_prefix('"{ ... }"') then AstFunKind.builtin
     else if parser.consume_prefix('"asm {"') then {
-      var start = parser.cursor
-      loop if parser.current() == #} then break else parser.advance()
-      var asm_code = parser.code.substr(start, parser.cursor)
-      asm_code.&.trim_prefix("{newline}")
-      asm_code.&.trim_suffix("{newline}")
-      parser.advance() | consume closing brace
-      AstFunKind.asm_(asm_code)
+      var instructions = vec[Instruction]()
+      loop instructions.&.push(parser.parse_instruction()? orelse break)
+      parser.consume_prefix("}")
+        orelse return bad_input[AstFun]("Expected a closing brace.")
+      AstFunKind.asm_(instructions)
     }
     else if parser.parse_body()? is some(body) then AstFunKind.body(body)
     else return bad_input[AstFun]("Expected a function body.")
@@ -1574,7 +1787,7 @@ struct MonoFun {
 struct MonoSlot { type: Type, initial_value: MonoSlotValue }
 enum MonoSlotValue { uninitialized, arg: U64, int: U64, str: Str }
 struct MonoSlotRef { index: U64 }
-enum MonoFunKind { builtin, body: MonoFunBody, asm_: Str }
+enum MonoFunKind { builtin, body: MonoFunBody, asm_: Vec[Instruction] }
 struct MonoFunBody {
   slots: Vec[MonoSlot],
   statements: Vec[MonoStatement],
@@ -2174,7 +2387,8 @@ fun compile(
 
   | TODO: explain
   mono.funs.&.put(signature, MonoFun {
-    type_args, arg_types, return_type, kind = MonoFunKind.asm_("<placeholder>")
+    type_args, arg_types, return_type,
+    kind = MonoFunKind.asm_(vec[Instruction]()),
   })
 
   var kind =
@@ -3280,7 +3494,7 @@ fun compile_reflection(type: Type, out: &CompileTypeFun): MonoExpr {
 
 | Assembling  
 | Martinaise supports two backends, both of which operate on the abstraction
-| level of x86_64 assembly instructions:
+| level of Soil assembly instructions:
 | - A textual assembly backend that produces NASM.
 | - A binary backend that produces machine code directly.
 |
@@ -3289,82 +3503,14 @@ fun compile_reflection(type: Type, out: &CompileTypeFun): MonoExpr {
 | assembler. An assembler is a type with a function for every required assembly
 | instruction, for example:
 | - ret()
-| - add(Reg64, Reg64)
-| - add(Reg32, Reg32)
-| - mov(Reg64, U64)
+| - add(Reg, Reg)
+| - mov(Reg, U64)
 | - ...
 |
 | This way, the assembly instructions are type checked in Martinaise (for
-| example, you can't add a Reg16 to a Reg64). The binary backend can also emit
+| example, you can't add a U64 to a Reg). The binary backend can also emit
 | totally different opcodes and encodings for instructions with the same
 | mnemonic but different operands.
-
-| All register names.
-enum Reg8  { ah,al, bh,bl, cl,  dl,  sil, dil, spl, bpl, r8b, r9b, r10b, r11b, r12b, r13b, r14b, r15b }
-enum Reg16 { ax,    bx,    cx,  dx,  si,  di,  sp,  bp,  r8w, r9w, r10w, r11w, r12w, r13w, r14w, r15w }
-enum Reg32 { eax,   ebx,   ecx, edx, esi, edi, esp, ebp, r8d, r9d, r10d, r11d, r12d, r13d, r14d, r15d }
-enum Reg64 { rax,   rbx,   rcx, rdx, rsi, rdi, rsp, rbp, r8,  r9,  r10,  r11,  r12,  r13,  r14,  r15  }
-
-var rax = Reg64.rax var eax = Reg32.eax var ax = Reg16.ax var ah = Reg8.ah var al = Reg8.al
-var rbx = Reg64.rbx var ebx = Reg32.ebx var bx = Reg16.bx var bh = Reg8.bh var bl = Reg8.bl
-var rcx = Reg64.rcx var ecx = Reg32.ecx var cx = Reg16.cx var cl = Reg8.cl
-var rdx = Reg64.rdx var edx = Reg32.edx var dx = Reg16.dx var dl = Reg8.dl
-var rsi = Reg64.rsi var esi = Reg32.esi var si = Reg16.si var sil = Reg8.sil
-var rdi = Reg64.rdi var edi = Reg32.edi var di = Reg16.di var dil = Reg8.dil
-var rsp = Reg64.rsp var esp = Reg32.esp var sp = Reg16.sp var spl = Reg8.spl
-var rbp = Reg64.rbp var ebp = Reg32.ebp var bp = Reg16.bp var bpl = Reg8.bpl
-var r8 = Reg64.r8 var r8d = Reg32.r8d var r8w = Reg16.r8w var r8b = Reg8.r8b
-var r9 = Reg64.r9 var r9d = Reg32.r9d var r9w = Reg16.r9w var r9b = Reg8.r9b
-var r10 = Reg64.r10 var r10d = Reg32.r10d var r10w = Reg16.r10w var r10b = Reg8.r10b
-var r11 = Reg64.r11 var r11d = Reg32.r11d var r11w = Reg16.r11w var r11b = Reg8.r11b
-var r12 = Reg64.r12 var r12d = Reg32.r12d var r12w = Reg16.r12w var r12b = Reg8.r12b
-var r13 = Reg64.r13 var r13d = Reg32.r13d var r13w = Reg16.r13w var r13b = Reg8.r13b
-var r14 = Reg64.r14 var r14d = Reg32.r14d var r14w = Reg16.r14w var r14b = Reg8.r14b
-var r15 = Reg64.r15 var r15d = Reg32.r15d var r15w = Reg16.r15w var r15b = Reg8.r15b
-
-fun write[W](writer: W, reg: Reg8) {
-  writer.write(
-    switch reg
-    case ah "ah" case al "al" case bh "bh" case bl "bl" case cl "cl" case dl "dl"
-    case sil  "sil"  case dil  "dil"  case spl  "spl"  case bpl  "bpl"
-    case r8b  "r8b"  case r9b  "r9b"  case r10b "r10b" case r11b "r11b"
-    case r12b "r12b" case r13b "r13b" case r14b "r14b" case r15b "r15b"
-  )
-}
-fun write[W](writer: W, reg: Reg16) {
-  writer.write(
-    switch reg
-    case ax   "ax"   case bx   "bx"   case cx   "cx"   case dx   "dx"
-    case si   "si"   case di   "di"   case sp   "sp"   case bp   "bp"
-    case r8w  "r8w"  case r9w  "r9w"  case r10w "r10w" case r11w "r11w"
-    case r12w "r12w" case r13w "r13w" case r14w "r14w" case r15w "r15w"
-  )
-}
-fun write[W](writer: W, reg: Reg32) {
-  writer.write(
-    switch reg
-    case eax  "eax"  case ebx  "ebx"  case ecx  "ecx"  case edx  "edx"
-    case esi  "esi"  case edi  "edi"  case esp  "esp"  case ebp  "ebp"
-    case r8d  "r8d"  case r9d  "r9d"  case r10d "r10d" case r11d "r11d"
-    case r12d "r12d" case r13d "r13d" case r14d "r14d" case r15d "r15d"
-  )
-}
-fun write[W](writer: W, reg: Reg64) {
-  writer.write(
-    switch reg
-    case rax "rax" case rbx "rbx" case rcx "rcx" case rdx "rdx"
-    case rsi "rsi" case rdi "rdi" case rsp "rsp" case rbp "rbp"
-    case r8  "r8"  case r9  "r9"  case r10 "r10" case r11 "r11"
-    case r12 "r12" case r13 "r13" case r14 "r14" case r15 "r15"
-  )
-}
-
-| A reference to memory. The "where" is usually a Reg64 or a Str (label).
-struct Memory[W] { where: W, offset: U64 }
-fun memory[W](where: W): Memory[W] { Memory { where, offset = 0 } }
-fun memory[W](where: W, offset: U64): Memory[W] { Memory { where, offset } }
-
-fun write[W, D](writer: W, mem: Memory[D]) { writer."[{mem.where} + {mem.offset}]" }
 
 fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, U64] {
   var offsets = map[Str, U64]()
@@ -3381,11 +3527,7 @@ fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, U64] {
 }
 
 fun assemble[Assembler](
-  mono: Mono, layouts: Map[Type, MemLayout],
-  text: &Assembler,   | readable, executable (for code)
-  rodata: &Assembler, | readable (for string literals)
-  bss: &Assembler,    | readable, writable, uninitialized (for heap and globals)
-  use_libc_malloc: Bool,
+  mono: Mono, layouts: Map[Type, MemLayout], asm: &Assembler,
 ) {
   var arg_layouts = map[Str, MemLayout]() | maps fun signature to arg struct mem layout
   var string_literals = vec[Str]() | will be put into rodata section at the end
@@ -3403,199 +3545,129 @@ fun assemble[Assembler](
     ))
   }
 
-  text.label("_start") {
-    if not(use_libc_malloc) then text.call("_init_heap")
-    text.call("_init_globals")
-    | The C-style args need to be converted into Martinaise-style args, aka a
-    | Slice[Str].
-    var num_args = r8
-    var c_args_cursor = r9
-    var args_cursor = r10
-    var args_start = r15
-    var args_end = r11
-    text.pop(num_args) | First thing on the stack is the number of args.
-    text.mov(c_args_cursor, rsp) | Next, the args themselves.
-    text.mov(r10, r8)  | How much memory to reserve for the slice data.
-    text.shl(r10, 4)   | For each arg, there's a Str = 16 bytes.
-    text.sub(rsp, r10) | Reserve memory.
-    text.mov(args_cursor, rsp)
-    text.mov(args_start, rsp)
-    text.mov(args_end, c_args_cursor)
-    text.label("_start.find_next_arg")
-    text.cmp(args_cursor, args_end)
-    text.je("_start.call_main") | Read all arguments.
-    { | Find the length of the null-terminated C string, save it in r13.
-      var start = r12
-      var cursor = r13
-      text.mov(start, memory(c_args_cursor))
-      text.mov(cursor, start)
-      text.label("_start.find_len")
-      text.mov(r14b, memory(cursor))
-      text.cmp(r14, 0)    | null-byte?
-      text.je("_start.add_arg") | ends the string
-      text.inc(cursor)
-      text.jmp("_start.find_len")
-      text.label("_start.add_arg")
-      text.sub(cursor, start) | calculate the str length
-    }
-    | Build the Str's Slice[Char]
-    text.mov(memory(args_cursor), r12)    | data: &Char
-    text.mov(memory(args_cursor, 8), r13) | len: U64
-    text.add(args_cursor, 16)
-    text.add(c_args_cursor, 8)
-    text.jmp("_start.find_next_arg")
-    text.label("_start.call_main") {
-      text.sub(rsp, 16) | Reserve memory for the surrounding Slice
-      text.mov(memory(rsp), r15)    | data: &Str
-      text.mov(memory(rsp, 8), r8) | len: U64
-      text.push(0) | where to store the returned Never
-      text.call("main(Slice[Str])")
-    }
-  }
+  asm.call("_heap.init")
+  asm.call("_globals.init")
+  asm.call("main(Slice[Str])")
+  asm.devicecall("exit")
 
-  if not(use_libc_malloc) then {
-    bss.align(8)
-    bss.label("_heap_head") bss.resb(8)
-    bss.label("_heap_end")  bss.resb(8)
-
-    text.label("_init_heap") {
-      text.mov(rax, 12) | brk syscall number
-      text.mov(rdi, 0)  | brk(0) returns the break (where the data segment ends)
-      text.syscall()
-      text.mov(memory("_heap_head"), rax)
-      text.mov(memory("_heap_end"), rax)
-      text.ret()
+  asm.label("_heap") {
+    asm.label(".head") asm.word(0)
+    asm.label(".init") {
+      asm.movei(Reg.a, "_end_of_program")
+      asm.load(Reg.a, Reg.a)
+      asm.movei(Reg.b, ".head")
+      asm.store(Reg.b, Reg.a)
+      asm.ret()
     }
-  }
-
-  text.label("_malloc") {
-    if use_libc_malloc then {
-      | libc malloc guarantees to only give out memory that is properly aligned
-      | for any type. It just uses the maximum alignment on the system.
-      text.mov(rdi, r8)
-      | make the call with a 16-bytes aligned stack
-      text.mov(rbp, rsp)
-      text.and(rsp, 16#fffffffffffffff0)
-      text.push(rbp)
-      text.sub(rsp, 8)
-      text.call("malloc")
-      text.add(rsp, 8)
-      text.pop(rsp)
-      text.ret()
-    } else {
-      var amount = r8
-      var alignment = r9
-      var new_address = r10
+    asm.label(".allocate") {
       | Note: This function doesn't follow the Martinaise calling convention. It
-      | expects the amount to allocate in r8 and the alignment in r9. Returns the
-      | address in rax.
-      text.mov(new_address, memory("_heap_head"))
+      | expects the amount to allocate in a and the alignment in b. Returns the
+      | address in a.
       { | Check that alignment is 1, 2, 4, or 8.
-        text.cmp(alignment, 8)
-        text.jg("_malloc.error") | alignment must be <= 8
-        text.popcnt(r11, alignment)
-        text.cmp(r11, 1)
-        text.jne("_malloc.error") | alignment must be 1, 2, 4, or 8
+        asm.moveib(Reg.e, 1:U8)
+        { | Check if alignment is 1.
+          asm.moveib(Reg.c, 1:U8)
+          asm.cmp(Reg.b, Reg.c)
+          asm.isequal()
+          asm.move(Reg.d, Reg.st)
+          asm.and(Reg.e, Reg.d)
+        }
+        { | Check if alignment is 2.
+          asm.moveib(Reg.c, 2:U8)
+          asm.cmp(Reg.b, Reg.c)
+          asm.isequal()
+          asm.move(Reg.d, Reg.st)
+          asm.and(Reg.e, Reg.d)
+        }
+        { | Check if alignment is 4.
+          asm.moveib(Reg.c, 4:U8)
+          asm.cmp(Reg.b, Reg.c)
+          asm.isequal()
+          asm.move(Reg.d, Reg.st)
+          asm.and(Reg.e, Reg.d)
+        }
+        { | Check if alignment is 8.
+          asm.moveib(Reg.c, 8:U8)
+          asm.cmp(Reg.b, Reg.c)
+          asm.isequal()
+          asm.move(Reg.d, Reg.st)
+          asm.and(Reg.e, Reg.d)
+        }
+        asm.moveib(Reg.d, 1:U8)
+        asm.sub(Reg.d, Reg.e)
+        asm.move(Reg.st, Reg.d)
+        asm.cjump("..error")
       }
-      { | Round up the new_address to a multiple of the alignment. Rounding up to
-        | the alignment means:
+      asm.movei(Reg.c, ".head")
+      asm.load(Reg.c, Reg.c)
+      asm.add(Reg.c, Reg.a)
+      { | Round up c to a multiple of the alignment (b). Rounding up to the
+        | alignment means:
         |
-        | new_address = (new_address + (r9 - 1)) & bitmask for lower bits
+        | c = (c + (b - 1)) & bitmask for lower bits
         |
         | For example, for alignment 4:
         |
-        | new_address = (new_address + 3) & ...1111100
-        text.add(new_address, alignment)
-        text.dec(new_address)
-        text.neg(alignment) | ...1111 or ...1110 or ...1100 or ...1000
-        text.and(new_address, alignment)
+        | c = (c + 3) & ...1111100
+        asm.add(Reg.c, Reg.b)
+        asm.moveib(Reg.d, 1:U8)
+        asm.sub(Reg.c, Reg.d)
+        asm.negate(Reg.b) | ...1111 or ...1110 or ...1100 or ...1000
+        asm.and(Reg.c, Reg.b)
       }
-      var end_of_allocation = r11
-      text.mov(end_of_allocation, new_address)
-      text.add(end_of_allocation, amount)
-      text.cmp(end_of_allocation, memory("_heap_end"))
-      text.jge("_malloc.realloc")
-      text.label("_malloc.actually_allocate") {
-        | Here, we assume there is enough memory for the allocation.
-        text.mov(memory("_heap_head"), end_of_allocation)
-        text.mov(rax, r10)
-        text.ret()
+      asm.move(Reg.b, Reg.c)
+      asm.add(Reg.b, Reg.a)
+      asm.move(Reg.a, Reg.c)
+      asm.movei(Reg.b, ".head")
+      asm.store(Reg.b, Reg.b)
+      asm.ret()
+
+      asm.label("..error") {
+        asm.movei(Reg.a, "..bad_alignment")
+        asm.moveib(Reg.b, 13:U8)
+        asm.panic()
       }
-      text.label("_malloc.realloc") {
-        var new_brk = r12
-        text.mov(new_brk, memory("_heap_end"))
-        text.label("_malloc.find_new_brk")
-        text.add(new_brk, 4096) | page size on Linux
-        text.cmp(new_brk, end_of_allocation)
-        text.jl("_malloc.find_new_brk")
-        { | Do the brk(new_brk) syscall.
-          text.push(new_address)
-          text.push(end_of_allocation)
-          text.push(new_brk)
-          text.mov(rax, 12)      | brk
-          text.mov(rdi, new_brk) | brk(new_brk) moves the break to new_brk
-          text.syscall()
-          text.pop(new_brk)
-          text.pop(end_of_allocation)
-          text.pop(new_address)
-        }
-        text.cmp(rax, new_brk)
-        text.jl("_malloc.error") | setting the brk failed TODO: describe why this can happen
-        text.mov(memory("_heap_end"), rax)
-        text.jmp("_malloc.actually_allocate")
-      }
-      text.label("_malloc.error") {
-        text.mov(rax, 0)
-        text.ret()
-      }
+      asm.label("..bad_alignment") { asm.str("bad alignment") }
     }
   }
 
-  for global in mono.globals do {
-    bss.label("_global_{global.key}")
-    bss.resb(layouts.get(global.value.return_type).size)
+  asm.label("_globals") {
+    for global in mono.globals do {
+      asm.label(".{global.key}")
+      for i in 0..layouts.get(global.value.return_type).size do asm.byte(0:U8)
 
-    var signature = "_init_global_{global.key}"
-    arg_layouts.&.put(signature, MemLayout {
-      type = type("Nothing"),
-      size = 0,
-      alignment = 1,
-      kind = MemLayoutKind.struct_(vec[MemLayoutStructPart]()),
-    })
-    text.label(signature)
-    global.value.assemble_body(
-      signature, mono, layouts, arg_layouts, text, rodata,
-    )
-  }
-  text.label("_init_globals") {
-    for global in mono.globals_init_order do {
-      | The global init functions are guaranteed not to take any arguments. The
-      | stack only has to look like this: [caller][return]...
-      text.push("_global_{global}")
-      text.call("_init_global_{global}")
-      text.pop(r8)
+      arg_layouts.&.put(global.key, MemLayout {
+        type = type("Nothing"),
+        size = 0,
+        alignment = 1,
+        kind = MemLayoutKind.struct_(vec[MemLayoutStructPart]()),
+      })
+      asm.label(".{global.key}.init")
+      global.value.assemble_body(global.key, mono, layouts, arg_layouts, asm)
     }
-    text.ret()
+    asm.label(".init") {
+      for global in mono.globals_init_order do asm.call(".{global}.init")
+      asm.ret()
+    }
   }
 
   for fun_ in mono.funs do {
     var signature = fun_.key
     var fun_ = fun_.value
-    text.label(signature)
-    fun_.assemble_body(signature, mono, layouts, arg_layouts, text, rodata)
+    asm.label(signature)
+    fun_.assemble_body(signature, mono, layouts, arg_layouts, asm)
   }
 }
 
 fun assemble_body[Assembler](
   fun_: MonoFun, signature: Str,
   mono: Mono, layouts: Map[Type, MemLayout], arg_layouts: Map[Str, MemLayout],
-  text: &Assembler, rodata: &Assembler,
+  asm: &Assembler,
 ) {
-  text.comment(signature)
+  asm.comment(signature)
 
   switch fun_.kind
   case builtin panic("Mono still contains builtins")
-  case asm_(code) text."{code}{newline}"
   case body(body) {
     var arg_offsets =
       if arg_layouts.get(signature).kind is struct_(fields)
@@ -3632,13 +3704,14 @@ fun assemble_body[Assembler](
       slot_offsets.&.put(MonoSlotRef { index = slot.index }, offset)
     }
 
-    text.sub(rsp, locals_size)
-    text.comment("rsp + {locals_size}: caller's ip")
-    text.comment("rsp + {locals_size + 8}: 
+    asm.movei(Reg.a, locals_size)
+    asm.sub(Reg.sp, Reg.a)
+    asm.comment("sp + {locals_size}: caller's ip")
+    asm.comment("sp + {locals_size + 8}: 
       'address of where to put the return value")
     for slot in body.slots.iter().enumerate() do {
       var slot_ref = MonoSlotRef { index = slot.index }
-      text.comment("rsp + {slot_offsets.get(slot_ref)}: 
+      asm.comment("sp + {slot_offsets.get(slot_ref)}: 
         '{slot_ref}: {slot.item.type} = {
           switch slot.item.initial_value
           case uninitialized "uninitialized"
@@ -3655,33 +3728,59 @@ fun assemble_body[Assembler](
       case uninitialized {}
       case arg {}
       case int(int) {
-        text.mov(r8, int)
+        if int >= 256
+        then asm.movei(Reg.a, int)
+        else asm.moveib(Reg.a, int.to_U8())
+        asm.move(Reg.b, Reg.sp)
+        asm.movei(Reg.c, offset)
+        asm.add(Reg.b, Reg.c)
         var size = layouts.get(body.slots.get(slot.index).type).size
-        if size == 1 then text.mov(memory(rsp, offset), r8b)
-        if size == 2 then text.mov(memory(rsp, offset), r8w)
-        if size == 4 then text.mov(memory(rsp, offset), r8d)
-        if size == 8 then text.mov(memory(rsp, offset), r8)
+        if size == 1 then asm.storeb(Reg.b, Reg.a)
+        if size == 2 then {
+          asm.storeb(Reg.b, Reg.a)
+          asm.moveib(Reg.c, 1:U8)
+          asm.add(Reg.b, Reg.c)
+          asm.movei(Reg.c, 256)
+          asm.div(Reg.a, Reg.c)
+          asm.storeb(Reg.b, Reg.a)
+        }
+        if size == 4 then {
+          asm.storeb(Reg.b, Reg.a)
+          asm.moveib(Reg.c, 1:U8)
+          asm.movei(Reg.d, 256)
+          for i in 0..3 do {
+            asm.add(Reg.b, Reg.c)
+            asm.div(Reg.a, Reg.d)
+            asm.storeb(Reg.b, Reg.a)
+          }
+        }
+        if size == 8 then asm.store(Reg.b, Reg.a)
       }
       case str(str) {
-        var label = rodata.disambiguated_label("_str_")
-        rodata.db(str.bytes())
-        text.lea(r8, memory(label))
-        text.mov(memory(rsp, offset), r8)
-        text.mov(r8, str.bytes().len)
-        text.mov(memory(rsp, offset + 8), r8)
+        var label = asm.disambiguated_label("_str_")
+        asm.label("str:")
+        asm.movei(Reg.a, label)
+        asm.move(Reg.b, Reg.sp)
+        asm.movei(Reg.c, offset)
+        asm.add(Reg.b, Reg.c)
+        asm.store(Reg.b, Reg.a)
+        asm.movei(Reg.c, str.bytes().len)
+        asm.moveib(Reg.d, 8:U8)
+        asm.add(Reg.b, Reg.d)
+        asm.store(Reg.b, Reg.c)
       }
     }
 
     for statement in body.statements do {
-      if statement is label then {} else text.comment("{statement}")
+      if statement is label then {} else asm.comment("{statement}")
 
       switch statement
-      case label(label) text.label("{signature}.{label}")
+      case label(label) asm.label("{signature}.{label}")
       case assign(assign) {
         var size = layouts.get(assign.value.type).size
-        text.save_address(r8, assign.value, 0, slot_offsets, layouts)
-        text.save_address(r9, assign.to, 0, slot_offsets, layouts)
-        text.copy_memory(memory(r8), memory(r9), size)
+        asm.save_address(Reg.a, assign.value, 0, slot_offsets, layouts, Reg.c)
+        asm.save_address(Reg.b, assign.to, 0, slot_offsets, layouts, Reg.c)
+        asm.copy_memory(Reg.a, Reg.b, size)
       }
       case set_enum(set) {
         var type = body.slots.get(set.slot.index).type
@@ -3695,10 +3794,16 @@ fun assemble_body[Assembler](
         var payload_size = layouts.get(set.value.type).size
         var variant_tag_offset = to_offset + layouts.get(type).size - 1
 
-        text.mov(r8, variant)
-        text.mov(memory(rsp, variant_tag_offset), r8b)
-        text.save_address(r8, set.value, 0, slot_offsets, layouts)
-        text.copy_memory(memory(r8), memory(rsp, to_offset), payload_size)
+        asm.moveib(Reg.a, variant)
+        asm.movei(Reg.b, variant_tag_offset)
+        asm.add(Reg.b, Reg.sp)
+        asm.storeb(Reg.b, Reg.a)
+
+        asm.save_address(Reg.a, set.value, 0, slot_offsets, layouts, Reg.c)
+        asm.move(Reg.b, Reg.sp)
+        asm.movei(Reg.c, to_offset)
+        asm.add(Reg.b, Reg.c)
+        asm.copy_memory(Reg.a, Reg.b, payload_size)
       }
       case call(call) {
         var args_layout = arg_layouts.get_maybe(call.fun_)
@@ -3710,20 +3815,27 @@ fun assemble_body[Assembler](
         }.name_to_offset_map()
         var args_size = args_layout.size.round_up_to_multiple_of(8)
 
-        text.sub(rsp, args_size)
+        asm.sub(rsp, args_size)
         for arg in call.args.iter().enumerate() do {
           var size = layouts.get(arg.item.type).size
           var offset_in_args = arg_offsets.get("arg_{arg.index}")
-          text.save_address(r8, arg.item, args_size, slot_offsets, layouts)
-          text.copy_memory(memory(r8), memory(rsp, offset_in_args), size)
+          asm.save_address(Reg.a, arg.item, args_size, slot_offsets, layouts, Reg.c)
+          asm.move(Reg.b, Reg.sp)
+          asm.movei(Reg.c, offset_in_args)
+          asm.add(Reg.c, Reg.b)
+          asm.copy_memory(Reg.b, Reg.c, size)
         }
-        text.sub(rsp, 8)
-        text.lea(r8, memory(rsp, args_size + 8 + slot_offsets.get(call.to)))
-        text.mov(memory(rsp), r8)
-        text.call(call.fun_)
-        text.add(rsp, args_size + 8)
+        asm.moveib(Reg.a, 8)
+        asm.sub(Reg.sp, Reg.a)
+        asm.move(Reg.a, Reg.sp)
+        asm.movei(Reg.b, args_size + slot_offsets.get(call.to))
+        asm.add(Reg.a, Reg.b)
+        asm.store(Reg.rsp, Reg.a)
+        asm.call(call.fun_)
+        asm.move(Reg.a, args_size + 8)
+        asm.add(Reg.sp, Reg.a)
       }
-      case jump(jump) text.jmp("{signature}.{jump.target}")
+      case jump(jump) asm.jmp("{signature}.{jump.target}")
       case jump_if_variant(jump) {
         var type = jump.condition.type
         var variant_tag_offset = layouts.get(type).size - 1
@@ -3733,53 +3845,99 @@ fun assemble_body[Assembler](
             if v.item.name == jump.variant then checked_tag = v.index.to_U8()
         } else panic("is not an enum")
 
-        text.save_address(r8, jump.condition, 0, slot_offsets, layouts)
-        text.mov(r8b, memory(r8, variant_tag_offset))
-        text.cmp(r8b, checked_tag)
-        text.je("{signature}.{jump.target}")
+        asm.save_address(r8, jump.condition, 0, slot_offsets, layouts)
+        asm.mov(r8b, memory(r8, variant_tag_offset))
+        asm.cmp(r8b, checked_tag)
+        asm.je("{signature}.{jump.target}")
       }
       case get_enum_value(get) {
         var variant_type = body.slots.get(get.to.index).type
         var size = layouts.get(variant_type).size
         var to_offset = slot_offsets.get(get.to)
 
-        text.save_address(r8, get.of, 0, slot_offsets, layouts)
-        text.copy_memory(memory(r8), memory(rsp, to_offset), size)
+        asm.save_address(r8, get.of, 0, slot_offsets, layouts)
+        asm.copy_memory(memory(r8), memory(rsp, to_offset), size)
       }
       case return_(expr) {
         var size = layouts.get(expr.type).size
 
-        text.save_address(r8, expr, 0, slot_offsets, layouts)
-        text.mov(r9, memory(rsp, locals_size + 8))
-        text.copy_memory(memory(r8), memory(r9), size)
-        text.jmp("{signature}.end")
+        asm.save_address(Reg.a, expr, 0, slot_offsets, layouts, Reg.b)
+        asm.move(Reg.b, Reg.sp)
+        asm.movei(Reg.c, locals_size + 8)
+        asm.add(Reg.b, Reg.c)
+        asm.load(Reg.b, Reg.b)
+        asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
+        asm.jmp("{signature}.end")
       }
       case ref(ref) {
-        text.save_address(r8, ref.of, 0, slot_offsets, layouts)
-        text.mov(memory(rsp, slot_offsets.get(ref.to)), r8)
+        asm.save_address(Reg.a, ref.of, 0, slot_offsets, layouts, Reg.b)
+        asm.move(Reg.b, Reg.sp)
+        asm.movei(Reg.c, slot_offsets.get(ref.to))
+        asm.add(Reg.b, Reg.c)
+        asm.store(Reg.b, Reg.a)
       }
     }
-    text.label("{signature}.end")
-    text.add(rsp, locals_size)
-    text.ret()
+    asm.label("{signature}.end")
+    asm.add(rsp, locals_size)
+    asm.ret()
+  }
+  case asm_(instructions) for instruction in instructions do {
+    switch instruction
+    case label(label) asm.define_label(label)
+    case str(str) asm.str(str)
+    case byte(byte) asm.byte(byte)
+    case word(word) asm.word(word)
+    case nop asm.nop()
+    case panic asm.panic()
+    case move(regs) asm.move(regs.first, regs.second)
+    case movei(args) asm.movei(args.first, args.second)
+    case moveib(args) asm.moveib(args.first, args.second)
+    case load(regs) asm.load(regs.first, regs.second)
+    case loadb(regs) asm.loadb(regs.first, regs.second)
+    case store(regs) asm.store(regs.first, regs.second)
+    case storeb(regs) asm.storeb(regs.first, regs.second)
+    case push(reg) asm.push(reg)
+    case pop(reg) asm.pop(reg)
+    case jump(word) asm.jump(word)
+    case cjump(word) asm.cjump(word)
+    case call(word) asm.call(word)
+    case ret asm.ret()
+    case devicecall(byte) asm.devicecall(byte)
+    case cmp(regs) asm.cmp(regs.first, regs.second)
+    case isequal asm.isequal()
+    case isless asm.isless()
+    case isgreater asm.isgreater()
+    case islessequal asm.islessequal()
+    case isgreaterequal asm.isgreaterequal()
+    case add(regs) asm.add(regs.first, regs.second)
+    case sub(regs) asm.sub(regs.first, regs.second)
+    case mul(regs) asm.mul(regs.first, regs.second)
+    case div(regs) asm.div(regs.first, regs.second)
+    case and(regs) asm.and(regs.first, regs.second)
+    case or(regs) asm.or(regs.first, regs.second)
+    case xor(regs) asm.xor(regs.first, regs.second)
+    case negate(reg) asm.negate(reg)
   }
 }
 
 | Saves the address of the expr in the register.
 fun save_address[Assembler](
-  text: Assembler, register: Reg64, expr: MonoExpr, locals_offset: U64,
+  asm: Assembler, register: Reg, expr: MonoExpr, locals_offset: U64,
   slot_offsets: Map[MonoSlotRef, U64], layouts: Map[Type, MemLayout],
+  scratch: Reg,
 ) {
   switch expr.kind
   case nothing {} | you can read zero bytes from anywhere
   case never {} | you can read zero bytes from anywhere
-  case global(name) text.lea(register, memory("_global_{name}"))
-  case slot(slot)
-    text.lea(register, memory(rsp, locals_offset + slot_offsets.get(slot)))
+  case global(name) asm.movei(register, "_globals.{name}")
+  case slot(slot) {
+    asm.movei(register, locals_offset + slot_offsets.get(slot))
+    asm.add(register, Reg.sp)
+  }
   case member(member) {
-    text.save_address(register, member.of.*, locals_offset, slot_offsets, layouts)
+    asm.save_address(register, member.of.*, locals_offset, slot_offsets, layouts)
     if member.name == "*"
-    then text.mov(register, memory(register))
+    then asm.load(register, register)
     else {
       var offset_in_struct =
         switch layouts.get(member.of.type).kind
@@ -3787,288 +3945,201 @@ fun save_address[Assembler](
         case enum_(e) panic("member receiver is an enum")
         case opaque_(o) panic("{member.of.type} is opaque: {o}")
         default panic("member receiver is always a struct")
-      text.add(register, offset_in_struct)
+      asm.movei(scratch, offset_in_struct)
+      asm.add(register, scratch)
     }
   }
 }
 
-fun copy_memory[Assembler, A, B](
-  text: Assembler, from: Memory[A], to: Memory[B], amount: U64,
+fun copy_memory[Assembler](
+  asm: Assembler, from: Reg, to: Reg, amount: U64, scratch: Reg,
 ) {
   var i = 0
   loop {
     if i >= amount then break
     if amount - i >= 8 then {
-      | TODO: implement + U64 for memory
-      text.mov(r15, memory(from.where, from.offset + i))
-      text.mov(memory(to.where, to.offset + i), r15)
+      asm.load(scratch, from)
+      asm.store(to, scratch)
+      asm.add(from, 8)
+      asm.add(to, 8)
       i = i + 8
     } else {
-      text.mov(r15b, memory(from.where, from.offset + i))
-      text.mov(memory(to.where, to.offset + i), r15b)
+      asm.loadb(scratch, from)
+      asm.storeb(to, scratch)
+      asm.add(from, 1)
+      asm.add(to, 1)
       i = i + 1
     }
   }
+  asm.sub(from, amount)
+  asm.sub(to, amount)
 }
 
-| Textual NASM Assembler  
-| This backend produces textual NASM code.
+| Textual Assembler  
+| This backend produces textual Soil code (a "recipe").
 
-struct Nasm { builder: StringBuilder }
+struct Recipe { builder: StringBuilder }
 
-fun write_byte(asm: &Nasm, byte: U8) { asm.builder.&.write_byte(byte) }
-fun write_bytes(asm: &Nasm, bytes: Slice[U8]) {
+fun write_byte(asm: &Recipe, byte: U8) { asm.builder.&.write_byte(byte) }
+fun write_bytes(asm: &Recipe, bytes: Slice[U8]) {
   asm.builder.&.write_bytes(bytes)
 }
 
-fun mangle(name: Str): Str {
-  | We trust labels that start with an underscore to only contain valid label
-  | characters. This is so that _start, _malloc, _global_... etc. labels all
-  | stay simple and readable, while user-written functions (which can't start
-  | with an underscore) are mangled.
-  if name.starts_with("_") then return name
+fun comment(asm: &Recipe, comment: Str) { asm."  | {comment}{newline}" }
 
-  var mangled = string_builder().&
-  for c in name do {
-    if c == #) then { mangled.write("__") continue }
-    if c == #[ then { mangled.write("_of_") continue }
-    if c == #] then { mangled.write("_end_") continue }
-    if c == #( then { mangled.write("_withargs_") continue }
-    if c == #) then { mangled.write("_end_") continue }
-    if c == #. then { mangled.write("_dot_") continue }
-    if c == #, then { mangled.write("_and_") continue }
-    if c == #% then { mangled.write("_percent_") continue }
-    if c == #! then { mangled.write("_bang_") continue }
-    if c == #~ then { mangled.write("_tilde_") continue }
-    if c == #@ then { mangled.write("_at_") continue }
-    if c == #^ then { mangled.write("_roof_") continue }
-    if c == #\ then { mangled.write("_backslash_") continue }
-    if c == #` then { mangled.write("_tick_") continue }
-    if c == #/ then { mangled.write("_slash_") continue }
-    if c == #& then { mangled.write("_amp_") continue }
-    if c == #* then { mangled.write("_star_") continue }
-    if c == #+ then { mangled.write("_plus_") continue }
-    if c == #$ then { mangled.write("_dollar_") continue }
-    if c == #- then { mangled.write("_minus_") continue }
-    if c == #< then { mangled.write("_less_") continue }
-    if c == #> then { mangled.write("_greater_") continue }
-    if c == #= then { mangled.write("_equals_") continue }
-    if c == #  then continue
-    mangled.write(c)
-  }
-  mangled.to_str()
-}
-fun mangle(mem: Memory[Str]): Memory[Str] {
-  memory(mem.where.mangle(), mem.offset)
-}
-
-fun comment(asm: &Nasm, comment: Str) { asm."  ; {comment}{newline}" }
-
-fun label(asm: &Nasm, label: Str) { asm."{label.mangle()}:{newline}" }
-fun disambiguated_label(asm: &Nasm, prefix: Str): Str {
+fun label(asm: &Recipe, label: Str) { asm."{label}:{newline}" }
+fun disambiguated_label(asm: &Recipe, prefix: Str): Str {
   var label = "{prefix}.{asm.builder.len()}"
   asm.label(label)
   label
 }
 
-fun align(asm: &Nasm, alignment: U64) { asm."  align {alignment}{newline}" }
-fun resb(asm: &Nasm, amount: U64)     { asm."  resb {amount}{newline}" }
-fun db(asm: &Nasm, bytes: Slice[U8])  { asm."  db {comma_separated(bytes)}{newline}" }
+fun str(asm: &Recipe, str: Str)   { asm.'"str "{str}"{newline}"' }
+fun byte(asm: &Recipe, byte: U8)  { asm."byte {byte}{newline}" }
+fun word(asm: &Recipe, word: U64) { asm."db {word}{newline}" }
 
 | Instructions
-fun add(asm: &Nasm, a: Reg64, b: U64)           { asm."  add {a}, {b}{newline}" }
-fun add(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  add {a}, {b}{newline}" }
-fun and(asm: &Nasm, a: Reg64, b: U64)           { asm."  and {a}, {b}{newline}" }
-fun and(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  and {a}, {b}{newline}" }
-fun call(asm: &Nasm, label: Str)                { asm."  call {label.mangle()}{newline}" }
-fun cmp(asm: &Nasm, a: Reg8, b: U8)             { asm."  cmp {a}, {b}{newline}" }
-fun cmp(asm: &Nasm, a: Reg64, b: U64)           { asm."  cmp {a}, {b}{newline}" }
-fun cmp(asm: &Nasm, a: Reg64, b: Memory[Str])   { asm."  cmp {a}, {b.mangle()}{newline}" }
-fun cmp(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  cmp {a}, {b}{newline}" }
-fun dec(asm: &Nasm, a: Reg64)                   { asm."  dec {a}{newline}" }
-fun inc(asm: &Nasm, a: Reg64)                   { asm."  inc {a}{newline}" }
-fun je(asm: &Nasm, label: Str)                  { asm."  je {label.mangle()}{newline}" }
-fun jg(asm: &Nasm, label: Str)                  { asm."  jg {label.mangle()}{newline}" }
-fun jge(asm: &Nasm, label: Str)                 { asm."  jge {label.mangle()}{newline}" }
-fun jl(asm: &Nasm, label: Str)                  { asm."  jl {label.mangle()}{newline}" }
-fun jmp(asm: &Nasm, label: Str)                 { asm."  jmp {label.mangle()}{newline}" }
-fun jne(asm: &Nasm, label: Str)                 { asm."  jne {label.mangle()}{newline}" }
-fun jz(asm: &Nasm, label: Str)                  { asm."  jz {label.mangle()}{newline}" }
-fun lea(asm: &Nasm, a: Reg64, b: Memory[Str])   { asm."  lea {a}, {b.mangle()}{newline}" }
-fun lea(asm: &Nasm, a: Reg64, b: Memory[Reg64]) { asm."  lea {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Reg8, b: Memory[Reg64])  { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Reg64, b: U64)           { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Reg64, b: Memory[Str])   { asm."  mov {a}, {b.mangle()}{newline}" }
-fun mov(asm: &Nasm, a: Reg64, b: Memory[Reg64]) { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Memory[Str], b: Reg64)   { asm."  mov {a.mangle()}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg8)  { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg16) { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg32) { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Nasm, a: Memory[Reg64], b: Reg64) { asm."  mov {a}, {b}{newline}" }
-fun neg(asm: &Nasm, a: Reg64)                   { asm."  neg {a}{newline}" }
-fun pop(asm: &Nasm, a: Reg64)                   { asm."  pop {a}{newline}" }
-fun popcnt(asm: &Nasm, a: Reg64, b: Reg64)      { asm."  popcnt {a}, {b}{newline}" }
-fun push(asm: &Nasm, a: U64)                    { asm."  push {a}{newline}" }
-fun push(asm: &Nasm, a: Reg64)                  { asm."  push {a}{newline}" }
-fun push(asm: &Nasm, a: Str)                    { asm."  push {a.mangle()}{newline}" }
-fun ret(asm: &Nasm)                             { asm."  ret{newline}" }
-fun shl(asm: &Nasm, a: Reg64, amount: U64)      { asm."  shl {a}, {amount}{newline}" }
-fun sub(asm: &Nasm, a: Reg64, b: U64)           { asm."  sub {a}, {b}{newline}" }
-fun sub(asm: &Nasm, a: Reg64, b: Reg64)         { asm."  sub {a}, {b}{newline}" }
-fun syscall(asm: &Nasm)                         { asm."  syscall{newline}" }
+fun nop(asm: &Recipe)                    { asm."  nop{newline}" }
+fun panic(asm: &Recipe)                  { asm."  panic{newline}" }
+fun move(asm: &Recipe, a: Reg, b: Reg)   { asm."  move {a} {b}{newline}" }
+fun movei(asm: &Recipe, a: Reg, b: U64)  { asm."  movei {a} {b}{newline}" }
+fun movei(asm: &Recipe, a: Reg, b: Str)  { asm."  movei {a} {b}{newline}" }
+fun moveib(asm: &Recipe, a: Reg, b: U8)  { asm."  moveib {a} {b}{newline}" }
+fun load(asm: &Recipe, a: Reg, b: Reg)   { asm."  load {a} {b}{newline}" }
+fun loadb(asm: &Recipe, a: Reg, b: Reg)  { asm."  loadb {a} {b}{newline}" }
+fun store(asm: &Recipe, a: Reg, b: Reg)  { asm."  store {a} {b}{newline}" }
+fun storeb(asm: &Recipe, a: Reg, b: Reg) { asm."  storeb {a} {b}{newline}" }
+fun push(asm: &Recipe, a: Reg)           { asm."  push {a}{newline}" }
+fun pop(asm: &Recipe, a: Reg)            { asm."  pop {a}{newline}" }
+fun jump(asm: &Recipe, a: U64)           { asm."  jump {a}{newline}" }
+fun jump(asm: &Recipe, a: Str)           { asm."  jump {a}{newline}" }
+fun cjump(asm: &Recipe, a: U64)          { asm."  cjump {a}{newline}" }
+fun cjump(asm: &Recipe, a: Str)          { asm."  cjump {a}{newline}" }
+fun call(asm: &Recipe, a: U64)           { asm."  call {a}{newline}" }
+fun call(asm: &Recipe, a: Str)           { asm."  call {a}{newline}" }
+fun ret(asm: &Recipe)                    { asm."  ret{newline}" }
+fun devicecall(asm: &Recipe, a: Str)     { asm."  devicecall {a}{newline}" }
+fun cmp(asm: &Recipe, a: Reg, b: Reg)    { asm."  cmp {a} {b}{newline}" }
+fun isequal(asm: &Recipe)                { asm."  isequal{newline}" }
+fun isless(asm: &Recipe)                 { asm."  isless{newline}" }
+fun isgreater(asm: &Recipe)              { asm."  isgreater{newline}" }
+fun islessequal(asm: &Recipe)            { asm."  islessequal{newline}" }
+fun isgreater(asm: &Recipe)              { asm."  isgreater{newline}" }
+fun add(asm: &Recipe, a: Reg, b: Reg)    { asm."  add {a} {b}{newline}" }
+fun sub(asm: &Recipe, a: Reg, b: Reg)    { asm."  sub {a} {b}{newline}" }
+fun mul(asm: &Recipe, a: Reg, b: Reg)    { asm."  mul {a} {b}{newline}" }
+fun div(asm: &Recipe, a: Reg, b: Reg)    { asm."  div {a} {b}{newline}" }
+fun and(asm: &Recipe, a: Reg, b: Reg)    { asm."  and {a} {b}{newline}" }
+fun or(asm: &Recipe, a: Reg, b: Reg)     { asm."  or {a} {b}{newline}" }
+fun xor(asm: &Recipe, a: Reg, b: Reg)    { asm."  xor {a} {b}{newline}" }
+fun negate(asm: &Recipe, a: Reg)         { asm."  negate {a}{newline}" }
 
-fun nasm(mono: Mono, layouts: Map[Type, MemLayout], use_sdl: Bool): Str {
-  var text   = Nasm { builder = string_builder() }
-  var bss    = Nasm { builder = string_builder() }
-  var rodata = Nasm { builder = string_builder() }
-  mono.assemble(layouts, text.&, rodata.&, bss.&, use_sdl)
-
-  if use_sdl
-  then "
-    'section .text{newline}
-    'global _start{newline}
-    '{newline}
-    'extern malloc{newline}
-    'extern SDL_Init{newline}
-    'extern SDL_Quit{newline}
-    'extern SDL_GetError{newline}
-    'extern SDL_Delay{newline}
-    'extern SDL_CreateWindow{newline}
-    'extern SDL_DestroyWindow{newline}
-    'extern SDL_PollEvent{newline}
-    'extern SDL_CreateRenderer{newline}
-    'extern SDL_DestroyRenderer{newline}
-    'extern SDL_CreateTexture{newline}
-    'extern SDL_DestroyTexture{newline}
-    'extern SDL_SetRenderTarget{newline}
-    'extern SDL_SetRenderDrawColor{newline}
-    'extern SDL_RenderClear{newline}
-    'extern SDL_RenderDrawPoint{newline}
-    'extern SDL_RenderFillRect{newline}
-    'extern SDL_RenderCopy{newline}
-    'extern SDL_RenderPresent{newline}
-    '{newline}
-    '{text.builder}{newline}
-    'section .rodata{newline}{rodata.builder}{newline}
-    'section .bss{newline}{bss.builder}{newline}"
-  else "
-    'section .text{newline}
-    'global _start{newline}
-    '{text.builder}{newline}
-    'section .rodata{newline}{rodata.builder}{newline}
-    'section .bss{newline}{bss.builder}{newline}"
+fun recipe(mono: Mono, layouts: Map[Type, MemLayout]): Str {
+  var asm = Recipe { builder = string_builder() }
+  mono.assemble(layouts, asm.&)
+  "jump _main{newline}{asm.builder}"
 }
 
-| Textual FASM Assembler  
-| This backend produces textual FASM code.
+| Binary Assembler  
+| This backend produces a Soil binary.
 
-struct Fasm { builder: StringBuilder }
+struct Soil {
+  bytes: Vec[U8],
+  last_label: Str,
+  labels: Map[Str, U64],
+  patches: Vec[Patch],
+}
+struct Patch { label: Str, where: U64 }
 
-fun write_byte(asm: &Fasm, byte: U8) { asm.builder.&.write_byte(byte) }
-fun write_bytes(asm: &Fasm, bytes: Slice[U8]) {
-  asm.builder.&.write_bytes(bytes)
+fun emit(asm: &Soil, byte: U8) { asm.bytes.&.push(byte) }
+fun emit(asm: &Soil, word: U64) {
+  asm.emit(word.and(16#ff).to_U8())
+  asm.emit({word / 16#100}.and(16#ff).to_U8())
+  asm.emit({word / 16#10000}.and(16#ff).to_U8())
+  asm.emit({word / 16#1000000}.and(16#ff).to_U8())
+  asm.emit({word / 16#100000000}.and(16#ff).to_U8())
+  asm.emit({word / 16#10000000000}.and(16#ff).to_U8())
+  asm.emit({word / 16#1000000000000}.and(16#ff).to_U8())
+  asm.emit({word / 16#100000000000000}.and(16#ff).to_U8())
+}
+fun emit(asm: &Soil, bytes: Slice[U8]) {
+  for byte in bytes do asm.builder.&.push(byte)
+}
+fun emit(asm: &Soil, a: Reg) { asm.emit(a.to_bits()) }
+fun emit(asm: &Soil, a: Reg, b: Reg) {
+  asm.emit(b.to_bits() * 16#10:U8 + a.to_bits())
+}
+fun emit(asm: &Soil, label: Str) {
+  asm.patches.push(Patch { label, where = asm.bytes.len })
+  asm.emit(0)
 }
 
-fun comment(asm: &Fasm, comment: Str) { asm."  ; {comment}{newline}" }
+fun to_bits(reg: Reg): U8 {
+  switch reg
+  case ip 2#0000:U8
+  case sp 2#0001:U8
+  case st 2#0010:U8
+  case a 2#0011:U8
+  case b 2#0100:U8
+  case c 2#0101:U8
+  case d 2#0110:U8
+  case e 2#0111:U8
+}
 
-fun label(asm: &Fasm, label: Str) { asm."{label.mangle()}:{newline}" }
-fun disambiguated_label(asm: &Fasm, prefix: Str): Str {
-  var label = "{prefix}.{asm.builder.len()}"
+fun comment(asm: &Soil, comment: Str) {}
+
+fun label(asm: &Soil, label: Str) { asm.labels.&.put(label, asm.bytes.len) }
+fun disambiguated_label(asm: &Soil, prefix: Str): Str {
+  var label = "{prefix}.{asm.bytes.len()}"
   asm.label(label)
   label
 }
 
-fun align(asm: &Fasm, alignment: U64) { asm."  align {alignment}{newline}" }
-fun resb(asm: &Fasm, amount: U64)     { asm."  rb {amount}{newline}" }
-fun db(asm: &Fasm, bytes: Slice[U8])  { asm."  db {comma_separated(bytes)}{newline}" }
+fun str(asm: &Soil, str: Str)   { asm.emit(str.bytes()) }
+fun byte(asm: &Soil, byte: U8)  { asm.emit(byte) }
+fun word(asm: &Soil, word: U64) { asm.emit(word) }
 
 | Instructions
-fun add(asm: &Fasm, a: Reg64, b: U64)           { asm."  add {a}, {b}{newline}" }
-fun add(asm: &Fasm, a: Reg64, b: Reg64)         { asm."  add {a}, {b}{newline}" }
-fun and(asm: &Fasm, a: Reg64, b: U64)           { asm."  and {a}, {b}{newline}" }
-fun and(asm: &Fasm, a: Reg64, b: Reg64)         { asm."  and {a}, {b}{newline}" }
-fun call(asm: &Fasm, label: Str)                { asm."  call {label.mangle()}{newline}" }
-fun cmp(asm: &Fasm, a: Reg8, b: U8)             { asm."  cmp {a}, {b}{newline}" }
-fun cmp(asm: &Fasm, a: Reg64, b: U64)           { asm."  cmp {a}, {b}{newline}" }
-fun cmp(asm: &Fasm, a: Reg64, b: Memory[Str])   { asm."  cmp {a}, {b.mangle()}{newline}" }
-fun cmp(asm: &Fasm, a: Reg64, b: Reg64)         { asm."  cmp {a}, {b}{newline}" }
-fun dec(asm: &Fasm, a: Reg64)                   { asm."  dec {a}{newline}" }
-fun inc(asm: &Fasm, a: Reg64)                   { asm."  inc {a}{newline}" }
-fun je(asm: &Fasm, label: Str)                  { asm."  je {label.mangle()}{newline}" }
-fun jg(asm: &Fasm, label: Str)                  { asm."  jg {label.mangle()}{newline}" }
-fun jge(asm: &Fasm, label: Str)                 { asm."  jge {label.mangle()}{newline}" }
-fun jl(asm: &Fasm, label: Str)                  { asm."  jl {label.mangle()}{newline}" }
-fun jmp(asm: &Fasm, label: Str)                 { asm."  jmp {label.mangle()}{newline}" }
-fun jne(asm: &Fasm, label: Str)                 { asm."  jne {label.mangle()}{newline}" }
-fun jz(asm: &Fasm, label: Str)                  { asm."  jz {label.mangle()}{newline}" }
-fun lea(asm: &Fasm, a: Reg64, b: Memory[Str])   { asm."  lea {a}, {b.mangle()}{newline}" }
-fun lea(asm: &Fasm, a: Reg64, b: Memory[Reg64]) { asm."  lea {a}, {b}{newline}" }
-fun mov(asm: &Fasm, a: Reg8, b: Memory[Reg64])  { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Fasm, a: Reg64, b: U64)           { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Fasm, a: Reg64, b: Reg64)         { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Fasm, a: Reg64, b: Memory[Str])   { asm."  mov {a}, {b.mangle()}{newline}" }
-fun mov(asm: &Fasm, a: Reg64, b: Memory[Reg64]) { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Fasm, a: Memory[Str], b: Reg64)   { asm."  mov {a.mangle()}, {b}{newline}" }
-fun mov(asm: &Fasm, a: Memory[Reg64], b: Reg8)  { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Fasm, a: Memory[Reg64], b: Reg16) { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Fasm, a: Memory[Reg64], b: Reg32) { asm."  mov {a}, {b}{newline}" }
-fun mov(asm: &Fasm, a: Memory[Reg64], b: Reg64) { asm."  mov {a}, {b}{newline}" }
-fun neg(asm: &Fasm, a: Reg64)                   { asm."  neg {a}{newline}" }
-fun pop(asm: &Fasm, a: Reg64)                   { asm."  pop {a}{newline}" }
-fun popcnt(asm: &Fasm, a: Reg64, b: Reg64)      { asm."  popcnt {a}, {b}{newline}" }
-fun push(asm: &Fasm, a: U64)                    { asm."  push {a}{newline}" }
-fun push(asm: &Fasm, a: Reg64)                  { asm."  push {a}{newline}" }
-fun push(asm: &Fasm, a: Str)                    { asm."  push {a.mangle()}{newline}" }
-fun ret(asm: &Fasm)                             { asm."  ret{newline}" }
-fun shl(asm: &Fasm, a: Reg64, amount: U64)      { asm."  shl {a}, {amount}{newline}" }
-fun sub(asm: &Fasm, a: Reg64, b: U64)           { asm."  sub {a}, {b}{newline}" }
-fun sub(asm: &Fasm, a: Reg64, b: Reg64)         { asm."  sub {a}, {b}{newline}" }
-fun syscall(asm: &Fasm)                         { asm."  syscall{newline}" }
+fun nop(asm: &Soil)                    { asm.emit(16#00:U8) }
+fun panic(asm: &Soil)                  { asm.emit(16#e0:U8) }
+fun move(asm: &Soil, a: Reg, b: Reg)   { asm.emit(16#d0:U8) asm.emit(a, b) }
+fun movei(asm: &Soil, a: Reg, b: U64)  { asm.emit(16#d1:U8) asm.emit(a) asm.emit(b) }
+fun movei(asm: &Soil, a: Reg, b: Str)  { asm.emit(16#d1:U8) asm.emit(a) asm.emit(b) }
+fun moveib(asm: &Soil, a: Reg, b: U8)  { asm.emit(16#d2:U8) asm.emit(a) asm.emit(b) }
+fun load(asm: &Soil, a: Reg, b: Reg)   { asm.emit(16#d3:U8) asm.emit(a) asm.emit(b) }
+fun loadb(asm: &Soil, a: Reg, b: Reg)  { asm.emit(16#d4:U8) asm.emit(a) asm.emit(b) }
+fun store(asm: &Soil, a: Reg, b: Reg)  { asm.emit(16#d5:U8) asm.emit(a) asm.emit(b) }
+fun storeb(asm: &Soil, a: Reg, b: Reg) { asm.emit(16#d6:U8) asm.emit(a) asm.emit(b) }
+fun push(asm: &Soil, a: Reg)           { asm.emit(16#d7:U8) asm.emit(a) }
+fun pop(asm: &Soil, a: Reg)            { asm.emit(16#d8:U8) asm.emit(a) }
+fun jump(asm: &Soil, a: U64)           { asm.emit(16#f0:U8) asm.emit(a) }
+fun jump(asm: &Soil, a: Str)           { asm.emit(16#f0:U8) asm.emit(a) }
+fun cjump(asm: &Soil, a: U64)          { asm.emit(16#f1:U8) asm.emit(a) }
+fun cjump(asm: &Soil, a: Str)          { asm.emit(16#f1:U8) asm.emit(a) }
+fun call(asm: &Soil, a: U64)           { asm.emit(16#f2:U8) asm.emit(a) }
+fun call(asm: &Soil, a: Str)           { asm.emit(16#f2:U8) asm.emit(a) }
+fun ret(asm: &Soil)                    { asm.emit(16#f3:U8) }
+fun devicecall(asm: &Soil, a: Str)     { asm.emit(16#f4:U8) asm.emit(0:U8) }
+fun cmp(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#c0:U8) asm.emit(a, b) }
+fun isequal(asm: &Soil)                { asm.emit(16#c1:U8) }
+fun isless(asm: &Soil)                 { asm.emit(16#c2:U8) }
+fun isgreater(asm: &Soil)              { asm.emit(16#c3:U8) }
+fun islessequal(asm: &Soil)            { asm.emit(16#c4:U8) }
+fun isgreater(asm: &Soil)              { asm.emit(16#c5:U8) }
+fun add(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#a0:U8) asm.emit(a, b) }
+fun sub(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#a1:U8) asm.emit(a, b) }
+fun mul(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#a2:U8) asm.emit(a, b) }
+fun div(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#a3:U8) asm.emit(a, b) }
+fun and(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#b0:U8) asm.emit(a, b) }
+fun or(asm: &Soil, a: Reg, b: Reg)     { asm.emit(16#b1:U8) asm.emit(a, b) }
+fun xor(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#b2:U8) asm.emit(a, b) }
+fun negate(asm: &Soil, a: Reg)         { asm.emit(16#b3:U8) asm.emit(a) }
 
-fun fasm(mono: Mono, layouts: Map[Type, MemLayout], use_sdl: Bool): Str {
-  var text   = Fasm { builder = string_builder() }
-  var bss    = Fasm { builder = string_builder() }
-  var rodata = Fasm { builder = string_builder() }
-  mono.assemble(layouts, text.&, rodata.&, bss.&, use_sdl)
-
-  if use_sdl
-  then "
-    'format ELF64{newline}
-    '{newline}
-    'section '.text' executable{newline}
-    'public _start{newline}
-    '{newline}
-    'extrn malloc{newline}
-    'extrn SDL_Init{newline}
-    'extrn SDL_Quit{newline}
-    'extrn SDL_GetError{newline}
-    'extrn SDL_Delay{newline}
-    'extrn SDL_CreateWindow{newline}
-    'extrn SDL_DestroyWindow{newline}
-    'extrn SDL_PollEvent{newline}
-    'extrn SDL_CreateRenderer{newline}
-    'extrn SDL_DestroyRenderer{newline}
-    'extrn SDL_CreateTexture{newline}
-    'extrn SDL_DestroyTexture{newline}
-    'extrn SDL_SetRenderTarget{newline}
-    'extrn SDL_SetRenderDrawColor{newline}
-    'extrn SDL_RenderClear{newline}
-    'extrn SDL_RenderDrawPoint{newline}
-    'extrn SDL_RenderFillRect{newline}
-    'extrn SDL_RenderCopy{newline}
-    'extrn SDL_RenderPresent{newline}
-    '{newline}
-    '{text.builder}{newline}
-    'section '.rodata'{newline}{rodata.builder}{newline}
-    'section '.data' writable{newline}{bss.builder}{newline}"
-  else "
-    'format ELF64 executable{newline}
-    '{newline}
-    'segment readable executable{newline}
-    '{text.builder}{newline}
-    'segment readable{newline}{rodata.builder}{newline}
-    'segment readable writable{newline}{bss.builder}{newline}"
+fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Vec[U8] {
+  var soil = Soil { bytes = vec[U8]() }
+  mono.assemble(layouts, soil.&)
+  soil.fix_patches()
+  soil.bytes
 }
 
 | File Watching  
@@ -4139,14 +4210,13 @@ fun wait_for_change(watcher: FileWatcher) {
 | The command line interface which you use to interact with the Martinaise
 | compiler.
 
-enum Command { help, ast, mono, nasm, fasm, compile, run, watch }
+enum Command { help, ast, mono, recipe, soil, run, watch }
 fun parse_command(command: Str): Maybe[Command] {
   if command == "help" then return some(Command.help)
   if command == "ast" then return some(Command.ast)
   if command == "mono" then return some(Command.mono)
-  if command == "nasm" then return some(Command.nasm)
-  if command == "fasm" then return some(Command.fasm)
-  if command == "compile" then return some(Command.compile)
+  if command == "recipe" then return some(Command.recipe)
+  if command == "soil" then return some(Command.soil)
   if command == "run" then return some(Command.run)
   if command == "watch" then return some(Command.watch)
   none[Command]()
@@ -4156,14 +4226,13 @@ fun print_usage_info(out: File) {
   out."
     'Usage: martinaise <command> <file>{newline}{newline}
     'Commands:{newline}
-    '  help     prints this help{newline}
-    '  ast      shows the abstract syntax tree{newline}
-    '  mono     shows the monomorphized code{newline}
-    '  nasm     compiles to NASM-style assembly{newline}
-    '  fasm     compiles to FASM-style assembly{newline}
-    '  compile  compiles to an executable{newline}
-    '  run      compiles and runs{newline}
-    '  watch    watches, compiles, and runs{newline}"
+    '  help    prints this help{newline}
+    '  ast     shows the abstract syntax tree{newline}
+    '  mono    shows the monomorphized code{newline}
+    '  recipe  compiles to a Soil recipe{newline}
+    '  soil    compiles to a Soil executable{newline}
+    '  run     compiles and runs{newline}
+    '  watch   watches, compiles, and runs{newline}"
 }
 
 | Runs the pipeline that matches the command. Errors are handled internally
@@ -4192,26 +4261,18 @@ fun run_pipeline(command: Command, file_path: Str, use_sdl: Bool): Bool {
   print_on_same_line("Monoing reflection functions")
   mono.&.compile_builtins(layouts)
 
-  print_on_same_line("Assembling")
-  if command is nasm then {
-    var asm = mono.nasm(layouts, use_sdl)
-    print_on_same_line("Writing assembly")
+  print_on_same_line("Assembling recipe")
+  if command is recipe then {
+    var recipe = mono.recipe(layouts)
+    print_on_same_line("Writing recipe")
     var buffered = stdout.buffered_writer(1024).&
-    buffered.writeln(asm)
+    buffered.writeln(recipe)
     buffered.flush()
-    print_on_same_line("Compiled to assembly. Enjoy!")
+    print_on_same_line("Compiled to recipe. Enjoy!")
     return true
   }
-  if command is fasm then {
-    var asm = mono.fasm(layouts, use_sdl)
-    print_on_same_line("Writing assembly")
-    var buffered = stdout.buffered_writer(1024).&
-    buffered.writeln(asm)
-    buffered.flush()
-    print_on_same_line("Compiled to assembly. Enjoy!")
-    return true
-  }
-  var asm = mono.fasm(layouts, use_sdl)
+  todo()
+  var recipe = mono.recipe(layouts)
 
   | TODO: compile to machine code in memory (in Martinaise)
   | TODO: assert that the file ends with .mar?
@@ -4219,36 +4280,28 @@ fun run_pipeline(command: Command, file_path: Str, use_sdl: Bool): Bool {
     if file_path.ends_with(".mar")
     then file_path.without_last(4)
     else file_path
-  var asm_file = "{file_path_without_extension}.asm"
-  var object_file = "{file_path_without_extension}.o"
-  var exe_file = file_path_without_extension
+  var recipe_file = "{file_path_without_extension}.recipe"
 
-  print_on_same_line("Writing assembly to file")
-  write_file(asm_file, asm.bytes()).unwrap()
+  print_on_same_line("Writing recipe to file")
+  write_file(recipe_file, asm.bytes()).unwrap()
 
   | TODO: make sure that the external commands succeed before calling the next
   | one
 
-  print_on_same_line("Compiling assembly using fasm")
-  if use_sdl then {
-    run("fasm {asm_file} {object_file}")
-    run("ld -o {exe_file} {object_file} -dynamic-linker /lib64/ld-linux-x86-64.so.2 -lc -lSDL2")
-  } else run("fasm {asm_file} {exe_file}")
-
   | TODO: remove generated asm and object file?
 
-  if command is compile then {
-    print_on_same_line("Compiled to {exe_file}. Enjoy!")
+  if command is soil then {
+    print_on_same_line("Compiled to {recipe_file}. Enjoy!")
     return true
   }
 
-  print_on_same_line("Running {exe_file}")
-  run(exe_file, vec(exe_file).to_slice())
+  print_on_same_line("Running {recipe_file}")
+  run(recipe_file, vec(recipe_file).to_slice())
 
   | TODO: time it
   | TODO: print exit status of the program
 
-  println("{exe_file} exited")
+  println("{recipe_file} exited")
 
   true
 }
@@ -4256,7 +4309,7 @@ fun run_pipeline(command: Command, file_path: Str, use_sdl: Bool): Bool {
 fun wrong_usage(): Never { print_usage_info(stderr) exit(1:U8) }
 
 fun main(args: Slice[Str]): Never {
-  eprintln("Welcome to Martinaise 4.")
+  eprintln("Welcome to Martinaise 5.")
 
   | Ways to use this program:
   | - martinaise help

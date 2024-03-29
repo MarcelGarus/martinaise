@@ -41,7 +41,7 @@ compiler/4/martinaise: compiler/4/compiler.mar compiler/3/martinaise compiler/3/
 		ld -o ../4/martinaise compiler.o && \
 		rm compiler.s compiler.o
 
-compiler/5/martinaise: compiler/5/compiler.mar compiler/3/martinaise compiler/3/stdlib.mar
+compiler/5/martinaise: compiler/5/compiler.mar compiler/4/martinaise compiler/4/stdlib.mar
 	@echo "# Martinaise 5"
 	cd compiler/4; \
 		./martinaise fasm ../5/compiler.mar > compiler.s && \
