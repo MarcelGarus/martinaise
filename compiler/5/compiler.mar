@@ -3534,10 +3534,8 @@ fun assemble[Assembler](
   var arg_layouts = map[Str, MemLayout]() | maps fun signature to arg struct mem layout
   var string_literals = vec[Str]() | will be put into rodata section at the end
 
-  asm.call("_heap.init")
-  asm.call("_globals.init")
+  asm.call("_init_globals")
   asm.call("main(Slice[Str])")
-  asm.syscall(0:U8) | exit
 
   for fun_ in mono.funs do {
     var name = fun_.key
@@ -3552,110 +3550,28 @@ fun assemble[Assembler](
     ))
   }
 
-  asm.label("_heap") {
-    asm.label(".head") asm.word(0)
-    asm.label(".init") {
-      asm.movei(Reg.a, "_end_of_program")
-      asm.load(Reg.a, Reg.a)
-      asm.movei(Reg.b, ".head")
-      asm.store(Reg.b, Reg.a)
-      asm.ret()
-    }
-    asm.label(".allocate") {
-      | Note: This function doesn't follow the Martinaise calling convention. It
-      | expects the amount to allocate in a and the alignment in b. Returns the
-      | address in a.
-      { | Check that alignment is 1, 2, 4, or 8.
-        asm.moveib(Reg.e, 1:U8)
-        { | Check if alignment is 1.
-          asm.moveib(Reg.c, 1:U8)
-          asm.cmp(Reg.b, Reg.c)
-          asm.isequal()
-          asm.move(Reg.d, Reg.st)
-          asm.and(Reg.e, Reg.d)
-        }
-        { | Check if alignment is 2.
-          asm.moveib(Reg.c, 2:U8)
-          asm.cmp(Reg.b, Reg.c)
-          asm.isequal()
-          asm.move(Reg.d, Reg.st)
-          asm.and(Reg.e, Reg.d)
-        }
-        { | Check if alignment is 4.
-          asm.moveib(Reg.c, 4:U8)
-          asm.cmp(Reg.b, Reg.c)
-          asm.isequal()
-          asm.move(Reg.d, Reg.st)
-          asm.and(Reg.e, Reg.d)
-        }
-        { | Check if alignment is 8.
-          asm.moveib(Reg.c, 8:U8)
-          asm.cmp(Reg.b, Reg.c)
-          asm.isequal()
-          asm.move(Reg.d, Reg.st)
-          asm.and(Reg.e, Reg.d)
-        }
-        asm.moveib(Reg.d, 1:U8)
-        asm.sub(Reg.d, Reg.e)
-        asm.move(Reg.st, Reg.d)
-        asm.cjump("..error")
-      }
-      asm.movei(Reg.c, ".head")
-      asm.load(Reg.c, Reg.c)
-      asm.add(Reg.c, Reg.a)
-      { | Round up c to a multiple of the alignment (b). Rounding up to the
-        | alignment means:
-        |
-        | c = (c + (b - 1)) & bitmask for lower bits
-        |
-        | For example, for alignment 4:
-        |
-        | c = (c + 3) & ...1111100
-        asm.add(Reg.c, Reg.b)
-        asm.moveib(Reg.d, 1:U8)
-        asm.sub(Reg.c, Reg.d)
-        asm.negate(Reg.b) | ...1111 or ...1110 or ...1100 or ...1000
-        asm.and(Reg.c, Reg.b)
-      }
-      asm.move(Reg.b, Reg.c)
-      asm.add(Reg.b, Reg.a)
-      asm.move(Reg.a, Reg.c)
-      asm.movei(Reg.b, ".head")
-      asm.store(Reg.b, Reg.b)
-      asm.ret()
+  for global in mono.globals do {
+    asm.label("_global_{global.key}")
+    for i in 0..layouts.get(global.value.return_type).size do asm.byte(0:U8)
 
-      asm.label("..error") {
-        asm.movei(Reg.a, "..bad_alignment")
-        asm.moveib(Reg.b, 13:U8)
-        asm.panic()
-      }
-      asm.label("..bad_alignment") { asm.str("bad alignment") }
-    }
+    arg_layouts.&.put(global.key, MemLayout {
+      type = type("Nothing"),
+      size = 0,
+      alignment = 1,
+      kind = MemLayoutKind.struct_(vec[MemLayoutStructPart]()),
+    })
+    asm.label(".init")
+    global.value.assemble_body(global.key, mono, layouts, arg_layouts, asm)
   }
-
-  asm.label("_globals") {
-    for global in mono.globals do {
-      asm.label(".{global.key}")
-      for i in 0..layouts.get(global.value.return_type).size do asm.byte(0:U8)
-
-      arg_layouts.&.put(global.key, MemLayout {
-        type = type("Nothing"),
-        size = 0,
-        alignment = 1,
-        kind = MemLayoutKind.struct_(vec[MemLayoutStructPart]()),
-      })
-      asm.label(".{global.key}.init")
-      global.value.assemble_body(global.key, mono, layouts, arg_layouts, asm)
-    }
-    asm.label(".init") {
-      for global in mono.globals_init_order do asm.call(".{global}.init")
-      asm.ret()
-    }
+  asm.label("_init_globals") {
+    for global in mono.globals_init_order do asm.call("_global_{global}.init")
+    asm.ret()
   }
 
   for fun_ in mono.funs do {
     var signature = fun_.key
     var fun_ = fun_.value
+    asm.str(signature)
     asm.label(signature)
     fun_.assemble_body(signature, mono, layouts, arg_layouts, asm)
   }
@@ -3777,7 +3693,7 @@ fun assemble_body[Assembler](
       if statement is label then {} else asm.comment("{statement}")
 
       switch statement
-      case label(label) asm.label("{signature}.{label}")
+      case label(label) asm.label("{label}")
       case assign(assign) {
         var size = layouts.get(assign.value.type).size
         asm.save_address(Reg.a, assign.value, 0, slot_offsets, layouts, Reg.c)
@@ -3836,7 +3752,7 @@ fun assemble_body[Assembler](
         asm.movei(Reg.a, args_size + 8)
         asm.add(Reg.sp, Reg.a)
       }
-      case jump(jump) asm.jump(".{jump.target}")
+      case jump(jump) asm.jump("{jump.target}")
       case jump_if_variant(jump) {
         var type = jump.condition.type
         var variant_tag_offset = layouts.get(type).size - 1
@@ -3851,7 +3767,7 @@ fun assemble_body[Assembler](
         asm.moveib(Reg.b, checked_tag)
         asm.cmp(Reg.a, Reg.b)
         asm.isequal()
-        asm.cjump(".{jump.target}")
+        asm.cjump("{jump.target}")
       }
       case get_enum_value(get) {
         var variant_type = body.slots.get(get.to.index).type
@@ -3871,7 +3787,7 @@ fun assemble_body[Assembler](
         asm.add(Reg.b, Reg.sp)
         asm.load(Reg.b, Reg.b)
         asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
-        asm.jump("{signature}.end")
+        asm.jump(".end")
       }
       case ref(ref) {
         asm.save_address(Reg.a, ref.of, 0, slot_offsets, layouts, Reg.b)
@@ -3881,7 +3797,7 @@ fun assemble_body[Assembler](
         asm.store(Reg.b, Reg.a)
       }
     }
-    asm.label("{signature}.end")
+    asm.label(".end")
     asm.movei(Reg.a, locals_size)
     asm.add(Reg.sp, Reg.a)
     asm.ret()
@@ -3954,7 +3870,7 @@ fun save_address[Assembler](
   switch expr.kind
   case nothing {} | you can read zero bytes from anywhere
   case never {} | you can read zero bytes from anywhere
-  case global(name) asm.movei(register, "_globals.{name}")
+  case global(name) asm.movei(register, "_global_{name}")
   case slot(slot) {
     asm.movei(register, locals_offset + slot_offsets.get(slot))
     asm.add(register, Reg.sp)
@@ -4016,24 +3932,24 @@ fun write_bytes(asm: &Recipe, bytes: Slice[U8]) {
 
 fun comment(asm: &Recipe, comment: Str) { asm."  | {comment}{newline}" }
 
-fun label(asm: &Recipe, label: Str) { asm."{label}:{newline}" }
+fun label(asm: &Recipe, label: Str) { asm.'""{{label}}":{{newline}}"' }
 fun disambiguated_label(asm: &Recipe, prefix: Str): Str {
   var label = "{prefix}.{asm.builder.len()}"
   asm.label(label)
   label
 }
 
-fun str(asm: &Recipe, str: Str)   { asm.'"str "{str}"{newline}"' }
-fun byte(asm: &Recipe, byte: U8)  { asm."byte {byte}{newline}" }
-fun word(asm: &Recipe, word: U64) { asm."word {word}{newline}" }
-fun word(asm: &Recipe, word: Str) { asm."word {word}{newline}" }
+fun str(asm: &Recipe, str: Str)   { asm.'"  str "{{str}}"{{newline}}"' }
+fun byte(asm: &Recipe, byte: U8)  { asm."  byte {byte}{newline}" }
+fun word(asm: &Recipe, word: U64) { asm."  word {word}{newline}" }
+fun word(asm: &Recipe, word: Str) { asm."  word {word}{newline}" }
 
 | Instructions
 fun nop(asm: &Recipe)                    { asm."  nop{newline}" }
 fun panic(asm: &Recipe)                  { asm."  panic{newline}" }
 fun move(asm: &Recipe, a: Reg, b: Reg)   { asm."  move {a} {b}{newline}" }
 fun movei(asm: &Recipe, a: Reg, b: U64)  { asm."  movei {a} {b}{newline}" }
-fun movei(asm: &Recipe, a: Reg, b: Str)  { asm."  movei {a} {b}{newline}" }
+fun movei(asm: &Recipe, a: Reg, b: Str)  { asm.'"  movei {{a}} "{{b}}"{{newline}}"' }
 fun moveib(asm: &Recipe, a: Reg, b: U8)  { asm."  moveib {a} {b}{newline}" }
 fun load(asm: &Recipe, a: Reg, b: Reg)   { asm."  load {a} {b}{newline}" }
 fun loadb(asm: &Recipe, a: Reg, b: Reg)  { asm."  loadb {a} {b}{newline}" }
@@ -4042,11 +3958,11 @@ fun storeb(asm: &Recipe, a: Reg, b: Reg) { asm."  storeb {a} {b}{newline}" }
 fun push(asm: &Recipe, a: Reg)           { asm."  push {a}{newline}" }
 fun pop(asm: &Recipe, a: Reg)            { asm."  pop {a}{newline}" }
 fun jump(asm: &Recipe, a: U64)           { asm."  jump {a}{newline}" }
-fun jump(asm: &Recipe, a: Str)           { asm."  jump {a}{newline}" }
+fun jump(asm: &Recipe, a: Str)           { asm.'"  jump "{{a}}"{{newline}}"' }
 fun cjump(asm: &Recipe, a: U64)          { asm."  cjump {a}{newline}" }
-fun cjump(asm: &Recipe, a: Str)          { asm."  cjump {a}{newline}" }
+fun cjump(asm: &Recipe, a: Str)          { asm.'"  cjump "{{a}}"{{newline}}"' }
 fun call(asm: &Recipe, a: U64)           { asm."  call {a}{newline}" }
-fun call(asm: &Recipe, a: Str)           { asm."  call {a}{newline}" }
+fun call(asm: &Recipe, a: Str)           { asm.'"  call "{{a}}"{{newline}}"' }
 fun ret(asm: &Recipe)                    { asm."  ret{newline}" }
 fun syscall(asm: &Recipe, a: U8)         { asm."  syscall {a}{newline}" }
 fun cmp(asm: &Recipe, a: Reg, b: Reg)    { asm."  cmp {a} {b}{newline}" }
@@ -4067,7 +3983,7 @@ fun negate(asm: &Recipe, a: Reg)         { asm."  negate {a}{newline}" }
 fun recipe(mono: Mono, layouts: Map[Type, MemLayout]): Str {
   var asm = Recipe { builder = string_builder() }
   mono.assemble(layouts, asm.&)
-  "jump _main{newline}{asm.builder}"
+  "{asm.builder}"
 }
 
 | Binary Assembler  
@@ -4109,11 +4025,11 @@ fun to_bits(reg: Reg): U8 {
   case ip 2#0000:U8
   case sp 2#0001:U8
   case st 2#0010:U8
-  case a 2#0011:U8
-  case b 2#0100:U8
-  case c 2#0101:U8
-  case d 2#0110:U8
-  case e 2#0111:U8
+  case a  2#0011:U8
+  case b  2#0100:U8
+  case c  2#0101:U8
+  case d  2#0110:U8
+  case e  2#0111:U8
 }
 
 fun comment(asm: &Soil, comment: Str) {}
@@ -4243,13 +4159,13 @@ fun wait_for_change(watcher: FileWatcher) {
 
 enum Command { help, ast, mono, recipe, soil, run, watch }
 fun parse_command(command: Str): Maybe[Command] {
-  if command == "help" then return some(Command.help)
-  if command == "ast" then return some(Command.ast)
-  if command == "mono" then return some(Command.mono)
+  if command == "help"   then return some(Command.help)
+  if command == "ast"    then return some(Command.ast)
+  if command == "mono"   then return some(Command.mono)
   if command == "recipe" then return some(Command.recipe)
-  if command == "soil" then return some(Command.soil)
-  if command == "run" then return some(Command.run)
-  if command == "watch" then return some(Command.watch)
+  if command == "soil"   then return some(Command.soil)
+  if command == "run"    then return some(Command.run)
+  if command == "watch"  then return some(Command.watch)
   none[Command]()
 }
 

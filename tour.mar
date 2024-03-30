@@ -123,28 +123,23 @@ fun use_operators() {
 }
 
 | Assembly  
-| You can define functions in x86_64 assembly.
-| You can also define opaque types, which can only be inspected from asm
-| functions.
+| You can define functions in Soil assembly. You can also define opaque types,
+| which can only be inspected from asm functions. For information about the
+| Martinaise calling convention and on how to allocate memory, read the Assembly
+| section in the stdlib.
 
 opaque MyInt = 8 bytes big, 8 bytes aligned
 
 fun create_one(): MyInt asm {
-  ; There are only integer literals for the stdlib integer types.
-  ; For information about the Martinaise calling convention and on how to
-  ; allocate memory, read the Assembly section in the stdlib.
-  mov r8, 1
-  mov r9, [rsp + 8] ; return address
-  mov [r9], r8 ; write the return value
-  ret
+  move a sp moveib b 8 add a b load a a | load return value address
+  moveib b 1 store a b ret
 }
 
-fun +(a: MyInt, b: MyInt): MyInt asm {
-  mov r8, [rsp + 16] ; a
-  add r8, [rsp + 24] ; b
-  mov r9, [rsp + 8] ; return address
-  mov [r9], r8 ; write the return value
-  ret
+fun +(left: MyInt, right: MyInt): MyInt asm {
+  move a sp moveib b 16 add a b load a a | load left
+  move b sp moveib c 24 add b c load b b | load right
+  move c sp moveib d 8 add c d load c c | load return value address
+  add a b store c a ret
 }
 
 fun use_custom_asm_fun() {

@@ -350,6 +350,16 @@ fun syscall_exit(status: U8): Never asm {
   syscall 0
   .halt: jump .halt | shouldn't be reached, but I don't trust my VM enough
 }
+fun syscall_print(message: Str): Never asm {
+  move a sp moveib b 16 add a b load a a | load message.data
+  move b sp moveib c 24 add b c load b b | load message.len
+  syscall 1 ret
+}
+fun syscall_log(message: Str): Never asm {
+  move a sp moveib b 16 add a b load a a | load message.data
+  move b sp moveib c 24 add b c load b b | load message.len
+  syscall 2 ret
+}
 
 | Many syscalls return 0 or -1 if an operation didn't work. Here are helpers for
 | dealing with that.
@@ -364,11 +374,35 @@ fun syscall_exit(status: U8): Never asm {
 |   else ok[U64, Str](value)
 | }
 
+| Printing and Logging  
+
+struct Print {}
+
+fun print[T](value: T) { Print {}.write(value) }
+fun println() { print(newline) }
+fun println[T](value: T) { print(value) println() }
+fun write_byte(print: Print, byte: U8) {
+  var str = Str { data = byte.to_char().&, len = 1 }
+  syscall_print(str)
+}
+fun write_bytes(print: Print, bytes: Slice[U8]) {
+  syscall_print(bytes.to_str())
+}
+
+struct Log {}
+
+fun eprint[T](value: T) { Log {}.write(value) }
+fun log[T](value: T) { eprint(value) eprint(newline) }
+fun write_byte(log: Log, byte: U8) {
+  syscall_log(Str { data = byte.to_char().&, len = 1 })
+}
+fun write_bytes(log: Log, bytes: Slice[U8]) { syscall_log(bytes.to_str()) }
+
 | Halting, Exiting, and Panicking  
 
 fun halt(): Never { loop {} }
 fun exit(status: U8): Never { syscall_exit(status) }
-fun panic(message: Str): Never { stderr.writeln(message) exit(1:U8) }
+fun panic(message: Str): Never { log(message) exit(1:U8) }
 fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
 fun unreachable(reason: Str): Never { panic("unreachable: {reason}") }
@@ -789,7 +823,7 @@ fun +(a: Address, offset: U64): Address { {a.to_U64() + offset}.to_address() }
 fun to_orelse(address: Address): Orelse[Address, Nothing] {
   if address == null
   then Orelse[Address, Nothing].secondary({})
-  else Orelse[Address, Nothing].secondary(address)
+  else Orelse[Address, Nothing].primary(address)
 }
 
 fun write[W](writer: W, address: Address) {
@@ -820,27 +854,49 @@ fun add_stride_offset[T](ref: &T, index: U64): &T {
 | Sometimes you need to allocate memory on the heap – for example, if you want
 | to return a value from a function, but you don't know its size before calling
 | it.
-| For those cases, Martinaise has a built-in heap. It's uses very basic bump
-| allocation: It keeps a simple pointer to the end of the heap and increases it
-| each time new memory is allocated.
-| Memory in Martinaise can never be freed. Because Martinaise targets only
-| short-lived puzzle-solving programs, we let the operating system free all
-| memory at once when the program ends. That simplifies things for Martinaise
-| code and generally leads to better runtime performance.
+| For those cases, Martinaise uses basic bump allocation: It keeps a pointer to
+| the end of the heap and increases it each time new memory is allocated.
+| Because Martinaise targets mostly short-lived programs, we let the operating
+| system free all memory at once when the program ends. That simplifies things
+| for Martinaise code and generally leads to better runtime performance.
 
-| TODO: implement malloc in user-mode (the stdlib)
-fun unchecked_malloc(size: U64, alignment: U64): Address asm {
-  | There's a built-in _malloc function that accepts the size to allocate in a
-  | and the alignment in b.
+var heap_head = end_of_program()
+fun end_of_program(): Address asm {
+  move a sp moveib b 8 add a b load a a | load return value address
+  movei b _end_of_program store a b ret
+}
+
+fun malloc(size: U64, alignment: U64): Address asm {
   move a sp moveib b 16 add a b load a a | load size
   move b sp moveib c 24 add b c load b b | load alignment
-  call _malloc | provided by the Martinaise runtime
+  movei c _global_heap_head load c c | load heap_head
+  moveib d 1 cmp b d isequal cjump .align
+  moveib d 2 cmp b d isequal cjump .align
+  moveib d 4 cmp b d isequal cjump .align
+  moveib d 8 cmp b d isequal cjump .align
+  jump .bad_alignment
+  | Round up c to a multiple of the alignment: c = (c + (b - 1)) & negate(b - 1)
+  .align: moveib d 1 sub b d add c b negate b and c b
+  .bump_head: move b c add b a move a c movei c _global_heap_head store c b
+  .check_oom: cmp b sp isgreaterequal cjump .oom
+  move b sp moveib c 8 add b c load b b | load return value address
+  store b a ret
+  .bad_alignment: movei a ..str moveib b 13 panic ..str: str "bad alignment"
+  .oom: movei a ..str moveib b 13 panic ..str: str "out of memory"
+}
+
+struct Checkpoint { heap_head: Address }
+fun heap_checkpoint(): Checkpoint asm {
+  movei b _global_heap_head load b b
   move b sp moveib c 8 add b c load b b | load return value address
   store b a ret
 }
-fun malloc(size: U64, alignment: U64): Address {
-  unchecked_malloc(size, alignment) orelse panic("out of memory")
+fun free_everything_after(checkpoint: &Checkpoint) asm {
+  move a sp moveib b 16 add a b load a a | load checkpoint
+  movei b _global_heap_head load b b | load heap_head
+  cmp b a isgreaterequal cjump .done move b a .done: ret
 }
+
 fun uninitialized[T](): &T {
   malloc(size_of[T](), alignment_of[T]()).to_reference[T]()
 }
@@ -1607,10 +1663,6 @@ fun write_file(name: Str, content: Slice[U8]): Result[Nothing, Str] {
 | printed. Writers are anything that has a write_byte(Writer, U8) function and a
 | write_bytes(Writer, Slice[U8]) function.
 
-var stdin = File { descriptor = 0 }
-var stdout = File { descriptor = 1 }
-var stderr = File { descriptor = 2 }
-
 fun format[T](value: T): Str { "{value}" }
 
 fun writeln[W](writer: W) { writer.write(newline) }
@@ -1627,14 +1679,6 @@ fun write[W, T](writer: W, format: CommaSeparatedFormat[T]) {
     writer.write(item)
   }
 }
-
-fun print[T](value: T) { stdout.write(value) }
-fun println() { print(newline) }
-fun println[T](value: T) { print(value) println() }
-
-fun eprint[T](value: T) { stderr.write(value) }
-fun eprintln() { eprint(newline) }
-fun eprintln[T](value: T) { eprint(value) eprintln() }
 
 fun buffered_writer[W](writer: W, capacity: U64): BufferedWriter[W] {
   assert(capacity > 0)
