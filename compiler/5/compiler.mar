@@ -3535,7 +3535,9 @@ fun assemble[Assembler](
   var string_literals = vec[Str]() | will be put into rodata section at the end
 
   asm.call("_init_globals")
-  asm.call("main(Slice[Str])")
+  asm.moveib(Reg.a, 0:U8)
+  asm.push(Reg.a)
+  asm.jump("main(Slice[Str])")
 
   for fun_ in mono.funs do {
     var name = fun_.key
@@ -3564,7 +3566,15 @@ fun assemble[Assembler](
     global.value.assemble_body(global.key, mono, layouts, arg_layouts, asm)
   }
   asm.label("_init_globals") {
-    for global in mono.globals_init_order do asm.call("_global_{global}.init")
+    asm.moveib(Reg.a, 8:U8)
+    asm.sub(Reg.sp, Reg.a)
+    for global in mono.globals_init_order do {
+      asm.movei(Reg.a, "_global_{global}")
+      asm.store(Reg.sp, Reg.a)
+      asm.call("_global_{global}.init")
+    }
+    asm.moveib(Reg.a, 8:U8)
+    asm.add(Reg.sp, Reg.a)
     asm.ret()
   }
 
@@ -3581,6 +3591,20 @@ fun smart_movei[Assembler](asm: &Assembler, reg: Reg, immediate: U64) {
   if immediate < 256
   then asm.moveib(reg, immediate.to_U8())
   else asm.movei(reg, immediate)
+}
+fun smart_move_and_add_offset[Assembler](
+  asm: &Assembler, to: Reg, from: Reg, offset: U64,
+) {
+  if offset == 0 then asm.move(to, from) else {
+    asm.smart_movei(to, offset)
+    asm.add(to, from)
+  }
+}
+fun smart_addi[Assembler](asm: &Assembler, to: Reg, value: U64, scratch: Reg) {
+  if value != 0 then {
+    asm.smart_movei(scratch, value)
+    asm.add(to, scratch)
+  }
 }
 
 fun assemble_body[Assembler](
@@ -3652,8 +3676,7 @@ fun assemble_body[Assembler](
       case uninitialized {}
       case arg {}
       case int(int) {
-        asm.smart_movei(Reg.a, offset)
-        asm.add(Reg.a, Reg.sp)
+        asm.smart_move_and_add_offset(Reg.a, Reg.sp, offset)
         var size = layouts.get(body.slots.get(slot.index).type).size
         if size == 1 then {
           asm.smart_movei(Reg.b, int)
@@ -3666,17 +3689,16 @@ fun assemble_body[Assembler](
         else panic("unknown int size {size}")
       }
       case str(str) {
-        var label = asm.disambiguated_label("_str_")
-        asm.label("str")
-        asm.movei(Reg.a, label)
-        asm.move(Reg.b, Reg.sp)
-        asm.smart_movei(Reg.c, offset)
-        asm.add(Reg.b, Reg.c)
-        asm.store(Reg.b, Reg.a)
-        asm.smart_movei(Reg.c, str.bytes().len)
-        asm.moveib(Reg.d, 8:U8)
-        asm.add(Reg.b, Reg.d)
-        asm.store(Reg.b, Reg.c)
+        asm.jump(".after_str_{slot}")
+        asm.label(".str_{slot}")
+        asm.str(str)
+        asm.label(".after_str_{slot}")
+        asm.smart_move_and_add_offset(Reg.a, Reg.sp, offset)
+        asm.movei(Reg.b, ".str_{slot}")
+        asm.store(Reg.a, Reg.b)
+        asm.smart_addi(Reg.a, 8, Reg.b)
+        asm.smart_movei(Reg.b, str.bytes().len)
+        asm.store(Reg.a, Reg.b)
       }
     }
 
@@ -3704,13 +3726,11 @@ fun assemble_body[Assembler](
         var variant_tag_offset = to_offset + layouts.get(type).size - 1
 
         asm.moveib(Reg.a, variant.to_U8())
-        asm.smart_movei(Reg.b, variant_tag_offset)
-        asm.add(Reg.b, Reg.sp)
+        asm.smart_move_and_add_offset(Reg.b, Reg.sp, variant_tag_offset)
         asm.storeb(Reg.b, Reg.a)
 
         asm.save_address(Reg.a, set.value, 0, slot_offsets, layouts, Reg.b)
-        asm.smart_movei(Reg.b, to_offset)
-        asm.add(Reg.b, Reg.sp)
+        asm.smart_move_and_add_offset(Reg.b, Reg.sp, to_offset)
         asm.copy_memory(Reg.a, Reg.b, payload_size, Reg.c)
       }
       case call(call) {
@@ -3729,19 +3749,16 @@ fun assemble_body[Assembler](
           var size = layouts.get(arg.item.type).size
           var offset_in_args = arg_offsets.get("arg_{arg.index}")
           asm.save_address(Reg.a, arg.item, args_size, slot_offsets, layouts, Reg.c)
-          asm.move(Reg.b, Reg.sp)
-          asm.smart_movei(Reg.c, offset_in_args)
-          asm.add(Reg.b, Reg.c)
+          asm.smart_move_and_add_offset(Reg.b, Reg.sp, offset_in_args)
           asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
         }
-        asm.smart_movei(Reg.a, args_size + slot_offsets.get(call.to))
-        asm.add(Reg.a, Reg.sp)
+        asm.smart_move_and_add_offset(Reg.a, Reg.sp,
+          args_size + slot_offsets.get(call.to))
         asm.moveib(Reg.b, 8:U8)
         asm.sub(Reg.sp, Reg.b)
         asm.store(Reg.sp, Reg.a)
         asm.call(call.fun_)
-        asm.smart_movei(Reg.a, args_size + 8)
-        asm.add(Reg.sp, Reg.a)
+        asm.smart_addi(Reg.sp, args_size + 8, Reg.a)
       }
       case jump(jump) asm.jump("{jump.target}")
       case jump_if_variant(jump) {
@@ -3766,31 +3783,27 @@ fun assemble_body[Assembler](
         var to_offset = slot_offsets.get(get.to)
 
         asm.save_address(Reg.a, get.of, 0, slot_offsets, layouts, Reg.b)
-        asm.smart_movei(Reg.b, to_offset)
-        asm.add(Reg.b, Reg.sp)
+        asm.smart_move_and_add_offset(Reg.b, Reg.sp, to_offset)
         asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
       }
       case return_(expr) {
         var size = layouts.get(expr.type).size
-
-        asm.save_address(Reg.a, expr, 0, slot_offsets, layouts, Reg.b)
-        asm.smart_movei(Reg.b, locals_size + 8)
-        asm.add(Reg.b, Reg.sp)
-        asm.load(Reg.b, Reg.b)
-        asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
+        if size > 0 then {
+          asm.save_address(Reg.a, expr, 0, slot_offsets, layouts, Reg.b)
+          asm.smart_move_and_add_offset(Reg.b, Reg.sp, locals_size + 8)
+          asm.load(Reg.b, Reg.b)
+          asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
+        }
         asm.jump(".end")
       }
       case ref(ref) {
         asm.save_address(Reg.a, ref.of, 0, slot_offsets, layouts, Reg.b)
-        asm.move(Reg.b, Reg.sp)
-        asm.smart_movei(Reg.c, slot_offsets.get(ref.to))
-        asm.add(Reg.b, Reg.c)
+        asm.smart_move_and_add_offset(Reg.b, Reg.sp, slot_offsets.get(ref.to))
         asm.store(Reg.b, Reg.a)
       }
     }
     asm.label(".end")
-    asm.smart_movei(Reg.a, locals_size)
-    asm.add(Reg.sp, Reg.a)
+    asm.smart_addi(Reg.sp, locals_size, Reg.a)
     asm.ret()
   }
   case asm_(instructions) for instruction in instructions do {
@@ -3863,8 +3876,8 @@ fun save_address[Assembler](
   case never {} | you can read zero bytes from anywhere
   case global(name) asm.movei(register, "_global_{name}")
   case slot(slot) {
-    asm.smart_movei(register, locals_offset + slot_offsets.get(slot))
-    asm.add(register, Reg.sp)
+    asm.smart_move_and_add_offset(register, Reg.sp,
+      locals_offset + slot_offsets.get(slot))
   }
   case member(member) {
     asm.save_address(
@@ -3878,8 +3891,7 @@ fun save_address[Assembler](
         case enum_(e) panic("member receiver is an enum")
         case opaque_(o) panic("{member.of.type} is opaque: {o}")
         default panic("member receiver is always a struct")
-      asm.smart_movei(scratch, offset_in_struct)
-      asm.add(register, scratch)
+      asm.smart_addi(register, offset_in_struct, scratch)
     }
   }
 }
@@ -3887,28 +3899,28 @@ fun save_address[Assembler](
 fun copy_memory[Assembler](
   asm: Assembler, from: Reg, to: Reg, amount: U64, scratch: Reg,
 ) {
-  var i = 0
+  if amount == 0 then return {}
   loop {
-    if i >= amount then break
-    if amount - i >= 8 then {
+    if amount >= 8 then {
       asm.load(scratch, from)
       asm.store(to, scratch)
-      asm.moveib(scratch, 8:U8)
-      asm.add(from, scratch)
-      asm.add(to, scratch)
-      i = i + 8
+      amount = amount - 8
+      if amount == 0 then break else {
+        asm.moveib(scratch, 8:U8)
+        asm.add(from, scratch)
+        asm.add(to, scratch)
+      }
     } else {
       asm.loadb(scratch, from)
       asm.storeb(to, scratch)
-      asm.moveib(scratch, 1:U8)
-      asm.add(from, scratch)
-      asm.add(to, scratch)
-      i = i + 1
+      amount = amount - 1
+      if amount == 0 then break else {
+        asm.moveib(scratch, 1:U8)
+        asm.add(from, scratch)
+        asm.add(to, scratch)
+      }
     }
   }
-  asm.smart_movei(scratch, amount)
-  asm.sub(from, scratch)
-  asm.sub(to, scratch)
 }
 
 | Textual Assembler  
