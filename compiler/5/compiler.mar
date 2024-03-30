@@ -3577,6 +3577,12 @@ fun assemble[Assembler](
   }
 }
 
+fun smart_movei[Assembler](asm: &Assembler, reg: Reg, immediate: U64) {
+  if immediate < 256
+  then asm.moveib(reg, immediate.to_U8())
+  else asm.movei(reg, immediate)
+}
+
 fun assemble_body[Assembler](
   fun_: MonoFun, signature: Str,
   mono: Mono, layouts: Map[Type, MemLayout], arg_layouts: Map[Str, MemLayout],
@@ -3622,7 +3628,7 @@ fun assemble_body[Assembler](
       slot_offsets.&.put(MonoSlotRef { index = slot.index }, offset)
     }
 
-    asm.movei(Reg.a, locals_size)
+    asm.smart_movei(Reg.a, locals_size)
     asm.sub(Reg.sp, Reg.a)
     asm.comment("sp + {locals_size}: caller's ip")
     asm.comment("sp + {locals_size + 8}: 
@@ -3646,43 +3652,28 @@ fun assemble_body[Assembler](
       case uninitialized {}
       case arg {}
       case int(int) {
-        if int >= 256
-        then asm.movei(Reg.a, int)
-        else asm.moveib(Reg.a, int.to_U8())
-        asm.move(Reg.b, Reg.sp)
-        asm.movei(Reg.c, offset)
-        asm.add(Reg.b, Reg.c)
+        asm.smart_movei(Reg.a, offset)
+        asm.add(Reg.a, Reg.sp)
         var size = layouts.get(body.slots.get(slot.index).type).size
-        if size == 1 then asm.storeb(Reg.b, Reg.a)
-        if size == 2 then {
-          asm.storeb(Reg.b, Reg.a)
-          asm.moveib(Reg.c, 1:U8)
-          asm.add(Reg.b, Reg.c)
-          asm.movei(Reg.c, 256)
-          asm.div(Reg.a, Reg.c)
-          asm.storeb(Reg.b, Reg.a)
+        if size == 1 then {
+          asm.smart_movei(Reg.b, int)
+          asm.storeb(Reg.a, Reg.b)
         }
-        if size == 4 then {
-          asm.storeb(Reg.b, Reg.a)
-          asm.moveib(Reg.c, 1:U8)
-          asm.movei(Reg.d, 256)
-          for i in 0..3 do {
-            asm.add(Reg.b, Reg.c)
-            asm.div(Reg.a, Reg.d)
-            asm.storeb(Reg.b, Reg.a)
-          }
+        else if size == 8 then {
+          asm.smart_movei(Reg.b, int)
+          asm.store(Reg.a, Reg.b)
         }
-        if size == 8 then asm.store(Reg.b, Reg.a)
+        else panic("unknown int size {size}")
       }
       case str(str) {
         var label = asm.disambiguated_label("_str_")
-        asm.label("str:")
+        asm.label("str")
         asm.movei(Reg.a, label)
         asm.move(Reg.b, Reg.sp)
-        asm.movei(Reg.c, offset)
+        asm.smart_movei(Reg.c, offset)
         asm.add(Reg.b, Reg.c)
         asm.store(Reg.b, Reg.a)
-        asm.movei(Reg.c, str.bytes().len)
+        asm.smart_movei(Reg.c, str.bytes().len)
         asm.moveib(Reg.d, 8:U8)
         asm.add(Reg.b, Reg.d)
         asm.store(Reg.b, Reg.c)
@@ -3713,12 +3704,12 @@ fun assemble_body[Assembler](
         var variant_tag_offset = to_offset + layouts.get(type).size - 1
 
         asm.moveib(Reg.a, variant.to_U8())
-        asm.movei(Reg.b, variant_tag_offset)
+        asm.smart_movei(Reg.b, variant_tag_offset)
         asm.add(Reg.b, Reg.sp)
         asm.storeb(Reg.b, Reg.a)
 
         asm.save_address(Reg.a, set.value, 0, slot_offsets, layouts, Reg.b)
-        asm.movei(Reg.b, to_offset)
+        asm.smart_movei(Reg.b, to_offset)
         asm.add(Reg.b, Reg.sp)
         asm.copy_memory(Reg.a, Reg.b, payload_size, Reg.c)
       }
@@ -3732,24 +3723,24 @@ fun assemble_body[Assembler](
         }.name_to_offset_map()
         var args_size = args_layout.size.round_up_to_multiple_of(8)
 
-        asm.movei(Reg.a, args_size)
+        asm.smart_movei(Reg.a, args_size)
         asm.sub(Reg.sp, Reg.a)
         for arg in call.args.iter().enumerate() do {
           var size = layouts.get(arg.item.type).size
           var offset_in_args = arg_offsets.get("arg_{arg.index}")
           asm.save_address(Reg.a, arg.item, args_size, slot_offsets, layouts, Reg.c)
           asm.move(Reg.b, Reg.sp)
-          asm.movei(Reg.c, offset_in_args)
+          asm.smart_movei(Reg.c, offset_in_args)
           asm.add(Reg.b, Reg.c)
           asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
         }
-        asm.movei(Reg.a, args_size + slot_offsets.get(call.to))
+        asm.smart_movei(Reg.a, args_size + slot_offsets.get(call.to))
         asm.add(Reg.a, Reg.sp)
         asm.moveib(Reg.b, 8:U8)
         asm.sub(Reg.sp, Reg.b)
         asm.store(Reg.sp, Reg.a)
         asm.call(call.fun_)
-        asm.movei(Reg.a, args_size + 8)
+        asm.smart_movei(Reg.a, args_size + 8)
         asm.add(Reg.sp, Reg.a)
       }
       case jump(jump) asm.jump("{jump.target}")
@@ -3775,7 +3766,7 @@ fun assemble_body[Assembler](
         var to_offset = slot_offsets.get(get.to)
 
         asm.save_address(Reg.a, get.of, 0, slot_offsets, layouts, Reg.b)
-        asm.movei(Reg.b, to_offset)
+        asm.smart_movei(Reg.b, to_offset)
         asm.add(Reg.b, Reg.sp)
         asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
       }
@@ -3783,7 +3774,7 @@ fun assemble_body[Assembler](
         var size = layouts.get(expr.type).size
 
         asm.save_address(Reg.a, expr, 0, slot_offsets, layouts, Reg.b)
-        asm.movei(Reg.b, locals_size + 8)
+        asm.smart_movei(Reg.b, locals_size + 8)
         asm.add(Reg.b, Reg.sp)
         asm.load(Reg.b, Reg.b)
         asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
@@ -3792,13 +3783,13 @@ fun assemble_body[Assembler](
       case ref(ref) {
         asm.save_address(Reg.a, ref.of, 0, slot_offsets, layouts, Reg.b)
         asm.move(Reg.b, Reg.sp)
-        asm.movei(Reg.c, slot_offsets.get(ref.to))
+        asm.smart_movei(Reg.c, slot_offsets.get(ref.to))
         asm.add(Reg.b, Reg.c)
         asm.store(Reg.b, Reg.a)
       }
     }
     asm.label(".end")
-    asm.movei(Reg.a, locals_size)
+    asm.smart_movei(Reg.a, locals_size)
     asm.add(Reg.sp, Reg.a)
     asm.ret()
   }
@@ -3872,7 +3863,7 @@ fun save_address[Assembler](
   case never {} | you can read zero bytes from anywhere
   case global(name) asm.movei(register, "_global_{name}")
   case slot(slot) {
-    asm.movei(register, locals_offset + slot_offsets.get(slot))
+    asm.smart_movei(register, locals_offset + slot_offsets.get(slot))
     asm.add(register, Reg.sp)
   }
   case member(member) {
@@ -3887,7 +3878,7 @@ fun save_address[Assembler](
         case enum_(e) panic("member receiver is an enum")
         case opaque_(o) panic("{member.of.type} is opaque: {o}")
         default panic("member receiver is always a struct")
-      asm.movei(scratch, offset_in_struct)
+      asm.smart_movei(scratch, offset_in_struct)
       asm.add(register, scratch)
     }
   }
@@ -3915,7 +3906,7 @@ fun copy_memory[Assembler](
       i = i + 1
     }
   }
-  asm.movei(scratch, amount)
+  asm.smart_movei(scratch, amount)
   asm.sub(from, scratch)
   asm.sub(to, scratch)
 }
