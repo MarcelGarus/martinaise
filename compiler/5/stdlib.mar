@@ -346,18 +346,18 @@ fun to_orelse[O, E](result: Result[O, E]): Orelse[O, E] {
 | fun syscall_inotify_init1(flags: U64): U64                              { 294.syscall(flags) }
 
 fun syscall_exit(status: U8): Never asm {
-  move a sp moveib b 16 add a b loadb a a | load status
+  moveib a 16 add a sp loadb a a | status
   syscall 0
   .halt: jump .halt | shouldn't be reached, but I don't trust my VM enough
 }
-fun syscall_print(message: Str): Never asm {
-  move a sp moveib b 16 add a b load a a | load message.data
-  move b sp moveib c 24 add b c load b b | load message.len
+fun syscall_print(message: Str): Nothing asm {
+  moveib a 16 add a sp load a a | message.data
+  moveib b 24 add b sp load b b | message.len
   syscall 1 ret
 }
-fun syscall_log(message: Str): Never asm {
-  move a sp moveib b 16 add a b load a a | load message.data
-  move b sp moveib c 24 add b c load b b | load message.len
+fun syscall_log(message: Str): Nothing asm {
+  moveib a 16 add a sp load a a | message.data
+  moveib b 24 add b sp load b b | message.len
   syscall 2 ret
 }
 
@@ -436,97 +436,97 @@ opaque U64 = 8 bytes big, 8 bytes aligned
 opaque I64 = 8 bytes big, 8 bytes aligned
 
 fun +(left: U8, right: U8): U8 asm {
-  move a sp moveib b 16 add a b loadb a a | load left
-  move b sp moveib c 17 add b c loadb b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp loadb a a | left
+  moveib b 17 add b sp loadb b b | right
+  moveib c 8 add c sp load c c | return value address
   add a b storeb c a ret
 }
 fun +(left: U64, right: U64): U64 asm {
-  move a sp moveib b 16 add a b load a a | load left
-  move b sp moveib c 24 add b c load b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp load a a | left
+  moveib b 24 add b sp load b b | right
+  moveib c 8 add c sp load c c | return value address
   add a b store c a ret
 }
 fun +(left: I64, right: I64): I64 asm {
-  move a sp moveib b 16 add a b load a a | load left
-  move b sp moveib c 24 add b c load b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp load a a | left
+  moveib b 24 add b sp load b b | right
+  moveib c 8 add c sp load c c | return value address
   add a b store c a ret
 }
 
 fun -(left: U8, right: U8): U8 asm {
-  move a sp moveib b 16 add a b loadb a a | load left
-  move b sp moveib c 17 add b c loadb b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp loadb a a | left
+  moveib b 17 add b sp loadb b b | right
+  moveib c 8 add c sp load c c | return value address
   sub a b storeb c a ret
 }
 fun -(left: U64, right: U64): U64 asm {
-  move a sp moveib b 16 add a b load a a | load left
-  move b sp moveib c 24 add b c load b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp load a a | left
+  moveib b 24 add b sp load b b | right
+  moveib c 8 add c sp load c c | return value address
   sub a b store c a ret
 }
 fun -(left: I64, right: I64): I64 asm {
-  move a sp moveib b 16 add a b load a a | load left
-  move b sp moveib c 24 add b c load b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp load a a | left
+  moveib b 24 add b sp load b b | right
+  moveib c 8 add c sp load c c | return value address
   sub a b store c a ret
 }
 
 fun *(left: U8, right: U8): U8 asm {
-  move a sp moveib b 16 add a b loadb a a | load left
-  move b sp moveib c 17 add b c loadb b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp loadb a a | left
+  moveib b 17 add b sp loadb b b | right
+  moveib c 8 add c sp load c c | return value address
   mul a b storeb c a ret
 }
 fun *(left: U64, right: U64): U64 asm {
-  move a sp moveib b 16 add a b load a a | load left
-  move b sp moveib c 24 add b c load b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp load a a | left
+  moveib b 24 add b sp load b b | right
+  moveib c 8 add c sp load c c | return value address
   mul a b store c a ret
 }
 fun *(left: I64, right: I64): I64 asm {
-  move a sp moveib b 16 add a b load a a | load left
-  move b sp moveib c 24 add b c load b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp load a a | left
+  moveib b 24 add b sp load b b | right
+  moveib c 8 add c sp load c c | return value address
   mul a b store c a ret
 }
 
 fun /(left: U8, right: U8): U8 asm {
-  move a sp moveib b 16 add a b loadb a a | load left
-  move b sp moveib c 17 add b c loadb b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp loadb a a | left
+  moveib b 17 add b sp loadb b b | right
+  moveib c 8 add c sp load c c | return value address
   div a b storeb c a ret
 }
 fun /(left: U64, right: U64): U64 asm {
-  move a sp moveib b 16 add a b load a a | load left
-  move b sp moveib c 24 add b c load b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp load a a | left
+  moveib b 24 add b sp load b b | right
+  moveib c 8 add c sp load c c | return value address
   div a b store c a ret
 }
 fun /(left: I64, right: I64): I64 asm {
-  move a sp moveib b 16 add a b load a a | load left
-  move b sp moveib c 24 add b c load b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp load a a | left
+  moveib b 24 add b sp load b b | right
+  moveib c 8 add c sp load c c | return value address
   div a b store c a ret
 }
 
 fun remainder(left: U8, right: U8): U8 asm {
-  move a sp moveib b 16 add a b loadb a a | load left
-  move b sp moveib c 17 add b c loadb b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp loadb a a | left
+  moveib b 17 add b sp loadb b b | right
+  moveib c 8 add c sp load c c | return value address
   div a b storeb c b ret
 }
 fun remainder(left: U64, right: U64): U64 asm {
-  move a sp moveib b 16 add a b load a a | load left
-  move b sp moveib c 24 add b c load b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp load a a | left
+  moveib b 24 add b sp load b b | right
+  moveib c 8 add c sp load c c | return value address
   div a b store c b ret
 }
 fun remainder(left: I64, right: I64): I64 asm {
-  move a sp moveib b 16 add a b load a a | load left
-  move b sp moveib c 24 add b c load b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp load a a | left
+  moveib b 24 add b sp load b b | right
+  moveib c 8 add c sp load c c | return value address
   div a b store c b ret
 }
 
@@ -535,49 +535,49 @@ fun modulo(a: U8, b: U8): U8 { a.remainder(b) }
 fun modulo(a: U64, b: U64): U64 { a.remainder(b) }
 
 fun and(left: U8, right: U8): U8 asm {
-  move a sp moveib b 16 add a b loadb a a | load left
-  move b sp moveib c 17 add b c loadb b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp loadb a a | left
+  moveib b 17 add b sp loadb b b | right
+  moveib c 8 add c sp load c c | return value address
   and a b storeb c b | and the numbers and store result into return value
   ret
 }
 fun and(left: U64, right: U64): U64 asm {
-  move a sp moveib b 16 add a b load a a | load left
-  move b sp moveib c 24 add b c load b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp load a a | left
+  moveib b 24 add b sp load b b | right
+  moveib c 8 add c sp load c c | return value address
   and a b store c b ret
 }
 
 fun and(left: U8, right: U8): U8 asm {
-  move a sp moveib b 16 add a b loadb a a | load left
-  move b sp moveib c 17 add b c loadb b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp loadb a a | left
+  moveib b 17 add b sp loadb b b | right
+  moveib c 8 add c sp load c c | return value address
   or a b storeb c b ret
 }
 fun and(left: U64, right: U64): U64 asm {
-  move a sp moveib b 16 add a b load a a | load left
-  move b sp moveib c 24 add b c load b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp load a a | left
+  moveib b 24 add b sp load b b | right
+  moveib c 8 add c sp load c c | return value address
   or a b store c b ret
 }
 
 fun xor(left: U8, right: U8): U8 asm {
-  move a sp moveib b 16 add a b loadb a a | load left
-  move b sp moveib c 17 add b c loadb b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp loadb a a | left
+  moveib b 17 add b sp loadb b b | right
+  moveib c 8 add c sp load c c | return value address
   xor a b storeb c b ret
 }
 fun xor(left: U64, right: U64): U64 asm {
-  move a sp moveib b 16 add a b load a a | load left
-  move b sp moveib c 24 add b c load b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp load a a | left
+  moveib b 24 add b sp load b b | right
+  moveib c 8 add c sp load c c | return value address
   xor a b store c b ret
 }
 
 fun <=>(left: U8, right: U8): Ordering asm {
-  move a sp moveib b 16 add a b loadb a a | load left
-  move b sp moveib c 17 add b c loadb b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  moveib a 16 add a sp loadb a a | left
+  moveib b 17 add b sp loadb b b | right
+  moveib c 8 add c sp load c c | return value address
   sub a b
   move st a isless cjump .less
   move st a isgreater cjump .greater
@@ -588,9 +588,9 @@ fun <=>(left: U8, right: U8): Ordering asm {
 }
 fun <=>(left: U64, right: U64): Ordering asm {
   | TODO: handle very big numbers correctly
-  move a sp moveib b 16 add a b loadb a a | load left
-  move b sp moveib c 24 add b c loadb b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  move a 16 add a sp loadb a a | left
+  move b 24 add b sp loadb b b | right
+  move c 8 add c sp load c c | return value address
   sub a b
   move st a isless cjump .less
   move st a isgreater cjump .greater
@@ -600,9 +600,9 @@ fun <=>(left: U64, right: U64): Ordering asm {
   .greater: moveib b 2 storeb c b ret
 }
 fun <=>(left: I64, right: I64): Ordering asm {
-  move a sp moveib b 16 add a b loadb a a | load left
-  move b sp moveib c 24 add b c loadb b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  move a 16 add a sp loadb a a | left
+  move b 24 add b sp loadb b b | right
+  move c 8 add c sp load c c | return value address
   sub a b
   move st a isless cjump .less
   move st a isgreater cjump .greater
@@ -613,33 +613,33 @@ fun <=>(left: I64, right: I64): Ordering asm {
 }
 
 fun to_U64(n: U8): U64 asm {
-  move a sp moveib b 16 add a b loadb a a | load n
-  move b sp moveib c 8 add b c load b b | load return value address
+  move a 16 add a sp loadb a a | n
+  move b 8 add b sp load b b | return value address
   store b a ret
 }
 fun to_I64(n: U8): I64 asm {
-  move a sp moveib b 16 add a b loadb a a | load n
-  move b sp moveib c 8 add b c load b b | load return value address
+  move a 16 add a sp loadb a a | n
+  move b 8 add b sp load b b | return value address
   store b a ret
 }
 fun to_U8(n: U64): U8 asm {
-  move a sp moveib b 16 add a b load a a | load n
-  move b sp moveib c 8 add b c load b b | load return value address
+  move a 16 add a sp load a a | n
+  move b 8 add b sp load b b | return value address
   storeb b a ret
 }
 fun to_I64(n: U64): I64 asm {
-  move a sp moveib b 16 add a b load a a | load n
-  move b sp moveib c 8 add b c load b b | load return value address
+  move a 16 add a sp load a a | n
+  move b 8 add b sp load b b | return value address
   store b a ret
 }
 fun to_U8(n: I64): U8 asm {
-  move a sp moveib b 16 add a b load a a | load n
-  move b sp moveib c 8 add b c load b b | load return value address
+  move a 16 add a sp load a a | n
+  move b 8 add b sp load b b | return value address
   storeb b a ret
 }
 fun to_U64(n: U64): U64 asm {
-  move a sp moveib b 16 add a b load a a | load n
-  move b sp moveib c 8 add b c load b b | load return value address
+  move a 16 add a sp load a a | n
+  move b 8 add b sp load b b | return value address
   store b a ret
 }
 
