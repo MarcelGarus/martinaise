@@ -588,9 +588,9 @@ fun <=>(left: U8, right: U8): Ordering asm {
 }
 fun <=>(left: U64, right: U64): Ordering asm {
   | TODO: handle very big numbers correctly
-  move a 16 add a sp loadb a a | left
-  move b 24 add b sp loadb b b | right
-  move c 8 add c sp load c c | return value address
+  moveib a 16 add a sp loadb a a | left
+  moveib b 24 add b sp loadb b b | right
+  moveib c 8 add c sp load c c | return value address
   sub a b
   move st a isless cjump .less
   move st a isgreater cjump .greater
@@ -600,9 +600,9 @@ fun <=>(left: U64, right: U64): Ordering asm {
   .greater: moveib b 2 storeb c b ret
 }
 fun <=>(left: I64, right: I64): Ordering asm {
-  move a 16 add a sp loadb a a | left
-  move b 24 add b sp loadb b b | right
-  move c 8 add c sp load c c | return value address
+  moveib a 16 add a sp loadb a a | left
+  moveib b 24 add b sp loadb b b | right
+  moveib c 8 add c sp load c c | return value address
   sub a b
   move st a isless cjump .less
   move st a isgreater cjump .greater
@@ -613,33 +613,33 @@ fun <=>(left: I64, right: I64): Ordering asm {
 }
 
 fun to_U64(n: U8): U64 asm {
-  move a 16 add a sp loadb a a | n
-  move b 8 add b sp load b b | return value address
+  moveib a 16 add a sp loadb a a | n
+  moveib b 8 add b sp load b b | return value address
   store b a ret
 }
 fun to_I64(n: U8): I64 asm {
-  move a 16 add a sp loadb a a | n
-  move b 8 add b sp load b b | return value address
+  moveib a 16 add a sp loadb a a | n
+  moveib b 8 add b sp load b b | return value address
   store b a ret
 }
 fun to_U8(n: U64): U8 asm {
-  move a 16 add a sp load a a | n
-  move b 8 add b sp load b b | return value address
+  moveib a 16 add a sp load a a | n
+  moveib b 8 add b sp load b b | return value address
   storeb b a ret
 }
 fun to_I64(n: U64): I64 asm {
-  move a 16 add a sp load a a | n
-  move b 8 add b sp load b b | return value address
+  moveib a 16 add a sp load a a | n
+  moveib b 8 add b sp load b b | return value address
   store b a ret
 }
 fun to_U8(n: I64): U8 asm {
-  move a 16 add a sp load a a | n
-  move b 8 add b sp load b b | return value address
+  moveib a 16 add a sp load a a | n
+  moveib b 8 add b sp load b b | return value address
   storeb b a ret
 }
 fun to_U64(n: U64): U64 asm {
-  move a 16 add a sp load a a | n
-  move b 8 add b sp load b b | return value address
+  moveib a 16 add a sp load a a | n
+  moveib b 8 add b sp load b b | return value address
   store b a ret
 }
 
