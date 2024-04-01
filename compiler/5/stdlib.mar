@@ -860,16 +860,10 @@ fun add_stride_offset[T](ref: &T, index: U64): &T {
 | system free all memory at once when the program ends. That simplifies things
 | for Martinaise code and generally leads to better runtime performance.
 
-var heap_head = end_of_program()
-fun end_of_program(): Address asm {
-  move a sp moveib b 8 add a b load a a | load return value address
-  movei b _end_of_program store a b ret
-}
-
 fun malloc(size: U64, alignment: U64): Address asm {
-  move a sp moveib b 16 add a b load a a | load size
-  move b sp moveib c 24 add b c load b b | load alignment
-  movei c _global_heap_head load c c | load heap_head
+  moveib a 16 add a sp load a a | size
+  moveib b 24 add b sp load b b | alignment
+  movei c .head load c c | heap_head
   moveib d 1 cmp b d isequal cjump .align
   moveib d 2 cmp b d isequal cjump .align
   moveib d 4 cmp b d isequal cjump .align
@@ -877,23 +871,26 @@ fun malloc(size: U64, alignment: U64): Address asm {
   jump .bad_alignment
   | Round up c to a multiple of the alignment: c = (c + (b - 1)) & negate(b - 1)
   .align: moveib d 1 sub b d add c b negate b and c b
-  .bump_head: move b c add b a move a c movei c _global_heap_head store c b
+  .bump_head: move b c add b a move a c movei c .head store c b
   .check_oom: cmp b sp isgreaterequal cjump .oom
-  move b sp moveib c 8 add b c load b b | load return value address
+  move b sp moveib c 8 add b c load b b | return value address
   store b a ret
+  .head: word _end_of_program | This will be moved forward by malloc.
   .bad_alignment: movei a ..str moveib b 13 panic ..str: str "bad alignment"
   .oom: movei a ..str moveib b 13 panic ..str: str "out of memory"
 }
 
 struct Checkpoint { heap_head: Address }
 fun heap_checkpoint(): Checkpoint asm {
-  movei b _global_heap_head load b b
-  move b sp moveib c 8 add b c load b b | load return value address
+  | use malloc
+  movei b malloc.head load b b
+  move b sp moveib c 8 add b c load b b | return value address
   store b a ret
 }
-fun free_everything_after(checkpoint: &Checkpoint) asm {
-  move a sp moveib b 16 add a b load a a | load checkpoint
-  movei b _global_heap_head load b b | load heap_head
+fun free_everything_after(checkpoint: Checkpoint) asm {
+  | use malloc
+  move a sp moveib b 16 add a b load a a | checkpoint.heap_head
+  movei b malloc.head load b b | malloc.head
   cmp b a isgreaterequal cjump .done move b a .done: ret
 }
 
@@ -907,9 +904,9 @@ fun put_on_heap[T](value: T): &T {
 }
 
 fun memcopy(from: Address, to: Address, amount: U64) asm {
-  move a sp moveib b 16 add a b load a a | load from
-  move b sp moveib c 24 add b c load b b | load to
-  move c sp moveib d 32 add c d load c c | load amount
+  moveib a 16 add a sp load a a | from
+  moveib b 24 add b sp load b b | to
+  moveib c 32 add c sp load c c | amount
   moveib e 1
   cmp a b isless cjump .right_to_left
   .left_to_right: ..loop:
