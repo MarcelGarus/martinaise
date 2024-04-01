@@ -138,20 +138,29 @@
       "patterns": [
         { "include": "#comments" },
         {
+          "name": "keyword",
+          "match": "\\b(str|byte|word)\\b"
+        },
+        {
           "name": "keyword.control",
           "match": "\\b(nop|panic|move|movei|moveib|load|loadb|store|storeb|push|pop|jump|cjump|call|ret|syscall|cmp|isequal|isless|isgreater|islessequal|isgreaterequal|add|sub|mul|div|and|or|xor|negate)\\b"
         },
         {
-          "name": "entity.name.type",
+          "name": "variable",
           "match": "\\b(ip|sp|st|a|b|c|d|e)\\b"
         },
         {
           "name": "entity.name.function",
-          "match": "\\b[a-z][a-z_0-9]*\\b"
+          "match": "\\b[a-zA-Z\\._][a-zA-Z\\._0-9]*\\b"
         },
         {
           "name": "constant.numeric",
           "match": "\\b[0-9]+\\b"
+        },
+        {
+          "name": "string.quoted",
+          "begin": "\"",
+          "end": "\""
         }
       ]
     }
