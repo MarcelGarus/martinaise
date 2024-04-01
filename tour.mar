@@ -131,14 +131,14 @@ fun use_operators() {
 opaque MyInt = 8 bytes big, 8 bytes aligned
 
 fun create_one(): MyInt asm {
-  move a sp moveib b 8 add a b load a a | load return value address
+  move a sp moveib b 8 add a b load a a | return value address
   moveib b 1 store a b ret
 }
 
 fun +(left: MyInt, right: MyInt): MyInt asm {
-  move a sp moveib b 16 add a b load a a | load left
-  move b sp moveib c 24 add b c load b b | load right
-  move c sp moveib d 8 add c d load c c | load return value address
+  move a sp moveib b 16 add a b load a a | left
+  move b sp moveib c 24 add b c load b b | right
+  move c sp moveib d 8 add c d load c c | return value address
   add a b store c a ret
 }
 
@@ -149,6 +149,7 @@ fun use_custom_asm_fun() {
 | Run everything  
 
 fun main(args: Slice[Str]): Never {
+  println("Hello!")
   functions()
   variables()
   structs_and_enums()
