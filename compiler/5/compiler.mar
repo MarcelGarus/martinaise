@@ -1199,7 +1199,7 @@ fun parse_asm_str(parser: &Parser): Result[Str, Str] {
   var start = parser.cursor
   loop if parser.current() == #" then break else parser.advance()
   parser.advance()
-  ok[Str, Str](parser.code.substr(start, parser.cursor))
+  ok[Str, Str](parser.code.substr(start, parser.cursor - 1))
 }
 
 fun parse_asm_num(parser: &Parser): Result[U64, Str] {
@@ -1532,7 +1532,7 @@ fun merge(a: Type, b: Type): Maybe[Type] {
     case some(type) merged_args.&.push(type)
   some(type(a.name, merged_args))
 }
-fun finish(sink: TypeSink): Type { sink.current.unwrap() }
+fun finish(sink: TypeSink): Type { sink.current.unwrap("type sink failed") }
 
 | Type Solving  
 | When compiling generic code, the free type variables need to be bound to
@@ -2401,11 +2401,12 @@ fun compile(
       else if fun_.name == "type" then {
         type("Type").compile(map[Str, Type](), ast, mono)?
         var make_vec = ast.lookup_fun("vec", none[Vec[Type]](), vec[Type]())
-          .unwrap().fun_.compile(map[Str, Type](), context, ast, mono)?
+          .unwrap("vec function doesn't exist")
+          .fun_.compile(map[Str, Type](), context, ast, mono)?
         var push = ast
           .lookup_fun("push", none[Vec[Type]](),
             vec[Type](type("Vec", vec(type("Type")))))
-          .unwrap()
+          .unwrap("push function doesn't exist")
         push.fun_.compile(push.type_env, context, ast, mono)?
         MonoFunKind.builtin
       } else return error[Str, Str]("Unknown builtin {fun_.name}")
@@ -2623,10 +2624,9 @@ fun compile_in_current_scope(
         for f in struct_.fields do
           if f.name == name then type_in_struct = some(f.type)
 
-        if type_in_struct is none then return error[MonoExpr, Str](
+        var type_in_struct = type_in_struct orelse return error[MonoExpr, Str](
           "Tried to initialize field {name} of {struct_.name}, but it doesn't 
           'have that.")
-        var type_in_struct = type_in_struct.unwrap()
         if not(solver.&.unify(type_in_struct, value.type)?)
         then return error[MonoExpr, Str](
           '"Tried to assign {{value.type}} to field "{{name}}" of type 
@@ -2842,7 +2842,7 @@ fun compile_in_current_scope(
           for variant in enum_.variants do
             if variant.name == case_.variant then
               variant_type = some(variant.type)
-          variant_type.unwrap()
+          variant_type.unwrap("expected variant type")
         }
         var unpacked = self.slots.&.push(variant_type)
         self.push(MonoStatement.get_enum_value(MonoGetEnumValue {
@@ -2871,9 +2871,10 @@ fun compile_in_current_scope(
       | Default case
       if switch_.default_ is some(default_) then {
         var label = self.push_label()
-        self.update(default_jump.unwrap(), MonoStatement.jump(MonoJump {
-          target = label
-        }))
+        self.update(
+          default_jump.unwrap("no default jump"),
+          MonoStatement.jump(MonoJump { target = label }),
+        )
         var default_result = default_.compile(self)?
         if not(default_result.type.is_never()) then {
           type = some(default_result.type)
@@ -3059,7 +3060,7 @@ fun compile_call(
         callee = some(c.member("*", c.type.args.get(0)))
         continue
       }
-      return error[MonoExpr, Str](first_error.unwrap())
+      return error[MonoExpr, Str](first_error.unwrap("error: no error"))
     }
     case ok(solution) {
       var fun_ = solution.fun_.compile(solution.type_env, context, ast, mono)?
@@ -3514,6 +3515,16 @@ fun compile_reflection(type: Type, out: &CompileTypeFun): MonoExpr {
 | totally different opcodes and encodings for instructions with the same
 | mnemonic but different operands.
 
+fun mangle(name: Str): Str {
+  var contains_dot = false
+  for char in name do if char == #. then contains_dot = true
+  if contains_dot then {
+    var str = string_builder()
+    for char in name do if char == #. then str.&."[dot]" else str.&."{char}"
+    str.to_str()
+  } else name
+}
+
 fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, U64] {
   var offsets = map[Str, U64]()
   var offset = 0
@@ -3553,7 +3564,7 @@ fun assemble[Assembler](
   }
 
   for global in mono.globals do {
-    asm.label("_global_{global.key}")
+    asm.label(global.key)
     for i in 0..layouts.get(global.value.return_type).size do asm.byte(0:U8)
 
     arg_layouts.&.put(global.key, MemLayout {
@@ -3569,9 +3580,9 @@ fun assemble[Assembler](
     asm.moveib(Reg.a, 8:U8)
     asm.sub(Reg.sp, Reg.a)
     for global in mono.globals_init_order do {
-      asm.movei(Reg.a, "_global_{global}")
+      asm.movei(Reg.a, global)
       asm.store(Reg.sp, Reg.a)
-      asm.call("_global_{global}.init")
+      asm.call("{global}.init")
     }
     asm.moveib(Reg.a, 8:U8)
     asm.add(Reg.sp, Reg.a)
@@ -3582,9 +3593,11 @@ fun assemble[Assembler](
     var signature = fun_.key
     var fun_ = fun_.value
     asm.str(signature)
-    asm.label(signature)
+    asm.label(signature.mangle())
     fun_.assemble_body(signature, mono, layouts, arg_layouts, asm)
   }
+
+  asm.label("_end_of_program")
 }
 
 fun smart_movei[Assembler](asm: &Assembler, reg: Reg, immediate: U64) {
@@ -3757,7 +3770,7 @@ fun assemble_body[Assembler](
         asm.moveib(Reg.b, 8:U8)
         asm.sub(Reg.sp, Reg.b)
         asm.store(Reg.sp, Reg.a)
-        asm.call(call.fun_)
+        asm.call(call.fun_.mangle())
         asm.smart_addi(Reg.sp, args_size + 8, Reg.a)
       }
       case jump(jump) asm.jump("{jump.target}")
@@ -3874,7 +3887,7 @@ fun save_address[Assembler](
   switch expr.kind
   case nothing {} | you can read zero bytes from anywhere
   case never {} | you can read zero bytes from anywhere
-  case global(name) asm.movei(register, "_global_{name}")
+  case global(name) asm.movei(register, name)
   case slot(slot) {
     asm.smart_move_and_add_offset(register, Reg.sp,
       locals_offset + slot_offsets.get(slot))
@@ -4233,7 +4246,8 @@ fun run_pipeline(command: Command, file_path: Str, use_sdl: Bool): Bool {
   var recipe_file = "{file_path_without_extension}.recipe"
 
   print_on_same_line("Writing recipe to file")
-  write_file(recipe_file, recipe.bytes()).unwrap()
+  write_file(recipe_file, recipe.bytes())
+    .unwrap("couldn't write recipe to file")
 
   | TODO: make sure that the external commands succeed before calling the next
   | one
