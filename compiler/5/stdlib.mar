@@ -321,87 +321,53 @@ fun to_orelse[O, E](result: Result[O, E]): Orelse[O, E] {
 |     Instead, consider writing asm functions with arguments that are explicitly
 |     of the same length and wrapping them with nicer-typed functions when
 |     necessary.
-
+|
 | Syscalls  
 | The syscall calling convention is different than the Martinaise calling
 | convention: a contains the syscall number, b contains the first argument,
 | c the second one, etc.
 | When the syscall returns, a contains the result.
 
-| Syscall table
-| https://chromium.googlesource.com/chromiumos/docs/+/master/constants/syscalls.md
-
-| fun syscall_read(fd: U64, buf: U64, count: U64): U64                    {   0.syscall(fd, buf, count) }
-| fun syscall_write(fd: U64, buf: U64, count: U64): U64                   {   1.syscall(fd, buf, count) }
-| fun syscall_open(filename: U64, flags: U64, mode: U64): U64             {   2.syscall(filename, flags, mode) }
-| fun syscall_close(fd: U64): U64                                         {   3.syscall(fd) }
-| fun syscall_fork(): U64                                                 {  57.syscall() }
-| fun syscall_execve(filename: U64, argv: U64, envp: U64): U64            {  59.syscall(filename, argv, envp) }
-| fun syscall_exit(error_code: U64): U64                                  {  60.syscall(error_code) }
-| fun syscall_wait4(pid: U64, stat_addr: U64, options: U64, ru: U64): U64 {  61.syscall(pid, stat_addr, options, ru) }
-| fun syscall_kill(pid: U64, sig: U64): U64                               {  62.syscall(pid, sig) }
-| fun syscall_creat(pathname: U64, mode: U64): U64                        {  85.syscall(pathname, mode) }
-| fun syscall_time(tloc: U64): U64                                        { 201.syscall(tloc) }
-| fun syscall_inotify_add_watch(fd: U64, path: U64, mask: U64): U64       { 254.syscall(fd, path, mask) }
-| fun syscall_inotify_init1(flags: U64): U64                              { 294.syscall(flags) }
-
-fun syscall_exit(status: U8): Never asm {
-  moveib a 16 add a sp loadb a a | status
-  syscall 0
-  .halt: jump .halt | shouldn't be reached, but I don't trust my VM enough
-}
-fun syscall_print(message: Str): Nothing asm {
-  moveib a 16 add a sp load a a | message.data
-  moveib b 24 add b sp load b b | message.len
-  syscall 1 ret
-}
-fun syscall_log(message: Str): Nothing asm {
-  moveib a 16 add a sp load a a | message.data
-  moveib b 24 add b sp load b b | message.len
-  syscall 2 ret
-}
-
-| Many syscalls return 0 or -1 if an operation didn't work. Here are helpers for
-| dealing with that.
-| fun error_if_zero(value: U64, message: Str): Result[U64, Str] {
-|   if value.cast[U64, I64]() == 0:I64
-|   then error[U64, Str](message)
-|   else ok[U64, Str](value)
-| }
-| fun error_if_minus_one(value: U64, message: Str): Result[U64, Str] {
-|   if value.cast[U64, I64]() == {0:I64 - 1:I64} | TODO: add a minus method
-|   then error[U64, Str](message)
-|   else ok[U64, Str](value)
-| }
-
 | Printing and Logging  
 
 struct Print {}
-
 fun print[T](value: T) { Print {}.write(value) }
 fun println() { print(newline) }
 fun println[T](value: T) { print(value) println() }
-fun write_byte(print: Print, byte: U8) {
-  var str = Str { data = byte.to_char().&, len = 1 }
-  syscall_print(str)
+fun write_byte(print: Print, byte: U8) asm {
+  moveib a 16 add a sp | byte.&
+  moveib b 1
+  syscall 1 ret
 }
-fun write_bytes(print: Print, bytes: Slice[U8]) {
-  syscall_print(bytes.to_str())
+fun write_bytes(print: Print, bytes: Slice[U8]) asm {
+  moveib a 16 add a sp load a a | bytes.data
+  moveib b 24 add b sp load b b | bytes.len
+  syscall 1 ret
 }
 
 struct Log {}
-
 fun eprint[T](value: T) { Log {}.write(value) }
+fun eprintln[T](value: T) { eprint(value) eprint(newline) }
 fun log[T](value: T) { eprint(value) eprint(newline) }
-fun write_byte(log: Log, byte: U8) {
-  syscall_log(Str { data = byte.to_char().&, len = 1 })
+fun write_byte(log: Log, byte: U8) asm {
+  moveib a 16 add a sp | byte.&
+  moveib b 1
+  syscall 2 ret
 }
-fun write_bytes(log: Log, bytes: Slice[U8]) { syscall_log(bytes.to_str()) }
+fun write_bytes(log: Log, bytes: Slice[U8]) asm {
+  moveib a 16 add a sp load a a | bytes.data
+  moveib b 24 add b sp load b b | bytes.len
+  syscall 2 ret
+}
 
 | Halting, Exiting, and Panicking  
 
 fun halt(): Never { loop {} }
-fun exit(status: U8): Never { syscall_exit(status) }
+fun exit(status: U8): Never asm {
+  moveib a 16 add a sp loadb a a | status
+  syscall 0
+  .halt: jump .halt | shouldn't be reached, but I don't trust my VM enough
+}
 fun panic(message: Str): Never { log(message) panic() }
 fun panic(): Never asm { panic }
 fun unreachable(): Never { panic("unreachable") }
@@ -1488,171 +1454,93 @@ fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
 | }
 
 | Files, Input & Output  
-| In C, a common way to work with files is with fopen, fclose, and similar
-| functions, which work with FILE* pointers. The FILE struct internally contains
-| a file descriptor, a small integer that's a handle to the file object in the
-| operating system kernel.
-| Martinaise doesn't use the FILE functions and instead works with file
-| descriptors using some libc functions (open, read, write, close). To make the
-| API type-safe, Martinaise has it's own wrapper around a file descriptor, the
-| File type.
-|
-| Files can also be opened in an asynchronous mode where you can poll the
-| operating system for reads and writes. But then you have to maintain an event
-| loop yourself and everything gets much more complicated. Here, I only use the
-| blocking version.
-| 
-| The mode below refers to the access bits that you see with `ls -l`. 8#666 is
-| read and write access for everyone.
-|
-| The flag constants are taken from the Zig implementation. The open-time flags
-| and I/O operating modes flags are specific to x86.
-|
-| https://www.gnu.org/software/libc/manual/html_node/Opening-and-Closing-Files.html
 
-struct File { descriptor: U64 }
+opaque File = 8 bytes big, 8 bytes aligned
 
-enum OpenFileFlag { read, write, create, truncate, append }
-fun hash(hasher: &Hasher, flag: OpenFileFlag) {
-  hasher.hash(
-    switch flag
-    case read 0
-    case write 1
-    case create 2
-    case truncate 3
-    case append 4
-  )
+fun create_file(filename: Str, mode: U64): Result[File, Nothing] asm {
+  moveib a 16 add a sp load a a | filename.data
+  moveib b 24 add b sp load b b | filename.len
+  moveib c 32 add c sp load c c | mode
+  syscall 3
+  moveib b 8 add b sp load b b | return value address
+  move st a isequal cjump .ret_error
+  .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
+  .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
 }
-fun ==(a: OpenFileFlag, b: OpenFileFlag): Bool {
-  switch a
-  case read if b is read then true else false
-  case write if b is write then true else false
-  case create if b is create then true else false
-  case truncate if b is truncate then true else false
-  case append if b is append then true else false
+fun open_file_for_reading(filename: Str): Result[File, Nothing] asm {
+  moveib a 16 add a sp load a a | filename.data
+  moveib b 24 add b sp load b b | filename.len
+  syscall 4
+  moveib b 8 add b sp load b b | return value address
+  move st a isequal cjump .ret_error
+  .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
+  .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
 }
-fun to_os_flags(flags: Set[OpenFileFlag]): U64 {
-  var flag_rdonly = 8#0000
-  var flag_wronly = 8#0001
-  var flag_rdwr   = 8#0002
-  var flag_create = 8#0100
-  var flag_trunc  = 8#1000
-  var flag_append = 8#2000
-
-  | "The argument flags must include one of the following access modes:
-  |  O_RDONLY, O_WRONLY, or O_RDWR. These request opening the file read-only,
-  |  write-only, or read/write, respectively."
-  | https://man7.org/linux/man-pages/man2/open.2.html
-  var res =
-    if flags.contains(OpenFileFlag.read)
-    then if flags.contains(OpenFileFlag.write) then flag_rdwr else flag_rdonly
-    else {
-      flags.contains(OpenFileFlag.write) orelse panic("must read or write")
-      flag_wronly
-    }
-
-  | "In addition, zero or more file creation flags and file status flags can be
-  |  bitwise ORed in flags. The file creation flags are O_CLOEXEC, O_CREATE,
-  |  O_DIRECTORY, O_EXCL, O_NOCTTY, O_NOFOLLOW, O_TMPFILE, and O_TRUNC. The file
-  |  status flags are all of the remaining flags listed below. The distinction
-  |  between these two groups of flags is that the file creation flags affect
-  |  the semantics of the open operation itself, while the file status flags
-  |  affect the semantics of subsequent I/O operations."
-  | https://man7.org/linux/man-pages/man2/open.2.html
-  | TODO: support more flags
-  eprintln("create flag set? {flags.contains(OpenFileFlag.create)}")
-  if flags.contains(OpenFileFlag.create)   then res = res.or(flag_create)
-  if flags.contains(OpenFileFlag.truncate) then res = res.or(flag_trunc)
-  if flags.contains(OpenFileFlag.append)   then res = res.or(flag_append)
-  res
+fun open_file_for_writing(filename: Str): Result[File, Nothing] asm {
+  moveib a 16 add a sp load a a | filename.data
+  moveib b 24 add b sp load b b | filename.len
+  syscall 5
+  moveib b 8 add b sp load b b | return value address
+  move st a isequal cjump .ret_error
+  .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
+  .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
 }
 
-fun create_file(filename: Str, mode: U64): Result[File, Str] {
-  var descriptor = syscall_creat(filename.to_os_str().address.to_U64(), mode)
-    .error_if_zero("couldn't create file {filename}")?
-  ok[File, Str](File { descriptor })
-}
-
-fun open_file(
-  filename: Str, flags: Set[OpenFileFlag], mode: U64,
-): Result[File, Str] {
-  var descriptor =
-    syscall_open(
-      filename.to_os_str().address.to_U64(),
-      flags.to_os_flags(),
-      mode,
-    ).error_if_zero("couldn't open file {filename}")?
-  ok[File, Str](File { descriptor })
-}
-
-fun read(file: File, buffer: Slice[U8]): Result[U64, Str] {
-  var bytes_read =
-    syscall_read(file.descriptor, buffer.data.to_address().to_U64(), buffer.len)
-    .error_if_minus_one("couldn't read from file")?
-  ok[U64, Str](bytes_read)
+fun read(file: File, buffer: Slice[U8]): Result[U64, Nothing] asm {
+  moveib a 16 add a sp load a a | file
+  moveib b 24 add b sp load b b | buffer.data
+  moveib c 32 add c sp load c c | buffer.len
+  syscall 6
+  moveib b 8 add b sp load b b | return value address
+  move st a isless cjump .ret_error
+  .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
+  .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
 }
 fun read_byte(file: File): Result[Maybe[U8], Str] {
-  var c = 0:U8
-  var bytes_read = syscall_read(file.descriptor, c.&.to_address().to_U64(), 1)
-    .error_if_minus_one("couldn't read from file")?
-  if bytes_read == 0 then ok[Maybe[U8], Str](none[U8]())
-  else ok[Maybe[U8], Str](some(c))
+  var char = 0:U8
+  var buffer = Slice { data = char.&, len = 1 }
+  ok(if file.read(buffer)? == 0 then none[U8]() else some(char))
 }
 
-fun write_bytes_safely(file: File, buffer: Slice[U8]): Result[Nothing, Str] {
-  loop {
-    if buffer.is_empty() then break
-    var bytes_written = syscall_write(
-      file.descriptor, buffer.data.to_address().to_U64(), buffer.len,
-    )
-    if bytes_written.cast[U64, I64]() <= 0:I64
-    then return error[Nothing, Str]("couldn't write to file")
-    buffer = buffer.without_first(bytes_written)
-  }
-  ok[Nothing, Str]({})
+fun write_bytes_safely(
+  file: File, buffer: Slice[U8],
+): Result[Nothing, Str] asm {
+  moveib a 16 add a sp load a a | file
+  moveib b 24 add b sp load b b | buffer.data
+  moveib c 32 add c sp load c c | buffer.len
+  syscall 7
+  moveib b 8 add b sp load b b | return value address
+  move st a cjump .ret_ok
+  .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
+  .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
 }
 fun write_byte_safely(file: File, byte: U8): Result[Nothing, Str] {
-  var bytes_written = syscall_write(
-    file.descriptor, byte.&.to_address().to_U64(), 1,
-  )
-  if bytes_written.cast[U64, I64]() <= 0:I64
-  then error[Nothing, Str]("couldn't write to file")
-  else ok[Nothing, Str]({})
+  file.write_bytes_safely(Slice { data = byte.&, len = 1 })
 }
 fun write_bytes(file: File, buffer: Slice[U8]) {
-  file.write_bytes_safely(buffer) orelse(e) panic(e)
+  file.write_bytes_safely(buffer) orelse panic("couldn't write byte")
 }
 fun write_byte(file: File, byte: U8) {
-  file.write_byte_safely(byte) orelse(e) panic(e)
+  file.write_byte_safely(byte) orelse panic("couldn't write byte")
 }
 
-fun close(file: File): Result[Nothing, Str] {
-  var returned = syscall_close(file.descriptor)
-  if returned.cast[U64, I64]() < 0:I64
-  then error[Nothing, Str]("couldn't close file")
-  else ok[Nothing, Str]({})
+fun close(file: File) asm {
+  moveib a 16 add a sp load a a | file
+  syscall 8 ret
 }
 
-fun read_file(name: Str): Result[Slice[U8], Str] {
-  var file = open_file(name, vec(OpenFileFlag.read).to_set(), 0)?
+fun read_file(name: Str): Result[Slice[U8], Nothing] {
+  var file = open_file_for_reading(name)?
   var content = vec[U8]()
-  loop {
-    var byte = file.read_byte()? orelse break
-    content.&.push(byte)
-  }
+  loop content.&.push(file.read_byte()? orelse break)
   file.close()?
-  ok[Slice[U8], Str](content.to_slice())
+  ok[Slice[U8], Nothing](content.to_slice())
 }
-fun write_file(name: Str, content: Slice[U8]): Result[Nothing, Str] {
-  var file = open_file(
-    name,
-    vec(OpenFileFlag.write, OpenFileFlag.create, OpenFileFlag.truncate)
-      .to_set(),
-    8#666 | read and write access for everyone
-  )?
-  for byte in content do file.write_byte_safely(byte)?
-  file.close()?
-  ok[Nothing, Str]({})
+fun write_file(name: Str, content: Slice[U8]): Result[Nothing, Nothing] {
+  var file = open_file_for_writing(name, 8#666)?
+  file.write_bytes_safely(content)?
+  file.close()
+  ok[Nothing, Nothing]({})
 }
 
 | Printing  
