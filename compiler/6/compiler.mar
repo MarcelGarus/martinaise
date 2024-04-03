@@ -3558,7 +3558,7 @@ fun assemble[Assembler](
   }
   asm.moveib(Reg.a, 0:U8)
   asm.store(Reg.sp, Reg.a)
-  asm.jump("main(Slice[Str])")
+  asm.call("main(Slice[Str])")
 
   for fun_ in mono.funs do {
     var name = fun_.key
