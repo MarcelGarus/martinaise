@@ -3788,6 +3788,7 @@ fun assemble_body[Assembler](
         } else panic("is not an enum")
 
         asm.save_address(Reg.a, jump.condition, 0, slot_offsets, layouts, Reg.b)
+        asm.smart_addi(Reg.a, variant_tag_offset, Reg.b)
         asm.loadb(Reg.a, Reg.a)
         asm.moveib(Reg.b, checked_tag)
         asm.cmp(Reg.a, Reg.b)
