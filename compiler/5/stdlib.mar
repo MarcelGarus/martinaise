@@ -331,7 +331,8 @@ fun to_orelse[O, E](result: Result[O, E]): Orelse[O, E] {
 | Printing and Logging  
 
 struct Print {}
-fun print[T](value: T) { Print {}.write(value) }
+var stdout = Print {}
+fun print[T](value: T) { stdout.write(value) }
 fun println() { print(newline) }
 fun println[T](value: T) { print(value) println() }
 fun write_byte(print: Print, byte: U8) asm {
@@ -346,7 +347,8 @@ fun write_bytes(print: Print, bytes: Slice[U8]) asm {
 }
 
 struct Log {}
-fun eprint[T](value: T) { Log {}.write(value) }
+var stderr = Log {}
+fun eprint[T](value: T) { stderr.write(value) }
 fun eprintln[T](value: T) { eprint(value) eprint(newline) }
 fun log[T](value: T) { eprint(value) eprint(newline) }
 fun write_byte(log: Log, byte: U8) asm {
@@ -1496,15 +1498,17 @@ fun read(file: File, buffer: Slice[U8]): Result[U64, Nothing] asm {
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
 }
-fun read_byte(file: File): Result[Maybe[U8], Str] {
+fun read_byte(file: File): Result[Maybe[U8], Nothing] {
   var char = 0:U8
   var buffer = Slice { data = char.&, len = 1 }
-  ok(if file.read(buffer)? == 0 then none[U8]() else some(char))
+  ok[Maybe[U8], Nothing](
+    if file.read(buffer)? == 0 then none[U8]() else some(char)
+  )
 }
 
 fun write_bytes_safely(
   file: File, buffer: Slice[U8],
-): Result[Nothing, Str] asm {
+): Result[Nothing, Nothing] asm {
   moveib a 16 add a sp load a a | file
   moveib b 24 add b sp load b b | buffer.data
   moveib c 32 add c sp load c c | buffer.len
@@ -1514,7 +1518,7 @@ fun write_bytes_safely(
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
 }
-fun write_byte_safely(file: File, byte: U8): Result[Nothing, Str] {
+fun write_byte_safely(file: File, byte: U8): Result[Nothing, Nothing] {
   file.write_bytes_safely(Slice { data = byte.&, len = 1 })
 }
 fun write_bytes(file: File, buffer: Slice[U8]) {
@@ -1533,11 +1537,11 @@ fun read_file(name: Str): Result[Slice[U8], Nothing] {
   var file = open_file_for_reading(name)?
   var content = vec[U8]()
   loop content.&.push(file.read_byte()? orelse break)
-  file.close()?
+  file.close()
   ok[Slice[U8], Nothing](content.to_slice())
 }
 fun write_file(name: Str, content: Slice[U8]): Result[Nothing, Nothing] {
-  var file = open_file_for_writing(name, 8#666)?
+  var file = open_file_for_writing(name)?
   file.write_bytes_safely(content)?
   file.close()
   ok[Nothing, Nothing]({})
@@ -1960,75 +1964,3 @@ fun min[T](slice: Set[T]): Maybe[T] {
 }
 
 | TODO: segment tree, treap
-
-| Telling the Time  
-
-fun seconds_since_unix_epoch(): Result[U64, Str] {
-  var result = syscall_time(0).error_if_minus_one("couldn't get time")?
-  ok[U64, Str](result)
-}
-
-| Executing subprocesses  
-
-struct Pid { value: U64 }
-enum Forked {
-  child,       | We are the child process.
-  parent: Pid, | We are the parent process, child has the given PID.
-}
-
-fun write[W](writer: W, pid: Pid) { writer."PID({pid.value})" }
-
-| Forks the process. In the child process, returns Forked.child. In the parent
-| process, returns Forked.parent(child_pid). You should wait for the child in
-| the parent process. If you don't (you exit the parent process before waiting
-| on the child process), the child process enters a zombie mode and resources
-| are not freed.
-fun fork(): Forked {
-  var pid = syscall_fork()
-  if pid == 0 then Forked.child else Forked.parent(Pid { value = pid })
-}
-
-| Performs a wait4 syscall, which performs a superset of what waitpid does.
-|
-| The PID can be one of these:
-| < -1: wait for any child process whose process group ID is equal to the
-|       absolute value of the PID
-|   -1: wait for any child process
-|    0: wait for any child process whose process group ID is equal to that of
-|       the calling process at the time of the call
-|  > 0: wait for the child whose PID is equal to the value of the given PID
-|
-| https://man7.org/linux/man-pages/man2/wait4.2.html
-| https://man7.org/linux/man-pages/man2/waitid.2.html
-fun wait(pid: Pid) { syscall_wait4(pid.value, 0, 0, 0).ignore() }
-
-fun kill(pid: Pid, signal: U64): Result[Nothing, Str] {
-  if syscall_kill(pid.value, signal) == 0
-  then ok[Nothing, Str]({})
-  else error[Nothing, Str]("couldn't send signal")
-}
-
-fun exec(program: Str, args: Slice[Str]): Never {
-  var program = program.to_os_str().address.to_U64()
-  | The exec syscall expects the arguments to be arranged like this:
-  | [ptr to str][ptr to str][0         ]
-  var os_args = malloc(args.len.inc() * 8, 8).to_reference[U64]()
-  for arg in args.iter().enumerate() do
-    os_args.add_stride_offset(arg.index).* =
-      arg.item.to_os_str().address.to_U64()
-  syscall_execve(
-    program, os_args.to_address().to_U64(), 0.&.to_address().to_U64())
-  panic("exec didn't work")
-}
-
-| Note: The program needs to be the path to a concrete program. This does not
-| search the path.
-fun run(program: Str, args: Slice[Str]) {
-  switch fork() case child exec(program, args) case parent(child) child.wait()
-}
-fun run(shell_command: Str) {
-  | Using strace on a simple C program that uses the stdlib system function to
-  | run a command, we can see that it runs /bin/sh with sh -c <command>.
-  | Here, we do the same thing.
-  run("/bin/sh", vec("sh", "-c", shell_command).to_slice())
-}

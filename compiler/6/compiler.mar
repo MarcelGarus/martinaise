@@ -54,7 +54,6 @@ fun clear_terminal() {
   todo()
   | var clear = std.ChildProcess.init(&[_]Str{"clear"}, alloc)
   | clear.stdout = std.io.getStdOut()
-  | clear.stderr = std.io.getStdErr()
   | _ = try clear.spawnAndWait()
 }
 
@@ -63,8 +62,8 @@ fun write_ansi_escape_sequence[W](writer: W, sequence: Str) {
   writer.write(sequence)
 }
 fun print_on_same_line(message: Str) {
-  stderr.write_ansi_escape_sequence("[1A") | move cursor up one line
-  stderr.write_ansi_escape_sequence("[K")  | erase the current line
+  eprint("[1A") | move cursor up one line
+  eprint("[K")  | erase the current line
   eprintln(message)
 }
 
@@ -4108,75 +4107,11 @@ fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Vec[U8] {
   soil.bytes
 }
 
-| File Watching  
-| Here, we implement watching files usign a crude, blocking version.
-| If there are problems in this part of the code, these are two good resources:
-| - The original file watching in compiler/0, written in Zig.
-| - This tutorial: https://www.linuxjournal.com/article/8478
-
-struct FileWatcher { inotify: File, watch: File }
-fun watch_file(path: Str): FileWatcher {
-  var inotify_fd = syscall_inotify_init1(0)
-  if inotify_fd.cast[U64, I64]() <= 0:I64
-  then panic("couldn't open inotify interface for watching file")
-
-  var flag_modify = 16#002
-  var flag_create = 16#100
-  var flag_delete = 16#200
-  var watch_fd = syscall_inotify_add_watch(
-    inotify_fd,
-    path.to_os_str().address.to_U64(),
-    flag_modify.or(flag_create).or(flag_delete),
-  )
-  if watch_fd == 0 then panic("couldn't register watch for file")
-
-  FileWatcher {
-    inotify = File { descriptor = inotify_fd },
-    watch   = File { descriptor = watch_fd },
-  }
-}
-fun stop(watcher: FileWatcher) { watcher.inotify.close() }
-fun wait_for_change(watcher: FileWatcher) {
-  | How does this work?
-  | We make a read syscall to the inotify_fd. This gives us potentially multiple
-  | events in the following form:
-  |
-  | struct inotify_event {
-  |   wd: i32,
-  |   mask: u32,
-  |   cookie: u32,
-  |   len: u32,
-  |   name: []u8,
-  | };
-  |
-  | Yes, the size of the last field "name" is not known statically – you first
-  | have to read it from the len field. The len is however guaranteed to be a
-  | multiple of 4 bytes so that events after that are aligned.
-  var event_size_without_name = 16
-  var buf_len = 1024 * event_size_without_name + 16
-  var buf = uninitialized_slice[U8](buf_len)
-
-  loop {
-    var len = watcher.inotify.read(buf).unwrap("reading inotify events failed")
-    if len == 0 then panic("inotify read completed without an event")
-    var i = 0
-    loop {
-      if i >= len then break
-      | Horrible bit magic to get the wd and len fields. Whenever the C struct
-      | layout changes, this needs to be updated.
-      var wd  = buf.get_ref(i).to_address().to_reference[I32]().*.to_U64()
-      var len = buf.get_ref(i + 12).to_address().to_reference[U32]().*.to_U64()
-      i = i + event_size_without_name + len
-      if wd == watcher.watch.descriptor then return {}
-    }
-  }
-}
-
 | Command Line Interface  
 | The command line interface which you use to interact with the Martinaise
 | compiler.
 
-enum Command { help, ast, mono, recipe, soil, run, watch }
+enum Command { help, ast, mono, recipe, soil, run }
 fun parse_command(command: Str): Maybe[Command] {
   if command == "help"   then return some(Command.help)
   if command == "ast"    then return some(Command.ast)
@@ -4184,12 +4119,11 @@ fun parse_command(command: Str): Maybe[Command] {
   if command == "recipe" then return some(Command.recipe)
   if command == "soil"   then return some(Command.soil)
   if command == "run"    then return some(Command.run)
-  if command == "watch"  then return some(Command.watch)
   none[Command]()
 }
 
-fun print_usage_info(out: File) {
-  out."
+fun print_usage_info[W](writer: W) {
+  writer."
     'Usage: martinaise <command> <file>{newline}{newline}
     'Commands:{newline}
     '  help    prints this help{newline}
@@ -4197,13 +4131,12 @@ fun print_usage_info(out: File) {
     '  mono    shows the monomorphized code{newline}
     '  recipe  compiles to a Soil recipe{newline}
     '  soil    compiles to a Soil executable{newline}
-    '  run     compiles and runs{newline}
-    '  watch   watches, compiles, and runs{newline}"
+    '  run     compiles and runs{newline}"
 }
 
 | Runs the pipeline that matches the command. Errors are handled internally
 | (stuff is printed to stderr). Returns whether it ran through successfully.
-fun run_pipeline(command: Command, file_path: Str, use_sdl: Bool): Bool {
+fun run_pipeline(command: Command, file_path: Str): Bool {
   eprintln("Reading {file_path}")
   var stdlib = read_file("stdlib.mar").unwrap("couldn't read stdlib").to_str()
   var file = read_file(file_path).unwrap("couldn't read {file_path}").to_str()
@@ -4263,7 +4196,7 @@ fun run_pipeline(command: Command, file_path: Str, use_sdl: Bool): Bool {
   }
 
   print_on_same_line("Running {recipe_file}")
-  run(recipe_file, vec(recipe_file).to_slice())
+  todo()
 
   | TODO: time it
   | TODO: print exit status of the program
@@ -4276,7 +4209,7 @@ fun run_pipeline(command: Command, file_path: Str, use_sdl: Bool): Bool {
 fun wrong_usage(): Never { print_usage_info(stderr) exit(1:U8) }
 
 fun main(args: Slice[Str]): Never {
-  eprintln("Welcome to Martinaise 5.")
+  eprintln("Welcome to Martinaise 6.")
 
   | Ways to use this program:
   | - martinaise help
@@ -4285,7 +4218,6 @@ fun main(args: Slice[Str]): Never {
   | - martinaise asm <file>
   | - martinaise compile <file>
   | - martinaise run <file> [-- <additonal args>]
-  | - martinaise watch <file> [-- <additonal args>]
   | Note the program name itself is also an additional argument at the front.
   if args.len < 2 then wrong_usage()
   var command = parse_command(args.get(1)) orelse wrong_usage()
@@ -4296,35 +4228,9 @@ fun main(args: Slice[Str]): Never {
   if args.len < 3 then wrong_usage()
   var file_path = args.get(2)
 
-  var use_sdl = if args.len > 3 then args.get(3) == "-sdl" else false
-
   | TODO: throw if additional args are given
   | TODO: support -- and additional args for the run command
 
-  if command is watch then {
-    eprintln("Starting watcher")
-    var watcher = watch_file(file_path)
-    loop {
-      | TODO: immediately continue waiting and kill the subprocess when the file
-      | changes
-      | TODO: clear the terminal screen
-
-      switch fork()
-      case child {
-        run("clear")
-        eprintln("=====")
-        var was_successful = run_pipeline(command, file_path, use_sdl)
-        exit(if was_successful then 0:U8 else 1:U8)
-      }
-      case parent(child) {
-        eprintln("waiting for file change")
-        watcher.wait_for_change()
-        child.kill(9)
-        child.wait()
-      }
-    }
-  } else {
-    var was_successful = run_pipeline(command, file_path, use_sdl)
-    exit(if was_successful then 0:U8 else 1:U8)
-  }
+  var was_successful = run_pipeline(command, file_path)
+  exit(if was_successful then 0:U8 else 1:U8)
 }
