@@ -402,7 +402,11 @@ fun write_bytes(log: Log, bytes: Slice[U8]) { syscall_log(bytes.to_str()) }
 
 fun halt(): Never { loop {} }
 fun exit(status: U8): Never { syscall_exit(status) }
-fun panic(message: Str): Never { log(message) exit(1:U8) }
+fun panic(message: Str): Never asm {
+  moveib a 16 add a sp load a a | message.data
+  moveib b 24 add b sp load b b | message.len
+  panic
+}
 fun panic(): Never { panic("panicked") }
 fun unreachable(): Never { panic("unreachable") }
 fun unreachable(reason: Str): Never { panic("unreachable: {reason}") }
