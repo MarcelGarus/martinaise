@@ -515,19 +515,19 @@ fun remainder(left: U8, right: U8): U8 asm {
   moveib a 16 add a sp loadb a a | left
   moveib b 17 add b sp loadb b b | right
   moveib c 8 add c sp load c c | return value address
-  div a b storeb c b ret
+  rem a b storeb c a ret
 }
 fun remainder(left: U64, right: U64): U64 asm {
   moveib a 16 add a sp load a a | left
   moveib b 24 add b sp load b b | right
   moveib c 8 add c sp load c c | return value address
-  div a b store c b ret
+  rem a b store c a ret
 }
 fun remainder(left: I64, right: I64): I64 asm {
   moveib a 16 add a sp load a a | left
   moveib b 24 add b sp load b b | right
   moveib c 8 add c sp load c c | return value address
-  div a b store c b ret
+  rem a b store c a ret
 }
 
 | For unsigned integers, modulo is the same as remainder.

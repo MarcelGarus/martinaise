@@ -205,6 +205,7 @@ enum Instruction {
   sub: RegAndReg,
   mul: RegAndReg,
   div: RegAndReg,
+  rem: RegAndReg,
   and: RegAndReg,
   or: RegAndReg,
   xor: RegAndReg,
@@ -402,6 +403,7 @@ fun write[W](writer: W, instruction: Instruction) {
   case sub(regs) writer."sub {regs.first} {regs.second}"
   case mul(regs) writer."mul {regs.first} {regs.second}"
   case div(regs) writer."div {regs.first} {regs.second}"
+  case rem(regs) writer."rem {regs.first} {regs.second}"
   case and(regs) writer."and {regs.first} {regs.second}"
   case or(regs) writer."or {regs.first} {regs.second}"
   case xor(regs) writer."xor {regs.first} {regs.second}"
@@ -1275,6 +1277,8 @@ fun parse_instruction(parser: &Parser): Result[Maybe[Instruction], Str] {
   if name == "mul" then return parsed(Instruction.mul(
     parser.parse_reg()? @ parser.parse_reg()?))
   if name == "div" then return parsed(Instruction.div(
+    parser.parse_reg()? @ parser.parse_reg()?))
+  if name == "rem" then return parsed(Instruction.rem(
     parser.parse_reg()? @ parser.parse_reg()?))
   if name == "and" then return parsed(Instruction.and(
     parser.parse_reg()? @ parser.parse_reg()?))
@@ -3871,6 +3875,7 @@ fun assemble_body[Assembler](
     case sub(regs)       asm.sub(regs.first, regs.second)
     case mul(regs)       asm.mul(regs.first, regs.second)
     case div(regs)       asm.div(regs.first, regs.second)
+    case rem(regs)       asm.rem(regs.first, regs.second)
     case and(regs)       asm.and(regs.first, regs.second)
     case or(regs)        asm.or(regs.first, regs.second)
     case xor(regs)       asm.xor(regs.first, regs.second)
@@ -3991,6 +3996,7 @@ fun add(asm: &Recipe, a: Reg, b: Reg)    { asm."  add {a} {b}{newline}" }
 fun sub(asm: &Recipe, a: Reg, b: Reg)    { asm."  sub {a} {b}{newline}" }
 fun mul(asm: &Recipe, a: Reg, b: Reg)    { asm."  mul {a} {b}{newline}" }
 fun div(asm: &Recipe, a: Reg, b: Reg)    { asm."  div {a} {b}{newline}" }
+fun rem(asm: &Recipe, a: Reg, b: Reg)    { asm."  rem {a} {b}{newline}" }
 fun and(asm: &Recipe, a: Reg, b: Reg)    { asm."  and {a} {b}{newline}" }
 fun or(asm: &Recipe, a: Reg, b: Reg)     { asm."  or {a} {b}{newline}" }
 fun xor(asm: &Recipe, a: Reg, b: Reg)    { asm."  xor {a} {b}{newline}" }
@@ -4093,6 +4099,7 @@ fun add(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#a0:U8) asm.emit(a, b) }
 fun sub(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#a1:U8) asm.emit(a, b) }
 fun mul(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#a2:U8) asm.emit(a, b) }
 fun div(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#a3:U8) asm.emit(a, b) }
+fun rem(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#a4:U8) asm.emit(a, b) }
 fun and(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#b0:U8) asm.emit(a, b) }
 fun or(asm: &Soil, a: Reg, b: Reg)     { asm.emit(16#b1:U8) asm.emit(a, b) }
 fun xor(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#b2:U8) asm.emit(a, b) }
