@@ -3703,7 +3703,7 @@ fun assemble_body[Assembler](
       case str(str) {
         asm.jump(".after_str_{slot}")
         asm.label(".str_{slot}")
-        asm.str(str)
+        for char in str do asm.byte(char.byte)
         asm.label(".after_str_{slot}")
         asm.smart_move_and_add_offset(Reg.a, Reg.sp, offset)
         asm.movei(Reg.b, ".str_{slot}")
