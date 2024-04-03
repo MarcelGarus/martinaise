@@ -149,7 +149,6 @@ fun use_custom_asm_fun() {
 | Run everything  
 
 fun main(args: Slice[Str]): Never {
-  println("Hello!")
   functions()
   variables()
   structs_and_enums()
