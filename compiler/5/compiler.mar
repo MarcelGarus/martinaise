@@ -3549,9 +3549,16 @@ fun assemble[Assembler](
   var arg_layouts = map[Str, MemLayout]() | maps fun signature to arg struct mem layout
   var string_literals = vec[Str]() | will be put into rodata section at the end
 
-  asm.call("_init_globals")
+  asm.label("_start")
+  asm.moveib(Reg.a, 8:U8)
+  asm.sub(Reg.sp, Reg.a)
+  for global in mono.globals_init_order do {
+    asm.movei(Reg.a, global)
+    asm.store(Reg.sp, Reg.a)
+    asm.call("{global}.init")
+  }
   asm.moveib(Reg.a, 0:U8)
-  asm.push(Reg.a)
+  asm.store(Reg.sp, Reg.a)
   asm.jump("main(Slice[Str])")
 
   for fun_ in mono.funs do {
@@ -3579,18 +3586,6 @@ fun assemble[Assembler](
     })
     asm.label(".init")
     global.value.assemble_body(global.key, mono, layouts, arg_layouts, asm)
-  }
-  asm.label("_init_globals") {
-    asm.moveib(Reg.a, 8:U8)
-    asm.sub(Reg.sp, Reg.a)
-    for global in mono.globals_init_order do {
-      asm.movei(Reg.a, global)
-      asm.store(Reg.sp, Reg.a)
-      asm.call("{global}.init")
-    }
-    asm.moveib(Reg.a, 8:U8)
-    asm.add(Reg.sp, Reg.a)
-    asm.ret()
   }
 
   for fun_ in mono.funs do {

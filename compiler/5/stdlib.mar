@@ -402,12 +402,8 @@ fun write_bytes(log: Log, bytes: Slice[U8]) { syscall_log(bytes.to_str()) }
 
 fun halt(): Never { loop {} }
 fun exit(status: U8): Never { syscall_exit(status) }
-fun panic(message: Str): Never asm {
-  moveib a 16 add a sp load a a | message.data
-  moveib b 24 add b sp load b b | message.len
-  panic
-}
-fun panic(): Never { panic("panicked") }
+fun panic(message: Str): Never { log(message) panic() }
+fun panic(): Never asm { panic }
 fun unreachable(): Never { panic("unreachable") }
 fun unreachable(reason: Str): Never { panic("unreachable: {reason}") }
 fun todo(): Never { panic("todo") }
@@ -872,16 +868,16 @@ fun malloc(size: U64, alignment: U64): Address asm {
   moveib d 2 cmp b d isequal cjump .align
   moveib d 4 cmp b d isequal cjump .align
   moveib d 8 cmp b d isequal cjump .align
-  jump .bad_alignment
   | Round up c to a multiple of the alignment: c = (c + (b - 1)) & negate(b - 1)
   .align: moveib d 1 sub b d add c b negate b and c b
   .bump_head: move b c add b a move a c movei c .head store c b
   .check_oom: cmp b sp isgreaterequal cjump .oom
   move b sp moveib c 8 add b c load b b | return value address
   store b a ret
-  .head: word _end_of_program | This will be moved forward by malloc.
-  .bad_alignment: movei a ..str moveib b 13 panic ..str: str "bad alignment"
-  .oom: movei a ..str moveib b 13 panic ..str: str "out of memory"
+  .head: word _end_of_program | This will be moved with each call.
+  .bad_alignment: movei a ..str moveib b 13 syscall 2 panic
+    ..str: str "bad alignment"
+  .oom: movei a ..str moveib b 13 syscall 2 panic ..str: str "out of memory"
 }
 
 struct Checkpoint { heap_head: Address }
