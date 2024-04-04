@@ -556,8 +556,8 @@ fun <=>(left: U8, right: U8): Ordering asm {
 }
 fun <=>(left: U64, right: U64): Ordering asm {
   | TODO: handle very big numbers correctly
-  moveib a 16 add a sp loadb a a | left
-  moveib b 24 add b sp loadb b b | right
+  moveib a 16 add a sp load a a | left
+  moveib b 24 add b sp load b b | right
   moveib c 8 add c sp load c c | return value address
   sub a b
   move st a isless cjump .less
@@ -568,8 +568,8 @@ fun <=>(left: U64, right: U64): Ordering asm {
   .greater: moveib b 2 storeb c b ret
 }
 fun <=>(left: I64, right: I64): Ordering asm {
-  moveib a 16 add a sp loadb a a | left
-  moveib b 24 add b sp loadb b b | right
+  moveib a 16 add a sp load a a | left
+  moveib b 24 add b sp load b b | right
   moveib c 8 add c sp load c c | return value address
   sub a b
   move st a isless cjump .less
