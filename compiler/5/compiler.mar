@@ -4155,12 +4155,9 @@ fun xor(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#b2:U8) asm.emit(a, b) }
 fun negate(asm: &ByteCode, a: Reg)         { asm.emit(16#b3:U8) asm.emit(a) }
 
 fun fix_patches(asm: &ByteCode) {
-  eprintln("Labels:")
-  for label in asm.labels do eprintln(" {label}")
-  for patch in asm.patches do {
-    eprintln("Fixing {patch.label}")
+  for patch in asm.patches do
     asm.bytes.&.overwrite_U64(patch.where, asm.labels_to_pos.get(patch.label))
-  }
+  asm.patches.len = 0
 }
 
 fun byte_code(mono: Mono, layouts: Map[Type, MemLayout]): Slice[U8] {
@@ -4184,23 +4181,18 @@ fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Slice[U8] {
     labels_to_pos = map[Str, U64](),
     patches = vec[Patch](),
   }
-  eprintln("Assembling it")
   mono.assemble(layouts, byte_code.&)
-  eprintln("Fixing the patches")
   byte_code.&.fix_patches()
 
-  eprintln("Putting it together")
   var out = vec[U8]()
   out.&.push_all("soil".bytes())
 
   | byte code section
-  eprintln("Adding byte code section")
   out.&.push(0:U8)
   out.&.push_U64(byte_code.bytes.len)
   out.&.push_all(byte_code.bytes.to_slice())
 
   | labels section
-  eprintln("Adding labels section")
   out.&.push(3:U8)
   var out_len = out.&.len
   out.&.push_U64(0)

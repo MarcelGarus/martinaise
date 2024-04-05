@@ -1847,7 +1847,6 @@ fun to_os_flags(flags: Set[OpenFileFlag]): U64 {
   |  affect the semantics of subsequent I/O operations."
   | https://man7.org/linux/man-pages/man2/open.2.html
   | TODO: support more flags
-  eprintln("create flag set? {flags.contains(OpenFileFlag.create)}")
   if flags.contains(OpenFileFlag.create)   then res = res.or(flag_create)
   if flags.contains(OpenFileFlag.truncate) then res = res.or(flag_trunc)
   if flags.contains(OpenFileFlag.append)   then res = res.or(flag_append)
