@@ -4130,7 +4130,7 @@ fun print_usage_info[W](writer: W) {
     '  ast     shows the abstract syntax tree{newline}
     '  mono    shows the monomorphized code{newline}
     '  recipe  compiles to a Soil recipe{newline}
-    '  soil    compiles to a Soil executable{newline}
+    '  soil    compiles to a Soil binary{newline}
     '  run     compiles and runs{newline}"
 }
 
@@ -4198,11 +4198,6 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   print_on_same_line("Running {recipe_file}")
   todo()
 
-  | TODO: time it
-  | TODO: print exit status of the program
-
-  println("{recipe_file} exited")
-
   true
 }
 
@@ -4211,13 +4206,6 @@ fun wrong_usage(): Never { print_usage_info(stderr) exit(1:U8) }
 fun main(args: Slice[Str]): Never {
   eprintln("Welcome to Martinaise 6.")
 
-  | Ways to use this program:
-  | - martinaise help
-  | - martinaise ast <file>
-  | - martinaise mono <file>
-  | - martinaise asm <file>
-  | - martinaise compile <file>
-  | - martinaise run <file> [-- <additonal args>]
   | Note the program name itself is also an additional argument at the front.
   if args.len < 2 then wrong_usage()
   var command = parse_command(args.get(1)) orelse wrong_usage()

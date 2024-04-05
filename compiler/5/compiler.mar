@@ -42,7 +42,6 @@
 | env  = environment
 | expr = expression
 | fun  = function
-| mono = monomorphize (verb as in "to mono something") TODO: needed?
 | str  = string
 | var  = variable
 |
@@ -656,9 +655,9 @@ fun parse_type_params(parser: &Parser): Result[Maybe[Vec[Str]], Str] {
 }
 
 | Expressions are parsed in two parts: parse_expr_without_suffix can parse
-| atomic expressions such as `4` or `"hey"`. parse_expr_suffix can parse
-| expressions that are written behind other expressions and wrap them, for
-| example `foo orelse bar` being parsed into an orelse of foo and bar.
+| atomic expressions such as 4 or "hey". parse_expr_suffix can parse expressions
+| that are written behind other expressions and wrap them, for example
+| `foo orelse bar` being parsed into an orelse of foo and bar.
 fun parse_expr(parser: &Parser): Result[Maybe[AstExpr], Str] {
   parser.parse_expr(true)
 }
@@ -1576,7 +1575,9 @@ fun create_type_solver[I](vars_: I): TypeSolver {
 }
 | Calling this function adds the constraint that `concrete` needs to be
 | assignable to `generic`. Returns whether that works.
-fun unify(solver: &TypeSolver, generic: Type, concrete: Type): Result[Bool, Str] {
+fun unify(
+  solver: &TypeSolver, generic: Type, concrete: Type,
+): Result[Bool, Str] {
   | Under type env {A: Int}, is Str assignable to A? Depends on whether Str is
   | assignable to Int.
   if solver.env.get_maybe(generic.name) is some(mapped) then {
@@ -2070,15 +2071,15 @@ fun exists(type: Str, types: Map[Str, AstType], extra: Vec[Str]): Bool {
 
 | Looks up the type with the given name. Type names have to be unique.
 fun lookup_type(ast: PreparedAst, name: Str): Result[AstType, Str] {
-  var match = ast.types.get_maybe(name)
-    orelse return error[AstType, Str]('"There is no type named "{{name}}"."')
-  ok[AstType, Str](match)
+  switch ast.types.get_maybe(name)
+  case some(match) ok[AstType, Str](match)
+  case none return error[AstType, Str]('"There is no type named "{{name}}"."')
 }
 
 | Looks up the global variable with the given name. Names of global variables
 | have to be unique.
 fun lookup_global(ast: PreparedAst, name: Str): Maybe[AstVar] {
-  some(ast.globals.get_maybe(name) orelse return none[AstVar]())
+  ast.globals.get_maybe(name)
 }
 
 | Looks up the function with the given name, the given number of type args
@@ -2204,7 +2205,8 @@ fun compile(ast: PreparedAst): Result[Mono, Str] {
     case error(error) {
       switch ast.lookup_fun("main", none[Vec[Type]](), vec[Type]())
       case error return error[Mono, Str](
-        "Your project must have one of these functions: main(Slice[Str]) or main()")
+        "Your project must have one of these functions: main(Slice[Str]) or
+        ' main()")
       | Generate a main(Slice[Str]) function that just calls main()
       case ok AstFun {
         name = "main",
@@ -2796,8 +2798,8 @@ fun compile_in_current_scope(
       for case_ in switch_.cases do {
         if handled.contains(case_.variant)
         then return error[MonoExpr, Str](
-          '"When switching on {{value.type}}, you handle the "{{case_.variant}}" 
-          'variant multiple times."')
+          '"When switching on {{value.type}}, you handle the "{{case_.variant}}"
+          ' variant multiple times."')
         | TODO: when supporting continue with label, use that
         var handled_this_case = false
         for variant in enum_.variants do
@@ -2828,8 +2830,8 @@ fun compile_in_current_scope(
         switch switch_.default_
         case some some(self.push_placeholder())
         case none none[U64]()
-      | contains indices of statements which will be replaced with unconditional
-      | jumps to after the switch
+      | Contains indices of statements which will be replaced with unconditional
+      | jumps to after the switch.
       var after_switch_jumps = vec[U64]()
 
       | Case bodies
@@ -3116,7 +3118,9 @@ fun calculate_mem_layout(
   type: Type, layouts: &Map[Type, MemLayout], type_defs: Map[Type, MonoTypeDef]
 ): MemLayout {
   if type.name == "&"
-  then return MemLayout { type, size = 8, alignment = 8, kind = MemLayoutKind.opaque_ }
+  then return MemLayout {
+    type, size = 8, alignment = 8, kind = MemLayoutKind.opaque_
+  }
   calculate_mem_layout(type, type_defs.get(type), layouts, type_defs)
 }
 | We sometimes want to mem-layout anonymous structs, for example when arranging
@@ -3457,7 +3461,7 @@ fun compile_builtin(
       slots = compile_fun.slots, statements = compile_fun.statements,
     }
   }
-  else panic("Unknown builtin fds {name}")
+  else panic("Unknown builtin fds {name}") | TODO
 }
 
 struct CompileTypeFun { slots: Vec[MonoSlot], statements: Vec[MonoStatement] }
@@ -3502,22 +3506,22 @@ fun compile_reflection(type: Type, out: &CompileTypeFun): MonoExpr {
 | Assembling  
 | Martinaise supports two backends, both of which operate on the abstraction
 | level of Soil assembly instructions:
-| - A textual assembly backend that produces NASM.
-| - A binary backend that produces machine code directly.
+|
+| - A backend that produces textual Soil assembly called "recipe".
+| - A backend that produces Soil byte code directly.
 |
 | The process of converting the Mono to one of these stages is called
 | "assembling". To support both backends, assembling is generic over an
-| assembler. An assembler is a type with a function for every required assembly
+| assembler. An assembler is a type with a function for every assembly
 | instruction, for example:
+|
 | - ret()
 | - add(Reg, Reg)
-| - mov(Reg, U64)
+| - movei(Reg, U64)
 | - ...
 |
 | This way, the assembly instructions are type checked in Martinaise (for
-| example, you can't add a U64 to a Reg). The binary backend can also emit
-| totally different opcodes and encodings for instructions with the same
-| mnemonic but different operands.
+| example, you can't add a U64 to a Reg).
 
 fun mangle(name: Str): Str {
   var contains_dot = false
@@ -3546,9 +3550,6 @@ fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, U64] {
 fun assemble[Assembler](
   mono: Mono, layouts: Map[Type, MemLayout], asm: &Assembler,
 ) {
-  var arg_layouts = map[Str, MemLayout]() | maps fun signature to arg struct mem layout
-  var string_literals = vec[Str]() | will be put into rodata section at the end
-
   asm.label("_start")
   asm.moveib(Reg.a, 8:U8)
   asm.sub(Reg.sp, Reg.a)
@@ -3562,6 +3563,7 @@ fun assemble[Assembler](
   asm.store(Reg.sp, Reg.a)
   asm.call("main(Slice[Str])")
 
+  var arg_layouts = map[Str, MemLayout]() | fun signature to arg layouts
   for fun_ in mono.funs do {
     var name = fun_.key
     var arg_struct = MonoStruct { fields = vec[MonoStructField]() }
@@ -3761,7 +3763,9 @@ fun assemble_body[Assembler](
         for arg in call.args.iter().enumerate() do {
           var size = layouts.get(arg.item.type).size
           var offset_in_args = arg_offsets.get("arg_{arg.index}")
-          asm.save_address(Reg.a, arg.item, args_size, slot_offsets, layouts, Reg.c)
+          asm.save_address(
+            Reg.a, arg.item, args_size, slot_offsets, layouts, Reg.c
+          )
           asm.smart_move_and_add_offset(Reg.b, Reg.sp, offset_in_args)
           asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
         }
@@ -3938,7 +3942,7 @@ fun copy_memory[Assembler](
   }
 }
 
-| Textual Assembler  
+| Textual Recipe Assembler  
 | This backend produces textual Soil code (a "recipe").
 
 struct Recipe { builder: StringBuilder }
@@ -3967,7 +3971,9 @@ fun nop(asm: &Recipe)                    { asm."  nop{newline}" }
 fun panic(asm: &Recipe)                  { asm."  panic{newline}" }
 fun move(asm: &Recipe, a: Reg, b: Reg)   { asm."  move {a} {b}{newline}" }
 fun movei(asm: &Recipe, a: Reg, b: U64)  { asm."  movei {a} {b}{newline}" }
-fun movei(asm: &Recipe, a: Reg, b: Str)  { asm.'"  movei {{a}} "{{b}}"{{newline}}"' }
+fun movei(asm: &Recipe, a: Reg, b: Str)  {
+  asm.'"  movei {{a}} "{{b}}"{{newline}}"'
+}
 fun moveib(asm: &Recipe, a: Reg, b: U8)  { asm."  moveib {a} {b}{newline}" }
 fun load(asm: &Recipe, a: Reg, b: Reg)   { asm."  load {a} {b}{newline}" }
 fun loadb(asm: &Recipe, a: Reg, b: Reg)  { asm."  loadb {a} {b}{newline}" }
@@ -4005,37 +4011,78 @@ fun recipe(mono: Mono, layouts: Map[Type, MemLayout]): Str {
   "{asm.builder}"
 }
 
-| Binary Assembler  
-| This backend produces a Soil binary.
+| Byte Code Assembler  
+| This backend produces Soil byte code.
 
-struct Soil {
+struct ByteCode {
   bytes: Vec[U8],
   last_label: Str,
-  labels: Map[Str, U64],
+  labels: Vec[Str],
+  labels_to_pos: Map[Str, U64],
   patches: Vec[Patch],
 }
 struct Patch { label: Str, where: U64 }
 
-fun emit(asm: &Soil, byte: U8) { asm.bytes.&.push(byte) }
-fun emit(asm: &Soil, word: U64) {
-  asm.emit(word.and(16#ff).to_U8())
-  asm.emit({word / 16#100}.and(16#ff).to_U8())
-  asm.emit({word / 16#10000}.and(16#ff).to_U8())
-  asm.emit({word / 16#1000000}.and(16#ff).to_U8())
-  asm.emit({word / 16#100000000}.and(16#ff).to_U8())
-  asm.emit({word / 16#10000000000}.and(16#ff).to_U8())
-  asm.emit({word / 16#1000000000000}.and(16#ff).to_U8())
-  asm.emit({word / 16#100000000000000}.and(16#ff).to_U8())
+fun globalize(byte_code: ByteCode, label: Str): Result[Str, Str] {
+  var num_dots = 0
+  loop
+    if label.chars().get_maybe(num_dots) == some(#.)
+    then num_dots = num_dots + 1
+    else break
+  if num_dots == 0 then return ok[Str, Str](label)
+  label = label.substr(num_dots, label.len)
+  var shared_prefix = 0
+  loop {
+    if shared_prefix >= byte_code.last_label.len then {
+      if num_dots == 1 then break
+      return error[Str, Str]("Label has too many dots at the beginning.")
+    }
+    if byte_code.last_label.chars().get(shared_prefix) == #. then {
+      num_dots = num_dots - 1
+      if num_dots == 0 then break
+    }
+    shared_prefix = shared_prefix + 1
+  }
+  var global = vec[Char]()
+  global.&.push_all(byte_code.last_label.substr(0, shared_prefix).chars())
+  global.&.push(#.)
+  for i in 0..label.len do global.&.push(label.chars().get(i))
+  ok[Str, Str](global.to_str())
 }
-fun emit(asm: &Soil, bytes: Slice[U8]) {
-  for byte in bytes do asm.builder.&.push(byte)
+
+fun push_U64(vec: &Vec[U8], n: U64) {
+  vec.push(n.and(16#ff).to_U8())
+  vec.push({n / 16#100}.and(16#ff).to_U8())
+  vec.push({n / 16#10000}.and(16#ff).to_U8())
+  vec.push({n / 16#1000000}.and(16#ff).to_U8())
+  vec.push({n / 16#100000000}.and(16#ff).to_U8())
+  vec.push({n / 16#10000000000}.and(16#ff).to_U8())
+  vec.push({n / 16#1000000000000}.and(16#ff).to_U8())
+  vec.push({n / 16#100000000000000}.and(16#ff).to_U8())
 }
-fun emit(asm: &Soil, a: Reg) { asm.emit(a.to_bits()) }
-fun emit(asm: &Soil, a: Reg, b: Reg) {
+fun overwrite_U64(vec: &Vec[U8], pos: U64, n: U64) {
+  vec.get_ref(pos + 0).* = n.and(16#ff).to_U8()
+  vec.get_ref(pos + 1).* = {n / 16#100}.and(16#ff).to_U8()
+  vec.get_ref(pos + 2).* = {n / 16#10000}.and(16#ff).to_U8()
+  vec.get_ref(pos + 3).* = {n / 16#1000000}.and(16#ff).to_U8()
+  vec.get_ref(pos + 4).* = {n / 16#100000000}.and(16#ff).to_U8()
+  vec.get_ref(pos + 5).* = {n / 16#10000000000}.and(16#ff).to_U8()
+  vec.get_ref(pos + 6).* = {n / 16#1000000000000}.and(16#ff).to_U8()
+  vec.get_ref(pos + 7).* = {n / 16#100000000000000}.and(16#ff).to_U8()
+}
+
+fun emit(asm: &ByteCode, byte: U8) { asm.bytes.&.push(byte) }
+fun emit(asm: &ByteCode, word: U64) { asm.bytes.&.push_U64(word) }
+fun emit(asm: &ByteCode, bytes: Slice[U8]) {
+  for byte in bytes do asm.bytes.&.push(byte)
+}
+fun emit(asm: &ByteCode, a: Reg) { asm.emit(a.to_bits()) }
+fun emit(asm: &ByteCode, a: Reg, b: Reg) {
   asm.emit(b.to_bits() * 16#10:U8 + a.to_bits())
 }
-fun emit(asm: &Soil, label: Str) {
-  asm.patches.push(Patch { label, where = asm.bytes.len })
+fun emit(asm: &ByteCode, label: Str) {
+  label = asm.globalize(label).unwrap()
+  asm.patches.&.push(Patch { label, where = asm.bytes.len })
   asm.emit(0)
 }
 
@@ -4051,62 +4098,121 @@ fun to_bits(reg: Reg): U8 {
   case e  2#0111:U8
 }
 
-fun comment(asm: &Soil, comment: Str) {}
+fun comment(asm: &ByteCode, comment: Str) {}
 
-fun label(asm: &Soil, label: Str) { asm.labels.&.put(label, asm.bytes.len) }
-fun disambiguated_label(asm: &Soil, prefix: Str): Str {
+fun label(asm: &ByteCode, label: Str) {
+  label = asm.globalize(label).unwrap()
+  asm.labels.&.push(label)
+  asm.labels_to_pos.&.put(label, asm.bytes.len)
+  asm.last_label = label
+}
+fun disambiguated_label(asm: &ByteCode, prefix: Str): Str {
   var label = "{prefix}.{asm.bytes.len()}"
   asm.label(label)
   label
 }
 
-fun str(asm: &Soil, str: Str)   { asm.emit(str.bytes()) }
-fun byte(asm: &Soil, byte: U8)  { asm.emit(byte) }
-fun word(asm: &Soil, word: U64) { asm.emit(word) }
-fun word(asm: &Soil, word: Str) { asm.emit(word) }
+fun str(asm: &ByteCode, str: Str)   { asm.emit(str.bytes()) }
+fun byte(asm: &ByteCode, byte: U8)  { asm.emit(byte) }
+fun word(asm: &ByteCode, word: U64) { asm.emit(word) }
+fun word(asm: &ByteCode, word: Str) { asm.emit(word) }
 
 | Instructions
-fun nop(asm: &Soil)                    { asm.emit(16#00:U8) }
-fun panic(asm: &Soil)                  { asm.emit(16#e0:U8) }
-fun move(asm: &Soil, a: Reg, b: Reg)   { asm.emit(16#d0:U8) asm.emit(a, b) }
-fun movei(asm: &Soil, a: Reg, b: U64)  { asm.emit(16#d1:U8) asm.emit(a) asm.emit(b) }
-fun movei(asm: &Soil, a: Reg, b: Str)  { asm.emit(16#d1:U8) asm.emit(a) asm.emit(b) }
-fun moveib(asm: &Soil, a: Reg, b: U8)  { asm.emit(16#d2:U8) asm.emit(a) asm.emit(b) }
-fun load(asm: &Soil, a: Reg, b: Reg)   { asm.emit(16#d3:U8) asm.emit(a) asm.emit(b) }
-fun loadb(asm: &Soil, a: Reg, b: Reg)  { asm.emit(16#d4:U8) asm.emit(a) asm.emit(b) }
-fun store(asm: &Soil, a: Reg, b: Reg)  { asm.emit(16#d5:U8) asm.emit(a) asm.emit(b) }
-fun storeb(asm: &Soil, a: Reg, b: Reg) { asm.emit(16#d6:U8) asm.emit(a) asm.emit(b) }
-fun push(asm: &Soil, a: Reg)           { asm.emit(16#d7:U8) asm.emit(a) }
-fun pop(asm: &Soil, a: Reg)            { asm.emit(16#d8:U8) asm.emit(a) }
-fun jump(asm: &Soil, a: U64)           { asm.emit(16#f0:U8) asm.emit(a) }
-fun jump(asm: &Soil, a: Str)           { asm.emit(16#f0:U8) asm.emit(a) }
-fun cjump(asm: &Soil, a: U64)          { asm.emit(16#f1:U8) asm.emit(a) }
-fun cjump(asm: &Soil, a: Str)          { asm.emit(16#f1:U8) asm.emit(a) }
-fun call(asm: &Soil, a: U64)           { asm.emit(16#f2:U8) asm.emit(a) }
-fun call(asm: &Soil, a: Str)           { asm.emit(16#f2:U8) asm.emit(a) }
-fun ret(asm: &Soil)                    { asm.emit(16#f3:U8) }
-fun syscall(asm: &Soil, a: U8)         { asm.emit(16#f4:U8) asm.emit(a) }
-fun cmp(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#c0:U8) asm.emit(a, b) }
-fun isequal(asm: &Soil)                { asm.emit(16#c1:U8) }
-fun isless(asm: &Soil)                 { asm.emit(16#c2:U8) }
-fun isgreater(asm: &Soil)              { asm.emit(16#c3:U8) }
-fun islessequal(asm: &Soil)            { asm.emit(16#c4:U8) }
-fun isgreater(asm: &Soil)              { asm.emit(16#c5:U8) }
-fun add(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#a0:U8) asm.emit(a, b) }
-fun sub(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#a1:U8) asm.emit(a, b) }
-fun mul(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#a2:U8) asm.emit(a, b) }
-fun div(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#a3:U8) asm.emit(a, b) }
-fun rem(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#a4:U8) asm.emit(a, b) }
-fun and(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#b0:U8) asm.emit(a, b) }
-fun or(asm: &Soil, a: Reg, b: Reg)     { asm.emit(16#b1:U8) asm.emit(a, b) }
-fun xor(asm: &Soil, a: Reg, b: Reg)    { asm.emit(16#b2:U8) asm.emit(a, b) }
-fun negate(asm: &Soil, a: Reg)         { asm.emit(16#b3:U8) asm.emit(a) }
+fun nop(asm: &ByteCode)                    { asm.emit(16#00:U8) }
+fun panic(asm: &ByteCode)                  { asm.emit(16#e0:U8) }
+fun move(asm: &ByteCode, a: Reg, b: Reg)   { asm.emit(16#d0:U8) asm.emit(a, b) }
+fun movei(asm: &ByteCode, a: Reg, b: U64)  { asm.emit(16#d1:U8) asm.emit(a) asm.emit(b) }
+fun movei(asm: &ByteCode, a: Reg, b: Str)  { asm.emit(16#d1:U8) asm.emit(a) asm.emit(b) }
+fun moveib(asm: &ByteCode, a: Reg, b: U8)  { asm.emit(16#d2:U8) asm.emit(a) asm.emit(b) }
+fun load(asm: &ByteCode, a: Reg, b: Reg)   { asm.emit(16#d3:U8) asm.emit(a, b) }
+fun loadb(asm: &ByteCode, a: Reg, b: Reg)  { asm.emit(16#d4:U8) asm.emit(a, b) }
+fun store(asm: &ByteCode, a: Reg, b: Reg)  { asm.emit(16#d5:U8) asm.emit(a, b) }
+fun storeb(asm: &ByteCode, a: Reg, b: Reg) { asm.emit(16#d6:U8) asm.emit(a, b) }
+fun push(asm: &ByteCode, a: Reg)           { asm.emit(16#d7:U8) asm.emit(a) }
+fun pop(asm: &ByteCode, a: Reg)            { asm.emit(16#d8:U8) asm.emit(a) }
+fun jump(asm: &ByteCode, a: U64)           { asm.emit(16#f0:U8) asm.emit(a) }
+fun jump(asm: &ByteCode, a: Str)           { asm.emit(16#f0:U8) asm.emit(a) }
+fun cjump(asm: &ByteCode, a: U64)          { asm.emit(16#f1:U8) asm.emit(a) }
+fun cjump(asm: &ByteCode, a: Str)          { asm.emit(16#f1:U8) asm.emit(a) }
+fun call(asm: &ByteCode, a: U64)           { asm.emit(16#f2:U8) asm.emit(a) }
+fun call(asm: &ByteCode, a: Str)           { asm.emit(16#f2:U8) asm.emit(a) }
+fun ret(asm: &ByteCode)                    { asm.emit(16#f3:U8) }
+fun syscall(asm: &ByteCode, a: U8)         { asm.emit(16#f4:U8) asm.emit(a) }
+fun cmp(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#c0:U8) asm.emit(a, b) }
+fun isequal(asm: &ByteCode)                { asm.emit(16#c1:U8) }
+fun isless(asm: &ByteCode)                 { asm.emit(16#c2:U8) }
+fun isgreater(asm: &ByteCode)              { asm.emit(16#c3:U8) }
+fun islessequal(asm: &ByteCode)            { asm.emit(16#c4:U8) }
+fun isgreaterequal(asm: &ByteCode)         { asm.emit(16#c5:U8) }
+fun add(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#a0:U8) asm.emit(a, b) }
+fun sub(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#a1:U8) asm.emit(a, b) }
+fun mul(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#a2:U8) asm.emit(a, b) }
+fun div(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#a3:U8) asm.emit(a, b) }
+fun rem(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#a4:U8) asm.emit(a, b) }
+fun and(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#b0:U8) asm.emit(a, b) }
+fun or(asm: &ByteCode, a: Reg, b: Reg)     { asm.emit(16#b1:U8) asm.emit(a, b) }
+fun xor(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#b2:U8) asm.emit(a, b) }
+fun negate(asm: &ByteCode, a: Reg)         { asm.emit(16#b3:U8) asm.emit(a) }
 
-fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Vec[U8] {
-  var soil = Soil { bytes = vec[U8]() }
-  mono.assemble(layouts, soil.&)
-  soil.fix_patches()
-  soil.bytes
+fun fix_patches(asm: &ByteCode) {
+  eprintln("Labels:")
+  for label in asm.labels do eprintln(" {label}")
+  for patch in asm.patches do {
+    eprintln("Fixing {patch.label}")
+    asm.bytes.&.overwrite_U64(patch.where, asm.labels_to_pos.get(patch.label))
+  }
+}
+
+fun byte_code(mono: Mono, layouts: Map[Type, MemLayout]): Slice[U8] {
+  var byte_code = ByteCode {
+    bytes = vec[U8](),
+    last_label = "",
+    labels = vec[Str](),
+    labels_to_pos = map[Str, U64](),
+    patches = vec[Patch](),
+  }
+  mono.assemble(layouts, byte_code.&)
+  byte_code.&.fix_patches()
+  byte_code.bytes.to_slice()
+}
+
+fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Slice[U8] {
+  var byte_code = ByteCode {
+    bytes = vec[U8](),
+    last_label = "",
+    labels = vec[Str](),
+    labels_to_pos = map[Str, U64](),
+    patches = vec[Patch](),
+  }
+  eprintln("Assembling it")
+  mono.assemble(layouts, byte_code.&)
+  eprintln("Fixing the patches")
+  byte_code.&.fix_patches()
+
+  eprintln("Putting it together")
+  var out = vec[U8]()
+  out.&.push_all("soil".bytes())
+
+  | byte code section
+  eprintln("Adding byte code section")
+  out.&.push(0:U8)
+  out.&.push_U64(byte_code.bytes.len)
+  out.&.push_all(byte_code.bytes.to_slice())
+
+  | labels section
+  eprintln("Adding labels section")
+  out.&.push(3:U8)
+  var out_len = out.&.len
+  out.&.push_U64(0)
+  out.&.push_U64(byte_code.labels.len)
+  for label in byte_code.labels do {
+    out.&.push_U64(byte_code.labels_to_pos.get(label))
+    out.&.push_U64(label.len)
+    for char in label do out.&.push(char.byte)
+  }
+  out.&.overwrite_U64(out_len, out.len - out_len - 8)
+
+  out.to_slice()
 }
 
 | File Watching  
@@ -4204,7 +4310,7 @@ fun print_usage_info(out: File) {
 
 | Runs the pipeline that matches the command. Errors are handled internally
 | (stuff is printed to stderr). Returns whether it ran through successfully.
-fun run_pipeline(command: Command, file_path: Str, use_sdl: Bool): Bool {
+fun run_pipeline(command: Command, file_path: Str): Bool {
   eprintln("Reading {file_path}")
   var stdlib = read_file("stdlib.mar").unwrap("couldn't read stdlib").to_str()
   var file = read_file(file_path).unwrap("couldn't read {file_path}").to_str()
@@ -4228,8 +4334,8 @@ fun run_pipeline(command: Command, file_path: Str, use_sdl: Bool): Bool {
   print_on_same_line("Monoing reflection functions")
   mono.&.compile_builtins(layouts)
 
-  print_on_same_line("Assembling recipe")
   if command is recipe then {
+    print_on_same_line("Assembling recipe")
     var recipe = mono.recipe(layouts)
     print_on_same_line("Writing recipe")
     var buffered = stdout.buffered_writer(1024).&
@@ -4238,38 +4344,22 @@ fun run_pipeline(command: Command, file_path: Str, use_sdl: Bool): Bool {
     print_on_same_line("Compiled to recipe. Enjoy!")
     return true
   }
-  todo()
-  var recipe = mono.recipe(layouts)
-
-  | TODO: compile to machine code in memory (in Martinaise)
-  | TODO: assert that the file ends with .mar?
-  var file_path_without_extension =
-    if file_path.ends_with(".mar")
-    then file_path.without_last(4)
-    else file_path
-  var recipe_file = "{file_path_without_extension}.recipe"
-
-  print_on_same_line("Writing recipe to file")
-  write_file(recipe_file, recipe.bytes())
-    .unwrap("couldn't write recipe to file")
-
-  | TODO: make sure that the external commands succeed before calling the next
-  | one
-
-  | TODO: remove generated asm and object file?
 
   if command is soil then {
-    print_on_same_line("Compiled to {recipe_file}. Enjoy!")
+    print_on_same_line("Assembling Soil binary")
+    var soil = mono.soil(layouts)
+    var buffered = stdout.buffered_writer(1024).&
+    buffered.write_bytes(soil)
+    buffered.flush()
+    print_on_same_line("Compiled to Soil binary ({soil.len} bytes). Enjoy!")
     return true
   }
 
-  print_on_same_line("Running {recipe_file}")
-  run(recipe_file, vec(recipe_file).to_slice())
+  print_on_same_line("Assembling byte code")
+  var byte_code = mono.byte_code(layouts)
+  print_on_same_line("Compiled to byte code. Enjoy!")
 
-  | TODO: time it
-  | TODO: print exit status of the program
-
-  println("{recipe_file} exited")
+  todo()
 
   true
 }
@@ -4297,8 +4387,6 @@ fun main(args: Slice[Str]): Never {
   if args.len < 3 then wrong_usage()
   var file_path = args.get(2)
 
-  var use_sdl = if args.len > 3 then args.get(3) == "-sdl" else false
-
   | TODO: throw if additional args are given
   | TODO: support -- and additional args for the run command
 
@@ -4314,7 +4402,7 @@ fun main(args: Slice[Str]): Never {
       case child {
         run("clear")
         eprintln("=====")
-        var was_successful = run_pipeline(command, file_path, use_sdl)
+        var was_successful = run_pipeline(command, file_path)
         exit(if was_successful then 0:U8 else 1:U8)
       }
       case parent(child) {
@@ -4325,7 +4413,7 @@ fun main(args: Slice[Str]): Never {
       }
     }
   } else {
-    var was_successful = run_pipeline(command, file_path, use_sdl)
+    var was_successful = run_pipeline(command, file_path)
     exit(if was_successful then 0:U8 else 1:U8)
   }
 }
