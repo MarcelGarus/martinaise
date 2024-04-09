@@ -18,19 +18,13 @@
 | TODO:   break and continue with targets
 | TODO:   funs as values, function types, higher-order funs?
 | TODO:   slice literals? array literals?
-| TODO: stdlib
-| TODO:   threads
-| TODO:   mutex
-| TODO:   semaphore
 | TODO: catch more errors
 | TODO:   enforce that statement-like expressions evaluate to Nothing
 | TODO:   disallow _ in type args, structs, enums, and recursive functions
 | TODO:   improve int parsing: be strict about whitespace
 | TODO:   catch circular global definitions
 | TODO: tooling
-| TODO:   watching files
 | TODO:   breakpoint
-| TODO:   stack traces
 
 | Nothing (aka Unit or Void)  
 | Nothing is a type with only one instance. From an information theoretical
@@ -516,13 +510,13 @@ fun and(left: U64, right: U64): U64 asm {
   and a b store c b ret
 }
 
-fun and(left: U8, right: U8): U8 asm {
+fun or(left: U8, right: U8): U8 asm {
   moveib a 16 add a sp loadb a a | left
   moveib b 17 add b sp loadb b b | right
   moveib c 8 add c sp load c c | return value address
   or a b storeb c b ret
 }
-fun and(left: U64, right: U64): U64 asm {
+fun or(left: U64, right: U64): U64 asm {
   moveib a 16 add a sp load a a | left
   moveib b 24 add b sp load b b | right
   moveib c 8 add c sp load c c | return value address

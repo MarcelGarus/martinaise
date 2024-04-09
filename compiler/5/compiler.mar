@@ -1761,7 +1761,46 @@ fun print_status(context: Context) {
 | guaranteed to be correct – during monoing, variable scoping, name lookups, and
 | type checking take place.
 |
-| TODO: explain slots, statements, expressions, globals
+| Functions in the Mono are way simpler than Ast functions in another way: They
+| are linear, only containing slots for local variables and instructions that
+| may jump to each other.
+|
+| Take this AST function:
+|
+| fun foo(a: Bool) {
+|   var foo =
+|     if condition
+|     then 2
+|     else 3
+|   foo + 1
+| }
+|
+| In the Mono, it looks something like this:
+|
+| fun foo(a: Bool) {
+|   slot_0: Bool = arg 0
+|   slot_1: U64 = uninitialized
+|   slot_2: Int = 2
+|   slot_3: Int = 3
+|   slot_4: U64 = uninitialized
+|   slot_5: Int = 1
+|
+|   label_0:
+|     jump_if_variant a true label_1
+|     jump label_2
+|   label_1:
+|     assign slot_1 = slot_2
+|     jump label_3
+|   label_2:
+|     assign slot_1 = slot_3
+|     jump label_3
+|   label_3:
+|     perform_call slot_4 = +(slot_1, slot_5)
+|     return slot_4
+| }
+|
+| Globals are lowered into functions that take no arguments and return the
+| value of the global.
 
 struct Mono {
   | Monomorphized type definitions.
@@ -1793,14 +1832,15 @@ struct MonoFun {
   kind: MonoFunKind,
 }
 
-struct MonoSlot { type: Type, initial_value: MonoSlotValue }
-enum MonoSlotValue { uninitialized, arg: U64, int: U64, str: Str }
-struct MonoSlotRef { index: U64 }
 enum MonoFunKind { builtin, body: MonoFunBody, asm_: Vec[Instruction] }
 struct MonoFunBody {
   slots: Vec[MonoSlot],
   statements: Vec[MonoStatement],
 }
+
+struct MonoSlot { type: Type, initial_value: MonoSlotValue }
+enum MonoSlotValue { uninitialized, arg: U64, int: U64, str: Str }
+struct MonoSlotRef { index: U64 }
 
 enum MonoStatement {
   label: MonoLabel,
