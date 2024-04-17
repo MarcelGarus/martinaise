@@ -834,17 +834,21 @@ fun end_of_initial_data(): Address asm {
   ret
 }
 
-fun malloc(size: U64, alignment: U64): Address asm {
+fun malloc(size: U64, alignment: U64): Address {
+  heap_head
+  malloc_impl(size, alignment)
+}
+fun malloc_impl(size: U64, alignment: U64): Address asm {
   moveib a 8  add a sp load a a | size
   moveib b 16 add b sp load b b | alignment
-  movei c .head load c c | heap_head
+  movei c heap_head load c c | heap_head
   moveib d 1 cmp b d isequal cjump .align
   moveib d 2 cmp b d isequal cjump .align
   moveib d 4 cmp b d isequal cjump .align
   moveib d 8 cmp b d isequal cjump .align
   | Round up c to a multiple of the alignment: c = (c + (b - 1)) & negate(b - 1)
   .align: moveib d 1 sub b d add c b negate b and c b
-  .bump_head: move b c add b a move a c movei c .head store c b
+  .bump_head: move b c add b a move a c movei c heap_head store c b
   .check_oom: cmp b sp isgreaterequal cjump .oom
   move b sp load b b | return value address
   store b a ret
