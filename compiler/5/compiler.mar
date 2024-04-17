@@ -172,12 +172,7 @@ struct AstSwitch {
 struct AstCase { variant: Str, binding: Maybe[Str], then_: &AstExpr }
 
 enum Instruction {
-  | Not really instructions, but meh:
-  label: Str,
-  str: Str,
-  byte: U8,
-  word: Word,
-  | These are the real instructions:
+  label: Str, | Not really an instruction, but meh.
   nop,
   panic,
   move: RegAndReg,
@@ -189,9 +184,9 @@ enum Instruction {
   storeb: RegAndReg,
   push: Reg,
   pop: Reg,
-  jump: Word,
-  cjump: Word,
-  call: Word,
+  jump: Str,
+  cjump: Str,
+  call: Str,
   ret,
   syscall: U8,
   cmp: RegAndReg,
@@ -211,9 +206,9 @@ enum Instruction {
   negate: Reg,
 }
 
-enum Reg { ip, sp, st, a, b, c, d, e }
+enum Reg { sp, st, a, b, c, d, e, f }
 
-enum Word { literal: U64, label: Str }
+enum Word { literal: U64, label: Str, str: Str }
 
 struct RegAndReg { first: Reg, second: Reg }
 struct RegAndWord { first: Reg, second: Word }
@@ -373,9 +368,6 @@ fun write[W](writer: W, arg: AstFunArg) { writer."{arg.name}: {arg.type}" }
 fun write[W](writer: W, instruction: Instruction) {
   switch instruction
   case label(label) writer."{label}:"
-  case str(str) writer.'"str "{str}""'
-  case byte(byte) writer."byte {byte}"
-  case word(word) writer."word {word}"
   case nop writer."nop"
   case panic writer."panic"
   case move(regs) writer."move {regs.first} {regs.second}"
@@ -411,7 +403,6 @@ fun write[W](writer: W, instruction: Instruction) {
 
 fun write[W](writer: W, reg: Reg) {
   switch reg
-  case ip writer."ip"
   case sp writer."sp"
   case st writer."st"
   case a writer."a"
@@ -419,12 +410,14 @@ fun write[W](writer: W, reg: Reg) {
   case c writer."c"
   case d writer."d"
   case e writer."e"
+  case f writer."f"
 }
 
 fun write[W](writer: W, word: Word) {
   switch word
   case literal(num) writer."{num}"
   case label(str) writer."{str}"
+  case str(str) writer."{str}"
 }
 
 fun signature(def: AstDef): AstSignature { AstSignature { def } }
@@ -1184,7 +1177,6 @@ fun parse_asm_name(parser: &Parser): Maybe[Str] {
 fun parse_reg(parser: &Parser): Result[Reg, Str] {
   var name = parser.parse_asm_name()
     orelse return error[Reg, Str]("Expected a register.")
-  if name == "ip" then return ok[Reg, Str](Reg.ip)
   if name == "sp" then return ok[Reg, Str](Reg.sp)
   if name == "st" then return ok[Reg, Str](Reg.st)
   if name == "a" then return ok[Reg, Str](Reg.a)
@@ -1192,6 +1184,7 @@ fun parse_reg(parser: &Parser): Result[Reg, Str] {
   if name == "c" then return ok[Reg, Str](Reg.c)
   if name == "d" then return ok[Reg, Str](Reg.d)
   if name == "e" then return ok[Reg, Str](Reg.e)
+  if name == "f" then return ok[Reg, Str](Reg.f)
   error[Reg, Str]("Expected a register.")
 }
 
@@ -1214,10 +1207,13 @@ fun parse_asm_num(parser: &Parser): Result[U64, Str] {
     orelse return error[U64, Str]("Expected a number."))
 }
 fun parse_asm_word(parser: &Parser): Result[Word, Str] {
-  if {#0..=#9}.contains(parser.current())
-  then return ok[Word, Str](Word.literal(parser.parse_asm_num()?))
+  parser.consume_whitespace()
+  if {#0..=#9}.contains(parser.current()) then
+    return ok[Word, Str](Word.literal(parser.parse_asm_num()?))
+  if parser.current() == #" then
+    return ok[Word, Str](Word.str(parser.parse_asm_str()?))
   ok[Word, Str](Word.label(parser.parse_asm_name()
-    orelse return error[Word, Str]("Expected a number or label.")))
+    orelse return error[Word, Str]("Expected a number, string, or label.")))
 }
 fun parse_asm_byte(parser: &Parser): Result[U8, Str] {
   var num = parser.parse_asm_num()?
@@ -1228,13 +1224,6 @@ fun parse_asm_byte(parser: &Parser): Result[U8, Str] {
 fun parse_instruction(parser: &Parser): Result[Maybe[Instruction], Str] {
   var name = parser.parse_asm_name() orelse return no_match[Instruction]()
   if parser.consume_prefix(":") then return parsed(Instruction.label(name))
-  if name == "str" then return parsed(Instruction.str(
-    parser.parse_asm_str()
-      orelse return bad_input[Instruction]("Expected string.")))
-  if name == "byte" then return parsed(Instruction.byte(
-      parser.parse_asm_byte()?))
-  if name == "word" then return parsed(Instruction.word(
-      parser.parse_asm_word()?))
   if name == "nop" then return parsed(Instruction.nop)
   if name == "panic" then return parsed(Instruction.panic)
   if name == "move" then return parsed(Instruction.move(
@@ -1254,11 +1243,14 @@ fun parse_instruction(parser: &Parser): Result[Maybe[Instruction], Str] {
   if name == "push" then return parsed(Instruction.push(parser.parse_reg()?))
   if name == "pop" then return parsed(Instruction.pop(parser.parse_reg()?))
   if name == "jump" then return parsed(Instruction.jump(
-    parser.parse_asm_word()?))
+    parser.parse_asm_name() orelse return bad_input[Instruction](
+      "Expected a label to jump to.")))
   if name == "cjump" then return parsed(Instruction.cjump(
-    parser.parse_asm_word()?))
+    parser.parse_asm_name() orelse return bad_input[Instruction](
+      "Expected a label to cjump to.")))
   if name == "call" then return parsed(Instruction.call(
-    parser.parse_asm_word()?))
+    parser.parse_asm_name() orelse return bad_input[Instruction](
+      "Expected a label to call.")))
   if name == "ret" then return parsed(Instruction.ret)
   if name == "syscall" then return parsed(Instruction.syscall(
     parser.parse_asm_byte()?))
@@ -3588,11 +3580,11 @@ fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, U64] {
 }
 
 fun assemble[Assembler](
-  mono: Mono, layouts: Map[Type, MemLayout], asm: &Assembler,
+  mono: Mono, layouts: Map[Type, MemLayout],
+  asm: &Assembler, data: &Vec[U8],
 ) {
   asm.label("_start")
-  asm.moveib(Reg.a, 8:U8)
-  asm.sub(Reg.sp, Reg.a)
+  asm.push(Reg.a)
   for global in mono.globals_init_order do {
     asm.movei(Reg.a, global)
     asm.store(Reg.sp, Reg.a)
@@ -3618,8 +3610,8 @@ fun assemble[Assembler](
   }
 
   for global in mono.globals do {
-    asm.label(global.key)
-    for i in 0..layouts.get(global.value.return_type).size do asm.byte(0:U8)
+    asm.data_label(global.key, data.len)
+    for i in 0..layouts.get(global.value.return_type).size do data.&.push(0:U8)
 
     arg_layouts.&.put(global.key, MemLayout {
       type = type("Nothing"),
@@ -3627,19 +3619,18 @@ fun assemble[Assembler](
       alignment = 1,
       kind = MemLayoutKind.struct_(vec[MemLayoutStructPart]()),
     })
-    asm.label(".init")
-    global.value.assemble_body(global.key, mono, layouts, arg_layouts, asm)
+    asm.label("{global.key}.init")
+    global.value.assemble_body(global.key, mono, layouts, arg_layouts, asm, data)
   }
 
   for fun_ in mono.funs do {
     var signature = fun_.key
     var fun_ = fun_.value
-    asm.str(signature)
     asm.label(signature.mangle())
-    fun_.assemble_body(signature, mono, layouts, arg_layouts, asm)
+    fun_.assemble_body(signature, mono, layouts, arg_layouts, asm, data)
   }
 
-  asm.label("_end_of_program")
+  asm.data_label("_end_of_initial_data", data.len)
 }
 
 fun smart_movei[Assembler](asm: &Assembler, reg: Reg, immediate: U64) {
@@ -3665,7 +3656,7 @@ fun smart_addi[Assembler](asm: &Assembler, to: Reg, value: U64, scratch: Reg) {
 fun assemble_body[Assembler](
   fun_: MonoFun, signature: Str,
   mono: Mono, layouts: Map[Type, MemLayout], arg_layouts: Map[Str, MemLayout],
-  asm: &Assembler,
+  asm: &Assembler, data: &Vec[U8],
 ) {
   asm.comment(signature)
 
@@ -3701,7 +3692,7 @@ fun assemble_body[Assembler](
       var offset =
         if slot.item.initial_value is arg
         then locals_size
-          + 16  | caller's ip and return value
+          + 8 | return value
           + arg_offsets.get("arg_{slot.index}")
         else locals_offsets.get("local_{slot.index}")
       slot_offsets.&.put(MonoSlotRef { index = slot.index }, offset)
@@ -3709,8 +3700,7 @@ fun assemble_body[Assembler](
 
     asm.smart_movei(Reg.a, locals_size)
     asm.sub(Reg.sp, Reg.a)
-    asm.comment("sp + {locals_size}: caller's ip")
-    asm.comment("sp + {locals_size + 8}: 
+    asm.comment("sp + {locals_size}: 
       'address of where to put the return value")
     for slot in body.slots.iter().enumerate() do {
       var slot_ref = MonoSlotRef { index = slot.index }
@@ -3744,12 +3734,10 @@ fun assemble_body[Assembler](
         else panic("unknown int size {size}")
       }
       case str(str) {
-        asm.jump(".after_str_{slot}")
-        asm.label(".str_{slot}")
-        for char in str do asm.byte(char.byte)
-        asm.label(".after_str_{slot}")
+        var str_pos = data.len
+        for byte in str.bytes() do data.&.push(byte)
         asm.smart_move_and_add_offset(Reg.a, Reg.sp, offset)
-        asm.movei(Reg.b, ".str_{slot}")
+        asm.movei(Reg.b, str_pos)
         asm.store(Reg.a, Reg.b)
         asm.smart_addi(Reg.a, 8, Reg.b)
         asm.smart_movei(Reg.b, str.bytes().len)
@@ -3848,7 +3836,7 @@ fun assemble_body[Assembler](
         var size = layouts.get(expr.type).size
         if size > 0 then {
           asm.save_address(Reg.a, expr, 0, slot_offsets, layouts, Reg.b)
-          asm.smart_move_and_add_offset(Reg.b, Reg.sp, locals_size + 8)
+          asm.smart_move_and_add_offset(Reg.b, Reg.sp, locals_size)
           asm.load(Reg.b, Reg.b)
           asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
         }
@@ -3867,13 +3855,6 @@ fun assemble_body[Assembler](
   case asm_(instructions) for instruction in instructions do {
     switch instruction
     case label(label)    asm.label(label)
-    case str(str)        asm.str(str)
-    case byte(byte)      asm.byte(byte)
-    case word(word) {
-      switch word
-      case label(word)   asm.word(word)
-      case literal(word) asm.word(word)
-    }
     case nop             asm.nop()
     case panic           asm.panic()
     case move(regs)      asm.move(regs.first, regs.second)
@@ -3881,6 +3862,11 @@ fun assemble_body[Assembler](
       switch args.second
       case label(word)   asm.movei(args.first, word)
       case literal(word) asm.movei(args.first, word)
+      case str(str) {
+        var offset = data.len
+        for byte in str.bytes() do data.&.push(byte)
+        asm.movei(args.first, offset)
+      }
     }
     case moveib(args)    asm.moveib(args.first, args.second)
     case load(regs)      asm.load(regs.first, regs.second)
@@ -3889,21 +3875,9 @@ fun assemble_body[Assembler](
     case storeb(regs)    asm.storeb(regs.first, regs.second)
     case push(reg)       asm.push(reg)
     case pop(reg)        asm.pop(reg)
-    case jump(word) {
-      switch word
-      case label(word)   asm.jump(word)
-      case literal(word) asm.jump(word)
-    }
-    case cjump(word) {
-      switch word
-      case label(word)   asm.cjump(word)
-      case literal(word) asm.cjump(word)
-    }
-    case call(word){
-      switch word
-      case label(word)   asm.call(word)
-      case literal(word) asm.call(word)
-    }
+    case jump(word)      asm.jump(word)
+    case cjump(word)     asm.cjump(word)
+    case call(word)      asm.call(word)
     case ret             asm.ret()
     case syscall(byte)   asm.syscall(byte)
     case cmp(regs)       asm.cmp(regs.first, regs.second)
@@ -3995,16 +3969,12 @@ fun write_bytes(asm: &Recipe, bytes: Slice[U8]) {
 fun comment(asm: &Recipe, comment: Str) { asm."  | {comment}{newline}" }
 
 fun label(asm: &Recipe, label: Str) { asm.'""{{label}}":{{newline}}"' }
+fun data_label(asm: &Recipe, label: Str, where: U64) {}
 fun disambiguated_label(asm: &Recipe, prefix: Str): Str {
   var label = "{prefix}.{asm.builder.len()}"
   asm.label(label)
   label
 }
-
-fun str(asm: &Recipe, str: Str)   { asm.'"  str "{{str}}"{{newline}}"' }
-fun byte(asm: &Recipe, byte: U8)  { asm."  byte {byte}{newline}" }
-fun word(asm: &Recipe, word: U64) { asm."  word {word}{newline}" }
-fun word(asm: &Recipe, word: Str) { asm."  word {word}{newline}" }
 
 | Instructions
 fun nop(asm: &Recipe)                    { asm."  nop{newline}" }
@@ -4047,7 +4017,8 @@ fun negate(asm: &Recipe, a: Reg)         { asm."  negate {a}{newline}" }
 
 fun recipe(mono: Mono, layouts: Map[Type, MemLayout]): Str {
   var asm = Recipe { builder = string_builder() }
-  mono.assemble(layouts, asm.&)
+  var data = vec[U8]()
+  mono.assemble(layouts, asm.&, data.&)
   "{asm.builder}"
 }
 
@@ -4128,14 +4099,14 @@ fun emit(asm: &ByteCode, label: Str) {
 
 fun to_bits(reg: Reg): U8 {
   switch reg
-  case ip 2#0000:U8
-  case sp 2#0001:U8
-  case st 2#0010:U8
-  case a  2#0011:U8
-  case b  2#0100:U8
-  case c  2#0101:U8
-  case d  2#0110:U8
-  case e  2#0111:U8
+  case sp 2#0000:U8
+  case st 2#0001:U8
+  case a  2#0010:U8
+  case b  2#0011:U8
+  case c  2#0100:U8
+  case d  2#0101:U8
+  case e  2#0110:U8
+  case f  2#0111:U8
 }
 
 fun comment(asm: &ByteCode, comment: Str) {}
@@ -4146,16 +4117,14 @@ fun label(asm: &ByteCode, label: Str) {
   asm.labels_to_pos.&.put(label, asm.bytes.len)
   asm.last_label = label
 }
+fun data_label(asm: &ByteCode, label: Str, where: U64) {
+  asm.labels_to_pos.&.put(label, where)
+}
 fun disambiguated_label(asm: &ByteCode, prefix: Str): Str {
   var label = "{prefix}.{asm.bytes.len()}"
   asm.label(label)
   label
 }
-
-fun str(asm: &ByteCode, str: Str)   { asm.emit(str.bytes()) }
-fun byte(asm: &ByteCode, byte: U8)  { asm.emit(byte) }
-fun word(asm: &ByteCode, word: U64) { asm.emit(word) }
-fun word(asm: &ByteCode, word: Str) { asm.emit(word) }
 
 | Instructions
 fun nop(asm: &ByteCode)                    { asm.emit(16#00:U8) }
@@ -4196,21 +4165,10 @@ fun negate(asm: &ByteCode, a: Reg)         { asm.emit(16#b3:U8) asm.emit(a) }
 
 fun fix_patches(asm: &ByteCode) {
   for patch in asm.patches do
-    asm.bytes.&.overwrite_U64(patch.where, asm.labels_to_pos.get(patch.label))
+    asm.bytes.&.overwrite_U64(patch.where,
+      asm.labels_to_pos.get_maybe(patch.label)
+        orelse panic("label {patch.label} is referenced, but doesn't exist"))
   asm.patches.len = 0
-}
-
-fun byte_code(mono: Mono, layouts: Map[Type, MemLayout]): Slice[U8] {
-  var byte_code = ByteCode {
-    bytes = vec[U8](),
-    last_label = "",
-    labels = vec[Str](),
-    labels_to_pos = map[Str, U64](),
-    patches = vec[Patch](),
-  }
-  mono.assemble(layouts, byte_code.&)
-  byte_code.&.fix_patches()
-  byte_code.bytes.to_slice()
 }
 
 fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Slice[U8] {
@@ -4221,7 +4179,8 @@ fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Slice[U8] {
     labels_to_pos = map[Str, U64](),
     patches = vec[Patch](),
   }
-  mono.assemble(layouts, byte_code.&)
+  var data = vec[U8]()
+  mono.assemble(layouts, byte_code.&, data.&)
   byte_code.&.fix_patches()
 
   var out = vec[U8]()
@@ -4231,6 +4190,11 @@ fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Slice[U8] {
   out.&.push(0:U8)
   out.&.push_U64(byte_code.bytes.len)
   out.&.push_all(byte_code.bytes.to_slice())
+
+  | initial memory section
+  out.&.push(1:U8)
+  out.&.push_U64(data.len)
+  out.&.push_all(data.to_slice())
 
   | labels section
   out.&.push(3:U8)
@@ -4361,10 +4325,10 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
 
   print_on_same_line("Memory layouting")
   var layouts = mono.type_defs.mem_layout_all_types()
-  if command is mono then { println(mono) return true }
 
   print_on_same_line("Monoing reflection functions")
   mono.&.compile_builtins(layouts)
+  if command is mono then { println(mono) return true }
 
   if command is recipe then {
     print_on_same_line("Assembling recipe")
@@ -4386,10 +4350,6 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
     print_on_same_line("Compiled to Soil binary ({soil.len} bytes). Enjoy!")
     return true
   }
-
-  print_on_same_line("Assembling byte code")
-  var byte_code = mono.byte_code(layouts)
-  print_on_same_line("Compiled to byte code. Enjoy!")
 
   todo()
 

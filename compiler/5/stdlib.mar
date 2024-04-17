@@ -11,6 +11,7 @@
 | Todos  
 | TODO: language features
 | TODO:   var bool = foo is some?
+| TODO:   and, or
 | TODO:   enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
 | TODO:   support getting reference to enum payload
 | TODO:   provide way to get memory layouts of types as runtime values
@@ -23,6 +24,8 @@
 | TODO:   disallow _ in type args, structs, enums, and recursive functions
 | TODO:   improve int parsing: be strict about whitespace
 | TODO:   catch circular global definitions
+| TODO: stdlib
+| TODO:   more efficient reading of files (append to end of heap)
 | TODO: tooling
 | TODO:   breakpoint
 
@@ -330,13 +333,13 @@ fun print[T](value: T) { stdout.write(value) }
 fun println() { print(newline) }
 fun println[T](value: T) { print(value) println() }
 fun write_byte(print: Print, byte: U8) asm {
-  moveib a 16 add a sp | byte.&
+  moveib a 8 add a sp | byte.&
   moveib b 1
   syscall 1 ret
 }
 fun write_bytes(print: Print, bytes: Slice[U8]) asm {
-  moveib a 16 add a sp load a a | bytes.data
-  moveib b 24 add b sp load b b | bytes.len
+  moveib a 8  add a sp load a a | bytes.data
+  moveib b 16 add b sp load b b | bytes.len
   syscall 1 ret
 }
 
@@ -346,13 +349,13 @@ fun eprint[T](value: T) { stderr.write(value) }
 fun eprintln[T](value: T) { eprint(value) eprint(newline) }
 fun log[T](value: T) { eprint(value) eprint(newline) }
 fun write_byte(log: Log, byte: U8) asm {
-  moveib a 16 add a sp | byte.&
+  moveib a 8 add a sp | byte.&
   moveib b 1
   syscall 2 ret
 }
 fun write_bytes(log: Log, bytes: Slice[U8]) asm {
-  moveib a 16 add a sp load a a | bytes.data
-  moveib b 24 add b sp load b b | bytes.len
+  moveib a 8  add a sp load a a | bytes.data
+  moveib b 16 add b sp load b b | bytes.len
   syscall 2 ret
 }
 
@@ -360,11 +363,15 @@ fun write_bytes(log: Log, bytes: Slice[U8]) asm {
 
 fun halt(): Never { loop {} }
 fun exit(status: U8): Never asm {
-  moveib a 16 add a sp loadb a a | status
+  moveib a 8 add a sp loadb a a | status
   syscall 0
-  .halt: jump .halt | shouldn't be reached, but I don't trust my VM enough
 }
-fun panic(message: Str): Never { log(message) panic() }
+fun panic(message: Str): Never asm {
+  moveib a 8  add a sp load a a | message.data
+  moveib b 16 add b sp load b b | message.len
+  syscall 2
+  panic
+}
 fun panic(): Never asm { panic }
 fun unreachable(): Never { panic("unreachable") }
 fun unreachable(reason: Str): Never { panic("unreachable: {reason}") }
@@ -398,97 +405,97 @@ opaque U64 = 8 bytes big, 8 bytes aligned
 opaque I64 = 8 bytes big, 8 bytes aligned
 
 fun +(left: U8, right: U8): U8 asm {
-  moveib a 16 add a sp loadb a a | left
-  moveib b 17 add b sp loadb b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
   add a b storeb c a ret
 }
 fun +(left: U64, right: U64): U64 asm {
-  moveib a 16 add a sp load a a | left
-  moveib b 24 add b sp load b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   add a b store c a ret
 }
 fun +(left: I64, right: I64): I64 asm {
-  moveib a 16 add a sp load a a | left
-  moveib b 24 add b sp load b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   add a b store c a ret
 }
 
 fun -(left: U8, right: U8): U8 asm {
-  moveib a 16 add a sp loadb a a | left
-  moveib b 17 add b sp loadb b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
   sub a b storeb c a ret
 }
 fun -(left: U64, right: U64): U64 asm {
-  moveib a 16 add a sp load a a | left
-  moveib b 24 add b sp load b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   sub a b store c a ret
 }
 fun -(left: I64, right: I64): I64 asm {
-  moveib a 16 add a sp load a a | left
-  moveib b 24 add b sp load b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   sub a b store c a ret
 }
 
 fun *(left: U8, right: U8): U8 asm {
-  moveib a 16 add a sp loadb a a | left
-  moveib b 17 add b sp loadb b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
   mul a b storeb c a ret
 }
 fun *(left: U64, right: U64): U64 asm {
-  moveib a 16 add a sp load a a | left
-  moveib b 24 add b sp load b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   mul a b store c a ret
 }
 fun *(left: I64, right: I64): I64 asm {
-  moveib a 16 add a sp load a a | left
-  moveib b 24 add b sp load b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   mul a b store c a ret
 }
 
 fun /(left: U8, right: U8): U8 asm {
-  moveib a 16 add a sp loadb a a | left
-  moveib b 17 add b sp loadb b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
   div a b storeb c a ret
 }
 fun /(left: U64, right: U64): U64 asm {
-  moveib a 16 add a sp load a a | left
-  moveib b 24 add b sp load b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   div a b store c a ret
 }
 fun /(left: I64, right: I64): I64 asm {
-  moveib a 16 add a sp load a a | left
-  moveib b 24 add b sp load b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   div a b store c a ret
 }
 
 fun remainder(left: U8, right: U8): U8 asm {
-  moveib a 16 add a sp loadb a a | left
-  moveib b 17 add b sp loadb b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
   rem a b storeb c a ret
 }
 fun remainder(left: U64, right: U64): U64 asm {
-  moveib a 16 add a sp load a a | left
-  moveib b 24 add b sp load b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   rem a b store c a ret
 }
 fun remainder(left: I64, right: I64): I64 asm {
-  moveib a 16 add a sp load a a | left
-  moveib b 24 add b sp load b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   rem a b store c a ret
 }
 
@@ -497,111 +504,108 @@ fun modulo(a: U8, b: U8): U8 { a.remainder(b) }
 fun modulo(a: U64, b: U64): U64 { a.remainder(b) }
 
 fun and(left: U8, right: U8): U8 asm {
-  moveib a 16 add a sp loadb a a | left
-  moveib b 17 add b sp loadb b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
   and a b storeb c b | and the numbers and store result into return value
   ret
 }
 fun and(left: U64, right: U64): U64 asm {
-  moveib a 16 add a sp load a a | left
-  moveib b 24 add b sp load b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   and a b store c b ret
 }
 
 fun or(left: U8, right: U8): U8 asm {
-  moveib a 16 add a sp loadb a a | left
-  moveib b 17 add b sp loadb b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
   or a b storeb c b ret
 }
 fun or(left: U64, right: U64): U64 asm {
-  moveib a 16 add a sp load a a | left
-  moveib b 24 add b sp load b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   or a b store c b ret
 }
 
 fun xor(left: U8, right: U8): U8 asm {
-  moveib a 16 add a sp loadb a a | left
-  moveib b 17 add b sp loadb b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
   xor a b storeb c b ret
 }
 fun xor(left: U64, right: U64): U64 asm {
-  moveib a 16 add a sp load a a | left
-  moveib b 24 add b sp load b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   xor a b store c b ret
 }
 
 fun <=>(left: U8, right: U8): Ordering asm {
-  moveib a 16 add a sp loadb a a | left
-  moveib b 17 add b sp loadb b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
   sub a b
   move st a isless cjump .less
   move st a isgreater cjump .greater
-  jump .equal
-  .less:    moveib b 0 storeb c b ret
   .equal:   moveib b 1 storeb c b ret
+  .less:    moveib b 0 storeb c b ret
   .greater: moveib b 2 storeb c b ret
 }
 fun <=>(left: U64, right: U64): Ordering asm {
   | TODO: handle very big numbers correctly
-  moveib a 16 add a sp load a a | left
-  moveib b 24 add b sp load b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   sub a b
   move st a isless cjump .less
   move st a isgreater cjump .greater
-  jump .equal
-  .less:    moveib b 0 storeb c b ret
   .equal:   moveib b 1 storeb c b ret
+  .less:    moveib b 0 storeb c b ret
   .greater: moveib b 2 storeb c b ret
 }
 fun <=>(left: I64, right: I64): Ordering asm {
-  moveib a 16 add a sp load a a | left
-  moveib b 24 add b sp load b b | right
-  moveib c 8 add c sp load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   sub a b
   move st a isless cjump .less
   move st a isgreater cjump .greater
-  jump .equal
-  .less:    moveib b 0 storeb c b ret
   .equal:   moveib b 1 storeb c b ret
+  .less:    moveib b 0 storeb c b ret
   .greater: moveib b 2 storeb c b ret
 }
 
 fun to_U64(n: U8): U64 asm {
-  moveib a 16 add a sp loadb a a | n
-  moveib b 8 add b sp load b b | return value address
+  moveib a 8 add a sp loadb a a | n
+  move b sp load b b | return value address
   store b a ret
 }
 fun to_I64(n: U8): I64 asm {
-  moveib a 16 add a sp loadb a a | n
-  moveib b 8 add b sp load b b | return value address
+  moveib a 8 add a sp loadb a a | n
+  move b sp load b b | return value address
   store b a ret
 }
 fun to_U8(n: U64): U8 asm {
-  moveib a 16 add a sp load a a | n
-  moveib b 8 add b sp load b b | return value address
+  moveib a 8 add a sp load a a | n
+  move b sp load b b | return value address
   storeb b a ret
 }
 fun to_I64(n: U64): I64 asm {
-  moveib a 16 add a sp load a a | n
-  moveib b 8 add b sp load b b | return value address
+  moveib a 8 add a sp load a a | n
+  move b sp load b b | return value address
   store b a ret
 }
 fun to_U8(n: I64): U8 asm {
-  moveib a 16 add a sp load a a | n
-  moveib b 8 add b sp load b b | return value address
+  moveib a 8 add a sp load a a | n
+  move b sp load b b | return value address
   storeb b a ret
 }
 fun to_U64(n: U64): U64 asm {
-  moveib a 16 add a sp load a a | n
-  moveib b 8 add b sp load b b | return value address
+  moveib a 8 add a sp load a a | n
+  move b sp load b b | return value address
   store b a ret
 }
 
@@ -754,13 +758,13 @@ fun hash(hasher: &Hasher, type: Type) {
 opaque Address = 8 bytes big, 8 bytes aligned
 
 fun to_address[T](ref: &T): Address asm {
-  move a sp moveib b 16 add a b load a a | load ref from sp + 16 into a
-  move b sp moveib c 8 add b c load b b | load return value address
+  moveib a 8 add a sp load a a | ref
+  move b sp load b b | return value address
   store b a ret
 }
 fun to_reference[T](address: Address): &T asm {
-  move a sp moveib b 16 add a b load a a | load address from sp + 16 into a
-  move b sp moveib c 8 add b c load b b | load return value address
+  moveib a 8 add a sp load a a | address
+  move b sp load b b | return value address
   store b a ret
 }
 
@@ -822,9 +826,17 @@ fun add_stride_offset[T](ref: &T, index: U64): &T {
 | system free all memory at once when the program ends. That simplifies things
 | for Martinaise code and generally leads to better runtime performance.
 
+var heap_head = end_of_initial_data()
+fun end_of_initial_data(): Address asm {
+  move a sp load a a | return value address
+  movei b _end_of_initial_data
+  store a b
+  ret
+}
+
 fun malloc(size: U64, alignment: U64): Address asm {
-  moveib a 16 add a sp load a a | size
-  moveib b 24 add b sp load b b | alignment
+  moveib a 8  add a sp load a a | size
+  moveib b 16 add b sp load b b | alignment
   movei c .head load c c | heap_head
   moveib d 1 cmp b d isequal cjump .align
   moveib d 2 cmp b d isequal cjump .align
@@ -834,24 +846,22 @@ fun malloc(size: U64, alignment: U64): Address asm {
   .align: moveib d 1 sub b d add c b negate b and c b
   .bump_head: move b c add b a move a c movei c .head store c b
   .check_oom: cmp b sp isgreaterequal cjump .oom
-  move b sp moveib c 8 add b c load b b | return value address
+  move b sp load b b | return value address
   store b a ret
-  .head: word _end_of_program | This will be moved with each call.
-  .bad_alignment: movei a ..str moveib b 13 syscall 2 panic
-    ..str: str "bad alignment"
-  .oom: movei a ..str moveib b 13 syscall 2 panic ..str: str "out of memory"
+  .bad_alignment: movei a "bad alignment" moveib b 13 syscall 2 panic
+  .oom: movei a "out of memory" moveib b 13 syscall 2 panic
 }
 
 struct Checkpoint { heap_head: Address }
 fun heap_checkpoint(): Checkpoint asm {
   | use malloc
-  movei b malloc.head load b b
-  move b sp moveib c 8 add b c load b b | return value address
+  movei a malloc.head load a a
+  move b sp load b b | return value address
   store b a ret
 }
 fun free_everything_after(checkpoint: Checkpoint) asm {
   | use malloc
-  move a sp moveib b 16 add a b load a a | checkpoint.heap_head
+  moveib a 8 add a sp load a a | checkpoint.heap_head
   movei b malloc.head load b b | malloc.head
   cmp b a isgreaterequal cjump .done move b a .done: ret
 }
@@ -866,9 +876,9 @@ fun put_on_heap[T](value: T): &T {
 }
 
 fun memcopy(from: Address, to: Address, amount: U64) asm {
-  moveib a 16 add a sp load a a | from
-  moveib b 24 add b sp load b b | to
-  moveib c 32 add c sp load c c | amount
+  moveib a 8  add a sp load a a | from
+  moveib b 16 add b sp load b b | to
+  moveib c 24 add c sp load c c | amount
   moveib e 1
   cmp a b isless cjump .right_to_left
   .left_to_right: ..loop:
@@ -1454,40 +1464,40 @@ fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
 opaque File = 8 bytes big, 8 bytes aligned
 
 fun create_file(filename: Str, mode: U64): Result[File, Nothing] asm {
-  moveib a 16 add a sp load a a | filename.data
-  moveib b 24 add b sp load b b | filename.len
-  moveib c 32 add c sp load c c | mode
+  moveib a 8  add a sp load a a | filename.data
+  moveib b 16 add b sp load b b | filename.len
+  moveib c 24 add c sp load c c | mode
   syscall 3
-  moveib b 8 add b sp load b b | return value address
+  move b sp load b b | return value address
   move st a isequal cjump .ret_error
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
 }
 fun open_file_for_reading(filename: Str): Result[File, Nothing] asm {
-  moveib a 16 add a sp load a a | filename.data
-  moveib b 24 add b sp load b b | filename.len
+  moveib a 8  add a sp load a a | filename.data
+  moveib b 16 add b sp load b b | filename.len
   syscall 4
-  moveib b 8 add b sp load b b | return value address
+  move b sp load b b | return value address
   move st a isequal cjump .ret_error
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
 }
 fun open_file_for_writing(filename: Str): Result[File, Nothing] asm {
-  moveib a 16 add a sp load a a | filename.data
-  moveib b 24 add b sp load b b | filename.len
+  moveib a 8  add a sp load a a | filename.data
+  moveib b 16 add b sp load b b | filename.len
   syscall 5
-  moveib b 8 add b sp load b b | return value address
+  move b sp load b b | return value address
   move st a isequal cjump .ret_error
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
 }
 
 fun read(file: File, buffer: Slice[U8]): Result[U64, Nothing] asm {
-  moveib a 16 add a sp load a a | file
-  moveib b 24 add b sp load b b | buffer.data
-  moveib c 32 add c sp load c c | buffer.len
+  moveib a 8  add a sp load a a | file
+  moveib b 16 add b sp load b b | buffer.data
+  moveib c 24 add c sp load c c | buffer.len
   syscall 6
-  moveib b 8 add b sp load b b | return value address
+  move b sp load b b | return value address
   move st a isless cjump .ret_error
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
@@ -1503,11 +1513,11 @@ fun read_byte(file: File): Result[Maybe[U8], Nothing] {
 fun write_bytes_safely(
   file: File, buffer: Slice[U8],
 ): Result[Nothing, Nothing] asm {
-  moveib a 16 add a sp load a a | file
-  moveib b 24 add b sp load b b | buffer.data
-  moveib c 32 add c sp load c c | buffer.len
+  moveib a 8  add a sp load a a | file
+  moveib b 16 add b sp load b b | buffer.data
+  moveib c 24 add c sp load c c | buffer.len
   syscall 7
-  moveib b 8 add b sp load b b | return value address
+  move b sp load b b | return value address
   move st a cjump .ret_ok
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
@@ -1523,7 +1533,7 @@ fun write_byte(file: File, byte: U8) {
 }
 
 fun close(file: File) asm {
-  moveib a 16 add a sp load a a | file
+  moveib a 8 add a sp load a a | file
   syscall 8 ret
 }
 
