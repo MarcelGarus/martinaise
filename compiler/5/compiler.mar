@@ -67,35 +67,6 @@ fun print_on_same_line(message: Str) {
   eprintln(message)
 }
 
-| Numbers  
-| Here are some basic concepts needed for representing numbers.
-
-enum Signedness { signed, unsigned }
-struct IntConfig { signedness: Signedness, bits: U64 }
-struct Int { value: U64, config: IntConfig } | int literals can't be negative
-
-fun ==(a: Signedness, b: Signedness): Bool {
-  switch a
-  case signed { switch b case signed true case unsigned false }
-  case unsigned { switch b case signed false case unsigned true }
-}
-fun ==(a: IntConfig, b: IntConfig): Bool {
-  {a.signedness == b.signedness} & {a.bits == b.bits}
-}
-fun ==(a: Int, b: Int): Bool { {a.config == b.config} & {a.value == b.value} }
-
-fun write[W](writer: W, signedness: Signedness) {
-  writer.write(switch signedness case signed #I case unsigned #U)
-}
-fun write[W](writer: W, config: IntConfig) {
-  writer."{config.signedness}{config.bits}"
-}
-fun write[W](writer: W, int: Int) {
-  writer."{int.value}#{int.config}"
-}
-
-fun to_type(config: IntConfig): Type { type("{config}") }
-
 | The Abstract Syntax Tree  
 | The compiler input is parsed into an abstract syntax tree. This tree is a
 | representation of the program that roughly corresponds to the structure of the
@@ -138,7 +109,7 @@ struct AstFun {
 struct AstFunArg { name: Str, type: Type }
 enum AstFunKind { builtin, body: Vec[AstExpr], asm_: Vec[Instruction] }
 enum AstExpr {
-  int: Int,                   | 0_U32
+  int: U64,                   | 42
   str: Str,                   | "foo"
   name: Str,                  | foo
   call: AstCall,              | ...(arg)
@@ -727,20 +698,7 @@ fun parse_int(parser: &Parser): Result[Maybe[AstExpr], Str] {
     value = parser.parse_digits(radix)? orelse return bad_input[AstExpr](
       "Expected the value of the number after the radix pound.")
   }
-  if parser.current() != #: then return parsed(AstExpr.int(Int {
-    value,
-    config = IntConfig { signedness = Signedness.unsigned, bits = 64 },
-  }))
-  parser.advance()
-  var signedness =
-    if parser.current() == #I then Signedness.signed
-    else if parser.current() == #U then Signedness.unsigned
-    else return bad_input[AstExpr]("Expected a signedness (U or I).")
-  parser.advance()
-  var bits = parser.parse_digits(10)?
-    orelse return bad_input[AstExpr]("Expected bit length of the integer.")
-  | TODO: check that number fits in range
-  parsed(AstExpr.int(Int { value, config = IntConfig { signedness, bits } }))
+  parsed(AstExpr.int(value))
 }
 
 | #a becomes Char { byte = 97:U8 }
@@ -752,10 +710,7 @@ fun parse_char(parser: &Parser): Result[Maybe[AstExpr], Str] {
     type = type("Char"),
     fields = vec(AstMakeStructField {
       name = "byte",
-      value = AstExpr.int(Int {
-        value = char.byte.to_U64(),
-        config = IntConfig { signedness = Signedness.unsigned, bits = 8 }
-      }),
+      value = AstExpr.int(char.byte.to_U64()).member("lower_byte").call(),
     })
   }))
 }
@@ -2578,8 +2533,7 @@ fun compile_in_current_scope(
 
   ok[MonoExpr,Str](
     switch expr
-    case int(int) self.slots.&
-      .push(int.config.to_type(), MonoSlotValue.int(int.value))
+    case int(int) self.slots.&.push(type("Int"), MonoSlotValue.int(int))
       .expr(self)
     case str(str) {
       type("Str").compile(map[Str, Type](), ast, mono)?
@@ -3467,20 +3421,20 @@ fun compile_builtin(
 
   if name.starts_with("size_of") then MonoFunBody {
     slots = vec(MonoSlot {
-      type = type("U64"),
+      type = type("Int"),
       initial_value = MonoSlotValue.int(layouts.get(type).size),
     }),
     statements = vec(MonoStatement.return_(
-      MonoSlotRef { index = 0 }.expr(type("U64"))
+      MonoSlotRef { index = 0 }.expr(type("Int"))
     )),
   }
   else if name.starts_with("alignment_of") then MonoFunBody {
     slots = vec(MonoSlot {
-      type = type("U64"),
+      type = type("Int"),
       initial_value = MonoSlotValue.int(layouts.get(type).alignment),
     }),
     statements = vec(MonoStatement.return_(
-      MonoSlotRef { index = 0 }.expr(type("U64"))
+      MonoSlotRef { index = 0 }.expr(type("Int"))
     )),
   }
   else if name.starts_with("type") then {
