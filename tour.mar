@@ -8,56 +8,60 @@
 | a comment line ends with two spaces, it's highlighted as a heading in the IDE.
 
 | Functions  
-| Create functions using the fun keyword.
-| You can overload functions (have functions with the same name as long as the
-| types of their arguments are different).
-| Writing a.foo(b) is an alternative way of writing foo(a, b).
+| The fun keyword is used to create functions. For a function call, the correct
+| function is chosen based on the name and the types of arguments. Writing
+| a.foo(b) is an alternative way of writing foo(a, b).
 
-fun function(integer: U64) { println("Integer is {integer}") }
-fun function(string: Str) { println("String is {string}") }
-
-fun functions() {
-  function(3)     | calls function(U64)
-  function("Hi")  | calls function(Str)
-  4.function()    | calls function(U64)
+fun print_title(header: Str) {
+  println()
+  println("# {header}")
 }
 
-| Variables, If, Loop  
+fun size(integer: Int): Int { integer }
+fun size(string: Str): Int { string.len }
+
+fun functions() {
+  print_title("Functions")
+
+  println(size(3))
+  println(size("Hi"))
+  42.size().println()
+}
+
+| Variables  
 | You can declare variables using the var keyword. Variables can be shadowed by
 | other variables (by declaring a new variable using the same name, the old one
 | becomes inaccessible).
 
 fun variables() {
+  print_title("Variables")
+
   var a = 3
   a = 4
-  | a = true    | This won't work – you can't assign a Bool to a U64.
+  | a = true  | This won't work – you can't assign a Bool to a Int.
+  println(a)
+
   var a = true  | This works. It's a completely new variable with the same name.
+  {
+    var a = 4 | Declares a in the local scope.
+  }
+  println(a)
 }
 
 | Structs and Enums  
 | Structs contain each of their fields. Enums only contain one variant.
 
-struct SomeStruct { a: Bool, b: Bool }  | contains a AND b
-enum SomeEnum     { a: Bool, b: Bool }  | contains a OR b
+struct Fruit { name: Str, color: Color }
+enum Color { red, green, other: Str }
+
+| Constants
+var banana = Fruit { name = "banana", color = Color.other("yellow") }
+var watermelon = Fruit { name = "watermelon", color = Color.green }
 
 fun structs_and_enums() {
-  var bar = SomeStruct { a = true, b = false }
-  var baz = SomeEnum.a(true)
+  print_title("Structs and enums")
 
-  var a = bar.a  | field access on the struct
-}
-
-| Generics  
-| Functions, structs and enums can be generic by using brackets.
-
-fun dump(bool: Bool)  { println("bool {bool}") }
-fun dump(string: Str) { println(string) }
-
-fun generic[T](argument: T) { argument.dump() }
-
-fun generics() {
-  "Hi".generic()  | writes "Hi"
-  true.generic()  | writes "bool true"
+  println(watermelon.name)
 }
 
 | If, Switch, Orelse, For, Loop, Break, Continue  
@@ -66,44 +70,96 @@ fun generics() {
 | expressions together. Bodies evaluate to their last inner expression.
 
 fun control_flow() {
-  if true then println("This will be printed.")
-  if 3 < 1 then println("This won't.")
+  print_title("Control flow")
 
-  var number =
-    switch vec(1, 2, 3).get_maybe(2)
-    case some(item) item
-    case none 0
-  
-  | This is equivalent to this:
-  var number = vec(1, 2, 3).get_maybe(2) orelse 0
+  if true then println("This will be printed.")
+
+  | An if is an expression:
+  println(if 3 < 1 then "This won't." else "But this will.")
+
+  | You can switch over enums:
+  var color_string =
+    switch banana.color
+    case red "red"
+    case green "green"
+    case other(color) color
+  println("The {banana.name} is {color_string}.")
+
+  | The standard library uses the Maybe[T] enum for optional types.
+  switch vec(1, 2, 3).get_maybe(2)
+  case some(item) println(item)
+  case none println("index out of bounds")
+
+  var number = vec(1, 2, 3).get_maybe(2) or 0
+
+  println(true or panic("not evaluated"))
+  println(false and panic("not evaluated"))
+  println(false or true and true)
 
   for i in 0..5 do println("i = {i}")
 
   var a = 5
   loop if a == 0 then break else {
-    println("{a}")
+    println(a)
     a = a.dec()
   }
 }
 
-| Customizing orelse  
-| You can make your own types compatible with the orelse keyword. Just implement
-| a to_orelse function.
+| Generics  
+| Functions, structs and enums can be generic by using brackets. Generics are
+| only checked when they are used with concrete types, aka they use duck-typing.
 
-struct Foo { a: U64 }
+enum Package[T] { filled: T, empty }
 
-fun to_orelse(foo: Foo): Orelse[Bool, U64] {
-  if foo.a < 5
-  then Orelse[Bool, U64].primary(foo.a > 0)
-  else Orelse[Bool, U64].secondary(foo.a)
+fun write[W](writer: W, fruit: Fruit) {
+  writer.write(fruit.name)
+}
+fun write[W, T](writer: W, package: Package[T]) {
+  switch package
+  case filled(content) writer."[{content}]"
+  case empty writer."[   ]"
 }
 
-fun custom_orelse() {
-  var fancy = Foo { a = 3 } orelse panic("too big")
-  var fancy = Foo { a = 10 } orelse(n) n > 100
+fun generics() {
+  print_title("Generics")
+
+  println(Package.filled(100))
 }
 
-| Custom operators  
+| Custom Logic  
+| You can make your own types compatible with the "and" and "or" keywords. Just
+| implement "and" and "or" functions.
+
+fun or[T](package: Package[T]): ControlFlow[T] {
+  switch package
+  case filled(content) ControlFlow[T].short_circuit(content)
+  case empty           ControlFlow[T].evaluate_alternative
+}
+
+fun custom_logic() {
+  print_title("Custom logic")
+
+  var banana = Package.filled(banana) or panic("empty")
+  var melon = Package[Fruit].empty or watermelon
+}
+
+| References  
+| Arguments to functions are copied. Use .& to get a reference.
+
+fun call_by_value(a: Int) { a   = a   + 5 }
+fun call_by_ref(a: &Int)  { a.* = a.* + 5 }
+
+fun references() {
+  print_title("References")
+
+  var a = 0
+  call_by_value(a)
+  println(a)
+  call_by_ref(a.&)
+  println(a)
+}
+
+| Operators  
 | You already saw operators such as in 2 < 3 or 0..5.
 | Operators are functions that accept two arguments and where the name matches
 | the following criteria:
@@ -113,14 +169,25 @@ fun custom_orelse() {
 | - it doesn't start with .*
 | - it doesn't start with .&
 
-fun ===(a: Bool, b: U64): Bool { false }
-
-fun %!~@^\`/&*+$-<>=.(a: U64, b: U64): U64 { 42 }
-
-fun use_operators() {
-  if true === 4 then panic("weird triple equal succeeded")
-  var a = 4 %!~@^\`/&*+$-<>=. 3
+fun --->[T](a: &Package[T], b: &Package[T]) {
+  b.* = a.*
+  a.* = Package[T].empty
 }
+
+fun operators() {
+  print_title("Operators")
+
+  var a = Package.filled(banana)
+  var b = Package[Fruit].empty
+
+  println("a = {a}, b = {b}")
+  a.& ---> b.&
+  println("a = {a}, b = {b}")
+
+  println(4 %!~@^\`/&*+$-<>=. 3)
+}
+
+fun %!~@^\`/&*+$-<>=.(a: Int, b: Int): Int { 42 }
 
 | Assembly  
 | You can define functions in Soil assembly. You can also define opaque types,
@@ -131,18 +198,19 @@ fun use_operators() {
 opaque MyInt = 8 bytes big, 8 bytes aligned
 
 fun create_one(): MyInt asm {
-  move a sp moveib b 8 add a b load a a | return value address
+  move a sp load a a | return value address
   moveib b 1 store a b ret
 }
 
 fun +(left: MyInt, right: MyInt): MyInt asm {
-  move a sp moveib b 16 add a b load a a | left
-  move b sp moveib c 24 add b c load b b | right
-  move c sp moveib d 8 add c d load c c | return value address
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  move c sp load c c | return value address
   add a b store c a ret
 }
 
-fun use_custom_asm_fun() {
+fun custom_asm_fun() {
+  print_title("Custom asm fun")
   var two = create_one() + create_one()
 }
 
@@ -154,9 +222,10 @@ fun main(args: Slice[Str]): Never {
   structs_and_enums()
   generics()
   control_flow()
-  custom_orelse()
-  use_operators()
-  use_custom_asm_fun()
+  custom_logic()
+  references()
+  operators()
+  custom_asm_fun()
 
-  exit(0:U8)
+  exit(0)
 }
