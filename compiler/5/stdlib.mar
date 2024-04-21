@@ -128,9 +128,9 @@ enum Maybe[T] { some: T, none }
 fun some[T](value: T): Maybe[T] { Maybe.some(value) }
 fun none[T](): Maybe[T] { Maybe[T].none }
 
-fun unwrap[T](maybe: Maybe[T], message: Str): T { maybe orelse panic(message) }
+fun unwrap[T](maybe: Maybe[T], message: Str): T { maybe or panic(message) }
 fun unwrap[T](maybe: Maybe[T]): T { maybe.unwrap("called none.unwrap") }
-fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { maybe orelse none[T]() }
+fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { maybe or none[T]() }
 fun is_some[T](maybe: Maybe[T]): Bool { if maybe is some then true else false }
 fun is_none[T](maybe: Maybe[T]): Bool { if maybe is none then true else false }
 
@@ -183,42 +183,49 @@ fun hash[O, E](hasher: &Hasher, result: Result[O, E]) {
   case error(e) { hasher.hash(#e) hasher.hash(e) }
 }
 
-| Orelse  
-| Martinaise has an orelse keyword, which you can write after a Maybe[T] or
-| "something similar" to get underlying value if everything is okay, and to run
-| an alternative expression if it's not. For example, you can write the
-| following code:
+| And and Or  
+| Martinaise has "and" and "or" keywords, which allow short-circuiting.
 |
-| some(2) orelse 3      | this is 2
-| none[Int]() orelse 3  | this is 3
+| Here are cases where the control flow short-circuits and the alternatives
+| don't get evaluated:
 |
-| vec.is_empty() orelse panic("expected list to be empty")
-| var int = result_of_int orelse(error) error.len
+| false and panic() | this is false
+| true or panic()   | this is true
+| some(2) or 3      | this is 2
+| 
+| In these cases, the control flow doesn't short-circuit and the alternatives
+| are evaluated as well:
 |
-| About that "something similar to Maybe": Internally, the orelse keyword calls
-| a to_orelse() function on the expression on the left. This should return an
-| Orelse[P, S]. If it's a primary P, that P is just the result of the orelse.
-| If it's a secondary S, alternative expression on the right of the orelse is
-| evaluated.
+| false or foo      | this is foo
+| true and stuff    | this is stuff
+| none[Int]() or 3  | this is 3
 |
-| You might wonder if this keyword is stolen from Zig. Yes, it is.
+| The "and" and "or" keywords turn into a call of left.and() or left.or(), which
+| returns a ControlFlow. This logic flow determines whether the expression
+| short-circuits or not.
 
-enum Orelse[P, S] { primary: P, secondary: S }
+enum ControlFlow[T] { short_circuit: T, evaluate_alternative }
 
-fun to_orelse(bool: Bool): Orelse[Nothing, Nothing] {
+fun and(bool: Bool): ControlFlow[Bool] {
   if bool
-  then Orelse[Nothing, Nothing].primary({})
-  else Orelse[Nothing, Nothing].secondary({})
+  then ControlFlow[Bool].evaluate_alternative
+  else ControlFlow[Bool].short_circuit(true)
 }
-fun to_orelse[T](maybe: Maybe[T]): Orelse[T, Nothing] {
+
+fun or(bool: Bool): ControlFlow[Bool] {
+  if bool
+  then ControlFlow[Bool].short_circuit(true)
+  else ControlFlow[Bool].evaluate_alternative
+}
+fun or[T](maybe: Maybe[T]): ControlFlow[T] {
   if maybe is some(t)
-  then Orelse[T, Nothing].primary(t)
-  else Orelse[T, Nothing].secondary({})
+  then ControlFlow[T].short_circuit(t)
+  else ControlFlow[T].evaluate_alternative
 }
-fun to_orelse[O, E](result: Result[O, E]): Orelse[O, E] {
+fun or[O, E](result: Result[O, E]): ControlFlow[O] {
   switch result
-  case ok(o) Orelse[O, E].primary(o)
-  case error(e) Orelse[O, E].secondary(e)
+  case ok(o) ControlFlow[O].short_circuit(o)
+  case error ControlFlow[O].evaluate_alternative
 }
 
 | Assembly  
@@ -378,7 +385,9 @@ fun unreachable(): Never { panic("unreachable") }
 fun unreachable(reason: Str): Never { panic("unreachable: {reason}") }
 fun todo(): Never { panic("todo") }
 fun assert(condition: Bool) { assert(condition, "assert failed") }
-fun assert(condition: Bool, message: Str) { condition orelse panic(message) }
+fun assert(condition: Bool, message: Str) {
+  if not(condition) then panic(message)
+}
 
 | Int  
 | If you write a number such as 3 in the code, it's an Int.
@@ -644,10 +653,10 @@ fun write[W, T](writer: W, type_args: TypeArgsFormat[T]) {
 }
 
 fun ==(a: Type, b: Type): Bool {
-  a.name == b.name orelse return false
-  a.args.len == b.args.len orelse return false
+  a.name == b.name or return false
+  a.args.len == b.args.len or return false
   for zip in zip(a.args.iter(), b.args.iter()) do
-    zip.a == zip.b orelse return false
+    zip.a == zip.b or return false
   true
 }
 fun hash(hasher: &Hasher, type: Type) {
@@ -700,10 +709,10 @@ var null = 0.to_address() | Million dollar mistake?
 fun ==(a: Address, b: Address): Bool { a.to_int() == b.to_int() }
 fun +(a: Address, offset: Int): Address { {a.to_int() + offset}.to_address() }
 
-fun to_orelse(address: Address): Orelse[Address, Nothing] {
+fun or(address: Address): ControlFlow[Address] {
   if address == null
-  then Orelse[Address, Nothing].secondary({})
-  else Orelse[Address, Nothing].primary(address)
+  then ControlFlow[Address].evaluate_alternative
+  else ControlFlow[Address].short_circuit(address)
 }
 
 fun write[W](writer: W, address: Address) {
@@ -870,8 +879,7 @@ fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
   }
 }
 fun ==[T](a: Slice[T], b: Slice[T]): Bool {
-  a.len == b.len orelse return false
-  | TODO: support types that only have ==, not <=>
+  a.len == b.len or return false
   if a <=> b is equal then true else false
 }
 fun hash[T](hasher: &Hasher, slice: Slice[T]) { hasher.hash_all(slice) }
@@ -952,11 +960,11 @@ fun without_last[T](slice: Slice[T], amount: Int): Slice[T] {
   slice.subslice(0..{slice.len - amount})
 }
 fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
-  slice.len >= prefix.len orelse return false
+  prefix.len <= slice.len or return false
   slice.first(prefix.len) == prefix
 }
 fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
-  slice.len >= suffix.len orelse return false
+  suffix.len <= slice.len or return false
   slice.last(suffix.len) == suffix
 }
 fun trim_prefix[T](slice: &Slice[T], prefix: Slice[T]): Bool {
@@ -1046,7 +1054,7 @@ fun to_str(builder: StringBuilder): Str { builder.chars.to_slice().to_str() }
 fun is_empty(str: Str): Bool { str.len == 0 }
 fun get(str: Str, index: Int): Char { str.get_ref(index).* }
 fun get_ref(str: Str, index: Int): &Char {
-  {0..str.len}.contains(index) orelse panic("index out of bounds")
+  {0..str.len}.contains(index) or panic("index out of bounds")
   str.chars().get_ref(index)
 }
 
@@ -1062,7 +1070,7 @@ fun <=>(a: Str, b: Str): Ordering {
   }
 }
 fun ==(a: Str, b: Str): Bool {
-  a.len == b.len orelse return false
+  a.len == b.len or return false
   if a <=> b is equal then true else false
 }
 fun hash(hasher: &Hasher, str: Str) { hasher.hash(str.chars()) }
@@ -1082,7 +1090,7 @@ fun next(iter: &Iter[Char, StrIter]): Maybe[Char] {
 }
 
 fun substr(str: Str, from: Int, to: Int): Str {
-  to <= str.len orelse panic("substr needs to be inside original str")
+  to <= str.len or panic("substr needs to be inside original str")
   str.chars().subslice(from..to).to_str()
 }
 fun first(str: Str): Char {
@@ -1354,7 +1362,7 @@ fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
 | fun lines(slice: Str): Slice[Str] { slice.split("
 | ") }
 | fun trim_prefix(str: &Str, prefix: Str) {
-|   str.starts_with(prefix) orelse panic("str doesn't start with prefix")
+|   str.starts_with(prefix) or panic("str doesn't start with prefix")
 |   str.* = str.substr(prefix.len)
 | }
 
@@ -1425,10 +1433,10 @@ fun write_byte_safely(file: File, byte: Byte): Result[Nothing, Nothing] {
   file.write_bytes_safely(Slice { data = byte.&, len = 1 })
 }
 fun write_bytes(file: File, buffer: Slice[Byte]) {
-  file.write_bytes_safely(buffer) orelse panic("couldn't write byte")
+  file.write_bytes_safely(buffer) or panic("couldn't write byte")
 }
 fun write_byte(file: File, byte: Byte) {
-  file.write_byte_safely(byte) orelse panic("couldn't write byte")
+  file.write_byte_safely(byte) or panic("couldn't write byte")
 }
 
 fun close(file: File) asm {
@@ -1439,7 +1447,7 @@ fun close(file: File) asm {
 fun read_file(name: Str): Result[Slice[Byte], Nothing] {
   var file = open_file_for_reading(name)?
   var content = vec[Byte]()
-  loop content.&.push(file.read_byte()? orelse break)
+  loop content.&.push(file.read_byte()? or break)
   file.close()
   ok[Slice[Byte], Nothing](content.to_slice())
 }
@@ -1725,8 +1733,8 @@ fun to_slices[T](deque: Deque[T]): Tuple2[Slice[T], Slice[T]] {
   )
 }
 fun ==[T](a: Deque[T], b: Deque[T]): Bool {
-  a.len() == b.len() orelse return false
-  for i in 0..a.len() do a.get(i) == b.get(i) orelse return false
+  a.len() == b.len() or return false
+  for i in 0..a.len() do a.get(i) == b.get(i) or return false
   true
 }
 

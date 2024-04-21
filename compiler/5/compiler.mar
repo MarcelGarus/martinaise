@@ -621,16 +621,28 @@ fun parse_type_params(parser: &Parser): Result[Maybe[Vec[Str]], Str] {
 | Expressions are parsed in two parts: parse_expr_without_suffix can parse
 | atomic expressions such as 4 or "hey". parse_expr_suffix can parse expressions
 | that are written behind other expressions and wrap them, for example
-| `foo orelse bar` being parsed into an orelse of foo and bar.
+| `foo or bar` being parsed into an or of foo and bar.
 fun parse_expr(parser: &Parser): Result[Maybe[AstExpr], Str] {
-  parser.parse_expr(true)
+  parser.parse_expr(Precedence.assign)
 }
+
+enum Precedence { immediate, operator, and, or, assign }
+fun to_U64(precedence: Precedence): U64 {
+  switch precedence
+  case immediate 0
+  case operator 1
+  case and 2
+  case or 3
+  case assign 4
+}
+fun <=>(a: Precedence, b: Precedence): Ordering { a.to_U64() <=> b.to_U64() }
+
 fun parse_expr(
-  parser: &Parser, operator_allowed: Bool,
+  parser: &Parser, precedence: Precedence,
 ): Result[Maybe[AstExpr], Str] {
   var expr = parser.parse_expr_without_suffix()?
     orelse return no_match[AstExpr]()
-  loop expr = parser.parse_expr_suffix(expr, operator_allowed)? orelse break
+  loop expr = parser.parse_expr_suffix(expr, precedence)? orelse break
   parsed(expr)
 }
 fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Str] {
@@ -652,13 +664,16 @@ fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Str] {
   no_match[AstExpr]()
 }
 fun parse_expr_suffix(
-  parser: &Parser, expr: AstExpr, operator_allowed: Bool,
+  parser: &Parser, expr: AstExpr, precedence: Precedence,
 ): Result[Maybe[AstExpr], Str] {
-  if operator_allowed then {
+  if precedence >= Precedence.or then
+    if parser.parse_expr_suffix_or(expr)? is some(o) then return parsed(o)
+  if precedence >= Precedence.and then
+    if parser.parse_expr_suffix_and(expr)? is some(o) then return parsed(o)
+  if precedence >= Precedence.operator then
     if parser.parse_expr_suffix_operator(expr)? is some(o) then return parsed(o)
-    if parser.parse_expr_suffix_orelse(expr)? is some(o) then return parsed(o)
+  if precedence is assign then
     if parser.parse_expr_suffix_assign(expr)? is some(a) then return parsed(a)
-  }
   if parser.parse_expr_suffix_member(expr)? is some(mem) then return parsed(mem)
   if parser.parse_expr_suffix_call(expr)? is some(call) then return parsed(call)
   if parser.parse_expr_suffix_try(expr)? is some(try_) then return parsed(try_)
@@ -1061,8 +1076,9 @@ fun parse_expr_suffix_operator(
   parser: &Parser, current: AstExpr,
 ): Result[Maybe[AstExpr], Str] {
   var operator = parser.parse_operator_name() orelse return no_match[AstExpr]()
-  var value = parser.parse_expr(false)? orelse return bad_input[AstExpr](
-    "Expected an expression on the right side of the operator.")
+  var value = parser.parse_expr(Precedence.immediate)?
+    orelse return bad_input[AstExpr](
+      "Expected an expression on the right side of the operator.")
   parsed(AstExpr.name(operator).call(none[Vec[Type]](), vec(current, value)))
 }
 
@@ -1078,31 +1094,47 @@ fun parse_expr_suffix_assign(
   }))
 }
 
-fun parse_expr_suffix_orelse(
+fun parse_expr_suffix_and(
   parser: &Parser, current: AstExpr,
 ): Result[Maybe[AstExpr], Str] {
-  parser.consume_keyword("orelse") orelse return no_match[AstExpr]()
-  var binding =
-    if parser.consume_prefix("(") then {
-      var name = parser.parse_lower_name()
-        orelse return bad_input[AstExpr]("Expected orelse binding.")
-      parser.consume_prefix(")")
-        orelse return bad_input[AstExpr]("Expected closing parenthesis.")
-      some(name)
-    } else none[Str]()
-  var alternative = parser.parse_expr()? orelse return bad_input[AstExpr](
-    "Expected alternative expression after orelse.")
+  parser.consume_keyword("and") orelse return no_match[AstExpr]()
+  var alternative = parser.parse_expr(Precedence.and)?
+    orelse return bad_input[AstExpr]("Expected alternative after and.")
   parsed(AstExpr.switch_(AstSwitch {
-    value = current.member("to_orelse").call().put_on_heap(),
+    value = current.member("and").call().put_on_heap(),
     cases = vec(
       AstCase {
-        variant = "primary",
+        variant = "short_circuit",
         binding = some("$primary"),
         then_ = AstExpr.name("$primary").put_on_heap(),
       },
       AstCase {
-        variant = "secondary",
-        binding,
+        variant = "evaluate_alternative",
+        binding = none[Str](),
+        then_ = alternative.put_on_heap(),
+      },
+    ),
+    default_ = none[&AstExpr](),
+  }))
+}
+
+fun parse_expr_suffix_or(
+  parser: &Parser, current: AstExpr,
+): Result[Maybe[AstExpr], Str] {
+  parser.consume_keyword("or") orelse return no_match[AstExpr]()
+  var alternative = parser.parse_expr(Precedence.or)?
+    orelse return bad_input[AstExpr]("Expected alternative after or.")
+  parsed(AstExpr.switch_(AstSwitch {
+    value = current.member("or").call().put_on_heap(),
+    cases = vec(
+      AstCase {
+        variant = "short_circuit",
+        binding = some("$primary"),
+        then_ = AstExpr.name("$primary").put_on_heap(),
+      },
+      AstCase {
+        variant = "evaluate_alternative",
+        binding = none[Str](),
         then_ = alternative.put_on_heap(),
       },
     ),
