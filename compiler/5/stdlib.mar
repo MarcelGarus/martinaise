@@ -209,7 +209,7 @@ enum ControlFlow[T] { short_circuit: T, evaluate_alternative }
 fun and(bool: Bool): ControlFlow[Bool] {
   if bool
   then ControlFlow[Bool].evaluate_alternative
-  else ControlFlow[Bool].short_circuit(true)
+  else ControlFlow[Bool].short_circuit(false)
 }
 
 fun or(bool: Bool): ControlFlow[Bool] {
