@@ -68,11 +68,11 @@ fun print_on_same_line(message: Str) {
 }
 
 | The Abstract Syntax Tree  
-| The compiler input is parsed into an abstract syntax tree. This tree is a
+| An input file is parsed into an abstract syntax tree. This tree is a
 | representation of the program that roughly corresponds to the structure of the
 | source code.
 
-struct Ast { defs: Vec[AstDef] }
+struct FileAst { imports: Vec[Str], defs: Vec[AstDef] }
 enum AstDef {
   opaque_: AstOpaqueType,
   struct_: AstStruct,
@@ -205,8 +205,9 @@ fun var_(name: Str, value: AstExpr): AstExpr {
   AstExpr.var_(AstVar { name, value = value.put_on_heap() })
 }
 
-fun write[W](writer: W, program: Ast) {
-  for def in program.defs do writer."{def}{newline}"
+fun write[W](writer: W, ast: FileAst) {
+  for import in imports do writer."import {import}{newline}"
+  for def in ast.defs do writer."{def}{newline}"
 }
 fun write[W](writer: W, def: AstDef) {
   switch def
@@ -1389,48 +1390,39 @@ fun parse_def(parser: &Parser): Result[Maybe[AstDef], Str] {
   if parser.parse_fun()? is some(fun_) then return parsed(AstDef.fun_(fun_))
   no_match[AstDef]()
 }
-
 fun parse_defs(parser: &Parser): Result[Vec[AstDef], Str] {
   var defs = vec[AstDef]()
-  loop switch parser.parse_def()? case some(d) defs.&.push(d) case none break
-  if parser.cursor < parser.code.len
-  then return error[Vec[AstDef], Str]("Expected a definition.")
+  loop defs.&.push(parser.parse_def()? orelse break)
+  if parser.cursor < parser.code.len then
+    return error[Vec[AstDef], Str]("Expected a definition.")
   ok[Vec[AstDef], Str](defs)
 }
 
-fun parse(code: Str, stdlib_size: U64): Result[Ast, Str] {
-  var parser = Parser { code, cursor = 0 }
-  | TODO: Replace switch with catch/orelse
-  switch parser.&.parse_defs()
-  case error(error) {
-    if parser.cursor <= stdlib_size
-    then error[Ast, Str](format_error_with_context(
-      parser.code, parser.cursor, error))
-    else error[Ast, Str](format_error_with_context(
-      parser.code.without_first(stdlib_size),
-      parser.cursor - stdlib_size,
-      error
-    ))
-  }
-  case ok(defs) {
-    | Reference types such as &T are type-checked just like any other types. For
-    | this to work, automatically we create a struct here.
-    | struct &[T] { *: T }
-    defs.&.push(AstDef.struct_(AstStruct {
-      name = "&",
-      type_args = vec("T"),
-      fields = vec(AstStructField { name = "*", type = type("T") })
-    }))
-
-    ok[Ast, Str](Ast { defs })
-  }
+fun parse_import(parser: &Parser): Result[Maybe[Str], Str] {
+  parser.consume_keyword("import") orelse return no_match[Str]()
+  var imported = parser.parse_lower_name()
+    orelse return bad_input[Str]("Expected an import (a lowercase name).")
+  parsed(imported)
 }
-fun push_builtin_fun(
-  defs: &Vec[AstDef], name: Str, args: Vec[AstFunArg], returns: Type
-) {
-  defs.push(AstDef.fun_(AstFun {
-    name, type_args = vec[Str](), args, returns, kind = AstFunKind.builtin
-  }))
+fun parse_imports(parser: &Parser): Result[Vec[Str], Str] {
+  var imports = vec[Str]()
+  loop imports.&.push(parser.parse_import()? orelse break)
+  ok[Vec[Str], Str](imports)
+}
+
+fun parse_single_file(input: Str, name: Str): Result[FileAst, Str] {
+  var parser = Parser { code = input, cursor = 0 }
+  var imports =
+    switch parser.&.parse_imports()
+    case ok(imports) imports
+    case error(error) return error[FileAst, Str](format_error_with_context(
+      parser.code, parser.cursor, error))
+  var defs =
+    switch parser.&.parse_defs()
+    case ok(defs) defs
+    case error(error) return error[FileAst, Str](format_error_with_context(
+      parser.code, parser.cursor, error))
+  ok[FileAst, Str](FileAst { imports, defs })
 }
 fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
   var lines = vec[Str]()
@@ -1465,6 +1457,174 @@ fun write_line_number[W](writer: W, n: U64) {
   else if n >= 100 then writer.write(" {n}")
   else if n >= 10 then writer.write("  {n}")
   else writer.write("   {n}")
+}
+
+| Joining Asts From Multiple Files  
+| Multiple FileAsts are joined into a single Ast. While we do that, we make the
+| lookup of methods and variables simpler by putting everything into a map with
+| the name as the key. Thus, the Ast no longer contains an ordering of
+| defintions.
+| This is also an opportunity to validate the general signatures of definitions
+| – in the first revisions of Martinaise, you could define a function foo(Foo),
+| even if no Foo type exists. The function would simply match no call, so
+| everything's fine. This practice is almost always not the intended behavior,
+| so there are some checks here.
+
+struct Ast {
+  types: Map[Str, AstType],
+  globals: Map[Str, AstVar],
+  funs: Map[Str, Vec[AstFun]],
+}
+enum AstType { opaque_: AstOpaqueType, struct_: AstStruct, enum_: AstEnum }
+
+fun write[W](writer: W, ast: Ast) {
+  for type in ast.types do writer."{type.value}{newline}"
+  for global in ast.globals do writer."{global.value}{newline}"
+  for funs in ast.funs do for f in funs.value do writer."{f}{newline}"
+}
+fun write[W](writer: W, type: AstType) {
+  switch type
+  case opaque_(o) writer."{o}"
+  case struct_(s) writer."{s}"
+  case enum_(e) writer."{e}"
+}
+
+fun parse_file_and_dependencies(
+  out: &Map[Str, FileAst], home: Str, file: Str
+): Result[Nothing, Str] {
+  if out.contains(file) then return ok[Nothing, Str]({})
+
+  var path = "{home}/{file}.mar"
+  eprintln("Reading {path}")
+  var content = read_file(path).unwrap("couldn't read {path}").to_str()
+
+  print_on_same_line("Parsing {path}")
+  var ast = content.parse_single_file(file)?
+  out.put(file, ast)
+
+  for import in ast.imports do parse_file_and_dependencies(out, home, import)
+
+  ok[Nothing, Str]({})
+}
+
+fun parse_project(home: Str, entry_file: Str): Result[Ast, Str] {
+  var asts = map[Str, FileAst]()
+
+  | Reference types such as &T are type-checked just like any other types. For
+  | this to work, automatically we create an implicitly imported file with this
+  | struct:
+  | struct &[T] { *: T }
+  var ref = FileAst { imports = vec[Str](), defs = vec[AstDef]() }
+  ref.defs.&.push(AstDef.struct_(AstStruct {
+    name = "&",
+    type_args = vec("T"),
+    fields = vec(AstStructField { name = "*", type = type("T") })
+  }))
+  asts.&.put("_ref", ref)
+
+  asts.&.parse_file_and_dependencies(home, entry_file)?
+
+  var types = map[Str, AstType]()
+  var globals = map[Str, AstVar]()
+  var funs = map[Str, Vec[AstFun]]()
+
+  for ast in asts do {
+    for def in ast.value.defs do {
+      switch def
+      case opaque_(opaque_) {
+        if types.contains(opaque_.name) then return error[Ast, Str]('"
+          'Multiple types are named "{{opaque_.name}}". 
+          'Type names have to be unique."')
+        types.&.put(opaque_.name, AstType.opaque_(opaque_))
+      }
+      case struct_(struct_) {
+        if types.contains(struct_.name) then return error[Ast, Str]('"
+          'Multiple types are named "{{struct_.name}}". 
+          'Type names have to be unique."')
+        types.&.put(struct_.name, AstType.struct_(struct_))
+      }
+      case enum_(enum_) {
+        if types.contains(enum_.name) then return error[Ast, Str]('"
+          'Multiple types are named "{{enum_.name}}". 
+          'Type names have to be unique."')
+        types.&.put(enum_.name, AstType.enum_(enum_))
+      }
+      case var_(global) {
+        if globals.contains(global.name) then return error[Ast, Str]('"
+          'Multiple global variables are named "{{global.name}}". 
+          'Names of globals have to be unique."')
+        globals.&.put(global.name, global)
+      }
+      case fun_(fun_)
+        if funs.contains(fun_.name)
+        then {
+          | TODO: update once there exists Map.get_ref
+          var overloads = funs.get(fun_.name)
+          overloads.&.push(fun_)
+          funs.&.put(fun_.name, overloads)
+        }
+        else funs.&.put(fun_.name, vec(fun_))
+    }
+  }
+
+  for type in types do
+    switch type.value
+    case opaque_ {
+      | TODO: check alignment is 1, 2, 4, or 8
+    }
+    case struct_(struct_) {
+      for arg in struct_.type_args do
+        if arg.exists(types, vec[Str]())
+        then return error[Ast, Str]("
+          '{struct_.name} defines a type argument {arg}, but {arg} is also a
+          'fully defined type.")
+      for field in struct_.fields do
+        field.type.exists(types, struct_.type_args)
+          orelse(type) return error[Ast, Str]("
+            '{struct_.name} refers to type {type}, but that doesn't exist.")
+    }
+    case enum_(enum_) {
+      for arg in enum_.type_args do
+        if arg.exists(types, vec[Str]())
+        then return error[Ast, Str]("
+          '{enum_.name} defines a type argument {arg}, but {arg} is also a fully
+          'defined type.")
+      for variant in enum_.variants do
+        variant.type.exists(types, enum_.type_args)
+          orelse(type) return error[Ast, Str]("
+            '{enum_.name} refers to type {type}, but that doesn't exist.")
+    }
+
+  for funs in funs do
+    for fun_ in funs.value do {
+      for arg in fun_.type_args do
+        if arg.exists(types, vec[Str]())
+        then return error[Ast, Str]("
+          '{fun_.name} defines a type argument {arg}, but {arg} is also a fully
+          'defined type.")
+      for arg in fun_.args do
+        arg.type.exists(types, fun_.type_args)
+          orelse(type) return error[Ast, Str]("
+            '{fun_.name} refers to type {type}, but that doesn't exist.")
+    }
+
+  ok[Ast, Str](Ast { types, globals, funs })
+}
+
+| Checks if the type exists.
+fun exists(
+  type: Type, types: Map[Str, AstType], extra: Vec[Str],
+): Result[Nothing, Str] {
+  if not(type.name.exists(types, extra))
+  then return error[Nothing, Str](type.name)
+  for arg in type.args do arg.exists(types, extra)?
+  ok[Nothing, Str]({})
+}
+fun exists(type: Str, types: Map[Str, AstType], extra: Vec[Str]): Bool {
+  if types.contains(type) then true else {
+    for extra in extra do if extra == type then return true
+    false
+  }
 }
 
 | Type Sinks  
@@ -1725,6 +1885,93 @@ fun print_status(context: Context) {
   print_on_same_line(out.to_str())
 }
 
+| Ast Lookup  
+
+| Looks up the type with the given name. Type names have to be unique.
+fun lookup_type(ast: Ast, name: Str): Result[AstType, Str] {
+  switch ast.types.get_maybe(name)
+  case some(match) ok[AstType, Str](match)
+  case none return error[AstType, Str]('"There is no type named "{{name}}"."')
+}
+
+| Looks up the global variable with the given name. Names of global variables
+| have to be unique.
+fun lookup_global(ast: Ast, name: Str): Maybe[AstVar] {
+  ast.globals.get_maybe(name)
+}
+
+| Looks up the function with the given name, the given number of type args
+| (none means they are inferred) and the args of the given types.
+struct LookupFunSolution { fun_: AstFun, type_env: Map[Str, Type] }
+fun lookup_fun(
+  ast: Ast,
+  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type],
+): Result[LookupFunSolution, Str] {
+  var name_matches = ast.funs.get_maybe(name)
+    orelse return error[LookupFunSolution, Str]('"
+      'There are no defintions named "{{name}}"."')
+
+  var full_matches = vec[LookupFunSolution]()
+  for fun_ in name_matches do {
+    var solver = create_type_solver(fun_.type_args)
+    if type_args is some(type_args_) then {
+      if type_args_.len != fun_.type_args.len then continue
+      for i in 0..type_args_.len do
+        solver.&.unify(type(fun_.type_args.get(i)), type_args_.get(i))?.assert()
+    }
+    if arg_types.len != fun_.args.len then continue
+    var matches = true
+    for i in 0..arg_types.len do
+      solver.&.unify(fun_.args.get(i).type, arg_types.get(i))?
+        orelse { matches = false break }
+    if not(matches) then continue
+    var type_env = solver.finish()
+      orelse(error) return error[LookupFunSolution, Str](
+        "Found a function matching a call:{newline}
+        '  call: {signature(name, type_args, arg_types)}{newline}
+        ' match: {fun_.stripped_signature()}{newline}{newline}
+        'However, resolving the call doesn't work:{newline}
+        '{error}")
+    full_matches.&.push(LookupFunSolution { fun_, type_env })
+  }
+
+  if full_matches.is_empty() then return error[LookupFunSolution, Str]({
+    var out = string_builder().&
+    out."
+      'This call doesn't work:{newline}
+      ' > {signature(name, type_args, arg_types)}{newline}{newline}"
+    if name_matches.is_empty()
+    then out.'"There are no defintions named "{{name}}"."'
+    else {
+      out."These definitions have the same name, but arguments don't match:"
+      for match in name_matches do
+        out."{newline} - {match.stripped_signature()}"
+    }
+    out.to_str()
+  })
+  if full_matches.len > 1 then return error[LookupFunSolution, Str]({
+    var out = string_builder().&
+    out.
+      "This call matches multiple functions:{newline}
+      '  call: {signature(name, type_args, arg_types)}{newline}"
+    for match in full_matches do {
+      var padded_signature = match.fun_.stripped_signature().format()
+        .pad_right(30, # )
+      out."{newline} match: {padded_signature}"
+      if match.type_env.is_not_empty() then {
+        out." with "
+        var first = true
+        for entry in match.type_env do {
+          if first then first = false else out.", "
+          out."{entry.key} = {entry.value}"
+        }
+      }
+    }
+    out.to_str()
+  })
+  ok[LookupFunSolution, Str](full_matches.get(0))
+}
+
 | Mono  
 | Generic code such as a function foo[T]() doesn't have any generic form in the
 | final output. Instead, for each place where foo is called (each "callsite"), a
@@ -1966,213 +2213,6 @@ fun expr(slot: MonoSlotRef, self: CompileFun): MonoExpr {
   slot.expr(self.slots.get(slot.index).type)
 }
 
-| Preparing the Ast  
-| When compiling function bodies during monomorphization, we need to find
-| matching functions in the Ast. Doing that on the raw Ast works, but is
-| inefficient. For example, when we see a call of the form foo(U8), we have to
-| walk all definitions in the Ast and look for matching ones. Walking the entire
-| Ast for each call is inefficient, so we sort the definitions by their kind and
-| name.
-| This is also an opportunity to validate the general signatures of definitions
-| – in the first revisions of Martinaise, you could define a function foo(Foo),
-| even if no Foo type exists. The function would simply match no call, so
-| everything's fine. This practice is almost always not the intended behavior,
-| so there are some checks here.
-
-struct PreparedAst {
-  types: Map[Str, AstType],
-  globals: Map[Str, AstVar],
-  funs: Map[Str, Vec[AstFun]],
-}
-enum AstType { opaque_: AstOpaqueType, struct_: AstStruct, enum_: AstEnum }
-
-fun prepare(ast: Ast): Result[PreparedAst, Str] {
-  var types = map[Str, AstType]()
-  var globals = map[Str, AstVar]()
-  var funs = map[Str, Vec[AstFun]]()
-
-  for def in ast.defs do {
-    switch def
-    case opaque_(opaque_) {
-      if types.contains(opaque_.name) then return error[PreparedAst, Str]('"
-        'Multiple types are named "{{opaque_.name}}". 
-        'Type names have to be unique."')
-      types.&.put(opaque_.name, AstType.opaque_(opaque_))
-    }
-    case struct_(struct_) {
-      if types.contains(struct_.name) then return error[PreparedAst, Str]('"
-        'Multiple types are named "{{struct_.name}}". 
-        'Type names have to be unique."')
-      types.&.put(struct_.name, AstType.struct_(struct_))
-    }
-    case enum_(enum_) {
-      if types.contains(enum_.name) then return error[PreparedAst, Str]('"
-        'Multiple types are named "{{enum_.name}}". 
-        'Type names have to be unique."')
-      types.&.put(enum_.name, AstType.enum_(enum_))
-    }
-    case var_(global) {
-      if globals.contains(global.name) then return error[PreparedAst, Str]('"
-        'Multiple global variables are named "{{global.name}}". 
-        'Names of globals have to be unique."')
-      globals.&.put(global.name, global)
-    }
-    case fun_(fun_)
-      if funs.contains(fun_.name)
-      then {
-        | TODO: update once there exists Map.get_ref
-        var overloads = funs.get(fun_.name)
-        overloads.&.push(fun_)
-        funs.&.put(fun_.name, overloads)
-      }
-      else funs.&.put(fun_.name, vec(fun_))
-  }
-
-  for type in types do
-    switch type.value
-    case opaque_ {
-      | TODO: check alignment is 1, 2, 4, or 8
-    }
-    case struct_(struct_) {
-      for arg in struct_.type_args do
-        if arg.exists(types, vec[Str]())
-        then return error[PreparedAst, Str]("
-          '{struct_.name} defines a type argument {arg}, but {arg} is also a
-          'fully defined type.")
-      for field in struct_.fields do
-        field.type.exists(types, struct_.type_args)
-          orelse(type) return error[PreparedAst, Str]("
-            '{struct_.name} refers to type {type}, but that doesn't exist.")
-    }
-    case enum_(enum_) {
-      for arg in enum_.type_args do
-        if arg.exists(types, vec[Str]())
-        then return error[PreparedAst, Str]("
-          '{enum_.name} defines a type argument {arg}, but {arg} is also a fully
-          'defined type.")
-      for variant in enum_.variants do
-        variant.type.exists(types, enum_.type_args)
-          orelse(type) return error[PreparedAst, Str]("
-            '{enum_.name} refers to type {type}, but that doesn't exist.")
-    }
-
-  for funs in funs do
-    for fun_ in funs.value do {
-      for arg in fun_.type_args do
-        if arg.exists(types, vec[Str]())
-        then return error[PreparedAst, Str]("
-          '{fun_.name} defines a type argument {arg}, but {arg} is also a fully
-          'defined type.")
-      for arg in fun_.args do
-        arg.type.exists(types, fun_.type_args)
-          orelse(type) return error[PreparedAst, Str]("
-            '{fun_.name} refers to type {type}, but that doesn't exist.")
-    }
-
-  ok[PreparedAst, Str](PreparedAst { types, globals, funs })
-}
-
-| Checks if the type exists.
-fun exists(
-  type: Type, types: Map[Str, AstType], extra: Vec[Str],
-): Result[Nothing, Str] {
-  if not(type.name.exists(types, extra))
-  then return error[Nothing, Str](type.name)
-  for arg in type.args do arg.exists(types, extra)?
-  ok[Nothing, Str]({})
-}
-fun exists(type: Str, types: Map[Str, AstType], extra: Vec[Str]): Bool {
-  if types.contains(type) then true else {
-    for extra in extra do if extra == type then return true
-    false
-  }
-}
-
-| Looks up the type with the given name. Type names have to be unique.
-fun lookup_type(ast: PreparedAst, name: Str): Result[AstType, Str] {
-  switch ast.types.get_maybe(name)
-  case some(match) ok[AstType, Str](match)
-  case none return error[AstType, Str]('"There is no type named "{{name}}"."')
-}
-
-| Looks up the global variable with the given name. Names of global variables
-| have to be unique.
-fun lookup_global(ast: PreparedAst, name: Str): Maybe[AstVar] {
-  ast.globals.get_maybe(name)
-}
-
-| Looks up the function with the given name, the given number of type args
-| (none means they are inferred) and the args of the given types.
-struct LookupFunSolution { fun_: AstFun, type_env: Map[Str, Type] }
-fun lookup_fun(
-  ast: PreparedAst,
-  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type],
-): Result[LookupFunSolution, Str] {
-  var name_matches = ast.funs.get_maybe(name)
-    orelse return error[LookupFunSolution, Str]('"
-      'There are no defintions named "{{name}}"."')
-
-  var full_matches = vec[LookupFunSolution]()
-  for fun_ in name_matches do {
-    var solver = create_type_solver(fun_.type_args)
-    if type_args is some(type_args_) then {
-      if type_args_.len != fun_.type_args.len then continue
-      for i in 0..type_args_.len do
-        solver.&.unify(type(fun_.type_args.get(i)), type_args_.get(i))?.assert()
-    }
-    if arg_types.len != fun_.args.len then continue
-    var matches = true
-    for i in 0..arg_types.len do
-      solver.&.unify(fun_.args.get(i).type, arg_types.get(i))?
-        orelse { matches = false break }
-    if not(matches) then continue
-    var type_env = solver.finish()
-      orelse(error) return error[LookupFunSolution, Str](
-        "Found a function matching a call:{newline}
-        '  call: {signature(name, type_args, arg_types)}{newline}
-        ' match: {fun_.stripped_signature()}{newline}{newline}
-        'However, resolving the call doesn't work:{newline}
-        '{error}")
-    full_matches.&.push(LookupFunSolution { fun_, type_env })
-  }
-
-  if full_matches.is_empty() then return error[LookupFunSolution, Str]({
-    var out = string_builder().&
-    out."
-      'This call doesn't work:{newline}
-      ' > {signature(name, type_args, arg_types)}{newline}{newline}"
-    if name_matches.is_empty()
-    then out.'"There are no defintions named "{{name}}"."'
-    else {
-      out."These definitions have the same name, but arguments don't match:"
-      for match in name_matches do
-        out."{newline} - {match.stripped_signature()}"
-    }
-    out.to_str()
-  })
-  if full_matches.len > 1 then return error[LookupFunSolution, Str]({
-    var out = string_builder().&
-    out.
-      "This call matches multiple functions:{newline}
-      '  call: {signature(name, type_args, arg_types)}{newline}"
-    for match in full_matches do {
-      var padded_signature = match.fun_.stripped_signature().format()
-        .pad_right(30, # )
-      out."{newline} match: {padded_signature}"
-      if match.type_env.is_not_empty() then {
-        out." with "
-        var first = true
-        for entry in match.type_env do {
-          if first then first = false else out.", "
-          out."{entry.key} = {entry.value}"
-        }
-      }
-    }
-    out.to_str()
-  })
-  ok[LookupFunSolution, Str](full_matches.get(0))
-}
-
 | Monomorphization  
 | A rough sketch on how this compiler stage works: The Ast functions are
 | compiled into monomorphized functions, starting from the main function. The
@@ -2205,7 +2245,7 @@ fun lookup_fun(
 | function is encountered recursively, only its signature is needed to figure
 | out how to use it.
 
-fun compile(ast: PreparedAst): Result[Mono, Str] {
+fun compile(ast: Ast): Result[Mono, Str] {
   var context = context()
   var mono = Mono {
     type_defs = map[Type, MonoTypeDef](),
@@ -2261,7 +2301,7 @@ fun compile(ast: PreparedAst): Result[Mono, Str] {
 | Slice[MapBucket[U64, Bool]], etc.)
 | Also saves the corresponding layout in the Mono.
 fun compile(
-  type: Type, type_env: Map[Str, Type], ast: PreparedAst, mono: &Mono,
+  type: Type, type_env: Map[Str, Type], ast: Ast, mono: &Mono,
 ): Result[Type, Str] {
   | TODO: Make sure generic types don't have parameters.
   var type = type_env.get_maybe(type.name) orelse {
@@ -2353,7 +2393,7 @@ fun is_incomplete(type: Type): Bool { not(type.is_complete()) }
 | would be the more appropriate term), outputting all the required type defs,
 | other global variables, and functions into the Mono.
 fun compile(
-  global: AstVar, context: &Context, ast: PreparedAst, mono: &Mono,
+  global: AstVar, context: &Context, ast: Ast, mono: &Mono,
 ): Result[Nothing, Str] {
   if mono.globals.contains(global.name) then return ok[Nothing, Str]({})
 
@@ -2396,7 +2436,7 @@ fun compile(
 | functions on the Mono.
 fun compile(
   fun_: AstFun, type_env: Map[Str, Type],
-  context: &Context, ast: PreparedAst, mono: &Mono,
+  context: &Context, ast: Ast, mono: &Mono,
 ): Result[Str, Str] {
   var type_args = vec[Type]()
   for arg in fun_.type_args do
@@ -2481,7 +2521,7 @@ fun compile(
 
 struct CompileFun {
   context: &Context,
-  ast: PreparedAst,
+  ast: Ast,
   mono: &Mono,
   type_env: Map[Str, Type],
   return_type: TypeSink,
@@ -4293,17 +4333,9 @@ fun print_usage_info(out: File) {
 | Runs the pipeline that matches the command. Errors are handled internally
 | (stuff is printed to stderr). Returns whether it ran through successfully.
 fun run_pipeline(command: Command, file_path: Str): Bool {
-  eprintln("Reading {file_path}")
-  var stdlib = read_file("stdlib.mar").unwrap("couldn't read stdlib").to_str()
-  var file = read_file(file_path).unwrap("couldn't read {file_path}").to_str()
-  var input = "{stdlib}{newline}{file}{newline}"
-
-  print_on_same_line("Parsing {file_path}")
-  var ast = input.parse(stdlib.len)
+  var ast = parse_project(".", file_path)
     orelse(error) { eprintln(error) return false }
   if command is ast then { println(ast) return true }
-  var ast = ast.prepare()
-    orelse(error) { print_on_same_line(error) return false }
 
   print_on_same_line("Monoing")
   var mono = ast.compile()

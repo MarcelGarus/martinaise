@@ -3,6 +3,8 @@
 | This is easier to follow if you have some experience in other programming
 | languages.
 
+import stdlib
+
 | Comments  
 | Use the pipe character to start comments. They go to the end of the line. If
 | a comment line ends with two spaces, it's highlighted as a heading in the IDE.
