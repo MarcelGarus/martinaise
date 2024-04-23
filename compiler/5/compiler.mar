@@ -1502,7 +1502,7 @@ fun parse_file_and_dependencies(
   var ast = content.parse_single_file(file)?
   out.put(file, ast)
 
-  for import in ast.imports do parse_file_and_dependencies(out, home, import)
+  for import in ast.imports do parse_file_and_dependencies(out, home, import)?
 
   ok[Nothing, Str]({})
 }
