@@ -47,6 +47,8 @@
 |
 | Plural forms have an "s" at the end (as in "args" or "defs").
 
+import stdlib
+
 | Terminal utilities  
 
 fun clear_terminal() {
@@ -58,7 +60,7 @@ fun clear_terminal() {
 }
 
 fun write_ansi_escape_sequence[W](writer: W, sequence: Str) {
-  writer.write(27:U8.to_char())
+  writer.write(27.lower_byte().to_char())
   writer.write(sequence)
 }
 fun print_on_same_line(message: Str) {
@@ -67,41 +69,23 @@ fun print_on_same_line(message: Str) {
   eprintln(message)
 }
 
-| Numbers  
-| Here are some basic concepts needed for representing numbers.
+| Source Locations  
+| When compiling and running code, we want errors to point to the right place in
+| the source code. To do that, locations are carried throughout the pipeline.
 
-enum Signedness { signed, unsigned }
-struct IntConfig { signedness: Signedness, bits: U64 }
-struct Int { value: U64, config: IntConfig } | int literals can't be negative
+struct Source { file: Str, span: Range[Int] }
 
-fun ==(a: Signedness, b: Signedness): Bool {
-  switch a
-  case signed { switch b case signed true case unsigned false }
-  case unsigned { switch b case signed false case unsigned true }
-}
-fun ==(a: IntConfig, b: IntConfig): Bool {
-  {a.signedness == b.signedness} & {a.bits == b.bits}
-}
-fun ==(a: Int, b: Int): Bool { {a.config == b.config} & {a.value == b.value} }
-
-fun write[W](writer: W, signedness: Signedness) {
-  writer.write(switch signedness case signed #I case unsigned #U)
-}
-fun write[W](writer: W, config: IntConfig) {
-  writer."{config.signedness}{config.bits}"
-}
-fun write[W](writer: W, int: Int) {
-  writer."{int.value}#{int.config}"
-}
-
-fun to_type(config: IntConfig): Type { type("{config}") }
+fun source(file: Str, span: Range[Int]): Source { Source { file, span } }
 
 | The Abstract Syntax Tree  
-| The compiler input is parsed into an abstract syntax tree. This tree is a
+| An input file is parsed into an abstract syntax tree. This tree is a
 | representation of the program that roughly corresponds to the structure of the
 | source code.
 
-struct Ast { defs: Vec[AstDef] }
+| A string that appears in the input and knows where it comes from.
+struct AstStr { str: Str, source: Source }
+
+struct FileAst { imports: Vec[AstStr], defs: Vec[AstDef] }
 enum AstDef {
   opaque_: AstOpaqueType,
   struct_: AstStruct,
@@ -110,37 +94,38 @@ enum AstDef {
   fun_: AstFun,
 }
 
-| Fundamental types such as U8, U16 etc. are defined as opaque types. You can
-| define your own opaque types as well.
-struct AstOpaqueType { name: Str, size: U64, alignment: U64 }
+struct AstOpaqueType { name: AstStr, size: Int, alignment: Int }
 
 struct AstStruct {
-  name: Str,
-  type_args: Vec[Str],
+  name: AstStr,
+  type_args: Vec[AstStr],
   fields: Vec[AstStructField],
 }
-struct AstStructField { name: Str, type: Type }
+struct AstStructField { name: AstStr, type: Type }
 
 struct AstEnum {
-  name: Str,
-  type_args: Vec[Str],
+  name: AstStr,
+  type_args: Vec[AstStr],
   variants: Vec[AstEnumVariant],
 }
-struct AstEnumVariant { name: Str, type: Type }
+struct AstEnumVariant { name: AstStr, type: Type }
 
 struct AstFun {
-  name: Str,
-  type_args: Vec[Str],
+  name: AstStr,
+  type_args: Vec[AstStr],
   args: Vec[AstFunArg],
   returns: Type,
   kind: AstFunKind,
 }
-struct AstFunArg { name: Str, type: Type }
-enum AstFunKind { builtin, body: Vec[AstExpr], asm_: Vec[Instruction] }
+struct AstFunArg { name: AstStr, type: Type }
+enum AstFunKind {
+  builtin: AstBuiltinDots, body: Vec[AstExpr], asm_: Vec[Instruction]
+}
+struct AstBuiltinDots { dots: AstStr }
 enum AstExpr {
-  int: Int,                   | 0_U32
+  int: Int,                   | 42
   str: Str,                   | "foo"
-  name: Str,                  | foo
+  name: AstStr,               | foo
   call: AstCall,              | ...(arg)
   make_struct: AstMakeStruct, | Foo { a = ... }
   make_enum: AstMakeEnum,     | Maybe.some(5)
@@ -148,36 +133,42 @@ enum AstExpr {
   var_: AstVar,               | var foo = ...
   assign: AstAssign,          | foo = ...
   switch_: AstSwitch,         | switch foo case a ... case b(bar) ...
-  loop_: &AstExpr,            | loop ...
-  break_: &AstExpr,           | break(2)
-  continue_,                  | continue
-  return_: &AstExpr,          | return ...
-  try: &AstExpr,              | ...?
-  body: Vec[AstExpr],         | { ... }
+  loop_: AstLoop ,            | loop ...
+  break_: AstBreak,           | break(2)
+  continue_: AstContinue,     | continue
+  return_: AstReturn,         | return ...
+  try: AstTry,                | ...?
+  block: Vec[AstExpr],        | { ... }
 }
 struct AstCall {
   callee: &AstExpr,
   type_args: Maybe[Vec[Type]],
+  opening_parenthesis: AstStr,
   args: Vec[AstExpr],
 }
-struct AstMakeStruct { type: Type, fields: Vec[AstMakeStructField] }
-struct AstMakeStructField { name: Str, value: AstExpr }
-struct AstMakeEnum { type: Type, variant: Str, arg: &AstExpr }
-struct AstMember { of: &AstExpr, name: Str }
-struct AstVar { name: Str, value: &AstExpr }
-struct AstAssign { to: &AstExpr, value: &AstExpr }
-struct AstSwitch {
-  value: &AstExpr, cases: Vec[AstCase], default_: Maybe[&AstExpr]
+struct AstMakeStruct {
+  type: Type, type_source: Source, fields: Vec[AstMakeStructField]
 }
-struct AstCase { variant: Str, binding: Maybe[Str], then_: &AstExpr }
+struct AstMakeStructField { name: AstStr, value: AstExpr }
+struct AstMakeEnum { type: Type, variant: AstStr, arg: &AstExpr }
+struct AstMember { of: &AstExpr, name: AstStr }
+struct AstVar { name: AstStr, value: &AstExpr }
+struct AstAssign { to: &AstExpr, value: &AstExpr, equal_sign: AstStr }
+struct AstSwitch {
+  keyword: AstStr, value: &AstExpr,
+  cases: Vec[AstCase], default_: Maybe[&AstDefaultCase],
+}
+struct AstCase { variant: AstStr, binding: Maybe[AstStr], body: AstExpr }
+struct AstDefaultCase { keyword: AstStr, body: AstExpr }
+struct AstLoop { keyword: AstStr, body: &AstExpr }
+struct AstBreak { keyword: AstStr, value: &AstExpr }
+struct AstContinue { keyword: AstStr }
+struct AstReturn { keyword: AstStr, value: &AstExpr }
+struct AstTry { value: &AstExpr, question_mark: AstStr }
 
-enum Instruction {
-  | Not really instructions, but meh:
-  label: Str,
-  str: Str,
-  byte: U8,
-  word: Word,
-  | These are the real instructions:
+struct Instruction { kind: InstructionKind, mnemonic: AstStr }
+enum InstructionKind {
+  label: AstStr, | Not really an instruction, but meh.
   nop,
   panic,
   move: RegAndReg,
@@ -189,11 +180,11 @@ enum Instruction {
   storeb: RegAndReg,
   push: Reg,
   pop: Reg,
-  jump: Word,
-  cjump: Word,
-  call: Word,
+  jump: AstStr,
+  cjump: AstStr,
+  call: AstStr,
   ret,
-  syscall: U8,
+  syscall: Byte,
   cmp: RegAndReg,
   isequal,
   isless,
@@ -211,36 +202,46 @@ enum Instruction {
   negate: Reg,
 }
 
-enum Reg { ip, sp, st, a, b, c, d, e }
+enum Reg { sp, st, a, b, c, d, e, f }
 
-enum Word { literal: U64, label: Str }
+enum Word { literal: Int, label: AstStr, str: Str }
 
 struct RegAndReg { first: Reg, second: Reg }
 struct RegAndWord { first: Reg, second: Word }
-struct RegAndByte { first: Reg, second: U8 }
+struct RegAndByte { first: Reg, second: Byte }
 
-fun @(first: Reg, second: Reg): RegAndReg { RegAndReg { first, second } }
-fun @(first: Reg, second: Word): RegAndWord { RegAndWord { first, second } }
-fun @(first: Reg, second: U8): RegAndByte { RegAndByte { first, second } }
+fun &(first: Reg, second: Reg): RegAndReg { RegAndReg { first, second } }
+fun &(first: Reg, second: Word): RegAndWord { RegAndWord { first, second } }
+fun &(first: Reg, second: Byte): RegAndByte { RegAndByte { first, second } }
+
+fun @(str: Str, source: Source): AstStr { AstStr { str, source } }
 
 fun call(
-  callee: AstExpr, type_args: Maybe[Vec[Type]], args: Vec[AstExpr]
+  callee: AstExpr, type_args: Maybe[Vec[Type]], args: Vec[AstExpr],
+  opening_parenthesis: AstStr
 ): AstExpr {
-  AstExpr.call(AstCall { callee = callee.put_on_heap(), type_args, args })
+  AstExpr.call(AstCall {
+    callee = callee.put_on_heap(), type_args, opening_parenthesis, args
+  })
 }
-fun call(callee: AstExpr, args: Vec[AstExpr]): AstExpr {
-  callee.call(none[Vec[Type]](), args)
+fun call(
+  callee: AstExpr, args: Vec[AstExpr], opening_parenthesis: AstStr
+): AstExpr {
+  callee.call(none[Vec[Type]](), args, opening_parenthesis)
 }
-fun call(callee: AstExpr): AstExpr { callee.call(vec[AstExpr]()) }
-fun member(of: AstExpr, name: Str): AstExpr {
+fun call(callee: AstExpr, opening_parenthesis: AstStr): AstExpr {
+  callee.call(vec[AstExpr](), opening_parenthesis)
+}
+fun member(of: AstExpr, name: AstStr): AstExpr {
   AstExpr.member(AstMember { of = of.put_on_heap(), name })
 }
-fun var_(name: Str, value: AstExpr): AstExpr {
+fun var_(name: AstStr, value: AstExpr): AstExpr {
   AstExpr.var_(AstVar { name, value = value.put_on_heap() })
 }
 
-fun write[W](writer: W, program: Ast) {
-  for def in program.defs do writer."{def}{newline}"
+fun write[W](writer: W, ast: FileAst) {
+  for import in imports do writer."import {import}{newline}"
+  for def in ast.defs do writer."{def}{newline}"
 }
 fun write[W](writer: W, def: AstDef) {
   switch def
@@ -250,6 +251,7 @@ fun write[W](writer: W, def: AstDef) {
   case var_(v) writer.write(v)
   case fun_(f) writer.write(f)
 }
+fun write[W](writer: W, name: AstStr) { writer."{name.str}" }
 fun write[W](writer: W, opaque_: AstOpaqueType) {
   writer."opaque {opaque_.name} = {opaque_.size} {
     if opaque_.size == 1 then "byte" else "bytes"
@@ -276,7 +278,7 @@ fun write[W](writer: W, enum_: AstEnum) {
   }
 }
 
-struct Indent { amount: U64 }
+struct Indent { amount: Int }
 fun inc(indent: Indent): Indent { Indent { amount = indent.amount + 1 } }
 fun write[W](writer: W, indent: Indent) {
   for i in 0..{2 * indent.amount} do writer." "
@@ -285,7 +287,7 @@ struct Indented[T] { indent: Indent, what: T }
 fun write[W, T](writer: W, indented: Indented[T]) {
   writer.write(indented.indent, indented.what)
 }
-fun indent(amount: U64): Indent { Indent { amount } }
+fun indent(amount: Int): Indent { Indent { amount } }
 fun indented[T](what: T, indent: Indent): Indented[T] {
   Indented { indent, what }
 }
@@ -301,14 +303,14 @@ fun write[W](writer: W, fun_: AstFun) {
     '({comma_separated(fun_.args)}): {fun_.returns} "
   switch fun_.kind
   case builtin writer.'"{ ... }"'
-  case body(body) writer.write_body(Indent { amount = 0 }, body)
+  case body(body) writer.write_block(Indent { amount = 0 }, body)
   case asm_(instructions) {
     writer.'"asm {{{newline}}"'
     for instruction in instructions do writer."  {instruction}{newline}"
     writer.'"}"'
   }
 }
-fun write_body[W](writer: W, indent: Indent, body: Vec[AstExpr]) {
+fun write_block[W](writer: W, indent: Indent, body: Vec[AstExpr]) {
   if body.is_empty() then { writer.'"{}"' return {} }
   writer.'"{{{newline}}"'
   for expr in body do
@@ -353,29 +355,26 @@ fun write[W](writer: W, indent: Indent, expr: AstExpr) {
       writer."{newline}{indent}case {case_.variant}"
       if case_.binding is some(binding) then writer."({binding})"
       writer.'" { {{newline}}
-        '{{indent.inc()}}{{case_.then_.*.indented(indent.inc())}}{{newline}}
+        '{{indent.inc()}}{{case_.body.indented(indent.inc())}}{{newline}}
         '{{indent}}}"'
     }
-    if switch_.default_ is some(default_)
-    then writer.'"{{newline}}{{indent}}default { {{newline}}
-      '{{indent.inc()}}{{default_.*.indented(indent.inc())}}{{newline}}
-      '{{indent}}}"'
+    if switch_.default_ is some(default_) then
+      writer.'"{{newline}}{{indent}}default { {{newline}}
+        '{{indent.inc()}}{{default_.*.body.indented(indent.inc())}}{{newline}}
+        '{{indent}}}"'
   }
-  case loop_(expr) writer."loop {expr.*.indented(indent)}"
-  case break_(arg) writer."break({arg.*.indented(indent)})"
+  case loop_(loop_) writer."loop {loop_.body.*.indented(indent)}"
+  case break_(break_) writer."break({break_.value.*.indented(indent)})"
   case continue_ writer."continue"
-  case return_(arg) writer."return {arg.*.indented(indent)}"
-  case try(expr) writer."{expr.*.indented(indent)}?"
-  case body(body) writer.write_body(indent, body)
+  case return_(return_) writer."return {return_.value.*.indented(indent)}"
+  case try(try_) writer."{try_.value.*.indented(indent)}?"
+  case block(block) writer.write_block(indent, block)
 }
 fun write[W](writer: W, arg: AstFunArg) { writer."{arg.name}: {arg.type}" }
 
 fun write[W](writer: W, instruction: Instruction) {
-  switch instruction
+  switch instruction.kind
   case label(label) writer."{label}:"
-  case str(str) writer.'"str "{str}""'
-  case byte(byte) writer."byte {byte}"
-  case word(word) writer."word {word}"
   case nop writer."nop"
   case panic writer."panic"
   case move(regs) writer."move {regs.first} {regs.second}"
@@ -411,7 +410,6 @@ fun write[W](writer: W, instruction: Instruction) {
 
 fun write[W](writer: W, reg: Reg) {
   switch reg
-  case ip writer."ip"
   case sp writer."sp"
   case st writer."st"
   case a writer."a"
@@ -419,12 +417,14 @@ fun write[W](writer: W, reg: Reg) {
   case c writer."c"
   case d writer."d"
   case e writer."e"
+  case f writer."f"
 }
 
 fun write[W](writer: W, word: Word) {
   switch word
   case literal(num) writer."{num}"
   case label(str) writer."{str}"
+  case str(str) writer."{str}"
 }
 
 fun signature(def: AstDef): AstSignature { AstSignature { def } }
@@ -447,10 +447,10 @@ fun write[W](writer: W, signature: AstSignature) {
 | A signature that doesn't print argument names, only types.
 fun stripped_signature(fun_: AstFun): StrippedFunSignature {
   var type_args = vec[Type]()
-  for arg in fun_.type_args do type_args.&.push(type(arg))
+  for arg in fun_.type_args do type_args.&.push(type(arg.str))
   var arg_types = vec[Type]()
   for arg in fun_.args do arg_types.&.push(arg.type)
-  signature(fun_.name, some(type_args), arg_types)
+  signature(fun_.name.str, some(type_args), arg_types)
 }
 fun signature(
   name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type]
@@ -502,12 +502,12 @@ fun write[W](writer: W, signature: StrippedFunSignature) {
 | because Martinaise generally doesn't care about whitespace and it makes the
 | code of the higher-level parsers (structs, enums, etc.) much more concise.
 
-struct Parser { code: Str, cursor: U64 }
+struct Parser { file: Str, code: Str, cursor: Int }
 
 fun current(parser: Parser): Char { parser.code.get(parser.cursor) }
 fun rest(parser: Parser): Str { parser.code.without_first(parser.cursor) }
 fun advance(parser: &Parser) { parser.advance_by(1) }
-fun advance_by(parser: &Parser, n: U64) { parser.cursor = parser.cursor + n }
+fun advance_by(parser: &Parser, n: Int) { parser.cursor = parser.cursor + n }
 fun is_whitespace(char: Char): Bool {
   {char == space} / {char == tab} / {char == newline}
 }
@@ -531,30 +531,34 @@ fun consume_whitespace(parser: &Parser) {
     break | not a whitespace nor comment
   }
 }
-fun consume_prefix(parser: &Parser, prefix: Str): Bool {
+fun consume_prefix(parser: &Parser, prefix: Str): Maybe[AstStr] {
   parser.consume_whitespace()
-  parser.rest().starts_with(prefix) orelse return false
+  var start = parser.cursor
+  parser.rest().starts_with(prefix) or return none[AstStr]()
   parser.advance_by(prefix.len)
-  true
+  var end = parser.cursor
+  some(prefix @ source(parser.file, start..end))
 }
 | Also makes sure there's a non-letter following, so consume_keyword("fun")
 | doesn't match the code "funny".
-fun consume_keyword(parser: &Parser, keyword: Str): Bool {
+fun consume_keyword(parser: &Parser, keyword: Str): Maybe[AstStr] {
   parser.consume_whitespace()
-  parser.rest().starts_with(keyword) orelse return false
+  var start = parser.cursor
+  parser.rest().starts_with(keyword) or return none[AstStr]()
   if parser.rest().len > keyword.len then {
     var char_after = parser.rest().get(keyword.len)
     var goes_on = {char_after == #_}
       / {#A..=#Z}.contains(char_after)
       / {#a..=#z}.contains(char_after)
       / {#0..=#9}.contains(char_after)
-    if goes_on then return false
+    if goes_on then return none[AstStr]()
   }
   parser.advance_by(keyword.len)
-  true
+  var end = parser.cursor
+  some(keyword @ source(parser.file, start..end))
 }
 
-fun parse_name(parser: &Parser): Maybe[Str] {
+fun parse_name(parser: &Parser): Maybe[AstStr] {
   var start = parser.cursor
   loop {
     var char = parser.current()
@@ -566,23 +570,24 @@ fun parse_name(parser: &Parser): Maybe[Str] {
       else { parser.advance() continue }
     break
   }
-  if parser.cursor == start then return none[Str]()
-  some(parser.code.substr(start, parser.cursor))
+  var end = parser.cursor
+  if start == end then return none[AstStr]()
+  some(parser.code.substr(start, end) @ source(parser.file, start..end))
 }
 
-fun parse_lower_name(parser: &Parser): Maybe[Str] {
+fun parse_lower_name(parser: &Parser): Maybe[AstStr] {
   parser.consume_whitespace()
-  if not({#a..=#z}.contains(parser.current())) then return none[Str]()
+  if not({#a..=#z}.contains(parser.current())) then return none[AstStr]()
   parser.parse_name()
 }
 
-fun parse_upper_name(parser: &Parser): Maybe[Str] {
+fun parse_upper_name(parser: &Parser): Maybe[AstStr] {
   parser.consume_whitespace()
-  if not({#A..=#Z}.contains(parser.current())) then return none[Str]()
+  if not({#A..=#Z}.contains(parser.current())) then return none[AstStr]()
   parser.parse_name()
 }
 
-fun parse_operator_name(parser: &Parser): Maybe[Str] {
+fun parse_operator_name(parser: &Parser): Maybe[AstStr] {
   parser.consume_whitespace()
   var allowed = "%!~@^\`/&*+$-<>=."
   var start = parser.cursor
@@ -593,14 +598,15 @@ fun parse_operator_name(parser: &Parser): Maybe[Str] {
       if char == c then is_operator = true
     if is_operator then parser.advance() else break
   }
-  if parser.cursor == start then return none[Str]()
-  var name = parser.code.substr(start, parser.cursor)
+  var end = parser.cursor
+  if start == end then return none[AstStr]()
+  var name = parser.code.substr(start, end)
   | disallow some patterns
-  if name == "=" then { parser.cursor = start return none[Str]() }
-  if name == "." then { parser.cursor = start return none[Str]() }
+  if name == "=" then { parser.cursor = start return none[AstStr]() }
+  if name == "." then { parser.cursor = start return none[AstStr]() }
   if name.starts_with(".*") / name.starts_with(".&")
-  then { parser.cursor = start return none[Str]() }
-  some(name)
+  then { parser.cursor = start return none[AstStr]() }
+  some(name @ source(parser.file, start..end))
 }
 
 | Convenience methods for the three possible results of parsers returning a
@@ -616,40 +622,40 @@ fun parsed[T](val: T): Result[Maybe[T], Str] {
 }
 
 fun parse_type(parser: &Parser): Result[Maybe[Type], Str] {
-  if parser.consume_prefix("&") then {
+  if parser.consume_prefix("&") is some then {
     var arg = parser.parse_type()?
-      orelse return bad_input[Type]("After &, there must come a type.")
+      or return bad_input[Type]("After &, there must come a type.")
     return parsed(type("&", vec(arg)))
   }
-  if parser.consume_prefix("_") then return parsed(type("_"))
+  if parser.consume_prefix("_") is some then return parsed(type("_"))
 
-  var name = parser.parse_upper_name() orelse return no_match[Type]()
-  var args = parser.parse_type_args()? orelse vec[Type]()
-  parsed(Type { name, args })
+  var name = parser.parse_upper_name() or return no_match[Type]()
+  var args = parser.parse_type_args()? or vec[Type]()
+  parsed(Type { name = name.str, args })
 }
 
 fun parse_type_args(parser: &Parser): Result[Maybe[Vec[Type]], Str] {
   var args = vec[Type]()
-  parser.consume_prefix("[") orelse return no_match[Vec[Type]]()
+  parser.consume_prefix("[") or return no_match[Vec[Type]]()
   loop {
-    args.&.push(parser.parse_type()? orelse break)
-    parser.consume_prefix(",") orelse break
+    args.&.push(parser.parse_type()? or break)
+    parser.consume_prefix(",") or break
   }
-  parser.consume_prefix("]") orelse return bad_input[Vec[Type]](
+  parser.consume_prefix("]") or return bad_input[Vec[Type]](
     "Expected a closing bracket to end the type arguments.")
   parsed(args)
 }
 
 | Like parse_type_args, but the args can only be strings, not types with
 | generics.
-fun parse_type_params(parser: &Parser): Result[Maybe[Vec[Str]], Str] {
-  var args = vec[Str]()
-  parser.consume_prefix("[") orelse return no_match[Vec[Str]]()
+fun parse_type_params(parser: &Parser): Result[Maybe[Vec[AstStr]], Str] {
+  var args = vec[AstStr]()
+  parser.consume_prefix("[") or return no_match[Vec[AstStr]]()
   loop {
-    args.&.push(parser.parse_upper_name() orelse break)
-    parser.consume_prefix(",") orelse break
+    args.&.push(parser.parse_upper_name() or break)
+    parser.consume_prefix(",") or break
   }
-  parser.consume_prefix("]") orelse return bad_input[Vec[Str]](
+  parser.consume_prefix("]") or return bad_input[Vec[AstStr]](
     "Expected a closing bracket to end the type arguments.")
   parsed(args)
 }
@@ -657,16 +663,28 @@ fun parse_type_params(parser: &Parser): Result[Maybe[Vec[Str]], Str] {
 | Expressions are parsed in two parts: parse_expr_without_suffix can parse
 | atomic expressions such as 4 or "hey". parse_expr_suffix can parse expressions
 | that are written behind other expressions and wrap them, for example
-| `foo orelse bar` being parsed into an orelse of foo and bar.
+| `foo or bar` being parsed into an or of foo and bar.
 fun parse_expr(parser: &Parser): Result[Maybe[AstExpr], Str] {
-  parser.parse_expr(true)
+  parser.parse_expr(Precedence.assign)
 }
+
+enum Precedence { immediate, operator, and, or, assign }
+fun to_int(precedence: Precedence): Int {
+  switch precedence
+  case immediate 0
+  case operator 1
+  case and 2
+  case or 3
+  case assign 4
+}
+fun <=>(a: Precedence, b: Precedence): Ordering { a.to_int() <=> b.to_int() }
+
 fun parse_expr(
-  parser: &Parser, operator_allowed: Bool,
+  parser: &Parser, precedence: Precedence,
 ): Result[Maybe[AstExpr], Str] {
   var expr = parser.parse_expr_without_suffix()?
-    orelse return no_match[AstExpr]()
-  loop expr = parser.parse_expr_suffix(expr, operator_allowed)? orelse break
+    or return no_match[AstExpr]()
+  loop expr = parser.parse_expr_suffix(expr, precedence)? or break
   parsed(expr)
 }
 fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Str] {
@@ -674,7 +692,7 @@ fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Str] {
   if parser.parse_char()? is some(char) then return parsed(char)
   if parser.parse_str()? is some(str) then return parsed(str)
   if parser.parse_make()? is some(make) then return parsed(make)
-  if parser.parse_body()? is some(body) then return parsed(AstExpr.body(body))
+  if parser.parse_block()? is some(blck) then return parsed(AstExpr.block(blck))
   if parser.parse_var()? is some(var_) then return parsed(AstExpr.var_(var_))
   if parser.parse_if()? is some(if_) then return parsed(if_)
   if parser.parse_switch()? is some(switch_) then return parsed(switch_)
@@ -688,101 +706,98 @@ fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Str] {
   no_match[AstExpr]()
 }
 fun parse_expr_suffix(
-  parser: &Parser, expr: AstExpr, operator_allowed: Bool,
+  parser: &Parser, expr: AstExpr, precedence: Precedence,
 ): Result[Maybe[AstExpr], Str] {
-  if operator_allowed then {
+  if precedence >= Precedence.or then
+    if parser.parse_expr_suffix_or(expr)? is some(or_) then return parsed(or_)
+  if precedence >= Precedence.and then
+    if parser.parse_expr_suffix_and(expr)? is some(and_) then
+      return parsed(and_)
+  if precedence >= Precedence.operator then
     if parser.parse_expr_suffix_operator(expr)? is some(o) then return parsed(o)
-    if parser.parse_expr_suffix_orelse(expr)? is some(o) then return parsed(o)
+  if precedence is assign then
     if parser.parse_expr_suffix_assign(expr)? is some(a) then return parsed(a)
-  }
   if parser.parse_expr_suffix_member(expr)? is some(mem) then return parsed(mem)
   if parser.parse_expr_suffix_call(expr)? is some(call) then return parsed(call)
   if parser.parse_expr_suffix_try(expr)? is some(try_) then return parsed(try_)
   no_match[AstExpr]()
 }
 
-fun parse_digits(parser: &Parser, radix: U64): Result[Maybe[U64], Str] {
+fun parse_digits(parser: &Parser, radix: Int): Result[Maybe[Int], Str] {
   var start = parser.cursor
   var num = 0
-  if radix > {10 + 26} then return bad_input[U64]("The radix is too big.")
+  if radix > {10 + 26} then return bad_input[Int]("The radix is too big.")
   loop {
     var char = parser.current()
-    if {#0 ..+ min(radix, 10).to_U8()}.contains(char) then {
-      num = num * radix + {char - #0}.to_U64()
+    if {#0 ..+ min(radix, 10).lower_byte()}.contains(char) then {
+      num = num * radix + {char - #0}.to_int()
       parser.advance()
       continue
     }
-    if radix >= 10
-    then if {#a ..+ min(radix - 10, 26).to_U8()}.contains(char)
-      then {
-        num = num * radix + {char - #a + 10:U8}.to_U64()
-        parser.advance()
-        continue
-      }
+    if radix >= 10 then if {#a ..+ min(radix - 10, 26).lower_byte()}.contains(char)
+    then {
+      num = num * radix + {char - #a + 10.lower_byte()}.to_int()
+      parser.advance()
+      continue
+    }
     if char == #_ then parser.advance() else break
   }
-  if parser.cursor == start then return no_match[U64]()
+  if parser.cursor == start then return no_match[Int]()
   parsed(num)
 }
 
 fun parse_int(parser: &Parser): Result[Maybe[AstExpr], Str] {
   parser.consume_whitespace()
-  var value = parser.parse_digits(10)? orelse return no_match[AstExpr]()
+  var value = parser.parse_digits(10)? or return no_match[AstExpr]()
   if parser.current() == ## then {
     parser.advance()
     var radix = value
-    value = parser.parse_digits(radix)? orelse return bad_input[AstExpr](
+    value = parser.parse_digits(radix)? or return bad_input[AstExpr](
       "Expected the value of the number after the radix pound.")
   }
-  if parser.current() != #: then return parsed(AstExpr.int(Int {
-    value,
-    config = IntConfig { signedness = Signedness.unsigned, bits = 64 },
-  }))
-  parser.advance()
-  var signedness =
-    if parser.current() == #I then Signedness.signed
-    else if parser.current() == #U then Signedness.unsigned
-    else return bad_input[AstExpr]("Expected a signedness (U or I).")
-  parser.advance()
-  var bits = parser.parse_digits(10)?
-    orelse return bad_input[AstExpr]("Expected bit length of the integer.")
-  | TODO: check that number fits in range
-  parsed(AstExpr.int(Int { value, config = IntConfig { signedness, bits } }))
+  var end = parser.cursor
+  parsed(AstExpr.int(value))
 }
 
-| #a becomes Char { byte = 97:U8 }
+| #a becomes Char { byte = 97.lower_byte() }
 fun parse_char(parser: &Parser): Result[Maybe[AstExpr], Str] {
-  parser.consume_prefix("#") orelse return no_match[AstExpr]()
+  parser.consume_prefix("#") or return no_match[AstExpr]()
   var char = parser.current()
   parser.advance()
+  var source = source(parser.file, {parser.cursor - 2}..parser.cursor)
   parsed(AstExpr.make_struct(AstMakeStruct {
     type = type("Char"),
+    type_source = source,
     fields = vec(AstMakeStructField {
-      name = "byte",
-      value = AstExpr.int(Int {
-        value = char.byte.to_U64(),
-        config = IntConfig { signedness = Signedness.unsigned, bits = 8 }
-      }),
-    })
+      name = "byte" @ source,
+      value = AstExpr.int(char.byte.to_int())
+        .member("lower_byte" @ source).call("(" @ source),
+    }),
   }))
 }
 
 | TODO: document strings somewhere
 fun parse_str(parser: &Parser): Result[Maybe[AstExpr], Str] {
-  var parts = parser.parse_str_parts()? orelse return no_match[AstExpr]()
+  parser.consume_whitespace()
+  var start = parser.cursor
+  var parts = parser.parse_str_parts()? or return no_match[AstExpr]()
+  var end = parser.cursor
+  var source = source(parser.file, start..end)
   if parts.len == 1 then {
     var expr = parts.get(0)
     if expr is str then return parsed(expr)
   }
-  var body = vec[AstExpr]()
-  body.&.push(var_("$str",
-    AstExpr.name("string_builder")
-      .call(none[Vec[Type]](), vec[AstExpr]())
-      .member("&")))
+  var block = vec[AstExpr]()
+  block.&.push(var_("$str" @ source,
+    AstExpr.name("string_builder" @ source)
+      .call(none[Vec[Type]](), vec[AstExpr](), "(" @ source)
+      .member("&" @ source)))
   for part in parts do
-    body.&.push(AstExpr.name("$str").member("write").call(vec(part)))
-  body.&.push(AstExpr.name("$str").member("to_str").call())
-  parsed(AstExpr.body(body))
+    block.&.push(AstExpr.name("$str" @ source).member("write" @ source)
+      .call(vec(part), "(" @ source))
+  block.&.push(AstExpr.name("$str" @ source)
+    .member("to_str" @ source).call("(" @ source))
+  parsed(AstExpr.block(block))
 }
 | Parses a string literal, potentially with interpolation, into expressions.
 | Metaness 0: "Hello" -> ["Hello"]
@@ -818,11 +833,11 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
         part = vec[Char]()
       }
       parser.advance_by(num_braces)
-      var expr = parser.parse_expr()? orelse return bad_input[Vec[AstExpr]](
+      var expr = parser.parse_expr()? or return bad_input[Vec[AstExpr]](
         "Expected an expression as string interpolation.")
       parts.&.push(expr)
       for i in 0 ..= metaness do
-        parser.consume_prefix("}") orelse return bad_input[Vec[AstExpr]](
+        parser.consume_prefix("}") or return bad_input[Vec[AstExpr]](
           "Expected a closing brace after string interpolation.")
       continue
     }
@@ -849,7 +864,8 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
         then is_followed_by_enough_single_quotes = false
       is_followed_by_enough_single_quotes
     } then {
-      if part.is_not_empty() then parts.&.push(AstExpr.str(part.to_str()))
+      if part.is_not_empty() then
+        parts.&.push(AstExpr.str(part.to_str()))
       parser.advance_by(1 + metaness)
       return parsed(parts)
     }
@@ -860,36 +876,40 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
 }
 
 | Parses either a struct creation such as Foo { foo, bar = 4 } or an enum
-| creation such as Maybe[U64].some(4).
+| creation such as Maybe[Int].some(4).
 fun parse_make(parser: &Parser): Result[Maybe[AstExpr], Str] {
-  var type = parser.parse_type()? orelse return no_match[AstExpr]()
-  if parser.consume_prefix('"{"') then {
+  parser.consume_whitespace()
+  var start = parser.cursor
+  var type = parser.parse_type()? or return no_match[AstExpr]()
+  var end = parser.cursor
+  var type_source = source(parser.file, start..end)
+  if parser.consume_prefix('"{"') is some then {
     var fields = vec[AstMakeStructField]()
     loop {
-      var name = parser.parse_lower_name() orelse break
+      var name = parser.parse_lower_name() or break
       var value =
-        if parser.consume_prefix("=")
-        then parser.parse_expr()?
-          orelse return bad_input[AstExpr]( "Expected the value of the field.")
+        if parser.consume_prefix("=") is some then
+          parser.parse_expr()?
+            or return bad_input[AstExpr]("Expected the value of the field.")
         else AstExpr.name(name)
       fields.&.push(AstMakeStructField { name, value })
-      parser.consume_prefix(",") orelse break
+      parser.consume_prefix(",") or break
     }
     parser.consume_prefix("}")
-      orelse return bad_input[AstExpr]("Expected a closing brace.")
-    parsed(AstExpr.make_struct(AstMakeStruct { type, fields }))
+      or return bad_input[AstExpr]("Expected a closing brace.")
+    parsed(AstExpr.make_struct(AstMakeStruct { type, type_source, fields }))
   } else {
     parser.consume_prefix(".")
-      orelse return bad_input[AstExpr]("Expected struct or enum creation.")
+      or return bad_input[AstExpr]("Expected struct or enum creation.")
     var variant = parser.parse_lower_name()
-      orelse return bad_input[AstExpr]("Expected the variant.")
+      or return bad_input[AstExpr]("Expected the variant.")
 
-    var arg = AstExpr.body(vec[AstExpr]())
-    if parser.consume_prefix("(") then {
-      arg = parser.parse_expr()? orelse return bad_input[AstExpr](
+    var arg = AstExpr.block(vec[AstExpr]())
+    if parser.consume_prefix("(") is some then {
+      arg = parser.parse_expr()? or return bad_input[AstExpr](
         "Expected an argument for the variant.")
       parser.consume_prefix(")")
-        orelse return bad_input[AstExpr]("Expected a closing parenthesis.")
+        or return bad_input[AstExpr]("Expected a closing parenthesis.")
     }
     parsed(AstExpr.make_enum(
       AstMakeEnum { type, variant, arg = arg.put_on_heap() }
@@ -897,25 +917,25 @@ fun parse_make(parser: &Parser): Result[Maybe[AstExpr], Str] {
   }
 }
 
-fun parse_body(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
-  parser.consume_prefix('"{"') orelse return no_match[Vec[AstExpr]]()
+fun parse_block(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
+  parser.consume_prefix('"{"') or return no_match[Vec[AstExpr]]()
   var statements = vec[AstExpr]()
   loop switch parser.parse_expr()?
   case some(expr) statements.&.push(expr)
   case none break
-  parser.consume_prefix("}") orelse return bad_input[Vec[AstExpr]](
-    "Expected the closing brace of the body.")
+  parser.consume_prefix("}") or return bad_input[Vec[AstExpr]](
+    "Expected the closing brace of the block.")
   parsed(statements)
 }
 
 fun parse_var(parser: &Parser): Result[Maybe[AstVar], Str] {
-  parser.consume_keyword("var") orelse return no_match[AstVar]()
+  parser.consume_keyword("var") or return no_match[AstVar]()
   var name = parser.parse_lower_name()
-    orelse return bad_input[AstVar]("Expected the name of the variable.")
+    or return bad_input[AstVar]("Expected the name of the variable.")
   parser.consume_prefix("=")
-    orelse return bad_input[AstVar]("Expected an equals sign.")
+    or return bad_input[AstVar]("Expected an equals sign.")
   var value = parser.parse_expr()?
-    orelse return bad_input[AstVar]("Expected the value of the variable.")
+    or return bad_input[AstVar]("Expected the value of the variable.")
   parsed(AstVar { name, value = value.put_on_heap() })
 }
 
@@ -928,72 +948,83 @@ fun parse_var(parser: &Parser): Result[Maybe[AstVar], Str] {
 | - if condition is variant(binding) then foo else bar
 | They all get desugared into a switch.
 fun parse_if(parser: &Parser): Result[Maybe[AstExpr], Str] {
-  parser.consume_keyword("if") orelse return no_match[AstExpr]()
-  var condition = parser.parse_expr()? orelse return bad_input[AstExpr](
+  var keyword = parser.consume_keyword("if") or return no_match[AstExpr]()
+  var condition = parser.parse_expr()? or return bad_input[AstExpr](
     "Expected the condition.")
-  var variant = "true"
-  var binding = none[Str]()
-  if parser.consume_keyword("is") then {
+  var variant = "true" @ keyword.source
+  var binding = none[AstStr]()
+  if parser.consume_keyword("is") is some then {
     variant = parser.parse_lower_name()
-      orelse return bad_input[AstExpr]("Expected a variant.")
-    if parser.consume_prefix("(") then {
+      or return bad_input[AstExpr]("Expected a variant.")
+    if parser.consume_prefix("(") is some then {
       binding = some(parser.parse_lower_name()
-        orelse return bad_input[AstExpr]("Expected the name of the binding."))
+        or return bad_input[AstExpr]("Expected the name of the binding."))
       parser.consume_prefix(")")
-        orelse return bad_input[AstExpr]("Expected a closing parenthesis.")
+        or return bad_input[AstExpr]("Expected a closing parenthesis.")
     }
   }
   parser.consume_keyword("then")
-    orelse return bad_input[AstExpr]("Expected then keyword.")
+    or return bad_input[AstExpr]("Expected then keyword.")
   var then_ = parser.parse_expr()?
-    orelse return bad_input[AstExpr]("Expected a then expression.")
-  var else_ = AstExpr.body(vec[AstExpr]())
-  if parser.consume_keyword("else")
-  then else_ = parser.parse_expr()?
-    orelse return bad_input[AstExpr]("Expected an else expression.")
+    or return bad_input[AstExpr]("Expected a then expression.")
+  var else_ = AstExpr.block(vec[AstExpr]())
+  var else_source = keyword.source
+  if parser.consume_keyword("else") is some(keyword) then {
+    else_ = parser.parse_expr()?
+      or return bad_input[AstExpr]("Expected an else expression.")
+    else_source = keyword.source
+  }
   parsed(AstExpr.switch_(AstSwitch {
+    keyword,
     value = condition.put_on_heap(),
-    cases = vec(AstCase { variant, binding, then_ = then_.put_on_heap() }),
-    default_ = some(else_.put_on_heap()),
+    cases = vec(AstCase { variant, binding, body = then_ }),
+    default_ = some(AstDefaultCase {
+      keyword = "default" @ else_source,
+      body = else_,
+    }.put_on_heap()),
   }))
 }
 
 fun parse_switch(parser: &Parser): Result[Maybe[AstExpr], Str] {
-  parser.consume_keyword("switch") orelse return no_match[AstExpr]()
-  var value = parser.parse_expr()? orelse return bad_input[AstExpr](
+  var keyword = parser.consume_keyword("switch")
+    or return no_match[AstExpr]()
+  var value = parser.parse_expr()? or return bad_input[AstExpr](
     "Expected the value that is switched over.")
   var cases = vec[AstCase]()
   loop {
-    parser.consume_keyword("case") orelse break
+    parser.consume_keyword("case") or break
     var variant = parser.parse_lower_name()
-      orelse return bad_input[AstExpr]("Expected a variant.")
-    var binding = none[Str]()
-    if parser.consume_prefix("(") then {
+      or return bad_input[AstExpr]("Expected a variant.")
+    eprintln("Parsed case {variant}")
+    var binding = none[AstStr]()
+    eprintln("Next: {parser.rest().substr(0, 5)}...")
+    var opening_paren = parser.consume_prefix("(")
+    if opening_paren is some then {
       binding = some(parser.parse_lower_name()
-        orelse return bad_input[AstExpr]("Expected the name of the binding."))
+        or return bad_input[AstExpr]("Expected the name of the binding."))
       parser.consume_prefix(")")
-        orelse return bad_input[AstExpr]("Expected a closing parenthesis.")
-    }
-    var then_ = parser.parse_expr()?
-      orelse return bad_input[AstExpr]("Expected a case expression.")
-    cases.&.push(AstCase { variant, binding, then_ = then_.put_on_heap() })
+        or return bad_input[AstExpr]("Expected a closing parenthesis.")
+    } else eprintln("No binding: {opening_paren}")
+    var body = parser.parse_expr()?
+      or return bad_input[AstExpr]("Expected a case expression.")
+    cases.&.push(AstCase { variant, binding, body })
   }
-  var default_ = none[&AstExpr]()
-  if parser.consume_keyword("default") then {
-    var default__ = parser.parse_expr()?
-      orelse return bad_input[AstExpr]("Expected a default expression.")
-    default_ = some(default__.put_on_heap())
+  var default_ = none[&AstDefaultCase]()
+  if parser.consume_keyword("default") is some(keyword) then {
+    var body = parser.parse_expr()?
+      or return bad_input[AstExpr]("Expected a default expression.")
+    default_ = some(AstDefaultCase { keyword, body }.put_on_heap())
   }
   parsed(AstExpr.switch_(AstSwitch {
-    value = value.put_on_heap(), cases, default_
+    keyword, value = value.put_on_heap(), cases, default_,
   }))
 }
 
 fun parse_loop(parser: &Parser): Result[Maybe[AstExpr], Str] {
-  parser.consume_keyword("loop") orelse return no_match[AstExpr]()
+  var keyword = parser.consume_keyword("loop") or return no_match[AstExpr]()
   var expr = parser.parse_expr()?
-    orelse return bad_input[AstExpr]("Expected loop expression.")
-  parsed(AstExpr.loop_(expr.put_on_heap()))
+    or return bad_input[AstExpr]("Expected loop expression.")
+  parsed(AstExpr.loop_(AstLoop { keyword, body = expr.put_on_heap() }))
 }
 
 | A for-loop such as `for foo in bar do baz` gets desugared into this:
@@ -1005,88 +1036,107 @@ fun parse_loop(parser: &Parser): Result[Maybe[AstExpr], Str] {
 |   }
 | }
 fun parse_for(parser: &Parser): Result[Maybe[AstExpr], Str] {
-  parser.consume_keyword("for") orelse return no_match[AstExpr]()
+  var keyword = parser.consume_keyword("for") or return no_match[AstExpr]()
+  var source = keyword.source
   var iter_var = parser.parse_lower_name()
-    orelse return bad_input[AstExpr](
+    or return bad_input[AstExpr](
       "Expected the name of the iteration variable.")
   parser.consume_keyword("in")
-    orelse return bad_input[AstExpr]("Expected in keyword.")
+    or return bad_input[AstExpr]("Expected in keyword.")
   var iter = parser.parse_expr()?
-    orelse return bad_input[AstExpr]("Expected something to iterate over.")
+    or return bad_input[AstExpr]("Expected something to iterate over.")
   parser.consume_keyword("do")
-    orelse return bad_input[AstExpr]("Expected do keyword.")
+    or return bad_input[AstExpr]("Expected do keyword.")
   var expr = parser.parse_expr()?
-    orelse return bad_input[AstExpr]("Expected a loop expression.")
-  parsed(AstExpr.body(vec(
-    var_("$iter", iter.member("iter").call().member("&")),
-    AstExpr.loop_(AstExpr.body(vec(
-      var_(iter_var, AstExpr.switch_(AstSwitch {
-        value = AstExpr.name("$iter").member("next").call().put_on_heap(),
-        cases = vec(
-          AstCase {
-            variant = "some",
-            binding = some("a"),
-            then_ = AstExpr.name("a").put_on_heap()
-          },
-          AstCase {
-            variant = "none",
-            binding = none[Str](),
-            then_ = AstExpr.break_(AstExpr.make_struct(AstMakeStruct {
-              type = type("Nothing"),
-              fields = vec[AstMakeStructField](),
-            }).put_on_heap()).put_on_heap(),
-          },
-        ),
-        default_ = none[&AstExpr](),
-      })),
-      expr,
-    )).put_on_heap())
+    or return bad_input[AstExpr]("Expected a loop expression.")
+  parsed(AstExpr.block(vec(
+    var_("$iter" @ source,
+      iter.member("iter" @ source).call("(" @ source).member("&" @ source)),
+    AstExpr.loop_(AstLoop {
+      keyword,
+      body = AstExpr.block(vec(
+        var_(iter_var, AstExpr.switch_(AstSwitch {
+          keyword,
+          value = AstExpr.name("$iter" @ source)
+            .member("next" @ source).call("(" @ source).put_on_heap(),
+          cases = vec(
+            AstCase {
+              variant = "some" @ source,
+              binding = some("a" @ source),
+              body = AstExpr.name("a" @ source),
+            },
+            AstCase {
+              variant = "none" @ source,
+              binding = none[AstStr](),
+              body = AstExpr.break_(AstBreak {
+                keyword = "break" @ source,
+                value = AstExpr.make_struct(AstMakeStruct {
+                  type = type("Nothing"),
+                  type_source = source,
+                  fields = vec[AstMakeStructField](),
+                }).put_on_heap()
+              }),
+            },
+          ),
+          default_ = none[&AstDefaultCase](),
+        })),
+        expr,
+      )).put_on_heap()
+    })
   )))
 }
 
 fun parse_break(parser: &Parser): Result[Maybe[AstExpr], Str] {
-  parser.consume_keyword("break") orelse return no_match[AstExpr]()
-  var expr = if parser.consume_prefix("(")
+  var keyword = parser.consume_keyword("break")
+    or return no_match[AstExpr]()
+  var expr = if parser.consume_prefix("(") is some
     then {
       var expr = parser.parse_expr()?
-        orelse return bad_input[AstExpr]("Expected break expression.")
+        or return bad_input[AstExpr]("Expected break expression.")
       parser.consume_prefix(")")
-        orelse return bad_input[AstExpr]("Expected closing parenthesis.")
+        or return bad_input[AstExpr]("Expected closing parenthesis.")
       expr
     }
     else AstExpr.make_struct(AstMakeStruct {
       type = type("Nothing"),
+      type_source = keyword.source,
       fields = vec[AstMakeStructField](),
     })
-  parsed(AstExpr.break_(expr.put_on_heap()))
+  parsed(AstExpr.break_(AstBreak { keyword, value = expr.put_on_heap() }))
 }
 
 fun parse_continue(parser: &Parser): Result[Maybe[AstExpr], Str] {
-  parser.consume_keyword("continue") orelse return no_match[AstExpr]()
-  parsed(AstExpr.continue_)
+  var keyword = parser.consume_keyword("continue")
+    or return no_match[AstExpr]()
+  parsed(AstExpr.continue_(AstContinue { keyword }))
 }
 
 fun parse_return(parser: &Parser): Result[Maybe[AstExpr], Str] {
-  parser.consume_keyword("return") orelse return no_match[AstExpr]()
+  var keyword = parser.consume_keyword("return")
+    or return no_match[AstExpr]()
   var expr = parser.parse_expr()?
-    orelse return bad_input[AstExpr]("Expected returned expression.")
-  parsed(AstExpr.return_(expr.put_on_heap()))
+    or return bad_input[AstExpr]("Expected returned expression.")
+  parsed(AstExpr.return_(AstReturn { keyword, value = expr.put_on_heap() }))
 }
 
 fun parse_expr_suffix_member(
   parser: &Parser, current: AstExpr,
 ): Result[Maybe[AstExpr], Str] {
-  parser.consume_prefix(".") orelse return no_match[AstExpr]()
-  if parser.consume_prefix("*") then return parsed(current.member("*"))
-  if parser.consume_prefix("&") then return parsed(current.member("&"))
-  if parser.parse_lower_name() is some(name)
-  then return parsed(current.member(name))
+  var dot = parser.consume_prefix(".") or return no_match[AstExpr]()
+  if parser.consume_prefix("*") is some(star) then
+    return parsed(current.member(star))
+  if parser.consume_prefix("&") is some(ampersand) then
+    return parsed(current.member(ampersand))
+  if parser.parse_lower_name() is some(name) then
+    return parsed(current.member(name))
   if parser.parse_str_parts()? is some(parts) then return {
-    var body = vec[AstExpr]()
-    body.&.push(var_("$str", current))
+    var block = vec[AstExpr]()
+    block.&.push(var_("$str" @ dot.source, current))
     for part in parts do
-      body.&.push(AstExpr.name("$str").member("write").call(vec(part)))
-    parsed(AstExpr.body(body))
+      block.&.push(AstExpr.name("$str" @ dot.source)
+        .member("write" @ dot.source)
+        .call(vec(part), "(" @ dot.source))
+    parsed(AstExpr.block(block))
   }
   return bad_input[AstExpr]("Expected the name of a member.")
 }
@@ -1095,81 +1145,103 @@ fun parse_expr_suffix_call(
   parser: &Parser, current: AstExpr,
 ): Result[Maybe[AstExpr], Str] {
   var type_args = parser.parse_type_args()?
-  parser.consume_prefix("(")
-    orelse return if type_args is some
+  var opening_parenthesis = parser.consume_prefix("(")
+    or return if type_args is some
       then bad_input[AstExpr]("Expected an opening parenthesis.")
       else no_match[AstExpr]()
   var args = vec[AstExpr]()
   loop {
-    args.&.push(parser.parse_expr()? orelse break)
-    parser.consume_prefix(",") orelse break
+    args.&.push(parser.parse_expr()? or break)
+    parser.consume_prefix(",") or break
   }
-  parser.consume_prefix(")") orelse return bad_input[AstExpr](
+  parser.consume_prefix(")") or return bad_input[AstExpr](
     "Expected closing parenthesis of the call. Args: {args.len}")
-  parsed(current.call(type_args, args))
+  parsed(current.call(type_args, args, opening_parenthesis))
 }
 
 fun parse_expr_suffix_operator(
   parser: &Parser, current: AstExpr,
 ): Result[Maybe[AstExpr], Str] {
-  var operator = parser.parse_operator_name() orelse return no_match[AstExpr]()
-  var value = parser.parse_expr(false)? orelse return bad_input[AstExpr](
-    "Expected an expression on the right side of the operator.")
-  parsed(AstExpr.name(operator).call(none[Vec[Type]](), vec(current, value)))
+  var operator = parser.parse_operator_name() or return no_match[AstExpr]()
+  var value = parser.parse_expr(Precedence.immediate)?
+    or return bad_input[AstExpr](
+      "Expected an expression on the right side of the operator.")
+  parsed(AstExpr.name(operator)
+    .call(none[Vec[Type]](), vec(current, value), operator))
 }
 
 fun parse_expr_suffix_assign(
   parser: &Parser, current: AstExpr,
 ): Result[Maybe[AstExpr], Str] {
-  parser.consume_prefix("=") orelse return no_match[AstExpr]()
-  var value = parser.parse_expr()? orelse return bad_input[AstExpr](
+  var equal_sign = parser.consume_prefix("=") or return no_match[AstExpr]()
+  var value = parser.parse_expr()? or return bad_input[AstExpr](
     "Expected an expression on the right side of the assign.")
   parsed(AstExpr.assign(AstAssign {
     to = current.put_on_heap(),
     value = value.put_on_heap(),
+    equal_sign,
   }))
 }
 
-fun parse_expr_suffix_orelse(
+fun parse_expr_suffix_and(
   parser: &Parser, current: AstExpr,
 ): Result[Maybe[AstExpr], Str] {
-  parser.consume_keyword("orelse") orelse return no_match[AstExpr]()
-  var binding =
-    if parser.consume_prefix("(") then {
-      var name = parser.parse_lower_name()
-        orelse return bad_input[AstExpr]("Expected orelse binding.")
-      parser.consume_prefix(")")
-        orelse return bad_input[AstExpr]("Expected closing parenthesis.")
-      some(name)
-    } else none[Str]()
-  var alternative = parser.parse_expr()? orelse return bad_input[AstExpr](
-    "Expected alternative expression after orelse.")
+  var keyword = parser.consume_keyword("and") or return no_match[AstExpr]()
+  var alternative = parser.parse_expr(Precedence.and)?
+    or return bad_input[AstExpr]("Expected alternative after and.")
   parsed(AstExpr.switch_(AstSwitch {
-    value = current.member("to_orelse").call().put_on_heap(),
+    keyword,
+    value = current.member(keyword).call("(" @ keyword.source).put_on_heap(),
     cases = vec(
       AstCase {
-        variant = "primary",
-        binding = some("$primary"),
-        then_ = AstExpr.name("$primary").put_on_heap(),
+        variant = "short_circuit" @ keyword.source,
+        binding = some("$primary" @ keyword.source),
+        body = AstExpr.name("$primary" @ keyword.source),
       },
       AstCase {
-        variant = "secondary",
-        binding,
-        then_ = alternative.put_on_heap(),
+        variant = "evaluate_alternative" @ keyword.source,
+        binding = none[AstStr](),
+        body = alternative,
       },
     ),
-    default_ = none[&AstExpr](),
+    default_ = none[&AstDefaultCase](),
+  }))
+}
+
+fun parse_expr_suffix_or(
+  parser: &Parser, current: AstExpr,
+): Result[Maybe[AstExpr], Str] {
+  var keyword = parser.consume_keyword("or") or return no_match[AstExpr]()
+  var alternative = parser.parse_expr(Precedence.or)?
+    or return bad_input[AstExpr]("Expected alternative after or.")
+  parsed(AstExpr.switch_(AstSwitch {
+    keyword,
+    value = current.member(keyword).call("(" @ keyword.source).put_on_heap(),
+    cases = vec(
+      AstCase {
+        variant = "short_circuit" @ keyword.source,
+        binding = some("$primary" @ keyword.source),
+        body = AstExpr.name("$primary" @ keyword.source),
+      },
+      AstCase {
+        variant = "evaluate_alternative" @ keyword.source,
+        binding = none[AstStr](),
+        body = alternative,
+      },
+    ),
+    default_ = none[&AstDefaultCase](),
   }))
 }
 
 fun parse_expr_suffix_try(
   parser: &Parser, current: AstExpr,
 ): Result[Maybe[AstExpr], Str] {
-  parser.consume_prefix("?") orelse return no_match[AstExpr]()
-  parsed(AstExpr.try(current.put_on_heap()))
+  var question_mark = parser.consume_prefix("?")
+    or return no_match[AstExpr]()
+  parsed(AstExpr.try(AstTry { question_mark, value = current.put_on_heap() }))
 }
 
-fun parse_asm_name(parser: &Parser): Maybe[Str] {
+fun parse_asm_name(parser: &Parser): Maybe[AstStr] {
   parser.consume_whitespace()
   var start = parser.cursor
   loop {
@@ -1178,13 +1250,13 @@ fun parse_asm_name(parser: &Parser): Maybe[Str] {
     then break
     else parser.advance()
   }
-  if parser.cursor == start then return none[Str]()
-  some(parser.code.substr(start, parser.cursor))
+  var end = parser.cursor
+  if start == end then return none[AstStr]()
+  some(parser.code.substr(start, end) @ source(parser.file, start..end))
 }
 fun parse_reg(parser: &Parser): Result[Reg, Str] {
-  var name = parser.parse_asm_name()
-    orelse return error[Reg, Str]("Expected a register.")
-  if name == "ip" then return ok[Reg, Str](Reg.ip)
+  var name = {parser.parse_asm_name()
+    or return error[Reg, Str]("Expected a register.")}.str
   if name == "sp" then return ok[Reg, Str](Reg.sp)
   if name == "st" then return ok[Reg, Str](Reg.st)
   if name == "a" then return ok[Reg, Str](Reg.a)
@@ -1192,212 +1264,219 @@ fun parse_reg(parser: &Parser): Result[Reg, Str] {
   if name == "c" then return ok[Reg, Str](Reg.c)
   if name == "d" then return ok[Reg, Str](Reg.d)
   if name == "e" then return ok[Reg, Str](Reg.e)
+  if name == "f" then return ok[Reg, Str](Reg.f)
   error[Reg, Str]("Expected a register.")
 }
 
 fun parse_asm_str(parser: &Parser): Result[Str, Str] {
-  parser.consume_prefix('"""') orelse return error[Str, Str]("Expected string.")
+  parser.consume_prefix('"""') or return error[Str, Str]("Expected string.")
   var start = parser.cursor
   loop if parser.current() == #" then break else parser.advance()
   parser.advance()
   ok[Str, Str](parser.code.substr(start, parser.cursor - 1))
 }
 
-fun parse_asm_num(parser: &Parser): Result[U64, Str] {
-  if parser.consume_prefix("0b")
-  then return ok[U64, Str](parser.parse_digits(2)?
-    orelse return error[U64, Str]("Expected a binary number."))
-  if parser.consume_prefix("0x")
-  then return ok[U64, Str](parser.parse_digits(16)?
-    orelse return error[U64, Str]("Expected a hexadecimal number."))
-  ok[U64, Str](parser.parse_digits(10)?
-    orelse return error[U64, Str]("Expected a number."))
+fun parse_asm_num(parser: &Parser): Result[Int, Str] {
+  if parser.consume_prefix("0b") is some then
+    return ok[Int, Str](parser.parse_digits(2)?
+      or return error[Int, Str]("Expected a binary number."))
+  if parser.consume_prefix("0x") is some then
+    return ok[Int, Str](parser.parse_digits(16)?
+      or return error[Int, Str]("Expected a hexadecimal number."))
+  ok[Int, Str](parser.parse_digits(10)?
+    or return error[Int, Str]("Expected a number."))
 }
 fun parse_asm_word(parser: &Parser): Result[Word, Str] {
-  if {#0..=#9}.contains(parser.current())
-  then return ok[Word, Str](Word.literal(parser.parse_asm_num()?))
+  parser.consume_whitespace()
+  if {#0..=#9}.contains(parser.current()) then
+    return ok[Word, Str](Word.literal(parser.parse_asm_num()?))
+  if parser.current() == #" then
+    return ok[Word, Str](Word.str(parser.parse_asm_str()?))
   ok[Word, Str](Word.label(parser.parse_asm_name()
-    orelse return error[Word, Str]("Expected a number or label.")))
+    or return error[Word, Str]("Expected a number, string, or label.")))
 }
-fun parse_asm_byte(parser: &Parser): Result[U8, Str] {
+fun parse_asm_byte(parser: &Parser): Result[Byte, Str] {
   var num = parser.parse_asm_num()?
-  if num >= 256 then return error[U8, Str]("Number doesn't fit in a byte.")
-  ok[U8, Str](num.to_U8())
+  if num >= 256 then return error[Byte, Str]("Number doesn't fit in a byte.")
+  ok[Byte, Str](num.lower_byte())
 }
 
 fun parse_instruction(parser: &Parser): Result[Maybe[Instruction], Str] {
-  var name = parser.parse_asm_name() orelse return no_match[Instruction]()
-  if parser.consume_prefix(":") then return parsed(Instruction.label(name))
-  if name == "str" then return parsed(Instruction.str(
-    parser.parse_asm_str()
-      orelse return bad_input[Instruction]("Expected string.")))
-  if name == "byte" then return parsed(Instruction.byte(
-      parser.parse_asm_byte()?))
-  if name == "word" then return parsed(Instruction.word(
-      parser.parse_asm_word()?))
-  if name == "nop" then return parsed(Instruction.nop)
-  if name == "panic" then return parsed(Instruction.panic)
-  if name == "move" then return parsed(Instruction.move(
-    parser.parse_reg()? @ parser.parse_reg()?))
-  if name == "movei" then return parsed(Instruction.movei(
-    parser.parse_reg()? @ parser.parse_asm_word()?))
-  if name == "moveib" then return parsed(Instruction.moveib(
-    parser.parse_reg()? @ parser.parse_asm_byte()?))
-  if name == "load" then return parsed(Instruction.load(
-    parser.parse_reg()? @ parser.parse_reg()?))
-  if name == "loadb" then return parsed(Instruction.loadb(
-    parser.parse_reg()? @ parser.parse_reg()?))
-  if name == "store" then return parsed(Instruction.store(
-    parser.parse_reg()? @ parser.parse_reg()?))
-  if name == "storeb" then return parsed(Instruction.storeb(
-    parser.parse_reg()? @ parser.parse_reg()?))
-  if name == "push" then return parsed(Instruction.push(parser.parse_reg()?))
-  if name == "pop" then return parsed(Instruction.pop(parser.parse_reg()?))
-  if name == "jump" then return parsed(Instruction.jump(
-    parser.parse_asm_word()?))
-  if name == "cjump" then return parsed(Instruction.cjump(
-    parser.parse_asm_word()?))
-  if name == "call" then return parsed(Instruction.call(
-    parser.parse_asm_word()?))
-  if name == "ret" then return parsed(Instruction.ret)
-  if name == "syscall" then return parsed(Instruction.syscall(
-    parser.parse_asm_byte()?))
-  if name == "cmp" then return parsed(Instruction.cmp(
-    parser.parse_reg()? @ parser.parse_reg()?))
-  if name == "isequal" then return parsed(Instruction.isequal)
-  if name == "isless" then return parsed(Instruction.isless)
-  if name == "isgreater" then return parsed(Instruction.isgreater)
-  if name == "islessequal" then return parsed(Instruction.islessequal)
-  if name == "isgreaterequal" then return parsed(Instruction.isgreaterequal)
-  if name == "add" then return parsed(Instruction.add(
-    parser.parse_reg()? @ parser.parse_reg()?))
-  if name == "sub" then return parsed(Instruction.sub(
-    parser.parse_reg()? @ parser.parse_reg()?))
-  if name == "mul" then return parsed(Instruction.mul(
-    parser.parse_reg()? @ parser.parse_reg()?))
-  if name == "div" then return parsed(Instruction.div(
-    parser.parse_reg()? @ parser.parse_reg()?))
-  if name == "rem" then return parsed(Instruction.rem(
-    parser.parse_reg()? @ parser.parse_reg()?))
-  if name == "and" then return parsed(Instruction.and(
-    parser.parse_reg()? @ parser.parse_reg()?))
-  if name == "or" then return parsed(Instruction.or(
-    parser.parse_reg()? @ parser.parse_reg()?))
-  if name == "xor" then return parsed(Instruction.xor(
-    parser.parse_reg()? @ parser.parse_reg()?))
-  if name == "negate" then return parsed(Instruction.negate(
-    parser.parse_reg()?))
-  bad_input[Instruction]("Unknown command {name}.")
+  var name = parser.parse_asm_name() or return no_match[Instruction]()
+  if parser.consume_prefix(":") is some then
+    return parsed(Instruction {
+      kind = InstructionKind.label(name), mnemonic = name
+    })
+  var kind = {
+    var name = name.str
+    if name == "nop" then InstructionKind.nop
+    else if name == "panic" then InstructionKind.panic
+    else if name == "move" then InstructionKind.move(
+      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "movei" then InstructionKind.movei(
+      parser.parse_reg()? & parser.parse_asm_word()?)
+    else if name == "moveib" then InstructionKind.moveib(
+      parser.parse_reg()? & parser.parse_asm_byte()?)
+    else if name == "load" then InstructionKind.load(
+      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "loadb" then InstructionKind.loadb(
+      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "store" then InstructionKind.store(
+      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "storeb" then InstructionKind.storeb(
+      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "push" then InstructionKind.push(parser.parse_reg()?)
+    else if name == "pop" then InstructionKind.pop(parser.parse_reg()?)
+    else if name == "jump" then InstructionKind.jump(
+      parser.parse_asm_name() or return bad_input[Instruction](
+        "Expected a label to jump to."))
+    else if name == "cjump" then InstructionKind.cjump(
+      parser.parse_asm_name() or return bad_input[Instruction](
+        "Expected a label to cjump to."))
+    else if name == "call" then InstructionKind.call(
+      parser.parse_asm_name() or return bad_input[Instruction](
+        "Expected a label to call."))
+    else if name == "ret" then InstructionKind.ret
+    else if name == "syscall" then InstructionKind.syscall(
+      parser.parse_asm_byte()?)
+    else if name == "cmp" then InstructionKind.cmp(
+      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "isequal" then InstructionKind.isequal
+    else if name == "isless" then InstructionKind.isless
+    else if name == "isgreater" then InstructionKind.isgreater
+    else if name == "islessequal" then InstructionKind.islessequal
+    else if name == "isgreaterequal" then InstructionKind.isgreaterequal
+    else if name == "add" then InstructionKind.add(
+      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "sub" then InstructionKind.sub(
+      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "mul" then InstructionKind.mul(
+      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "div" then InstructionKind.div(
+      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "rem" then InstructionKind.rem(
+      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "and" then InstructionKind.and(
+      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "or" then InstructionKind.or(
+      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "xor" then InstructionKind.xor(
+      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "negate" then InstructionKind.negate(parser.parse_reg()?)
+    else return bad_input[Instruction]("Unknown command {name}.")
+  }
+  parsed(Instruction { kind, mnemonic = name })
 }
 
 fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
-  parser.consume_keyword("fun") orelse return no_match[AstFun]()
+  parser.consume_keyword("fun") or return no_match[AstFun]()
   var fun_name = parser.parse_lower_name()
-    orelse parser.parse_operator_name()
-    orelse return bad_input[AstFun]("
+    or parser.parse_operator_name()
+    or return bad_input[AstFun]("
       'Expected a lowercase name or operator name of the function.")
-  var type_args = parser.parse_type_params()? orelse vec[Str]()
+  var type_args = parser.parse_type_params()? or vec[AstStr]()
   var args = vec[AstFunArg]()
   parser.consume_prefix("(")
-    orelse return bad_input[AstFun]("Expected an opening parenthesis.")
+    or return bad_input[AstFun]("Expected an opening parenthesis.")
   loop {
-    var name = parser.parse_lower_name() orelse break
+    var name = parser.parse_lower_name() or break
     parser.consume_prefix(":")
-      orelse return bad_input[AstFun]("Expected a colon.")
+      or return bad_input[AstFun]("Expected a colon.")
     var type = parser.parse_type()?
-      orelse return bad_input[AstFun]("Expected the type of the argument.")
+      or return bad_input[AstFun]("Expected the type of the argument.")
     args.&.push(AstFunArg { name, type })
-    parser.consume_prefix(",") orelse break
+    parser.consume_prefix(",") or break
   }
   parser.consume_prefix(")")
-    orelse return bad_input[AstFun](
+    or return bad_input[AstFun](
       "Expected a parameter or closing parenthesis.")
   var returns = type("Nothing")
-  if parser.consume_prefix(":")
-  then returns = parser.parse_type()?
-    orelse return bad_input[AstFun]("Expected the return type.")
+  if parser.consume_prefix(":") is some then
+    returns = parser.parse_type()?
+      or return bad_input[AstFun]("Expected the return type.")
   var kind =
-    if parser.consume_prefix('"{ ... }"') then AstFunKind.builtin
-    else if parser.consume_prefix('"asm {"') then {
+    if parser.consume_prefix('"{ ... }"') is some(dots) then
+      AstFunKind.builtin(AstBuiltinDots { dots })
+    else if parser.consume_prefix('"asm {"') is some then {
       var instructions = vec[Instruction]()
-      loop instructions.&.push(parser.parse_instruction()? orelse break)
-      parser.consume_prefix("}") orelse return bad_input[AstFun](
+      loop instructions.&.push(parser.parse_instruction()? or break)
+      parser.consume_prefix("}") or return bad_input[AstFun](
         "Expected an instruction or closing brace.")
       AstFunKind.asm_(instructions)
     }
-    else if parser.parse_body()? is some(body) then AstFunKind.body(body)
+    else if parser.parse_block()? is some(block) then AstFunKind.body(block)
     else return bad_input[AstFun]("Expected a function body.")
   parsed(AstFun { name = fun_name, type_args, args, returns, kind })
 }
 
 fun parse_opaque(parser: &Parser): Result[Maybe[AstOpaqueType], Str] {
-  parser.consume_keyword("opaque") orelse return no_match[AstOpaqueType]()
+  parser.consume_keyword("opaque") or return no_match[AstOpaqueType]()
   var name = parser.parse_upper_name()
-    orelse return bad_input[AstOpaqueType]("Expected an uppercase name.")
+    or return bad_input[AstOpaqueType]("Expected an uppercase name.")
   parser.consume_prefix("=")
-    orelse return bad_input[AstOpaqueType]("Expected an equals sign.")
-  var size = parser.parse_bytes_amount("size")? orelse unreachable()
+    or return bad_input[AstOpaqueType]("Expected an equals sign.")
+  var size = parser.parse_bytes_amount("size")? or unreachable()
   parser.consume_prefix("big")
-    orelse return bad_input[AstOpaqueType]('"Expected "big"."')
+    or return bad_input[AstOpaqueType]('"Expected "big"."')
   parser.consume_prefix(",")
-    orelse return bad_input[AstOpaqueType]("Expected comma.")
-  var alignment = parser.parse_bytes_amount("alignment")? orelse unreachable()
+    or return bad_input[AstOpaqueType]("Expected comma.")
+  var alignment = parser.parse_bytes_amount("alignment")? or unreachable()
   parser.consume_prefix("aligned")
-    orelse return bad_input[AstOpaqueType]('"Expected "aligned"."')
+    or return bad_input[AstOpaqueType]('"Expected "aligned"."')
   parsed(AstOpaqueType { name, size, alignment })
 }
-fun parse_bytes_amount(parser: &Parser, name: Str): Result[Maybe[U64], Str] {
+fun parse_bytes_amount(parser: &Parser, name: Str): Result[Maybe[Int], Str] {
   parser.consume_whitespace()
   var amount = parser.parse_digits(10)?
-    orelse return bad_input[U64]("Expected {name}.")
+    or return bad_input[Int]("Expected {name}.")
   if amount == 1
   then parser.consume_prefix("byte")
-    orelse return bad_input[U64]('"Expected "byte"."')
+    or return bad_input[Int]('"Expected "byte"."')
   else parser.consume_prefix("bytes")
-    orelse return bad_input[U64]('"Expected "bytes"."')
+    or return bad_input[Int]('"Expected "bytes"."')
   parsed(amount)
 }
 
 fun parse_struct(parser: &Parser): Result[Maybe[AstStruct], Str] {
-  parser.consume_keyword("struct") orelse return no_match[AstStruct]()
+  parser.consume_keyword("struct") or return no_match[AstStruct]()
   var name = parser.parse_upper_name()
-    orelse return bad_input[AstStruct]("Expected an uppercase name.")
-  var type_args = parser.parse_type_params()? orelse vec[Str]()
+    or return bad_input[AstStruct]("Expected an uppercase name.")
+  var type_args = parser.parse_type_params()? or vec[AstStr]()
   parser.consume_prefix('"{"')
-    orelse return bad_input[AstStruct]("Expected an opening brace.")
+    or return bad_input[AstStruct]("Expected an opening brace.")
   var fields = vec[AstStructField]()
   loop {
-    var field_name = parser.parse_lower_name() orelse break
+    var field_name = parser.parse_lower_name() or break
     parser.consume_prefix(":")
-      orelse return bad_input[AstStruct]("Expected a colon.")
+      or return bad_input[AstStruct]("Expected a colon.")
     var field_type = parser.parse_type()?
-      orelse return bad_input[AstStruct]("Expected the type of the field.")
+      or return bad_input[AstStruct]("Expected the type of the field.")
     fields.&.push(AstStructField { name = field_name, type = field_type })
-    parser.consume_prefix(",") orelse break
+    parser.consume_prefix(",") or break
   }
-  parser.consume_prefix("}") orelse return bad_input[AstStruct](
+  parser.consume_prefix("}") or return bad_input[AstStruct](
     "Expected a closing brace to end the struct.")
   parsed(AstStruct { name, type_args, fields })
 }
 
 fun parse_enum(parser: &Parser): Result[Maybe[AstEnum], Str] {
-  parser.consume_keyword("enum") orelse return no_match[AstEnum]()
+  parser.consume_keyword("enum") or return no_match[AstEnum]()
   var name = parser.parse_upper_name()
-    orelse return bad_input[AstEnum]("Expected an uppercase name.")
-  var type_args = parser.parse_type_params()? orelse vec[Str]()
+    or return bad_input[AstEnum]("Expected an uppercase name.")
+  var type_args = parser.parse_type_params()? or vec[AstStr]()
   parser.consume_prefix('"{"')
-    orelse return bad_input[AstEnum]("Expected an opening brace.")
+    or return bad_input[AstEnum]("Expected an opening brace.")
   var variants = vec[AstEnumVariant]()
   loop {
-    var variant_name = parser.parse_lower_name() orelse break
+    var variant_name = parser.parse_lower_name() or break
     var variant_type = type("Nothing")
-    if parser.consume_prefix(":")
-    then variant_type = parser.parse_type()?
-      orelse return bad_input[AstEnum]("Expected the type of the variant.")
+    if parser.consume_prefix(":") is some then
+      variant_type = parser.parse_type()?
+        or return bad_input[AstEnum]("Expected the type of the variant.")
     variants.&.push(AstEnumVariant { name = variant_name, type = variant_type })
-    parser.consume_prefix(",") orelse break
+    parser.consume_prefix(",") or break
   }
-  parser.consume_prefix("}") orelse return bad_input[AstEnum](
+  parser.consume_prefix("}") or return bad_input[AstEnum](
     "Expected a closing brace to end the enum.")
   parsed(AstEnum { name, type_args, variants })
 }
@@ -1410,50 +1489,41 @@ fun parse_def(parser: &Parser): Result[Maybe[AstDef], Str] {
   if parser.parse_fun()? is some(fun_) then return parsed(AstDef.fun_(fun_))
   no_match[AstDef]()
 }
-
 fun parse_defs(parser: &Parser): Result[Vec[AstDef], Str] {
   var defs = vec[AstDef]()
-  loop switch parser.parse_def()? case some(d) defs.&.push(d) case none break
-  if parser.cursor < parser.code.len
-  then return error[Vec[AstDef], Str]("Expected a definition.")
+  loop defs.&.push(parser.parse_def()? or break)
+  if parser.cursor < parser.code.len then
+    return error[Vec[AstDef], Str]("Expected a definition.")
   ok[Vec[AstDef], Str](defs)
 }
 
-fun parse(code: Str, stdlib_size: U64): Result[Ast, Str] {
-  var parser = Parser { code, cursor = 0 }
-  | TODO: Replace switch with catch/orelse
-  switch parser.&.parse_defs()
-  case error(error) {
-    if parser.cursor <= stdlib_size
-    then error[Ast, Str](format_error_with_context(
-      parser.code, parser.cursor, error))
-    else error[Ast, Str](format_error_with_context(
-      parser.code.without_first(stdlib_size),
-      parser.cursor - stdlib_size,
-      error
-    ))
-  }
-  case ok(defs) {
-    | Reference types such as &T are type-checked just like any other types. For
-    | this to work, automatically we create a struct here.
-    | struct &[T] { *: T }
-    defs.&.push(AstDef.struct_(AstStruct {
-      name = "&",
-      type_args = vec("T"),
-      fields = vec(AstStructField { name = "*", type = type("T") })
-    }))
+fun parse_import(parser: &Parser): Result[Maybe[AstStr], Str] {
+  parser.consume_keyword("import") or return no_match[AstStr]()
+  var imported = parser.parse_lower_name()
+    or return bad_input[AstStr]("Expected an import (a lowercase name).")
+  parsed(imported)
+}
+fun parse_imports(parser: &Parser): Result[Vec[AstStr], Str] {
+  var imports = vec[AstStr]()
+  loop imports.&.push(parser.parse_import()? or break)
+  ok[Vec[AstStr], Str](imports)
+}
 
-    ok[Ast, Str](Ast { defs })
-  }
+fun parse_single_file(input: Str, file: Str): Result[FileAst, Str] {
+  var parser = Parser { file, code = input, cursor = 0 }
+  var imports =
+    switch parser.&.parse_imports()
+    case ok(imports) imports
+    case error(error) return error[FileAst, Str](format_error_with_context(
+      input, parser.cursor, error))
+  var defs =
+    switch parser.&.parse_defs()
+    case ok(defs) defs
+    case error(error) return error[FileAst, Str](format_error_with_context(
+      input, parser.cursor, error))
+  ok[FileAst, Str](FileAst { imports, defs })
 }
-fun push_builtin_fun(
-  defs: &Vec[AstDef], name: Str, args: Vec[AstFunArg], returns: Type
-) {
-  defs.push(AstDef.fun_(AstFun {
-    name, type_args = vec[Str](), args, returns, kind = AstFunKind.builtin
-  }))
-}
-fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
+fun format_error_with_context(code: Str, offset: Int, error: Str): Str {
   var lines = vec[Str]()
   var current_line = string_builder().&
   var offset_in_line = 0
@@ -1481,11 +1551,191 @@ fun format_error_with_context(code: Str, offset: U64, error: Str): Str {
   out.write(error)
   out.to_str()
 }
-fun write_line_number[W](writer: W, n: U64) {
+fun write_line_number[W](writer: W, n: Int) {
   if n >= 1000 then writer.write(n)
   else if n >= 100 then writer.write(" {n}")
   else if n >= 10 then writer.write("  {n}")
   else writer.write("   {n}")
+}
+
+| Joining Asts From Multiple Files  
+| Multiple FileAsts are joined into a single Ast. While we do that, we make the
+| lookup of methods and variables simpler by putting everything into a map with
+| the name as the key. Thus, the Ast no longer contains an ordering of
+| defintions.
+| This is also an opportunity to validate the general signatures of definitions
+| – in the first revisions of Martinaise, you could define a function foo(Foo),
+| even if no Foo type exists. The function would simply match no call, so
+| everything's fine. This practice is almost always not the intended behavior,
+| so there are some checks here.
+
+struct Ast {
+  types: Map[Str, AstType],
+  globals: Map[Str, AstVar],
+  funs: Map[Str, Vec[AstFun]],
+}
+enum AstType { opaque_: AstOpaqueType, struct_: AstStruct, enum_: AstEnum }
+
+fun write[W](writer: W, ast: Ast) {
+  for type in ast.types do writer."{type.value}{newline}"
+  for global in ast.globals do writer."{global.value}{newline}"
+  for funs in ast.funs do for f in funs.value do writer."{f}{newline}"
+}
+fun write[W](writer: W, type: AstType) {
+  switch type
+  case opaque_(o) writer."{o}"
+  case struct_(s) writer."{s}"
+  case enum_(e) writer."{e}"
+}
+
+fun parse_file_and_dependencies(
+  out: &Map[Str, FileAst], home: Str, file: Str
+): Result[Nothing, Str] {
+  if out.contains(file) then return ok[Nothing, Str]({})
+
+  var path = "{home}/{file}.mar"
+  eprintln("Reading {path}")
+  var content = read_file(path).unwrap("couldn't read {path}").to_str()
+
+  print_on_same_line("Parsing {path}")
+  var ast = content.parse_single_file(file)?
+  out.put(file, ast)
+
+  eprintln("Imports:")
+  for import in ast.imports do eprintln("- {import.str}")
+
+  for import in ast.imports do
+    parse_file_and_dependencies(out, home, import.str)?
+
+  ok[Nothing, Str]({})
+}
+
+fun parse_project(home: Str, entry_file: Str): Result[Ast, Str] {
+  var asts = map[Str, FileAst]()
+
+  | Reference types such as &T are type-checked just like any other types. For
+  | this to work, automatically we create an implicitly imported file with this
+  | struct:
+  | struct &[T] { *: T }
+  var ref_file = "_ref"
+  var invalid_location = source(ref_file, 0..0)
+  var ref = FileAst { imports = vec[AstStr](), defs = vec[AstDef]() }
+  ref.defs.&.push(AstDef.struct_(AstStruct {
+    name = "&" @ invalid_location,
+    type_args = vec("T" @ invalid_location),
+    fields = vec(AstStructField {
+      name = "*" @ invalid_location, type = type("T")
+    }),
+  }))
+  asts.&.put("_ref", ref)
+
+  asts.&.parse_file_and_dependencies(home, entry_file)?
+
+  var types = map[Str, AstType]()
+  var globals = map[Str, AstVar]()
+  var funs = map[Str, Vec[AstFun]]()
+
+  for ast in asts do {
+    eprintln("Collecting defs from {ast.key}")
+    for def in ast.value.defs do {
+      switch def
+      case opaque_(opaque_) {
+        if types.contains(opaque_.name.str) then return error[Ast, Str]('"
+          'Multiple types are named "{{opaque_.name}}". 
+          'Type names have to be unique."')
+        types.&.put(opaque_.name.str, AstType.opaque_(opaque_))
+      }
+      case struct_(struct_) {
+        if types.contains(struct_.name.str) then return error[Ast, Str]('"
+          'Multiple types are named "{{struct_.name}}". 
+          'Type names have to be unique."')
+        types.&.put(struct_.name.str, AstType.struct_(struct_))
+      }
+      case enum_(enum_) {
+        if types.contains(enum_.name.str) then return error[Ast, Str]('"
+          'Multiple types are named "{{enum_.name}}". 
+          'Type names have to be unique."')
+        types.&.put(enum_.name.str, AstType.enum_(enum_))
+      }
+      case var_(global) {
+        if globals.contains(global.name.str) then return error[Ast, Str]('"
+          'Multiple global variables are named "{{global.name}}". 
+          'Names of globals have to be unique."')
+        globals.&.put(global.name.str, global)
+      }
+      case fun_(fun_)
+        if funs.contains(fun_.name.str)
+        then {
+          | TODO: update once there exists Map.get_ref
+          var overloads = funs.get(fun_.name.str)
+          overloads.&.push(fun_)
+          funs.&.put(fun_.name.str, overloads)
+        }
+        else funs.&.put(fun_.name.str, vec(fun_))
+    }
+  }
+
+  eprintln("Types:")
+  for type in types do eprintln("- {type.key}")
+
+  for type in types do
+    switch type.value
+    case opaque_ {
+      | TODO: check alignment is 1, 2, 4, or 8
+    }
+    case struct_(struct_) {
+      for arg in struct_.type_args do
+        if arg.str.exists(types, vec[AstStr]())
+        then return error[Ast, Str]("
+          '{struct_.name} defines a type argument {arg}, but {arg} is also a
+          'fully defined type.")
+      for field in struct_.fields do
+        if field.type.exists(types, struct_.type_args) is error(type) then
+          return error[Ast, Str]("
+            '{struct_.name} refers to type {type}, but that doesn't exist.")
+    }
+    case enum_(enum_) {
+      for arg in enum_.type_args do
+        if arg.str.exists(types, vec[AstStr]())
+        then return error[Ast, Str]("
+          '{enum_.name} defines a type argument {arg}, but {arg} is also a fully
+          'defined type.")
+      for variant in enum_.variants do
+        if variant.type.exists(types, enum_.type_args) is error(type) then
+          return error[Ast, Str]("
+            '{enum_.name} refers to type {type}, but that doesn't exist.")
+    }
+
+  for funs in funs do
+    for fun_ in funs.value do {
+      for arg in fun_.type_args do
+        if arg.str.exists(types, vec[AstStr]()) then
+          return error[Ast, Str]("
+            '{fun_.name} defines a type argument {arg}, but {arg} is also the
+            'name of a concrete type.")
+      for arg in fun_.args do
+        if arg.type.exists(types, fun_.type_args) is error(type) then
+          return error[Ast, Str]("
+            '{fun_.name} refers to type {type}, but that doesn't exist.")
+    }
+
+  ok[Ast, Str](Ast { types, globals, funs })
+}
+
+| Checks if the type exists.
+fun exists(
+  type: Type, types: Map[Str, AstType], extra: Vec[AstStr],
+): Result[Nothing, Str] {
+  if not(type.name.exists(types, extra))
+  then return error[Nothing, Str](type.name)
+  for arg in type.args do arg.exists(types, extra)?
+  ok[Nothing, Str]({})
+}
+fun exists(type: Str, types: Map[Str, AstType], extra: Vec[AstStr]): Bool {
+  if types.contains(type) then true else {
+    for extra in extra do if extra.str == type then return true
+    false
+  }
 }
 
 | Type Sinks  
@@ -1494,8 +1744,8 @@ fun write_line_number[W](writer: W, n: U64) {
 |
 | var a = if condition then 3 else return 4
 |
-| Even though both branches of the if have different types (U64 and Never), they
-| still line up properly to a final U64 type. Type sinks are a way to ensure
+| Even though both branches of the if have different types (Int and Never), they
+| still line up properly to a final Int type. Type sinks are a way to ensure
 | multiple expressions evaluate to the same type.
 
 struct TypeSink { current: Maybe[Type] }
@@ -1546,10 +1796,10 @@ fun finish(sink: TypeSink): Type { sink.current.unwrap("type sink failed") }
 | fun foo[A](a: Foo[A], b: A) { ... }
 | fun foo[A](a: A, b: A) { ... }
 |
-| foo(Foo[U64], U64)
+| foo(Foo[Int], Int)
 |
 | When compiling the call, the Martinaise compiler figures out to use the first
-| function with A = U64. It uses the TypeSolver for that. Here's how to use it:
+| function with A = Int. It uses the TypeSolver for that. Here's how to use it:
 |
 | 1. Create a TypeSolver, passing all type variables that need to be bound.
 |    In the example above, that would be A.
@@ -1558,19 +1808,19 @@ fun finish(sink: TypeSink): Type { sink.current.unwrap("type sink failed") }
 |    - For calls, unify all arguments.
 |    - For struct creations, unify all fields.
 |    - For enum creations, unify the argument.
-|    In the example above, we call unify(Foo[A], Foo[U64]) and unify(A, U64).
+|    In the example above, we call unify(Foo[A], Foo[Int]) and unify(A, Int).
 | 3. Call finish. This ensures that no type variables are unbound and it returns
 |    a type environment (a Map[Str, Type]) that maps the generic type parameters
 |    to concrete types. It can be used to specialize the generic code to the
 |    usage site.
-|    In the example above, the resulting type environment would be {A: U64}.
+|    In the example above, the resulting type environment would be {A: Int}.
 
 struct TypeSolver { vars: Set[Str], env: Map[Str, Type] }
 
-fun create_type_solver[I](vars_: I): TypeSolver {
+fun create_type_solver(vars_: Vec[AstStr]): TypeSolver {
   | TODO: make sure each type var only exists once
   var vars = set[Str]()
-  for var_ in vars_ do vars.&.put(var_)
+  for var_ in vars_ do vars.&.put(var_.str)
   TypeSolver { vars, env = map[Str, Type]() }
 }
 | Calling this function adds the constraint that `concrete` needs to be
@@ -1593,10 +1843,10 @@ fun unify(
     return ok[Bool, Str](true)
   }
 
-  generic.name == concrete.name orelse return ok[Bool, Str](false)
-  generic.args.len == concrete.args.len orelse return ok[Bool, Str](false)
+  generic.name == concrete.name or return ok[Bool, Str](false)
+  generic.args.len == concrete.args.len or return ok[Bool, Str](false)
   for zip in zip(generic.args.iter(), concrete.args.iter()) do
-    solver.unify(zip.a, zip.b)? orelse return ok[Bool, Str](false)
+    solver.unify(zip.a, zip.b)? or return ok[Bool, Str](false)
 
   ok[Bool, Str](true)
 }
@@ -1675,7 +1925,7 @@ fun finish(solver: TypeSolver): Result[Map[Str, Type], Str] {
 
 struct Vars[T] { visible: Vec[VarInScope[T]] }
 struct VarInScope[T] { name: Str, data: T }
-struct VarScope { num_visible: U64 }
+struct VarScope { num_visible: Int }
 
 fun vars[T](): Vars[T] { Vars { visible = vec[VarInScope[T]]() } }
 
@@ -1697,7 +1947,7 @@ fun restore[T](vars: &Vars[T], scope: VarScope) {
 
 | Context  
 | When monoing fails, we want to have backtraces – a path from the main function
-| over all monoed function to the failing location. The Context tracks what the
+| over all monoed function to the failing source. The Context tracks what the
 | compiler is currently doing – it's basically a stack of function signatures.
 | Each time a signature is pushed or popped, it also prints a one-line message
 | to the console, something like this:
@@ -1746,371 +1996,10 @@ fun print_status(context: Context) {
   print_on_same_line(out.to_str())
 }
 
-| Mono  
-| Generic code such as a function foo[T]() doesn't have any generic form in the
-| final output. Instead, for each place where foo is called (each "callsite"), a
-| new version of foo gets compiled. This process (called "monomorphization")
-| enables useful programming patterns. For example, just by writing a compare_to
-| function for a type, you can automatically use all other comparison functions.
-| Generally speaking, monoed code also tends to be faster than general code.
-|
-| The Mono is the next stage in the compiler. Here, functions and types are
-| monoed (aka they are made to be not generic anymore). Only the functions and
-| types that are reachable from the main function appear here – everything else
-| is ignored. While the Ast may contain invalid code (like 3 = 1), the Mono is
-| guaranteed to be correct – during monoing, variable scoping, name lookups, and
-| type checking take place.
-|
-| Functions in the Mono are way simpler than Ast functions in another way: They
-| are linear, only containing slots for local variables and instructions that
-| may jump to each other.
-|
-| Take this AST function:
-|
-| fun foo(a: Bool) {
-|   var foo =
-|     if condition
-|     then 2
-|     else 3
-|   foo + 1
-| }
-|
-| In the Mono, it looks something like this:
-|
-| fun foo(a: Bool) {
-|   slot_0: Bool = arg 0
-|   slot_1: U64 = uninitialized
-|   slot_2: Int = 2
-|   slot_3: Int = 3
-|   slot_4: U64 = uninitialized
-|   slot_5: Int = 1
-|
-|   label_0:
-|     jump_if_variant a true label_1
-|     jump label_2
-|   label_1:
-|     assign slot_1 = slot_2
-|     jump label_3
-|   label_2:
-|     assign slot_1 = slot_3
-|     jump label_3
-|   label_3:
-|     perform_call slot_4 = +(slot_1, slot_5)
-|     return slot_4
-| }
-|
-| Globals are lowered into functions that take no arguments and return the
-| value of the global.
-
-struct Mono {
-  | Monomorphized type definitions.
-  type_defs: Map[Type, MonoTypeDef],
-
-  | Global variables. They map to a function that computes the value.
-  globals: Map[Str, MonoFun],
-  globals_init_order: Vec[Str],
-
-  | Monomorphized functions. Keys are signatures such as "foo[U8](U8)".
-  funs: Map[Str, MonoFun],
-}
-
-enum MonoTypeDef {
-  opaque_: MonoOpaqueType,
-  struct_: MonoStruct,
-  enum_: MonoEnum,
-}
-struct MonoOpaqueType { size: U64, alignment: U64 }
-struct MonoStruct { fields: Vec[MonoStructField] }
-struct MonoStructField { name: Str, type: Type }
-struct MonoEnum { variants: Vec[MonoEnumVariant] }
-struct MonoEnumVariant { name: Str, type: Type }
-
-struct MonoFun {
-  type_args: Vec[Type],
-  arg_types: Vec[Type],
-  return_type: Type,
-  kind: MonoFunKind,
-}
-
-enum MonoFunKind { builtin, body: MonoFunBody, asm_: Vec[Instruction] }
-struct MonoFunBody {
-  slots: Vec[MonoSlot],
-  statements: Vec[MonoStatement],
-}
-
-struct MonoSlot { type: Type, initial_value: MonoSlotValue }
-enum MonoSlotValue { uninitialized, arg: U64, int: U64, str: Str }
-struct MonoSlotRef { index: U64 }
-
-enum MonoStatement {
-  label: MonoLabel,
-  assign: MonoAssign,
-  set_enum: MonoSetEnum,
-  call: MonoCall,
-  jump: MonoJump,
-  jump_if_variant: MonoJumpIfVariant,
-  get_enum_value: MonoGetEnumValue,
-  return_: MonoExpr,
-  ref: MonoRef,
-}
-struct MonoLabel { id: U64 }
-struct MonoAssign { to: MonoExpr, value: MonoExpr }
-struct MonoSetEnum { slot: MonoSlotRef, variant: Str, value: MonoExpr }
-struct MonoCall { to: MonoSlotRef, fun_: Str, args: Vec[MonoExpr] }
-struct MonoJump { target: MonoLabel }
-struct MonoJumpIfVariant {
-  condition: MonoExpr,
-  variant: Str,
-  target: MonoLabel,
-}
-struct MonoGetEnumValue { to: MonoSlotRef, of: MonoExpr, variant: Str }
-struct MonoRef { to: MonoSlotRef, of: MonoExpr }
-
-struct MonoExpr { type: Type, kind: MonoExprKind }
-enum MonoExprKind {
-  nothing,
-  never,
-  global: Str,
-  slot: MonoSlotRef,
-  member: MonoMember,
-}
-struct MonoMember { of: &MonoExpr, name: Str }
-
-fun hash(hasher: &Hasher, slot: MonoSlotRef) { hasher.hash(slot.index) }
-fun ==(a: MonoSlotRef, b: MonoSlotRef): Bool { a.index == b.index }
-
-fun write[W](writer: W, mono: Mono) {
-  writer."Types:{newline}"
-  | TODO: add keys and value iters to stdlib
-  for entry in mono.type_defs do writer." - {entry.key}{newline}"
-
-  writer."Globals:{newline}"
-  for entry in mono.globals do
-    writer." - {entry.key}: {entry.value.return_type}{newline}"
-
-  writer."Funs:{newline}"
-  for entry in mono.funs do {
-    writer.write(entry.key, entry.value)
-    writer.write(newline)
-  }
-}
-fun write[W](writer: W, name: Str, fun_: MonoFun) {
-  writer."{name}{newline}"
-  switch fun_.kind
-  case builtin writer."<builtin>"
-  case body(body) {
-    for zip in body.slots.iter().enumerate() do {
-      var index = zip.index
-      var slot = zip.item
-      if index > 0 then writer.write(newline)
-      writer."  _{index}: {slot.type} = "
-      switch slot.initial_value
-      case uninitialized writer."uninitialized"
-      case arg(i) writer."arg_{i}"
-      case int(int) writer.write(int)
-      case str(str) writer.'""{{str}}""'
-    }
-    for statement in body.statements do writer."{newline}  {statement}"
-  }
-  case asm_(code) writer.write(code)
-}
-fun write[W](writer: W, statement: MonoStatement) {
-  switch statement
-  case label(label) writer."{label}:"
-  case assign(assign) writer."{assign.to} = {assign.value}"
-  case set_enum(set) writer."{set.slot} = {set.variant}({set.value})"
-  case call(call)
-    writer."{call.to} = {call.fun_} called with ({comma_separated(call.args)})"
-  case jump(jump) writer."jump to {jump.target}"
-  case jump_if_variant(jump)
-    writer."if {jump.condition} is {jump.variant}, jump to {jump.target}"
-  case get_enum_value(get) writer."{get.to} = get {get.variant} of {get.of}"
-  case return_(returned) writer."return {returned}"
-  case ref(expr) writer."{expr.to} = {expr.of}.&"
-}
-fun write[W](writer: W, label: MonoLabel) { writer.".l_{label.id}" }
-fun write[W](writer: W, slot: MonoSlotRef) { writer."_{slot.index}" }
-fun write[W](writer: W, expr: MonoExpr) {
-  switch expr.kind
-  case global(name) writer."global_{name}"
-  case slot(slot) writer.write(slot)
-  case member(member) writer."{member.of.*}.{member.name}"
-  case nothing writer."_nothing"
-  case never writer."_never"
-}
-
-fun push(
-  slots: &Vec[MonoSlot], type: Type, initial_value: MonoSlotValue,
-): MonoSlotRef {
-  var ref = MonoSlotRef { index = slots.len }
-  slots.&.push(MonoSlot { type, initial_value })
-  ref
-}
-fun push(slots: &Vec[MonoSlot], type: Type): MonoSlotRef {
-  slots.push(type, MonoSlotValue.uninitialized)
-}
-fun get_ref(slots: &Vec[MonoSlot], ref: MonoSlotRef): &MonoSlot {
-  slots.get_ref(ref.index)
-}
-
-fun push_assign(
-  statements: &Vec[MonoStatement], to: MonoExpr, value: MonoExpr,
-) {
-  statements.push(MonoStatement.assign(MonoAssign { to, value }))
-}
-fun push_call(
-  statements: &Vec[MonoStatement], to: MonoSlotRef, fun_: Str,
-  args: Vec[MonoExpr],
-) {
-  statements.push(MonoStatement.call(MonoCall { to, fun_, args }))
-}
-fun push_ref(statements: &Vec[MonoStatement], to: MonoSlotRef, of: MonoExpr) {
-  statements.push(MonoStatement.ref(MonoRef { to, of }))
-}
-
-var nothing_expr =
-  MonoExpr { kind = MonoExprKind.nothing, type = type("Nothing") }
-var never_expr =
-  MonoExpr { kind = MonoExprKind.never, type = type("Never") }
-
-fun expr(slot_ref: MonoSlotRef, type: Type): MonoExpr {
-  MonoExpr { kind = MonoExprKind.slot(slot_ref), type }
-}
-fun member(of: MonoExpr, name: Str, type: Type): MonoExpr {
-  MonoExpr {
-    kind = MonoExprKind.member(MonoMember { of = of.put_on_heap(), name }),
-    type,
-  }
-}
-
-fun expr(slot: MonoSlotRef, self: CompileFun): MonoExpr {
-  slot.expr(self.slots.get(slot.index).type)
-}
-
-| Preparing the Ast  
-| When compiling function bodies during monomorphization, we need to find
-| matching functions in the Ast. Doing that on the raw Ast works, but is
-| inefficient. For example, when we see a call of the form foo(U8), we have to
-| walk all definitions in the Ast and look for matching ones. Walking the entire
-| Ast for each call is inefficient, so we sort the definitions by their kind and
-| name.
-| This is also an opportunity to validate the general signatures of definitions
-| – in the first revisions of Martinaise, you could define a function foo(Foo),
-| even if no Foo type exists. The function would simply match no call, so
-| everything's fine. This practice is almost always not the intended behavior,
-| so there are some checks here.
-
-struct PreparedAst {
-  types: Map[Str, AstType],
-  globals: Map[Str, AstVar],
-  funs: Map[Str, Vec[AstFun]],
-}
-enum AstType { opaque_: AstOpaqueType, struct_: AstStruct, enum_: AstEnum }
-
-fun prepare(ast: Ast): Result[PreparedAst, Str] {
-  var types = map[Str, AstType]()
-  var globals = map[Str, AstVar]()
-  var funs = map[Str, Vec[AstFun]]()
-
-  for def in ast.defs do {
-    switch def
-    case opaque_(opaque_) {
-      if types.contains(opaque_.name) then return error[PreparedAst, Str]('"
-        'Multiple types are named "{{opaque_.name}}". 
-        'Type names have to be unique."')
-      types.&.put(opaque_.name, AstType.opaque_(opaque_))
-    }
-    case struct_(struct_) {
-      if types.contains(struct_.name) then return error[PreparedAst, Str]('"
-        'Multiple types are named "{{struct_.name}}". 
-        'Type names have to be unique."')
-      types.&.put(struct_.name, AstType.struct_(struct_))
-    }
-    case enum_(enum_) {
-      if types.contains(enum_.name) then return error[PreparedAst, Str]('"
-        'Multiple types are named "{{enum_.name}}". 
-        'Type names have to be unique."')
-      types.&.put(enum_.name, AstType.enum_(enum_))
-    }
-    case var_(global) {
-      if globals.contains(global.name) then return error[PreparedAst, Str]('"
-        'Multiple global variables are named "{{global.name}}". 
-        'Names of globals have to be unique."')
-      globals.&.put(global.name, global)
-    }
-    case fun_(fun_)
-      if funs.contains(fun_.name)
-      then {
-        | TODO: update once there exists Map.get_ref
-        var overloads = funs.get(fun_.name)
-        overloads.&.push(fun_)
-        funs.&.put(fun_.name, overloads)
-      }
-      else funs.&.put(fun_.name, vec(fun_))
-  }
-
-  for type in types do
-    switch type.value
-    case opaque_ {
-      | TODO: check alignment is 1, 2, 4, or 8
-    }
-    case struct_(struct_) {
-      for arg in struct_.type_args do
-        if arg.exists(types, vec[Str]())
-        then return error[PreparedAst, Str]("
-          '{struct_.name} defines a type argument {arg}, but {arg} is also a
-          'fully defined type.")
-      for field in struct_.fields do
-        field.type.exists(types, struct_.type_args)
-          orelse(type) return error[PreparedAst, Str]("
-            '{struct_.name} refers to type {type}, but that doesn't exist.")
-    }
-    case enum_(enum_) {
-      for arg in enum_.type_args do
-        if arg.exists(types, vec[Str]())
-        then return error[PreparedAst, Str]("
-          '{enum_.name} defines a type argument {arg}, but {arg} is also a fully
-          'defined type.")
-      for variant in enum_.variants do
-        variant.type.exists(types, enum_.type_args)
-          orelse(type) return error[PreparedAst, Str]("
-            '{enum_.name} refers to type {type}, but that doesn't exist.")
-    }
-
-  for funs in funs do
-    for fun_ in funs.value do {
-      for arg in fun_.type_args do
-        if arg.exists(types, vec[Str]())
-        then return error[PreparedAst, Str]("
-          '{fun_.name} defines a type argument {arg}, but {arg} is also a fully
-          'defined type.")
-      for arg in fun_.args do
-        arg.type.exists(types, fun_.type_args)
-          orelse(type) return error[PreparedAst, Str]("
-            '{fun_.name} refers to type {type}, but that doesn't exist.")
-    }
-
-  ok[PreparedAst, Str](PreparedAst { types, globals, funs })
-}
-
-| Checks if the type exists.
-fun exists(
-  type: Type, types: Map[Str, AstType], extra: Vec[Str],
-): Result[Nothing, Str] {
-  if not(type.name.exists(types, extra))
-  then return error[Nothing, Str](type.name)
-  for arg in type.args do arg.exists(types, extra)?
-  ok[Nothing, Str]({})
-}
-fun exists(type: Str, types: Map[Str, AstType], extra: Vec[Str]): Bool {
-  if types.contains(type) then true else {
-    for extra in extra do if extra == type then return true
-    false
-  }
-}
+| Ast Lookup  
 
 | Looks up the type with the given name. Type names have to be unique.
-fun lookup_type(ast: PreparedAst, name: Str): Result[AstType, Str] {
+fun lookup_type(ast: Ast, name: Str): Result[AstType, Str] {
   switch ast.types.get_maybe(name)
   case some(match) ok[AstType, Str](match)
   case none return error[AstType, Str]('"There is no type named "{{name}}"."')
@@ -2118,7 +2007,7 @@ fun lookup_type(ast: PreparedAst, name: Str): Result[AstType, Str] {
 
 | Looks up the global variable with the given name. Names of global variables
 | have to be unique.
-fun lookup_global(ast: PreparedAst, name: Str): Maybe[AstVar] {
+fun lookup_global(ast: Ast, name: Str): Maybe[AstVar] {
   ast.globals.get_maybe(name)
 }
 
@@ -2126,11 +2015,11 @@ fun lookup_global(ast: PreparedAst, name: Str): Maybe[AstVar] {
 | (none means they are inferred) and the args of the given types.
 struct LookupFunSolution { fun_: AstFun, type_env: Map[Str, Type] }
 fun lookup_fun(
-  ast: PreparedAst,
+  ast: Ast,
   name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type],
 ): Result[LookupFunSolution, Str] {
   var name_matches = ast.funs.get_maybe(name)
-    orelse return error[LookupFunSolution, Str]('"
+    or return error[LookupFunSolution, Str]('"
       'There are no defintions named "{{name}}"."')
 
   var full_matches = vec[LookupFunSolution]()
@@ -2139,16 +2028,20 @@ fun lookup_fun(
     if type_args is some(type_args_) then {
       if type_args_.len != fun_.type_args.len then continue
       for i in 0..type_args_.len do
-        solver.&.unify(type(fun_.type_args.get(i)), type_args_.get(i))?.assert()
+        solver.&
+          .unify(type(fun_.type_args.get(i).str), type_args_.get(i))?
+          .assert()
     }
     if arg_types.len != fun_.args.len then continue
     var matches = true
     for i in 0..arg_types.len do
       solver.&.unify(fun_.args.get(i).type, arg_types.get(i))?
-        orelse { matches = false break }
+        or { matches = false break }
     if not(matches) then continue
-    var type_env = solver.finish()
-      orelse(error) return error[LookupFunSolution, Str](
+    var type_env =
+      switch solver.finish()
+      case ok(env) env
+      case error(error) return error[LookupFunSolution, Str](
         "Found a function matching a call:{newline}
         '  call: {signature(name, type_args, arg_types)}{newline}
         ' match: {fun_.stripped_signature()}{newline}{newline}
@@ -2194,6 +2087,260 @@ fun lookup_fun(
   ok[LookupFunSolution, Str](full_matches.get(0))
 }
 
+| Mono  
+| Generic code such as a function foo[T]() doesn't have any generic form in the
+| final output. Instead, for each place where foo is called (each "callsite"), a
+| new version of foo gets compiled. This process (called "monomorphization")
+| enables useful programming patterns. For example, just by writing a compare_to
+| function for a type, you can automatically use all other comparison functions.
+| Generally speaking, monoed code also tends to be faster than general code.
+|
+| The Mono is the next stage in the compiler. Here, functions and types are
+| monoed (aka they are made to be not generic anymore). Only the functions and
+| types that are reachable from the main function appear here – everything else
+| is ignored. While the Ast may contain invalid code (like 3 = 1), the Mono is
+| guaranteed to be correct – during monoing, variable scoping, name lookups, and
+| type checking take place.
+|
+| Functions in the Mono are way simpler than Ast functions in another way: They
+| are linear, only containing slots for local variables and instructions that
+| may jump to each other.
+|
+| Take this AST function:
+|
+| fun foo(a: Bool) {
+|   var foo =
+|     if condition
+|     then 2
+|     else 3
+|   foo + 1
+| }
+|
+| In the Mono, it looks something like this:
+|
+| fun foo(a: Bool) {
+|   slot_0: Bool = arg 0
+|   slot_1: Int = uninitialized
+|   slot_2: Int = 2
+|   slot_3: Int = 3
+|   slot_4: Int = uninitialized
+|   slot_5: Int = 1
+|
+|   label_0:
+|     jump_if_variant a true label_1
+|     jump label_2
+|   label_1:
+|     assign slot_1 = slot_2
+|     jump label_3
+|   label_2:
+|     assign slot_1 = slot_3
+|     jump label_3
+|   label_3:
+|     perform_call slot_4 = +(slot_1, slot_5)
+|     return slot_4
+| }
+|
+| Globals are lowered into functions that take no arguments and return the
+| value of the global.
+
+struct Mono {
+  | Monomorphized type definitions.
+  type_defs: Map[Type, MonoTypeDef],
+
+  | Global variables. They map to a function that computes the value.
+  globals: Map[Str, MonoFun],
+  globals_init_order: Vec[Str],
+
+  | Monomorphized functions. Keys are signatures such as "foo[Byte](Byte)".
+  funs: Map[Str, MonoFun],
+}
+
+enum MonoTypeDef {
+  opaque_: MonoOpaqueType,
+  struct_: MonoStruct,
+  enum_: MonoEnum,
+}
+struct MonoOpaqueType { size: Int, alignment: Int }
+struct MonoStruct { fields: Vec[MonoStructField] }
+struct MonoStructField { name: Str, type: Type }
+struct MonoEnum { variants: Vec[MonoEnumVariant] }
+struct MonoEnumVariant { name: Str, type: Type }
+
+struct MonoFun {
+  type_args: Vec[Type],
+  arg_types: Vec[Type],
+  return_type: Type,
+  kind: MonoFunKind,
+}
+
+enum MonoFunKind { builtin: AstStr, body: MonoFunBody, asm_: Vec[Instruction] }
+struct MonoFunBody {
+  slots: Vec[MonoSlot],
+  statements: Vec[MonoStatementAndSource],
+}
+
+struct MonoSlot { type: Type, initial_value: MonoSlotValue }
+enum MonoSlotValue { uninitialized, arg: Int, int: Int, str: Str }
+struct MonoSlotRef { index: Int }
+
+struct MonoStatementAndSource {
+  statement: MonoStatement,
+  source: Source,
+}
+enum MonoStatement {
+  label: MonoLabel,
+  assign: MonoAssign,
+  set_enum: MonoSetEnum,
+  call: MonoCall,
+  jump: MonoJump,
+  jump_if_variant: MonoJumpIfVariant,
+  get_enum_value: MonoGetEnumValue,
+  return_: MonoExpr,
+  ref: MonoRef,
+}
+struct MonoLabel { id: Int }
+struct MonoAssign { to: MonoExpr, value: MonoExpr }
+struct MonoSetEnum { slot: MonoSlotRef, variant: Str, value: MonoExpr }
+struct MonoCall { to: MonoSlotRef, fun_: Str, args: Vec[MonoExpr] }
+struct MonoJump { target: MonoLabel }
+struct MonoJumpIfVariant {
+  condition: MonoExpr,
+  variant: Str,
+  target: MonoLabel,
+}
+struct MonoGetEnumValue { to: MonoSlotRef, of: MonoExpr, variant: Str }
+struct MonoRef { to: MonoSlotRef, of: MonoExpr }
+
+struct MonoExpr { type: Type, kind: MonoExprKind }
+enum MonoExprKind {
+  nothing,
+  never,
+  global: Str,
+  slot: MonoSlotRef,
+  member: MonoMember,
+}
+struct MonoMember { of: &MonoExpr, name: Str }
+
+fun hash(hasher: &Hasher, slot: MonoSlotRef) { hasher.hash(slot.index) }
+fun ==(a: MonoSlotRef, b: MonoSlotRef): Bool { a.index == b.index }
+
+fun @(statement: MonoStatement, source: Source): MonoStatementAndSource {
+  MonoStatementAndSource { statement, source }
+}
+
+fun write[W](writer: W, mono: Mono) {
+  writer."Types:{newline}"
+  | TODO: add keys and value iters to stdlib
+  for entry in mono.type_defs do writer." - {entry.key}{newline}"
+
+  writer."Globals:{newline}"
+  for entry in mono.globals do
+    writer." - {entry.key}: {entry.value.return_type}{newline}"
+
+  writer."Funs:{newline}"
+  for entry in mono.funs do {
+    writer.write(entry.key, entry.value)
+    writer.write(newline)
+  }
+}
+fun write[W](writer: W, name: Str, fun_: MonoFun) {
+  writer."{name}{newline}"
+  switch fun_.kind
+  case builtin writer."<builtin>"
+  case body(body) {
+    for zip in body.slots.iter().enumerate() do {
+      var index = zip.index
+      var slot = zip.item
+      if index > 0 then writer.write(newline)
+      writer."  _{index}: {slot.type} = "
+      switch slot.initial_value
+      case uninitialized writer."uninitialized"
+      case arg(i) writer."arg_{i}"
+      case int(int) writer.write(int)
+      case str(str) writer.'""{{str}}""'
+    }
+    for statement in body.statements do
+      writer."{newline}  {statement.statement}"
+  }
+  case asm_(code) writer.write(code)
+}
+fun write[W](writer: W, statement: MonoStatement) {
+  switch statement
+  case label(label) writer."{label}:"
+  case assign(assign) writer."{assign.to} = {assign.value}"
+  case set_enum(set) writer."{set.slot} = {set.variant}({set.value})"
+  case call(call)
+    writer."{call.to} = {call.fun_} called with ({comma_separated(call.args)})"
+  case jump(jump) writer."jump to {jump.target}"
+  case jump_if_variant(jump)
+    writer."if {jump.condition} is {jump.variant}, jump to {jump.target}"
+  case get_enum_value(get) writer."{get.to} = get {get.variant} of {get.of}"
+  case return_(returned) writer."return {returned}"
+  case ref(expr) writer."{expr.to} = {expr.of}.&"
+}
+fun write[W](writer: W, label: MonoLabel) { writer.".l_{label.id}" }
+fun write[W](writer: W, slot: MonoSlotRef) { writer."_{slot.index}" }
+fun write[W](writer: W, expr: MonoExpr) {
+  switch expr.kind
+  case global(name) writer."global_{name}"
+  case slot(slot) writer.write(slot)
+  case member(member) writer."{member.of.*}.{member.name}"
+  case nothing writer."_nothing"
+  case never writer."_never"
+}
+
+fun push(
+  slots: &Vec[MonoSlot], type: Type, initial_value: MonoSlotValue,
+): MonoSlotRef {
+  var ref = MonoSlotRef { index = slots.len }
+  slots.&.push(MonoSlot { type, initial_value })
+  ref
+}
+fun push(slots: &Vec[MonoSlot], type: Type): MonoSlotRef {
+  slots.push(type, MonoSlotValue.uninitialized)
+}
+fun get_ref(slots: &Vec[MonoSlot], ref: MonoSlotRef): &MonoSlot {
+  slots.get_ref(ref.index)
+}
+
+fun push_assign(
+  statements: &Vec[MonoStatementAndSource], to: MonoExpr, value: MonoExpr,
+  source: Source,
+) {
+  statements.push(MonoStatement.assign(MonoAssign { to, value }) @ source)
+}
+fun push_call(
+  statements: &Vec[MonoStatementAndSource],
+  to: MonoSlotRef, fun_: Str, args: Vec[MonoExpr], source: Source
+) {
+  statements.push(MonoStatement.call(MonoCall { to, fun_, args }) @ source)
+}
+fun push_ref(
+  statements: &Vec[MonoStatementAndSource], to: MonoSlotRef, of: MonoExpr,
+  source: Source
+) {
+  statements.push(MonoStatement.ref(MonoRef { to, of }) @ source)
+}
+
+var nothing_expr =
+  MonoExpr { kind = MonoExprKind.nothing, type = type("Nothing") }
+var never_expr =
+  MonoExpr { kind = MonoExprKind.never, type = type("Never") }
+
+fun expr(slot_ref: MonoSlotRef, type: Type): MonoExpr {
+  MonoExpr { kind = MonoExprKind.slot(slot_ref), type }
+}
+fun member(of: MonoExpr, name: Str, type: Type): MonoExpr {
+  MonoExpr {
+    kind = MonoExprKind.member(MonoMember { of = of.put_on_heap(), name }),
+    type,
+  }
+}
+
+fun expr(slot: MonoSlotRef, self: CompileFun): MonoExpr {
+  slot.expr(self.slots.get(slot.index).type)
+}
+
 | Monomorphization  
 | A rough sketch on how this compiler stage works: The Ast functions are
 | compiled into monomorphized functions, starting from the main function. The
@@ -2205,18 +2352,18 @@ fun lookup_fun(
 |
 | struct Foo[T] { inner: T }
 | fun wrap_in_foo[T](val: T) { Foo { inner = val } }
-| fun main(): U8 {
-|   var foo = wrap_in_foo(wrap_in_foo(2:U8))
-|   0:U8
+| fun main(): Byte {
+|   var foo = wrap_in_foo(wrap_in_foo(2.lower_byte()))
+|   0.lower_byte()
 | }
 |
 | The following types and functions are monomorphized:
 |
 | - main[]()
-|   - wrap_in_foo[U8]()
-|     - Foo[U8]
-|   - wrap_in_foo[Foo[U8]]()
-|     - Foo[Foo[U8]]
+|   - wrap_in_foo[Byte]()
+|     - Foo[Byte]
+|   - wrap_in_foo[Foo[Byte]]()
+|     - Foo[Foo[Byte]]
 |
 | TODO: move this down to the compile fun
 | Recursive functions  
@@ -2226,7 +2373,7 @@ fun lookup_fun(
 | function is encountered recursively, only its signature is needed to figure
 | out how to use it.
 
-fun compile(ast: PreparedAst): Result[Mono, Str] {
+fun compile(ast: Ast): Result[Mono, Str] {
   var context = context()
   var mono = Mono {
     type_defs = map[Type, MonoTypeDef](),
@@ -2248,19 +2395,29 @@ fun compile(ast: PreparedAst): Result[Mono, Str] {
         "Your project must have one of these functions: main(Slice[Str]) or
         ' main()")
       | Generate a main(Slice[Str]) function that just calls main()
-      case ok AstFun {
-        name = "main",
-        type_args = vec[Str](),
-        args = vec(
-          AstFunArg { name = "args", type = type("Slice", vec(type("Str"))) },
-        ),
-        returns = type("Never"),
-        kind = AstFunKind.body(vec(AstExpr.name("main").call())),
+      case ok {
+        var source = source("_main", 0..0)
+        AstFun {
+          name = "main" @ source,
+          type_args = vec[AstStr](),
+          args = vec(
+            AstFunArg {
+              name = "args" @ source,
+              type = type("Slice", vec(type("Str"))),
+            },
+          ),
+          returns = type("Never"),
+          kind = AstFunKind.body(vec(
+            AstExpr.name("main" @ source).call("(" @ source)
+          )),
+        }
       }
     }
 
-  var main_signature = main.compile(map[Str, Type](), context.&, ast, mono.&)
-    orelse(error) return error[Mono, Str]({
+  var main_signature =
+    switch main.compile(map[Str, Type](), context.&, ast, mono.&)
+    case ok(signature) signature
+    case error(error) return error[Mono, Str]({
       var out = string_builder().&
       out."Error when compiling{newline}"
       for signature in context.signatures do out." - {signature}{newline}"
@@ -2271,21 +2428,21 @@ fun compile(ast: PreparedAst): Result[Mono, Str] {
   var return_type = mono.funs.get(main_signature).return_type
   if not(return_type.is_never()) then return error[Mono, Str](
     "The main function should return Never, but it returns {return_type}.
-    '{newline}You can call exit(0:U8) if you want the program to stop.")
+    '{newline}You can call exit(0.lower_byte()) if you want the program to stop.")
 
   ok[Mono, Str](mono)
 }
 
 | Monomorphizes a type, outputting all the required type defs into the Mono. For
-| example, monomorphizing Map[T, Bool] with {T: U64} results in Map[U64, Bool]
-| and also creates all the required defs (Map[U64, Bool], MapBucket[U64, Bool],
-| Slice[MapBucket[U64, Bool]], etc.)
+| example, monomorphizing Map[T, Bool] with {T: Int} results in Map[Int, Bool]
+| and also creates all the required defs (Map[Int, Bool], MapBucket[Int, Bool],
+| Slice[MapBucket[Int, Bool]], etc.)
 | Also saves the corresponding layout in the Mono.
 fun compile(
-  type: Type, type_env: Map[Str, Type], ast: PreparedAst, mono: &Mono,
+  type: Type, type_env: Map[Str, Type], ast: Ast, mono: &Mono,
 ): Result[Type, Str] {
   | TODO: Make sure generic types don't have parameters.
-  var type = type_env.get_maybe(type.name) orelse {
+  var type = type_env.get_maybe(type.name) or {
     var args = vec[Type]()
     for arg in type.args do args.&.push(arg.compile(type_env, ast, mono)?)
     Type { name = type.name, args }
@@ -2310,8 +2467,8 @@ fun compile(
   |       2. Lower Slice[Tree]
   |          ...
   |          (this will not lower Tree again because it's already in the defs)
-  |       3. Lower U64
-  |       4. Put Vec[Tree]: struct { data: Slice[Tree], cap: U64 } in the type
+  |       3. Lower Int
+  |       4. Put Vec[Tree]: struct { data: Slice[Tree], cap: Int } in the type
   |          defs, replacing the placeholder.
   |    3. Put Tree: struct { children: Vec[Tree] } in the type defs
   mono.type_defs.&.put(type,
@@ -2325,16 +2482,16 @@ fun compile(
   }
   case struct_(struct_) {
     var inner_type_env = map[Str, Type]()
-    type.args.len == struct_.type_args.len orelse return error[Type, Str](
+    type.args.len == struct_.type_args.len or return error[Type, Str](
       "You tried to use a {type}, but {struct_.name} takes 
       '{struct_.type_args.len} type arguments.")
     for zip in zip(struct_.type_args.iter(), type.args.iter()) do
-      inner_type_env.&.put(zip.a, zip.b)
+      inner_type_env.&.put(zip.a.str, zip.b)
 
     var fields = vec[MonoStructField]()
     for field in struct_.fields do
       fields.&.push(MonoStructField {
-        name = field.name,
+        name = field.name.str,
         type = field.type.compile(inner_type_env, ast, mono)?,
       })
 
@@ -2343,16 +2500,16 @@ fun compile(
   }
   case enum_(enum_) {
     var inner_type_env = map[Str, Type]()
-    type.args.len == enum_.type_args.len orelse return error[Type, Str](
+    type.args.len == enum_.type_args.len or return error[Type, Str](
       "You tried to use a {type}, but {enum_.name} takes {enum_.type_args.len} 
       'type arguments.")
     for i in 0..type.args.len do
-      inner_type_env.&.put(enum_.type_args.get(i), type.args.get(i))
+      inner_type_env.&.put(enum_.type_args.get(i).str, type.args.get(i))
 
     var variants = vec[MonoEnumVariant]()
     for variant in enum_.variants do
       variants.&.push(MonoEnumVariant {
-        name = variant.name,
+        name = variant.name.str,
         type = variant.type.compile(inner_type_env, ast, mono)?,
       })
 
@@ -2365,7 +2522,7 @@ fun compile(
 | You can use _ to infer parts of the type, for example like Maybe[_].
 fun is_complete(type: Type): Bool {
   if type.name == "_" then return false
-  for arg in type.args do arg.is_complete() orelse return false
+  for arg in type.args do arg.is_complete() or return false
   true
 }
 fun is_incomplete(type: Type): Bool { not(type.is_complete()) }
@@ -2374,29 +2531,31 @@ fun is_incomplete(type: Type): Bool { not(type.is_complete()) }
 | would be the more appropriate term), outputting all the required type defs,
 | other global variables, and functions into the Mono.
 fun compile(
-  global: AstVar, context: &Context, ast: PreparedAst, mono: &Mono,
+  global: AstVar, context: &Context, ast: Ast, mono: &Mono,
 ): Result[Nothing, Str] {
-  if mono.globals.contains(global.name) then return ok[Nothing, Str]({})
+  if mono.globals.contains(global.name.str) then return ok[Nothing, Str]({})
 
   context.push("var {global.name}")
 
   var compile_fun = CompileFun {
     context, ast, mono, type_env = map[Str, Type](),
     return_type = type_sink(),
-    slots = vec[MonoSlot](), statements = vec[MonoStatement](),
+    slots = vec[MonoSlot](),
+    statements = vec[MonoStatementAndSource](),
     next_label = 0, vars = vars[MonoSlotRef](),
     break_scopes = stack[BreakScope](),
     continue_scopes = stack[ContinueScope](),
   }
 
   var value = global.value.compile(compile_fun.&)?
-  compile_fun.statements.&.push(MonoStatement.return_(value))
-  compile_fun.return_type.&.add(value.type)
-    orelse(error) return error[Nothing, Str](
+  compile_fun.statements.&.push(MonoStatement.return_(value)
+    @ global.name.source)
+  if compile_fun.return_type.&.add(value.type) is error(error) then
+    return error[Nothing, Str](
       "The value of the variable doesn't match its expected type.{newline}
       '{error}")
 
-  mono.globals.&.put(global.name, MonoFun {
+  mono.globals.&.put(global.name.str, MonoFun {
     type_args = vec[Type](),
     arg_types = vec[Type](),
     return_type = compile_fun.return_type.finish(),
@@ -2405,29 +2564,29 @@ fun compile(
       statements = compile_fun.statements,
     }),
   })
-  mono.globals_init_order.&.push(global.name)
+  mono.globals_init_order.&.push(global.name.str)
 
   context.&.pop()
   ok[Nothing, Str]({})
 }
 
 | Monos a function with a type env, outputting it into the Mono. Returns the
-| function signature. For example, monomorphizing foo[T](a: T) with {T: U64}
-| results in the function signature foo(U64) and creates all required types and
+| function signature. For example, monomorphizing foo[T](a: T) with {T: Int}
+| results in the function signature foo(Int) and creates all required types and
 | functions on the Mono.
 fun compile(
   fun_: AstFun, type_env: Map[Str, Type],
-  context: &Context, ast: PreparedAst, mono: &Mono,
+  context: &Context, ast: Ast, mono: &Mono,
 ): Result[Str, Str] {
   var type_args = vec[Type]()
   for arg in fun_.type_args do
-    type_args.&.push(type(arg).compile(type_env, ast, mono)?)
+    type_args.&.push(type(arg.str).compile(type_env, ast, mono)?)
 
   var arg_types = vec[Type]()
   for arg in fun_.args do
     arg_types.&.push(arg.type.compile(type_env, ast, mono)?)
 
-  var signature = signature(fun_.name, some(type_args), arg_types).format()
+  var signature = signature(fun_.name.str, some(type_args), arg_types).format()
   if mono.funs.contains(signature) then return ok[Str, Str](signature)
   context.&.push(signature)
 
@@ -2441,10 +2600,11 @@ fun compile(
 
   var kind =
     switch fun_.kind
-    case builtin {
-      if fun_.name == "size_of" then MonoFunKind.builtin
-      else if fun_.name == "alignment_of" then MonoFunKind.builtin
-      else if fun_.name == "type" then {
+    case builtin(builtin) {
+      if fun_.name.str == "size_of" then MonoFunKind.builtin(builtin.dots)
+      else if fun_.name.str == "alignment_of" then
+        MonoFunKind.builtin(builtin.dots)
+      else if fun_.name.str == "type" then {
         type("Type").compile(map[Str, Type](), ast, mono)?
         var make_vec = ast.lookup_fun("vec", none[Vec[Type]](), vec[Type]())
           .unwrap("vec function doesn't exist")
@@ -2454,7 +2614,7 @@ fun compile(
             vec[Type](type("Vec", vec(type("Type")))))
           .unwrap("push function doesn't exist")
         push.fun_.compile(push.type_env, context, ast, mono)?
-        MonoFunKind.builtin
+        MonoFunKind.builtin(builtin.dots)
       } else return error[Str, Str]("Unknown builtin {fun_.name}")
     }
     case asm_(code) MonoFunKind.asm_(code)
@@ -2466,22 +2626,23 @@ fun compile(
         slots.&.push(MonoSlot {
           type = arg_types.get(i), initial_value = MonoSlotValue.arg(i),
         })
-        vars.&.define(fun_.args.get(i).name, slot)
+        vars.&.define(fun_.args.get(i).name.str, slot)
       }
       var compile_fun = CompileFun {
         context, ast, mono, type_env,
         return_type = type_sink(return_type),
-        slots, statements = vec[MonoStatement](),
+        slots, statements = vec[MonoStatementAndSource](),
         next_label = 0, vars,
         break_scopes = stack[BreakScope](),
         continue_scopes = stack[ContinueScope](),
       }
       var body_result = body.compile(compile_fun.&)?
-      compile_fun.statements.&.push(MonoStatement.return_(body_result))
+      compile_fun.statements.&.push(MonoStatement.return_(body_result)
+        @ fun_.name.source)
       | For builtin functions and asm functions, we trust the fully specified
       | return type. For Martinaise functions, we take the inferred return type.
-      compile_fun.return_type.&.add(body_result.type)
-        orelse(error) return error[Str, Str](
+      if compile_fun.return_type.&.add(body_result.type) is error(error) then
+        return error[Str, Str](
           "The last expression of the function body doesn't match the return 
           'type.{newline}{error}")
       return_type = compile_fun.return_type.finish()
@@ -2502,13 +2663,13 @@ fun compile(
 
 struct CompileFun {
   context: &Context,
-  ast: PreparedAst,
+  ast: Ast,
   mono: &Mono,
   type_env: Map[Str, Type],
   return_type: TypeSink,
   slots: Vec[MonoSlot],
-  statements: Vec[MonoStatement],
-  next_label: U64,
+  statements: Vec[MonoStatementAndSource],
+  next_label: Int,
   vars: Vars[MonoSlotRef],
   | When lowering loops, breaks and continues don't know where to jump yet.
   | Instead, they fill these structures with jump addresses that need to be
@@ -2516,37 +2677,40 @@ struct CompileFun {
   break_scopes: Stack[BreakScope],
   continue_scopes: Stack[ContinueScope],
 }
-struct BreakScope { result: MonoSlotRef, type: Maybe[Type], breaks: Vec[U64] }
-struct ContinueScope { continues: Vec[U64] }
+struct BreakScope { result: MonoSlotRef, type: Maybe[Type], breaks: Vec[Int] }
+struct ContinueScope { continues: Vec[Int] }
 
-fun push(self: &CompileFun, statement: MonoStatement): U64 {
+fun push(self: &CompileFun, statement: MonoStatementAndSource): Int {
   var index = self.statements.len
   self.statements.&.push(statement)
   index
 }
-fun push_placeholder(self: &CompileFun): U64 {
-  self.push(MonoStatement.label(MonoLabel { id = 0 }))
+fun push_placeholder(self: &CompileFun, source: Source): Int {
+  self.push(MonoStatement.label(MonoLabel { id = 0 }) @ source)
 }
-fun push_label(self: &CompileFun): MonoLabel {
+fun push_label(self: &CompileFun, source: Source): MonoLabel {
   var label = MonoLabel { id = self.next_label }
   self.next_label = self.next_label + 1
-  self.push(MonoStatement.label(label))
+  self.push(MonoStatement.label(label) @ source)
   label
 }
-fun push_assign(self: &CompileFun, to: MonoExpr, value: MonoExpr) {
-  self.statements.&.push_assign(to, value)
+fun push_assign(
+  self: &CompileFun, to: MonoExpr, value: MonoExpr, source: Source
+) {
+  self.statements.&.push_assign(to, value, source)
 }
 fun push_call(
   self: &CompileFun, to: MonoSlotRef, fun_: Str, args: Vec[MonoExpr],
+  source: Source
 ) {
-  self.statements.&.push_call(to, fun_, args)
+  self.statements.&.push_call(to, fun_, args, source)
 }
-fun push_ref(self: &CompileFun, to: MonoSlotRef, of: MonoExpr) {
-  self.statements.&.push_ref(to, of)
+fun push_ref(self: &CompileFun, to: MonoSlotRef, of: MonoExpr, source: Source) {
+  self.statements.&.push_ref(to, of, source)
 }
 
-fun update(self: &CompileFun, index: U64, statement: MonoStatement) {
-  self.statements.&.get_ref(index).* = statement
+fun update(self: &CompileFun, index: Int, statement: MonoStatement) {
+  self.statements.&.get_ref(index).*.statement = statement
 }
 
 fun expr(slot: MonoSlotRef, self: &CompileFun): MonoExpr {
@@ -2575,7 +2739,7 @@ fun compile(body: Vec[AstExpr], self: &CompileFun): Result[MonoExpr, Str] {
   var last = none[MonoExpr]()
   for expr in body do last = some(expr.compile_in_current_scope(self)?)
   self.vars.&.restore(scope)
-  ok[MonoExpr, Str](last orelse nothing_expr)
+  ok[MonoExpr, Str](last or nothing_expr)
 }
 fun compile_in_current_scope(
   expr: AstExpr, self: &CompileFun,
@@ -2586,22 +2750,21 @@ fun compile_in_current_scope(
 
   ok[MonoExpr,Str](
     switch expr
-    case int(int) self.slots.&
-      .push(int.config.to_type(), MonoSlotValue.int(int.value))
+    case int(int) self.slots.&.push(type("Int"), MonoSlotValue.int(int))
       .expr(self)
     case str(str) {
       type("Str").compile(map[Str, Type](), ast, mono)?
       self.slots.&.push(type("Str"), MonoSlotValue.str(str)).expr(self)
     }
     case name(name) {
-      switch self.vars.lookup(name)
+      switch self.vars.lookup(name.str)
       case some(slot) slot.expr(self)
       case none {
-        switch ast.lookup_global(name)
+        switch ast.lookup_global(name.str)
         case some(global) {
           global.compile(context, ast, mono)?
-          var type = mono.globals.get(name).return_type
-          MonoExpr { kind = MonoExprKind.global(name), type }
+          var type = mono.globals.get(name.str).return_type
+          MonoExpr { kind = MonoExprKind.global(name.str), type }
         }
         | TODO: print which variables are in scope
         case none return error[MonoExpr, Str]('""{{name}}" is not in scope."')
@@ -2641,10 +2804,10 @@ fun compile_in_current_scope(
           'struct type.")
       var fields = map[Str, MonoExpr]() {
         for field in make_struct.fields do
-          fields.&.put(field.name, field.value.compile(self)?)
+          fields.&.put(field.name.str, field.value.compile(self)?)
       }
       for field in struct_.fields do
-        if not(fields.contains(field.name))
+        if not(fields.contains(field.name.str))
         then return error[MonoExpr, Str](
           '"You tried to create a {{make_struct.type.name}}, but the 
           '"{{field.name}}" field is missing."')
@@ -2653,24 +2816,24 @@ fun compile_in_current_scope(
       | TODO: Foo[] { ... } should not be treated like Foo { ... }
       if make_struct.type.args.is_not_empty() then {
         make_struct.type.args.len == struct_.type_args.len
-          orelse return error[MonoExpr, Str](
+          or return error[MonoExpr, Str](
             "Tried to create struct {struct_.name} with 
             '{make_struct.type.args.len} type arguments, but it needs 
             '{struct_.type_args.len}.")
         for i in 0..struct_.type_args.len do
           solver.&.unify(
-            type(struct_.type_args.get(i)),
+            type(struct_.type_args.get(i).str),
             make_struct.type.args.get(i).compile(self.type_env, ast, mono)?,
-          )? orelse panic("unifying type args always works")
+          )? or panic("unifying type args always works")
       }
       for field in fields do {
         var name = field.key
         var value = field.value
         var type_in_struct = none[Type]()
         for f in struct_.fields do
-          if f.name == name then type_in_struct = some(f.type)
+          if f.name.str == name then type_in_struct = some(f.type)
 
-        var type_in_struct = type_in_struct orelse return error[MonoExpr, Str](
+        var type_in_struct = type_in_struct or return error[MonoExpr, Str](
           "Tried to initialize field {name} of {struct_.name}, but it doesn't 
           'have that.")
         if not(solver.&.unify(type_in_struct, value.type)?)
@@ -2683,12 +2846,15 @@ fun compile_in_current_scope(
       var unspecialized_type = make_struct.type
       if make_struct.type.args.is_empty() & struct_.type_args.is_not_empty()
       then for arg in struct_.type_args do
-        unspecialized_type.args.&.push(type(arg).compile(type_env, ast, mono)?)
+        unspecialized_type.args.&.push(type(arg.str).compile(type_env, ast, mono)?)
       var type = unspecialized_type.compile(self.type_env, ast, mono)?
 
       var slot = self.slots.&.push(type).expr(self)
       for field in fields do
-        self.push_assign(slot.member(field.key, field.value.type), field.value)
+        self.push_assign(
+          slot.member(field.key, field.value.type), field.value,
+          make_struct.type_source,
+        )
       slot
     }
     case make_enum(make_enum) {
@@ -2702,9 +2868,9 @@ fun compile_in_current_scope(
       var variant_type = {
         var type = none[Type]()
         for variant in enum_.variants do
-          if variant.name == make_enum.variant
-          then type = some(variant.type)
-        type orelse return error[MonoExpr, Str](
+          if variant.name.str == make_enum.variant.str then
+            type = some(variant.type)
+        type or return error[MonoExpr, Str](
           "Unknown variant {make_enum.type.name}.{make_enum.variant}.")
       }
 
@@ -2717,13 +2883,13 @@ fun compile_in_current_scope(
           'type arguments, but it needs {enum_.type_args.len}.")
         for i in 0..enum_.type_args.len do {
           solver.&.unify(
-            type(enum_.type_args.get(i)),
+            type(enum_.type_args.get(i).str),
             make_enum.type.args.get(i).compile(self.type_env, ast, mono)?
-          )? orelse panic("unifying type args always works")
+          )? or panic("unifying type args always works")
         }
       }
       solver.&.unify(variant_type, arg.type)?
-        orelse return error[MonoExpr, Str](
+        or return error[MonoExpr, Str](
           "Tried to create {make_enum.type.name}.{make_enum.variant} with 
           '{arg.type}, but it needs a {variant_type}.")
       var type_env = solver.finish()?
@@ -2731,30 +2897,31 @@ fun compile_in_current_scope(
       var unspecialized_type = make_enum.type
       if make_enum.type.args.is_empty() & enum_.type_args.is_not_empty()
       then for a in enum_.type_args do
-        unspecialized_type.args.&.push(type(a).compile(type_env, ast, mono)?)
+        unspecialized_type.args.&
+          .push(type(a.str).compile(type_env, ast, mono)?)
       var type = unspecialized_type.compile(self.type_env, ast, mono)?
 
       var slot = self.slots.&.push(type)
       self.push(MonoStatement.set_enum(MonoSetEnum {
-        slot, variant = make_enum.variant, value = arg,
-      }))
+        slot, variant = make_enum.variant.str, value = arg,
+      }) @ make_enum.variant.source)
       slot.expr(self)
     }
     case member(member) {
       var of = member.of.compile(self)?
       | expr.& references the of
-      if member.name == "&" then {
+      if member.name.str == "&" then {
         var ref_type = type("&", vec(of.type))
           .compile(self.type_env, ast, mono)?
         var slot = self.slots.&.push(ref_type)
-        self.push_ref(slot, of)
+        self.push_ref(slot, of, member.name.source)
         return ok[MonoExpr,Str](slot.expr(self))
       }
       | When accessing a member on a reference, we automatically dereference the
       | receiver as often as necessary. For example, you can access point.x if
       | point is a &&&Point.
       loop
-        if {of.type.name == "&"} & {member.name != "*"}
+        if {of.type.name == "&"} & {member.name.str != "*"}
         then of = of.member("*", of.type.args.get(0))
         else break
       var struct_ =
@@ -2766,8 +2933,8 @@ fun compile_in_current_scope(
       var type = {
         var field_type = none[Type]()
         for field in struct_.fields do
-          if field.name == member.name then field_type = some(field.type)
-        field_type orelse return error[MonoExpr, Str]({
+          if field.name == member.name.str then field_type = some(field.type)
+        field_type or return error[MonoExpr, Str]({
           var out = string_builder().&
           out.'""{{member.name}}" is not a field on {{of.type}}.{{newline}}
             'It only contains these fields:"'
@@ -2776,21 +2943,21 @@ fun compile_in_current_scope(
         })
       }
 
-      of.member(member.name, type)
+      of.member(member.name.str, type)
     }
     case var_(var_) {
       var value = var_.value.compile(self)?
       var slot = self.slots.&.push(value.type)
-      self.push_assign(slot.expr(self), value)
-      self.vars.&.define(var_.name, slot)
+      self.push_assign(slot.expr(self), value, var_.name.source)
+      self.vars.&.define(var_.name.str, slot)
       nothing_expr
     }
     case assign(assign) {
       var to = assign.to.compile(self)?
       var value = assign.value.compile(self)?
-      value.type == to.type orelse return error[MonoExpr, Str](
+      value.type == to.type or return error[MonoExpr, Str](
         "Tried to assign {value.type} to a variable of type {to.type}.")
-      self.push_assign(to, value)
+      self.push_assign(to, value, assign.equal_sign.source)
       nothing_expr
     }
     | Switch  
@@ -2836,15 +3003,15 @@ fun compile_in_current_scope(
       | exactly once.
       var handled = set[Str]()
       for case_ in switch_.cases do {
-        if handled.contains(case_.variant)
+        if handled.contains(case_.variant.str)
         then return error[MonoExpr, Str](
           '"When switching on {{value.type}}, you handle the "{{case_.variant}}"
           ' variant multiple times."')
         | TODO: when supporting continue with label, use that
         var handled_this_case = false
         for variant in enum_.variants do
-          if variant.name == case_.variant then {
-            handled.&.put(case_.variant)
+          if variant.name == case_.variant.str then {
+            handled.&.put(case_.variant.str)
             handled_this_case = true
           }
         if handled_this_case then continue
@@ -2859,82 +3026,90 @@ fun compile_in_current_scope(
       }
       if switch_.default_ is none then
         for variant in enum_.variants do
-          handled.contains(variant.name) orelse return error[MonoExpr, Str](
+          handled.contains(variant.name) or return error[MonoExpr, Str](
             '"You switched on {{value.type}}, but you don't handle the 
              '"{{variant.name}}" variant."')
 
-      var jump_table_jumps = map[Str, U64]()
+      var jump_table_jumps = map[Str, Int]()
       for case_ in switch_.cases do
-        jump_table_jumps.&.put(case_.variant, self.push_placeholder())
+        jump_table_jumps.&.put(
+          case_.variant.str,
+          self.push_placeholder(case_.variant.source)
+        )
       var default_jump =
         switch switch_.default_
-        case some some(self.push_placeholder())
-        case none none[U64]()
+        case some(default_) some(self.push_placeholder(default_.keyword.source))
+        case none none[Int]()
       | Contains indices of statements which will be replaced with unconditional
       | jumps to after the switch.
-      var after_switch_jumps = vec[U64]()
+      var after_switch_jumps = vec[Int]()
 
       | Case bodies
       for case_ in switch_.cases do {
-        var label = self.push_label()
+        var source = case_.variant.source
+        var label = self.push_label(source)
         self.update(
-          jump_table_jumps.get(case_.variant),
+          jump_table_jumps.get(case_.variant.str),
           MonoStatement.jump_if_variant(MonoJumpIfVariant {
-            condition = value, variant = case_.variant, target = label,
+            condition = value, variant = case_.variant.str, target = label
           })
         )
         var variant_type = {
           var variant_type = none[Type]()
           for variant in enum_.variants do
-            if variant.name == case_.variant then
+            if variant.name == case_.variant.str then
               variant_type = some(variant.type)
           variant_type.unwrap("expected variant type")
         }
         var unpacked = self.slots.&.push(variant_type)
         self.push(MonoStatement.get_enum_value(MonoGetEnumValue {
-          to = unpacked, of = value, variant = case_.variant,
-        }))
+          to = unpacked, of = value, variant = case_.variant.str
+        }) @ source)
         var scope = self.vars.snapshot()
         if case_.binding is some(binding) then
-          self.vars.&.define(binding, unpacked)
-        var then_ = case_.then_.compile(self)?
+          self.vars.&.define(binding.str, unpacked)
+        var body = case_.body.compile(self)?
         self.vars.&.restore(scope)
 
-        if not(then_.type.is_never()) then {
+        if not(body.type.is_never()) then {
           switch type
-          case none type = some(then_.type)
-          case some(expected)
-            then_.type == expected orelse return error[MonoExpr, Str](
+          case none type = some(body.type)
+          case some(expected) {
+            body.type == expected or return error[MonoExpr, Str](
               '"When lowering this:{{newline}}
                '{{AstExpr.switch_(switch_).indented(indent(0))}}{{newline}}
                'Previous switch cases return {{expected}}, but the case for 
-               '"{{case_.variant}}" returns {{then_.type}}."')
-          self.push_assign(result.expr(self), then_).ignore()
+               '"{{case_.variant}}" returns {{body.type}}."')
+            {}
+          }
+          self.push_assign(result.expr(self), body, source)
+            .ignore()
         }
-        after_switch_jumps.&.push(self.push_placeholder())
+        after_switch_jumps.&.push(self.push_placeholder(source))
       }
 
       | Default case
       if switch_.default_ is some(default_) then {
-        var label = self.push_label()
+        var source = default_.keyword.source
+        var label = self.push_label(source)
         self.update(
           default_jump.unwrap("no default jump"),
           MonoStatement.jump(MonoJump { target = label }),
         )
-        var default_result = default_.compile(self)?
+        var default_result = default_.body.compile(self)?
         if not(default_result.type.is_never()) then {
           type = some(default_result.type)
-          self.push_assign(result.expr(self), default_result).ignore()
+          self.push_assign(result.expr(self), default_result, source).ignore()
         }
-        after_switch_jumps.&.push(self.push_placeholder())
+        after_switch_jumps.&.push(self.push_placeholder(source))
       }
 
-      var after_switch = self.push_label()
+      var after_switch = self.push_label(switch_.keyword.source)
       for jump in after_switch_jumps do
         self.update(jump,
           MonoStatement.jump(MonoJump { target = after_switch }))
 
-      self.slots.&.get_ref(result).type = type orelse type("Never")
+      self.slots.&.get_ref(result).type = type or type("Never")
       result.expr(self)
     }
     | Loop  
@@ -2961,118 +3136,121 @@ fun compile_in_current_scope(
     | jump label_0 ──┼─>┘
     | label_1: <─────┘
     | ...
-    case loop_(expr) {
+    case loop_(loop_) {
+      var source = loop_.keyword.source
       var result = self.slots.&.push(type(""))
       self.break_scopes.&.push(BreakScope {
         | TODO: turn this into an expr
         result,
         type = none[Type](), | TODO: use type sink
-        breaks = vec[U64](),
+        breaks = vec[Int](),
       })
       | TODO: save the loop start instead
-      self.continue_scopes.&.push(ContinueScope { continues = vec[U64]() })
+      self.continue_scopes.&.push(ContinueScope { continues = vec[Int]() })
 
-      var loop_start = self.push_label()
+      var loop_start = self.push_label(source)
       expr.compile(self)?
-      self.push(MonoStatement.jump(MonoJump { target = loop_start }))
+      self.push(MonoStatement.jump(MonoJump { target = loop_start }) @ source)
 
-      var after_loop = self.push_label()
+      var after_loop = self.push_label(source)
       var scope = self.break_scopes.&.pop()
       for break_ in scope.breaks do
-        self.update(break_,
-          MonoStatement.jump(MonoJump { target = after_loop }))
+        self.update(
+          break_, MonoStatement.jump(MonoJump { target = after_loop }))
 
-      self.slots.&.get_ref(result).type = scope.type orelse type("Never")
+      self.slots.&.get_ref(result).type = scope.type or type("Never")
       var scope = self.continue_scopes.&.pop()
       for continue_ in scope.continues do
         self.update(
           continue_, MonoStatement.jump(MonoJump { target = loop_start }))
       result.expr(self)
     }
-    case break_(arg) {
+    case break_(break_) {
       if self.break_scopes.is_empty() then return error[MonoExpr, Str](
         "There's a break outside out a loop.")
       var scope = self.break_scopes.top_ref()
 
-      var arg = arg.compile(self)?
+      var source = break_.keyword.source
+      var value = break_.value.compile(self)?
 
       if scope.type is some(expected) then
-        arg.type == expected orelse return error[MonoExpr, Str](
+        value.type == expected or return error[MonoExpr, Str](
           "A previous break returned {expected}, but this break returns 
-          '{arg.type}.")
-      scope.type = some(arg.type)
+          '{value.type}.")
+      scope.type = some(value.type)
       | TODO: This is not correct. The type of the slot is only updated after
       | the loop body is fully lowered. The created slot expr still has the
       | wrong type.
-      self.push_assign(scope.result.expr(self), arg)
+      self.push_assign(scope.result.expr(self), value, source)
 
-      scope.breaks.&.push(self.push_placeholder())
+      scope.breaks.&.push(self.push_placeholder(source))
       never_expr
     }
-    case continue_ {
+    case continue_(continue_) {
       if self.continue_scopes.is_empty() then return error[MonoExpr, Str](
         "There's a continue outside out a loop.")
       var scope = self.continue_scopes.top_ref()
-      scope.continues.&.push(self.push_placeholder())
+      scope.continues.&.push(self.push_placeholder(continue_.keyword.source))
       never_expr
     }
-    case return_(arg) {
-      var arg = arg.compile(self)?
-      self.return_type.&.add(arg.type)
-        orelse(error) return error[MonoExpr, Str](
+    case return_(return_) {
+      var value = return_.value.compile(self)?
+      if self.return_type.&.add(value.type) is error(error) then
+        return error[MonoExpr, Str](
           "The type of a return doesn't match the return type up to this point:
           '{newline}{error}")
-      self.push(MonoStatement.return_(arg))
+      self.push(MonoStatement.return_(value) @ return_.keyword.source)
       never_expr
     }
-    case try(expr) {
-      var expr = expr.compile(self)?
-      expr.type.name == "Result" orelse return error[MonoExpr, Str](
+    case try(try_) {
+      var source = try_.question_mark.source
+      var value = try_.value.compile(self)?
+      value.type.name == "Result" or return error[MonoExpr, Str](
         "The try operator ? can only be used on Results.")
       var return_type = self.return_type.finish()
-      return_type.name == "Result" orelse return error[MonoExpr, Str](
+      return_type.name == "Result" or return error[MonoExpr, Str](
         "The try operator ? can only be used in functions that return Result.")
-      expr.type.args.get(1) == return_type.args.get(1)
-        orelse return error[MonoExpr, Str](
+      value.type.args.get(1) == return_type.args.get(1)
+        or return error[MonoExpr, Str](
           "You used ? on a Result where the error type doesn't match the error 
           'type of the function.{newline}{newline}
-          '  type of ? value: Result[..., {expr.type.args.get(1)}]{newline}
+          '  type of ? value: Result[..., {value.type.args.get(1)}]{newline}
           ' type of function: Result[..., {return_type.args.get(1)}]")
 
-      var ok_type = expr.type.args.get(0)
-      var error_type = expr.type.args.get(1)
+      var ok_type = value.type.args.get(0)
+      var error_type = value.type.args.get(1)
 
-      var jump_if_ok = self.push_placeholder()
+      var jump_if_ok = self.push_placeholder(source)
       var error_payload = self.slots.&.push(error_type)
       self.push(MonoStatement.get_enum_value(MonoGetEnumValue {
-        to = error_payload, of = expr, variant = "error",
-      }))
+        to = error_payload, of = value, variant = "error",
+      }) @ source)
       var error_to_return = self.slots.&.push(return_type)
       self.push(MonoStatement.set_enum(MonoSetEnum {
         slot = error_to_return,
         variant = "error",
         value = error_payload.expr(self),
-      }))
-      self.push(MonoStatement.return_(error_to_return.expr(self)))
+      }) @ source)
+      self.push(MonoStatement.return_(error_to_return.expr(self)) @ source)
 
-      var after_error_handling = self.push_label()
+      var after_error_handling = self.push_label(source)
       self.update(jump_if_ok, MonoStatement.jump_if_variant(MonoJumpIfVariant {
-        condition = expr, variant = "ok", target = after_error_handling,
+        condition = value, variant = "ok", target = after_error_handling,
       }))
 
       var ok_payload = self.slots.&.push(ok_type)
       self.push(MonoStatement.get_enum_value(MonoGetEnumValue {
-        to = ok_payload, of = expr, variant = "ok",
-      }))
+        to = ok_payload, of = value, variant = "ok",
+      }) @ source)
       ok_payload.expr(self)
     }
-    case body(body) body.compile(self)?
+    case block(block) block.compile(self)?
   )
 }
 
 fun compile_call(
   self: &CompileFun,
-  name: Str,
+  name: AstStr,
   callee: Maybe[MonoExpr],
   type_args: Maybe[Vec[Type]],
   explicit_args: Vec[MonoExpr],
@@ -3098,7 +3276,7 @@ fun compile_call(
       arg_types.&.push(arg.type)
     }
 
-    switch ast.lookup_fun(name, type_args, arg_types)
+    switch ast.lookup_fun(name.str, type_args, arg_types)
     case error(error) {
       if first_error is none then first_error = some(error)
       if callee is some(c) then if c.type.name == "&" then {
@@ -3111,7 +3289,9 @@ fun compile_call(
     case ok(solution) {
       var fun_ = solution.fun_.compile(solution.type_env, context, ast, mono)?
       var result = self.slots.&.push(mono.funs.get(fun_).return_type)
-      self.push(MonoStatement.call(MonoCall { to = result, fun_, args }))
+      self.push(
+        MonoStatement.call(MonoCall { to = result, fun_, args }) @ name.source
+      )
       return ok[MonoExpr, Str](result.expr(self))
     }
   }
@@ -3122,14 +3302,14 @@ fun compile_call(
 
 struct MemLayout {
   type: Type,
-  size: U64,
-  alignment: U64,
+  size: Int,
+  alignment: Int,
   kind: MemLayoutKind,
 }
 enum MemLayoutKind {
   opaque_, struct_: Vec[MemLayoutStructPart], enum_: Vec[MemLayoutVariant],
 }
-enum MemLayoutStructPart { padding: U64, field: MemLayoutField }
+enum MemLayoutStructPart { padding: Int, field: MemLayoutField }
 struct MemLayoutField { name: Str, layout: MemLayout }
 struct MemLayoutVariant { name: Str, layout: MemLayout }
 
@@ -3199,7 +3379,7 @@ fun calculate_mem_layout(
 
     | For all remaining fields, try all permutations to find the one with the
     | smallest overall size.
-    var smallest_permutation = uninitialized_slice[U64](remaining_fields.len)
+    var smallest_permutation = uninitialized_slice[Int](remaining_fields.len)
     var smallest_size_of_remaining = 999999999 | TODO
     for permutation in permutations(remaining_fields.len).enumerate() do {
       | Only try the first 1000 permutations.
@@ -3253,26 +3433,26 @@ fun calculate_mem_layout(
   }
 }
 
-fun needed_for_multiple_of(number: U64, factor: U64): U64 {
+fun needed_for_multiple_of(number: Int, factor: Int): Int {
   number.round_up_to_multiple_of(factor) - number
 }
 
 | TODO: move to stdlib?
-fun permutations(size: U64): Iter[Slice[U64], Permutations] {
-  var numbers = vec[U64]()
+fun permutations(size: Int): Iter[Slice[Int], Permutations] {
+  var numbers = vec[Int]()
   for i in 0..size do numbers.&.push(i)
-  Iter[Slice[U64], Permutations] {
+  Iter[Slice[Int], Permutations] {
     state = Permutations { is_first = true, last = numbers.to_slice() }
   }
 }
-struct Permutations { is_first: Bool, last: Slice[U64] }
-fun next(self: &Iter[Slice[U64], Permutations]): Maybe[Slice[U64]] {
+struct Permutations { is_first: Bool, last: Slice[Int] }
+fun next(self: &Iter[Slice[Int], Permutations]): Maybe[Slice[Int]] {
   var self = self.state.&
   if self.is_first then { self.is_first = false return some(self.last) }
-  if self.last.is_empty() then return none[Slice[U64]]()
+  if self.last.is_empty() then return none[Slice[Int]]()
   var index = self.last.len - 1
   loop {
-    if index == 0 then { return none[Slice[U64]]() }
+    if index == 0 then { return none[Slice[Int]]() }
     index = index - 1
     if self.last.get(index) < self.last.get(index + 1) then {
       | Find the smallest element after the index that is greater than
@@ -3313,7 +3493,7 @@ struct MemWriter {
   lines: Vec[StringBuilder],
   last_shades: Vec[MemShade],
 }
-fun mem_writer(lines: U64): MemWriter {
+fun mem_writer(lines: Int): MemWriter {
   var lines_vec = vec[StringBuilder]()
   var last_shades = vec[MemShade]()
   for i in 0..lines do {
@@ -3322,10 +3502,10 @@ fun mem_writer(lines: U64): MemWriter {
   }
   MemWriter { lines = lines_vec, last_shades }
 }
-fun line(writer: &MemWriter, index: U64): &StringBuilder {
+fun line(writer: &MemWriter, index: Int): &StringBuilder {
   writer.lines.get_ref(index)
 }
-fun shade(writer: &MemWriter, index: U64): &MemShade {
+fun shade(writer: &MemWriter, index: Int): &MemShade {
   writer.last_shades.get_ref(index)
 }
 fun write[W](writer: W, layout: MemLayout) {
@@ -3346,7 +3526,7 @@ fun write[W](writer: W, layout: MemLayout) {
     if line.index < {mem_writer.lines.len - 1} then writer.writeln()
   }
 }
-fun num_lines_when_printing(layout: MemLayout): U64 {
+fun num_lines_when_printing(layout: MemLayout): Int {
   if layout.size == 0 then return 0
   switch layout.kind
   case opaque_ 2
@@ -3368,7 +3548,7 @@ fun num_lines_when_printing(layout: MemLayout): U64 {
   }
 }
 fun write(
-  writer: &MemWriter, layout: MemLayout, line: U64, preffered_shade: MemShade
+  writer: &MemWriter, layout: MemLayout, line: Int, preffered_shade: MemShade
 ) {
   if layout.size == 0 then return {}
 
@@ -3434,8 +3614,8 @@ fun write(
     for line in start_line..line do writer.shade(line).* = MemShade.padding
   }
 }
-fun fit_to_size(str: Str, size: U64): Str { str.fit_to_size(size, " ") }
-fun fit_to_size(str: Str, size: U64, padding: Str): Str {
+fun fit_to_size(str: Str, size: Int): Str { str.fit_to_size(size, " ") }
+fun fit_to_size(str: Str, size: Int, padding: Str): Str {
   if size == 0 then return ""
   if size == 1 then return "…"
   if str.len >= size then str = "{str.first(size - 1)}…"
@@ -3445,7 +3625,7 @@ fun fit_to_size(str: Str, size: U64, padding: Str): Str {
   for i in str.len..size do string.write(padding)
   string.to_str()
 }
-fun write_n[W](writer: W, n: U64, str: Str) {
+fun write_n[W](writer: W, n: Int, str: Str) {
   for i in 0..n do writer.write(str)
 }
 
@@ -3457,10 +3637,12 @@ fun compile_builtins(mono: &Mono, layouts: Map[Type, MemLayout]) {
   for fun_ in mono.funs do {
     var name = fun_.key
     var fun_ = fun_.value
-    if fun_.kind is builtin then {
+    if fun_.kind is builtin(dots_in_code) then {
       | Modifying the map while we iterate on it feels hacky, but because the
       | key stays the same, this is guaranteed not to cause the map to grow.
-      var body = compile_builtin(name, fun_.type_args, mono, layouts)
+      var body = compile_builtin(
+        name, fun_.type_args, mono, layouts, dots_in_code
+      )
       fun_.kind = MonoFunKind.body(body)
       mono.funs.&.put(name, fun_)
     }
@@ -3469,34 +3651,37 @@ fun compile_builtins(mono: &Mono, layouts: Map[Type, MemLayout]) {
 
 fun compile_builtin(
   name: Str, type_args: Vec[Type], mono: &Mono, layouts: Map[Type, MemLayout],
+  dots_in_code: AstStr
 ): MonoFunBody {
   | All builtin functions have exactly one type arg.
   var type = type_args.get(0)
 
   if name.starts_with("size_of") then MonoFunBody {
     slots = vec(MonoSlot {
-      type = type("U64"),
+      type = type("Int"),
       initial_value = MonoSlotValue.int(layouts.get(type).size),
     }),
     statements = vec(MonoStatement.return_(
-      MonoSlotRef { index = 0 }.expr(type("U64"))
-    )),
+      MonoSlotRef { index = 0 }.expr(type("Int"))
+    ) @ dots_in_code.source),
   }
   else if name.starts_with("alignment_of") then MonoFunBody {
     slots = vec(MonoSlot {
-      type = type("U64"),
+      type = type("Int"),
       initial_value = MonoSlotValue.int(layouts.get(type).alignment),
     }),
     statements = vec(MonoStatement.return_(
-      MonoSlotRef { index = 0 }.expr(type("U64"))
-    )),
+      MonoSlotRef { index = 0 }.expr(type("Int"))
+    ) @ dots_in_code.source),
   }
   else if name.starts_with("type") then {
     var compile_fun = CompileTypeFun {
-      slots = vec[MonoSlot](), statements = vec[MonoStatement](),
+      slots = vec[MonoSlot](), statements = vec[MonoStatementAndSource](),
+      source = dots_in_code.source,
     }
     var reflected = type.compile_reflection(compile_fun.&)
-    compile_fun.statements.&.push(MonoStatement.return_(reflected))
+    compile_fun.statements.&.push(MonoStatement.return_(reflected)
+      @ dots_in_code.source)
     MonoFunBody {
       slots = compile_fun.slots, statements = compile_fun.statements,
     }
@@ -3504,8 +3689,12 @@ fun compile_builtin(
   else panic("Unknown builtin fds {name}") | TODO
 }
 
-struct CompileTypeFun { slots: Vec[MonoSlot], statements: Vec[MonoStatement] }
+struct CompileTypeFun {
+  slots: Vec[MonoSlot], statements: Vec[MonoStatementAndSource], source: Source
+}
 fun compile_reflection(type: Type, out: &CompileTypeFun): MonoExpr {
+  var source = out.source
+
   | Almost looks like we're writing C now.
   var nothing_t = type("Nothing")
   var str_t = type("Str")
@@ -3517,27 +3706,33 @@ fun compile_reflection(type: Type, out: &CompileTypeFun): MonoExpr {
 
   var vec_slot = out.slots.&.push(vec_of_type_t)
   var make_vec = "vec[Type]()"
-  out.statements.&.push_call(vec_slot, make_vec, vec[MonoExpr]())
+  out.statements.&.push_call(vec_slot, make_vec, vec[MonoExpr](), source)
 
   var ref_vec_slot = out.slots.&.push(ref_of_vec_of_type_t)
-  out.statements.&.push_ref(ref_vec_slot, vec_slot.expr(ref_of_vec_of_type_t))
+  out.statements.&.push_ref(
+    ref_vec_slot, vec_slot.expr(ref_of_vec_of_type_t), source
+  )
 
   for arg in type.args do {
     var arg_slot = out.slots.&.push(nothing_t)
     var push = "push[Type](Vec[Type])"
     var arg = arg.compile_reflection(out)
     out.statements.&.push_call(
-      arg_slot, push, vec(ref_vec_slot.expr(ref_of_vec_of_type_t), arg))
+      arg_slot, push, vec(ref_vec_slot.expr(ref_of_vec_of_type_t), arg),
+      source
+    )
   }
 
   var type_slot = out.slots.&.push(type_t)
   out.statements.&.push_assign(
     type_slot.expr(type_t).member("name", str_t),
     name_slot.expr(str_t),
+    source,
   )
   out.statements.&.push_assign(
     type_slot.expr(type_t).member("args", vec_of_type_t),
     vec_slot.expr(vec_of_type_t),
+    source,
   )
 
   type_slot.expr(type_t)
@@ -3547,7 +3742,7 @@ fun compile_reflection(type: Type, out: &CompileTypeFun): MonoExpr {
 | Martinaise supports two backends, both of which operate on the abstraction
 | level of Soil assembly instructions:
 |
-| - A backend that produces textual Soil assembly called a "recipe".
+| - A backend that produces textual Soil assembly called "recipe".
 | - A backend that produces Soil byte code directly.
 |
 | The process of converting the Mono to one of these stages is called
@@ -3557,11 +3752,11 @@ fun compile_reflection(type: Type, out: &CompileTypeFun): MonoExpr {
 |
 | - ret()
 | - add(Reg, Reg)
-| - movei(Reg, U64)
+| - movei(Reg, Int)
 | - ...
 |
 | This way, the assembly instructions are type checked in Martinaise (for
-| example, you can't add a U64 to a Reg).
+| example, you can't add a Int to a Reg).
 
 fun mangle(name: Str): Str {
   var contains_dot = false
@@ -3573,8 +3768,8 @@ fun mangle(name: Str): Str {
   } else name
 }
 
-fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, U64] {
-  var offsets = map[Str, U64]()
+fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, Int] {
+  var offsets = map[Str, Int]()
   var offset = 0
   for part in parts do
     offset = offset +
@@ -3588,18 +3783,18 @@ fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, U64] {
 }
 
 fun assemble[Assembler](
-  mono: Mono, layouts: Map[Type, MemLayout], asm: &Assembler,
+  mono: Mono, layouts: Map[Type, MemLayout],
+  asm: &Assembler, data: &Vec[Byte],
 ) {
   asm.label("_start")
-  asm.moveib(Reg.a, 8:U8)
-  asm.sub(Reg.sp, Reg.a)
+  asm.push(Reg.a)
   for global in mono.globals_init_order do {
     asm.movei(Reg.a, global)
     asm.store(Reg.sp, Reg.a)
     asm.call("{global}.init")
   }
   asm.label("_run_main")
-  asm.moveib(Reg.a, 0:U8)
+  asm.moveib(Reg.a, 0.lower_byte())
   asm.store(Reg.sp, Reg.a)
   asm.call("main(Slice[Str])")
 
@@ -3618,8 +3813,9 @@ fun assemble[Assembler](
   }
 
   for global in mono.globals do {
-    asm.label(global.key)
-    for i in 0..layouts.get(global.value.return_type).size do asm.byte(0:U8)
+    asm.data_label(global.key, data.len)
+    for i in 0..layouts.get(global.value.return_type).size do
+      data.&.push(0.lower_byte())
 
     arg_layouts.&.put(global.key, MemLayout {
       type = type("Nothing"),
@@ -3627,35 +3823,34 @@ fun assemble[Assembler](
       alignment = 1,
       kind = MemLayoutKind.struct_(vec[MemLayoutStructPart]()),
     })
-    asm.label(".init")
-    global.value.assemble_body(global.key, mono, layouts, arg_layouts, asm)
+    asm.label("{global.key}.init")
+    global.value.assemble_body(global.key, mono, layouts, arg_layouts, asm, data)
   }
 
   for fun_ in mono.funs do {
     var signature = fun_.key
     var fun_ = fun_.value
-    asm.str(signature)
     asm.label(signature.mangle())
-    fun_.assemble_body(signature, mono, layouts, arg_layouts, asm)
+    fun_.assemble_body(signature, mono, layouts, arg_layouts, asm, data)
   }
 
-  asm.label("_end_of_program")
+  asm.data_label("_end_of_initial_data", data.len)
 }
 
-fun smart_movei[Assembler](asm: &Assembler, reg: Reg, immediate: U64) {
+fun smart_movei[Assembler](asm: &Assembler, reg: Reg, immediate: Int) {
   if immediate < 256
-  then asm.moveib(reg, immediate.to_U8())
+  then asm.moveib(reg, immediate.lower_byte())
   else asm.movei(reg, immediate)
 }
 fun smart_move_and_add_offset[Assembler](
-  asm: &Assembler, to: Reg, from: Reg, offset: U64,
+  asm: &Assembler, to: Reg, from: Reg, offset: Int,
 ) {
   if offset == 0 then asm.move(to, from) else {
     asm.smart_movei(to, offset)
     asm.add(to, from)
   }
 }
-fun smart_addi[Assembler](asm: &Assembler, to: Reg, value: U64, scratch: Reg) {
+fun smart_addi[Assembler](asm: &Assembler, to: Reg, value: Int, scratch: Reg) {
   if value != 0 then {
     asm.smart_movei(scratch, value)
     asm.add(to, scratch)
@@ -3665,7 +3860,7 @@ fun smart_addi[Assembler](asm: &Assembler, to: Reg, value: U64, scratch: Reg) {
 fun assemble_body[Assembler](
   fun_: MonoFun, signature: Str,
   mono: Mono, layouts: Map[Type, MemLayout], arg_layouts: Map[Str, MemLayout],
-  asm: &Assembler,
+  asm: &Assembler, data: &Vec[Byte],
 ) {
   asm.comment(signature)
 
@@ -3696,12 +3891,12 @@ fun assemble_body[Assembler](
     var locals_size = locals_layout.size.round_up_to_multiple_of(8)
 
     | Combine all slots – args and locals
-    var slot_offsets = map[MonoSlotRef, U64]() | relative to sp
+    var slot_offsets = map[MonoSlotRef, Int]() | relative to sp
     for slot in body.slots.iter().enumerate() do {
       var offset =
         if slot.item.initial_value is arg
         then locals_size
-          + 16  | caller's ip and return value
+          + 8 | return value
           + arg_offsets.get("arg_{slot.index}")
         else locals_offsets.get("local_{slot.index}")
       slot_offsets.&.put(MonoSlotRef { index = slot.index }, offset)
@@ -3709,8 +3904,7 @@ fun assemble_body[Assembler](
 
     asm.smart_movei(Reg.a, locals_size)
     asm.sub(Reg.sp, Reg.a)
-    asm.comment("sp + {locals_size}: caller's ip")
-    asm.comment("sp + {locals_size + 8}: 
+    asm.comment("sp + {locals_size}: 
       'address of where to put the return value")
     for slot in body.slots.iter().enumerate() do {
       var slot_ref = MonoSlotRef { index = slot.index }
@@ -3744,12 +3938,10 @@ fun assemble_body[Assembler](
         else panic("unknown int size {size}")
       }
       case str(str) {
-        asm.jump(".after_str_{slot}")
-        asm.label(".str_{slot}")
-        for char in str do asm.byte(char.byte)
-        asm.label(".after_str_{slot}")
+        var str_pos = data.len
+        for byte in str.bytes() do data.&.push(byte)
         asm.smart_move_and_add_offset(Reg.a, Reg.sp, offset)
-        asm.movei(Reg.b, ".str_{slot}")
+        asm.movei(Reg.b, str_pos)
         asm.store(Reg.a, Reg.b)
         asm.smart_addi(Reg.a, 8, Reg.b)
         asm.smart_movei(Reg.b, str.bytes().len)
@@ -3758,6 +3950,9 @@ fun assemble_body[Assembler](
     }
 
     for statement in body.statements do {
+      var source = statement.source
+      var statement = statement.statement
+
       if statement is label then {} else asm.comment("{statement}")
 
       switch statement
@@ -3780,7 +3975,7 @@ fun assemble_body[Assembler](
         var payload_size = layouts.get(set.value.type).size
         var variant_tag_offset = to_offset + layouts.get(type).size - 1
 
-        asm.moveib(Reg.a, variant.to_U8())
+        asm.moveib(Reg.a, variant.lower_byte())
         asm.smart_move_and_add_offset(Reg.b, Reg.sp, variant_tag_offset)
         asm.storeb(Reg.b, Reg.a)
 
@@ -3811,7 +4006,7 @@ fun assemble_body[Assembler](
         }
         asm.smart_move_and_add_offset(Reg.a, Reg.sp,
           args_size + slot_offsets.get(call.to))
-        asm.moveib(Reg.b, 8:U8)
+        asm.moveib(Reg.b, 8.lower_byte())
         asm.sub(Reg.sp, Reg.b)
         asm.store(Reg.sp, Reg.a)
         asm.call(call.fun_.mangle())
@@ -3821,10 +4016,10 @@ fun assemble_body[Assembler](
       case jump_if_variant(jump) {
         var type = jump.condition.type
         var variant_tag_offset = layouts.get(type).size - 1
-        var checked_tag = 0:U8
+        var checked_tag = 0.lower_byte()
         if mono.type_defs.get(type) is enum_(enum_) then {
           for v in enum_.variants.iter().enumerate() do
-            if v.item.name == jump.variant then checked_tag = v.index.to_U8()
+            if v.item.name == jump.variant then checked_tag = v.index.lower_byte()
         } else panic("is not an enum")
 
         asm.save_address(Reg.a, jump.condition, 0, slot_offsets, layouts, Reg.b)
@@ -3848,7 +4043,7 @@ fun assemble_body[Assembler](
         var size = layouts.get(expr.type).size
         if size > 0 then {
           asm.save_address(Reg.a, expr, 0, slot_offsets, layouts, Reg.b)
-          asm.smart_move_and_add_offset(Reg.b, Reg.sp, locals_size + 8)
+          asm.smart_move_and_add_offset(Reg.b, Reg.sp, locals_size)
           asm.load(Reg.b, Reg.b)
           asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
         }
@@ -3865,22 +4060,20 @@ fun assemble_body[Assembler](
     asm.ret()
   }
   case asm_(instructions) for instruction in instructions do {
-    switch instruction
-    case label(label)    asm.label(label)
-    case str(str)        asm.str(str)
-    case byte(byte)      asm.byte(byte)
-    case word(word) {
-      switch word
-      case label(word)   asm.word(word)
-      case literal(word) asm.word(word)
-    }
+    switch instruction.kind
+    case label(label)    asm.label(label.str)
     case nop             asm.nop()
     case panic           asm.panic()
     case move(regs)      asm.move(regs.first, regs.second)
     case movei(args){
       switch args.second
-      case label(word)   asm.movei(args.first, word)
+      case label(word)   asm.movei(args.first, word.str)
       case literal(word) asm.movei(args.first, word)
+      case str(str) {
+        var offset = data.len
+        for byte in str.bytes() do data.&.push(byte)
+        asm.movei(args.first, offset)
+      }
     }
     case moveib(args)    asm.moveib(args.first, args.second)
     case load(regs)      asm.load(regs.first, regs.second)
@@ -3889,21 +4082,9 @@ fun assemble_body[Assembler](
     case storeb(regs)    asm.storeb(regs.first, regs.second)
     case push(reg)       asm.push(reg)
     case pop(reg)        asm.pop(reg)
-    case jump(word) {
-      switch word
-      case label(word)   asm.jump(word)
-      case literal(word) asm.jump(word)
-    }
-    case cjump(word) {
-      switch word
-      case label(word)   asm.cjump(word)
-      case literal(word) asm.cjump(word)
-    }
-    case call(word){
-      switch word
-      case label(word)   asm.call(word)
-      case literal(word) asm.call(word)
-    }
+    case jump(word)      asm.jump(word.str)
+    case cjump(word)     asm.cjump(word.str)
+    case call(word)      asm.call(word.str)
     case ret             asm.ret()
     case syscall(byte)   asm.syscall(byte)
     case cmp(regs)       asm.cmp(regs.first, regs.second)
@@ -3926,8 +4107,8 @@ fun assemble_body[Assembler](
 
 | Saves the address of the expr in the register.
 fun save_address[Assembler](
-  asm: Assembler, register: Reg, expr: MonoExpr, locals_offset: U64,
-  slot_offsets: Map[MonoSlotRef, U64], layouts: Map[Type, MemLayout],
+  asm: Assembler, register: Reg, expr: MonoExpr, locals_offset: Int,
+  slot_offsets: Map[MonoSlotRef, Int], layouts: Map[Type, MemLayout],
   scratch: Reg,
 ) {
   switch expr.kind
@@ -3956,7 +4137,7 @@ fun save_address[Assembler](
 }
 
 fun copy_memory[Assembler](
-  asm: Assembler, from: Reg, to: Reg, amount: U64, scratch: Reg,
+  asm: Assembler, from: Reg, to: Reg, amount: Int, scratch: Reg,
 ) {
   if amount == 0 then return {}
   loop {
@@ -3965,7 +4146,7 @@ fun copy_memory[Assembler](
       asm.store(to, scratch)
       amount = amount - 8
       if amount == 0 then break else {
-        asm.moveib(scratch, 8:U8)
+        asm.moveib(scratch, 8.lower_byte())
         asm.add(from, scratch)
         asm.add(to, scratch)
       }
@@ -3974,7 +4155,7 @@ fun copy_memory[Assembler](
       asm.storeb(to, scratch)
       amount = amount - 1
       if amount == 0 then break else {
-        asm.moveib(scratch, 1:U8)
+        asm.moveib(scratch, 1.lower_byte())
         asm.add(from, scratch)
         asm.add(to, scratch)
       }
@@ -3987,48 +4168,44 @@ fun copy_memory[Assembler](
 
 struct Recipe { builder: StringBuilder }
 
-fun write_byte(asm: &Recipe, byte: U8) { asm.builder.&.write_byte(byte) }
-fun write_bytes(asm: &Recipe, bytes: Slice[U8]) {
+fun write_byte(asm: &Recipe, byte: Byte) { asm.builder.&.write_byte(byte) }
+fun write_bytes(asm: &Recipe, bytes: Slice[Byte]) {
   asm.builder.&.write_bytes(bytes)
 }
 
 fun comment(asm: &Recipe, comment: Str) { asm."  | {comment}{newline}" }
 
 fun label(asm: &Recipe, label: Str) { asm.'""{{label}}":{{newline}}"' }
+fun data_label(asm: &Recipe, label: Str, where: Int) {}
 fun disambiguated_label(asm: &Recipe, prefix: Str): Str {
   var label = "{prefix}.{asm.builder.len()}"
   asm.label(label)
   label
 }
 
-fun str(asm: &Recipe, str: Str)   { asm.'"  str "{{str}}"{{newline}}"' }
-fun byte(asm: &Recipe, byte: U8)  { asm."  byte {byte}{newline}" }
-fun word(asm: &Recipe, word: U64) { asm."  word {word}{newline}" }
-fun word(asm: &Recipe, word: Str) { asm."  word {word}{newline}" }
-
 | Instructions
 fun nop(asm: &Recipe)                    { asm."  nop{newline}" }
 fun panic(asm: &Recipe)                  { asm."  panic{newline}" }
 fun move(asm: &Recipe, a: Reg, b: Reg)   { asm."  move {a} {b}{newline}" }
-fun movei(asm: &Recipe, a: Reg, b: U64)  { asm."  movei {a} {b}{newline}" }
+fun movei(asm: &Recipe, a: Reg, b: Int)  { asm."  movei {a} {b}{newline}" }
 fun movei(asm: &Recipe, a: Reg, b: Str)  {
   asm.'"  movei {{a}} "{{b}}"{{newline}}"'
 }
-fun moveib(asm: &Recipe, a: Reg, b: U8)  { asm."  moveib {a} {b}{newline}" }
+fun moveib(asm: &Recipe, a: Reg, b: Byte)  { asm."  moveib {a} {b}{newline}" }
 fun load(asm: &Recipe, a: Reg, b: Reg)   { asm."  load {a} {b}{newline}" }
 fun loadb(asm: &Recipe, a: Reg, b: Reg)  { asm."  loadb {a} {b}{newline}" }
 fun store(asm: &Recipe, a: Reg, b: Reg)  { asm."  store {a} {b}{newline}" }
 fun storeb(asm: &Recipe, a: Reg, b: Reg) { asm."  storeb {a} {b}{newline}" }
 fun push(asm: &Recipe, a: Reg)           { asm."  push {a}{newline}" }
 fun pop(asm: &Recipe, a: Reg)            { asm."  pop {a}{newline}" }
-fun jump(asm: &Recipe, a: U64)           { asm."  jump {a}{newline}" }
+fun jump(asm: &Recipe, a: Int)           { asm."  jump {a}{newline}" }
 fun jump(asm: &Recipe, a: Str)           { asm.'"  jump "{{a}}"{{newline}}"' }
-fun cjump(asm: &Recipe, a: U64)          { asm."  cjump {a}{newline}" }
+fun cjump(asm: &Recipe, a: Int)          { asm."  cjump {a}{newline}" }
 fun cjump(asm: &Recipe, a: Str)          { asm.'"  cjump "{{a}}"{{newline}}"' }
-fun call(asm: &Recipe, a: U64)           { asm."  call {a}{newline}" }
+fun call(asm: &Recipe, a: Int)           { asm."  call {a}{newline}" }
 fun call(asm: &Recipe, a: Str)           { asm.'"  call "{{a}}"{{newline}}"' }
 fun ret(asm: &Recipe)                    { asm."  ret{newline}" }
-fun syscall(asm: &Recipe, a: U8)         { asm."  syscall {a}{newline}" }
+fun syscall(asm: &Recipe, a: Byte)         { asm."  syscall {a}{newline}" }
 fun cmp(asm: &Recipe, a: Reg, b: Reg)    { asm."  cmp {a} {b}{newline}" }
 fun isequal(asm: &Recipe)                { asm."  isequal{newline}" }
 fun isless(asm: &Recipe)                 { asm."  isless{newline}" }
@@ -4047,7 +4224,8 @@ fun negate(asm: &Recipe, a: Reg)         { asm."  negate {a}{newline}" }
 
 fun recipe(mono: Mono, layouts: Map[Type, MemLayout]): Str {
   var asm = Recipe { builder = string_builder() }
-  mono.assemble(layouts, asm.&)
+  var data = vec[Byte]()
+  mono.assemble(layouts, asm.&, data.&)
   "{asm.builder}"
 }
 
@@ -4055,13 +4233,13 @@ fun recipe(mono: Mono, layouts: Map[Type, MemLayout]): Str {
 | This backend produces Soil byte code.
 
 struct ByteCode {
-  bytes: Vec[U8],
+  bytes: Vec[Byte],
   last_label: Str,
   labels: Vec[Str],
-  labels_to_pos: Map[Str, U64],
+  labels_to_pos: Map[Str, Int],
   patches: Vec[Patch],
 }
-struct Patch { label: Str, where: U64 }
+struct Patch { label: Str, where: Int }
 
 fun globalize(byte_code: ByteCode, label: Str): Result[Str, Str] {
   var num_dots = 0
@@ -4090,35 +4268,35 @@ fun globalize(byte_code: ByteCode, label: Str): Result[Str, Str] {
   ok[Str, Str](global.to_str())
 }
 
-fun push_U64(vec: &Vec[U8], n: U64) {
-  vec.push(n.and(16#ff).to_U8())
-  vec.push({n / 16#100}.and(16#ff).to_U8())
-  vec.push({n / 16#10000}.and(16#ff).to_U8())
-  vec.push({n / 16#1000000}.and(16#ff).to_U8())
-  vec.push({n / 16#100000000}.and(16#ff).to_U8())
-  vec.push({n / 16#10000000000}.and(16#ff).to_U8())
-  vec.push({n / 16#1000000000000}.and(16#ff).to_U8())
-  vec.push({n / 16#100000000000000}.and(16#ff).to_U8())
+fun push_Int(vec: &Vec[Byte], n: Int) {
+  vec.push(n.and(16#ff).lower_byte())
+  vec.push({n / 16#100}.and(16#ff).lower_byte())
+  vec.push({n / 16#10000}.and(16#ff).lower_byte())
+  vec.push({n / 16#1000000}.and(16#ff).lower_byte())
+  vec.push({n / 16#100000000}.and(16#ff).lower_byte())
+  vec.push({n / 16#10000000000}.and(16#ff).lower_byte())
+  vec.push({n / 16#1000000000000}.and(16#ff).lower_byte())
+  vec.push({n / 16#100000000000000}.and(16#ff).lower_byte())
 }
-fun overwrite_U64(vec: &Vec[U8], pos: U64, n: U64) {
-  vec.get_ref(pos + 0).* = n.and(16#ff).to_U8()
-  vec.get_ref(pos + 1).* = {n / 16#100}.and(16#ff).to_U8()
-  vec.get_ref(pos + 2).* = {n / 16#10000}.and(16#ff).to_U8()
-  vec.get_ref(pos + 3).* = {n / 16#1000000}.and(16#ff).to_U8()
-  vec.get_ref(pos + 4).* = {n / 16#100000000}.and(16#ff).to_U8()
-  vec.get_ref(pos + 5).* = {n / 16#10000000000}.and(16#ff).to_U8()
-  vec.get_ref(pos + 6).* = {n / 16#1000000000000}.and(16#ff).to_U8()
-  vec.get_ref(pos + 7).* = {n / 16#100000000000000}.and(16#ff).to_U8()
+fun overwrite_Int(vec: &Vec[Byte], pos: Int, n: Int) {
+  vec.get_ref(pos + 0).* = n.and(16#ff).lower_byte()
+  vec.get_ref(pos + 1).* = {n / 16#100}.and(16#ff).lower_byte()
+  vec.get_ref(pos + 2).* = {n / 16#10000}.and(16#ff).lower_byte()
+  vec.get_ref(pos + 3).* = {n / 16#1000000}.and(16#ff).lower_byte()
+  vec.get_ref(pos + 4).* = {n / 16#100000000}.and(16#ff).lower_byte()
+  vec.get_ref(pos + 5).* = {n / 16#10000000000}.and(16#ff).lower_byte()
+  vec.get_ref(pos + 6).* = {n / 16#1000000000000}.and(16#ff).lower_byte()
+  vec.get_ref(pos + 7).* = {n / 16#100000000000000}.and(16#ff).lower_byte()
 }
 
-fun emit(asm: &ByteCode, byte: U8) { asm.bytes.&.push(byte) }
-fun emit(asm: &ByteCode, word: U64) { asm.bytes.&.push_U64(word) }
-fun emit(asm: &ByteCode, bytes: Slice[U8]) {
+fun emit(asm: &ByteCode, byte: Byte) { asm.bytes.&.push(byte) }
+fun emit(asm: &ByteCode, word: Int) { asm.bytes.&.push_Int(word) }
+fun emit(asm: &ByteCode, bytes: Slice[Byte]) {
   for byte in bytes do asm.bytes.&.push(byte)
 }
 fun emit(asm: &ByteCode, a: Reg) { asm.emit(a.to_bits()) }
 fun emit(asm: &ByteCode, a: Reg, b: Reg) {
-  asm.emit(b.to_bits() * 16#10:U8 + a.to_bits())
+  asm.emit(b.to_bits() * 16#10.lower_byte() + a.to_bits())
 }
 fun emit(asm: &ByteCode, label: Str) {
   label = asm.globalize(label).unwrap()
@@ -4126,16 +4304,16 @@ fun emit(asm: &ByteCode, label: Str) {
   asm.emit(0)
 }
 
-fun to_bits(reg: Reg): U8 {
+fun to_bits(reg: Reg): Byte {
   switch reg
-  case ip 2#0000:U8
-  case sp 2#0001:U8
-  case st 2#0010:U8
-  case a  2#0011:U8
-  case b  2#0100:U8
-  case c  2#0101:U8
-  case d  2#0110:U8
-  case e  2#0111:U8
+  case sp 2#0000.lower_byte()
+  case st 2#0001.lower_byte()
+  case a  2#0010.lower_byte()
+  case b  2#0011.lower_byte()
+  case c  2#0100.lower_byte()
+  case d  2#0101.lower_byte()
+  case e  2#0110.lower_byte()
+  case f  2#0111.lower_byte()
 }
 
 fun comment(asm: &ByteCode, comment: Str) {}
@@ -4146,103 +4324,96 @@ fun label(asm: &ByteCode, label: Str) {
   asm.labels_to_pos.&.put(label, asm.bytes.len)
   asm.last_label = label
 }
+fun data_label(asm: &ByteCode, label: Str, where: Int) {
+  asm.labels_to_pos.&.put(label, where)
+}
 fun disambiguated_label(asm: &ByteCode, prefix: Str): Str {
   var label = "{prefix}.{asm.bytes.len()}"
   asm.label(label)
   label
 }
 
-fun str(asm: &ByteCode, str: Str)   { asm.emit(str.bytes()) }
-fun byte(asm: &ByteCode, byte: U8)  { asm.emit(byte) }
-fun word(asm: &ByteCode, word: U64) { asm.emit(word) }
-fun word(asm: &ByteCode, word: Str) { asm.emit(word) }
-
 | Instructions
-fun nop(asm: &ByteCode)                    { asm.emit(16#00:U8) }
-fun panic(asm: &ByteCode)                  { asm.emit(16#e0:U8) }
-fun move(asm: &ByteCode, a: Reg, b: Reg)   { asm.emit(16#d0:U8) asm.emit(a, b) }
-fun movei(asm: &ByteCode, a: Reg, b: U64)  { asm.emit(16#d1:U8) asm.emit(a) asm.emit(b) }
-fun movei(asm: &ByteCode, a: Reg, b: Str)  { asm.emit(16#d1:U8) asm.emit(a) asm.emit(b) }
-fun moveib(asm: &ByteCode, a: Reg, b: U8)  { asm.emit(16#d2:U8) asm.emit(a) asm.emit(b) }
-fun load(asm: &ByteCode, a: Reg, b: Reg)   { asm.emit(16#d3:U8) asm.emit(a, b) }
-fun loadb(asm: &ByteCode, a: Reg, b: Reg)  { asm.emit(16#d4:U8) asm.emit(a, b) }
-fun store(asm: &ByteCode, a: Reg, b: Reg)  { asm.emit(16#d5:U8) asm.emit(a, b) }
-fun storeb(asm: &ByteCode, a: Reg, b: Reg) { asm.emit(16#d6:U8) asm.emit(a, b) }
-fun push(asm: &ByteCode, a: Reg)           { asm.emit(16#d7:U8) asm.emit(a) }
-fun pop(asm: &ByteCode, a: Reg)            { asm.emit(16#d8:U8) asm.emit(a) }
-fun jump(asm: &ByteCode, a: U64)           { asm.emit(16#f0:U8) asm.emit(a) }
-fun jump(asm: &ByteCode, a: Str)           { asm.emit(16#f0:U8) asm.emit(a) }
-fun cjump(asm: &ByteCode, a: U64)          { asm.emit(16#f1:U8) asm.emit(a) }
-fun cjump(asm: &ByteCode, a: Str)          { asm.emit(16#f1:U8) asm.emit(a) }
-fun call(asm: &ByteCode, a: U64)           { asm.emit(16#f2:U8) asm.emit(a) }
-fun call(asm: &ByteCode, a: Str)           { asm.emit(16#f2:U8) asm.emit(a) }
-fun ret(asm: &ByteCode)                    { asm.emit(16#f3:U8) }
-fun syscall(asm: &ByteCode, a: U8)         { asm.emit(16#f4:U8) asm.emit(a) }
-fun cmp(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#c0:U8) asm.emit(a, b) }
-fun isequal(asm: &ByteCode)                { asm.emit(16#c1:U8) }
-fun isless(asm: &ByteCode)                 { asm.emit(16#c2:U8) }
-fun isgreater(asm: &ByteCode)              { asm.emit(16#c3:U8) }
-fun islessequal(asm: &ByteCode)            { asm.emit(16#c4:U8) }
-fun isgreaterequal(asm: &ByteCode)         { asm.emit(16#c5:U8) }
-fun add(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#a0:U8) asm.emit(a, b) }
-fun sub(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#a1:U8) asm.emit(a, b) }
-fun mul(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#a2:U8) asm.emit(a, b) }
-fun div(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#a3:U8) asm.emit(a, b) }
-fun rem(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#a4:U8) asm.emit(a, b) }
-fun and(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#b0:U8) asm.emit(a, b) }
-fun or(asm: &ByteCode, a: Reg, b: Reg)     { asm.emit(16#b1:U8) asm.emit(a, b) }
-fun xor(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#b2:U8) asm.emit(a, b) }
-fun negate(asm: &ByteCode, a: Reg)         { asm.emit(16#b3:U8) asm.emit(a) }
+fun nop(asm: &ByteCode)                    { asm.emit(16#00.lower_byte()) }
+fun panic(asm: &ByteCode)                  { asm.emit(16#e0.lower_byte()) }
+fun move(asm: &ByteCode, a: Reg, b: Reg)   { asm.emit(16#d0.lower_byte()) asm.emit(a, b) }
+fun movei(asm: &ByteCode, a: Reg, b: Int)  { asm.emit(16#d1.lower_byte()) asm.emit(a) asm.emit(b) }
+fun movei(asm: &ByteCode, a: Reg, b: Str)  { asm.emit(16#d1.lower_byte()) asm.emit(a) asm.emit(b) }
+fun moveib(asm: &ByteCode, a: Reg, b: Byte)  { asm.emit(16#d2.lower_byte()) asm.emit(a) asm.emit(b) }
+fun load(asm: &ByteCode, a: Reg, b: Reg)   { asm.emit(16#d3.lower_byte()) asm.emit(a, b) }
+fun loadb(asm: &ByteCode, a: Reg, b: Reg)  { asm.emit(16#d4.lower_byte()) asm.emit(a, b) }
+fun store(asm: &ByteCode, a: Reg, b: Reg)  { asm.emit(16#d5.lower_byte()) asm.emit(a, b) }
+fun storeb(asm: &ByteCode, a: Reg, b: Reg) { asm.emit(16#d6.lower_byte()) asm.emit(a, b) }
+fun push(asm: &ByteCode, a: Reg)           { asm.emit(16#d7.lower_byte()) asm.emit(a) }
+fun pop(asm: &ByteCode, a: Reg)            { asm.emit(16#d8.lower_byte()) asm.emit(a) }
+fun jump(asm: &ByteCode, a: Int)           { asm.emit(16#f0.lower_byte()) asm.emit(a) }
+fun jump(asm: &ByteCode, a: Str)           { asm.emit(16#f0.lower_byte()) asm.emit(a) }
+fun cjump(asm: &ByteCode, a: Int)          { asm.emit(16#f1.lower_byte()) asm.emit(a) }
+fun cjump(asm: &ByteCode, a: Str)          { asm.emit(16#f1.lower_byte()) asm.emit(a) }
+fun call(asm: &ByteCode, a: Int)           { asm.emit(16#f2.lower_byte()) asm.emit(a) }
+fun call(asm: &ByteCode, a: Str)           { asm.emit(16#f2.lower_byte()) asm.emit(a) }
+fun ret(asm: &ByteCode)                    { asm.emit(16#f3.lower_byte()) }
+fun syscall(asm: &ByteCode, a: Byte)         { asm.emit(16#f4.lower_byte()) asm.emit(a) }
+fun cmp(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#c0.lower_byte()) asm.emit(a, b) }
+fun isequal(asm: &ByteCode)                { asm.emit(16#c1.lower_byte()) }
+fun isless(asm: &ByteCode)                 { asm.emit(16#c2.lower_byte()) }
+fun isgreater(asm: &ByteCode)              { asm.emit(16#c3.lower_byte()) }
+fun islessequal(asm: &ByteCode)            { asm.emit(16#c4.lower_byte()) }
+fun isgreaterequal(asm: &ByteCode)         { asm.emit(16#c5.lower_byte()) }
+fun add(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#a0.lower_byte()) asm.emit(a, b) }
+fun sub(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#a1.lower_byte()) asm.emit(a, b) }
+fun mul(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#a2.lower_byte()) asm.emit(a, b) }
+fun div(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#a3.lower_byte()) asm.emit(a, b) }
+fun rem(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#a4.lower_byte()) asm.emit(a, b) }
+fun and(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#b0.lower_byte()) asm.emit(a, b) }
+fun or(asm: &ByteCode, a: Reg, b: Reg)     { asm.emit(16#b1.lower_byte()) asm.emit(a, b) }
+fun xor(asm: &ByteCode, a: Reg, b: Reg)    { asm.emit(16#b2.lower_byte()) asm.emit(a, b) }
+fun negate(asm: &ByteCode, a: Reg)         { asm.emit(16#b3.lower_byte()) asm.emit(a) }
 
 fun fix_patches(asm: &ByteCode) {
   for patch in asm.patches do
-    asm.bytes.&.overwrite_U64(patch.where, asm.labels_to_pos.get(patch.label))
+    asm.bytes.&.overwrite_Int(patch.where,
+      asm.labels_to_pos.get_maybe(patch.label)
+        or panic("label {patch.label} is referenced, but doesn't exist"))
   asm.patches.len = 0
 }
 
-fun byte_code(mono: Mono, layouts: Map[Type, MemLayout]): Slice[U8] {
+fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Slice[Byte] {
   var byte_code = ByteCode {
-    bytes = vec[U8](),
+    bytes = vec[Byte](),
     last_label = "",
     labels = vec[Str](),
-    labels_to_pos = map[Str, U64](),
+    labels_to_pos = map[Str, Int](),
     patches = vec[Patch](),
   }
-  mono.assemble(layouts, byte_code.&)
-  byte_code.&.fix_patches()
-  byte_code.bytes.to_slice()
-}
-
-fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Slice[U8] {
-  var byte_code = ByteCode {
-    bytes = vec[U8](),
-    last_label = "",
-    labels = vec[Str](),
-    labels_to_pos = map[Str, U64](),
-    patches = vec[Patch](),
-  }
-  mono.assemble(layouts, byte_code.&)
+  var data = vec[Byte]()
+  mono.assemble(layouts, byte_code.&, data.&)
   byte_code.&.fix_patches()
 
-  var out = vec[U8]()
+  var out = vec[Byte]()
   out.&.push_all("soil".bytes())
 
   | byte code section
-  out.&.push(0:U8)
-  out.&.push_U64(byte_code.bytes.len)
+  out.&.push(0.lower_byte())
+  out.&.push_Int(byte_code.bytes.len)
   out.&.push_all(byte_code.bytes.to_slice())
 
+  | initial memory section
+  out.&.push(1.lower_byte())
+  out.&.push_Int(data.len)
+  out.&.push_all(data.to_slice())
+
   | labels section
-  out.&.push(3:U8)
+  out.&.push(3.lower_byte())
   var out_len = out.&.len
-  out.&.push_U64(0)
-  out.&.push_U64(byte_code.labels.len)
+  out.&.push_Int(0)
+  out.&.push_Int(byte_code.labels.len)
   for label in byte_code.labels do {
-    out.&.push_U64(byte_code.labels_to_pos.get(label))
-    out.&.push_U64(label.len)
+    out.&.push_Int(byte_code.labels_to_pos.get(label))
+    out.&.push_Int(label.len)
     for char in label do out.&.push(char.byte)
   }
-  out.&.overwrite_U64(out_len, out.len - out_len - 8)
+  out.&.overwrite_Int(out_len, out.len - out_len - 8)
 
   out.to_slice()
 }
@@ -4277,28 +4448,24 @@ fun print_usage_info[W](writer: W) {
 | Runs the pipeline that matches the command. Errors are handled internally
 | (stuff is printed to stderr). Returns whether it ran through successfully.
 fun run_pipeline(command: Command, file_path: Str): Bool {
-  eprintln("Reading {file_path}")
-  var stdlib = read_file("stdlib.mar").unwrap("couldn't read stdlib").to_str()
-  var file = read_file(file_path).unwrap("couldn't read {file_path}").to_str()
-  var input = "{stdlib}{newline}{file}{newline}"
-
-  print_on_same_line("Parsing {file_path}")
-  var ast = input.parse(stdlib.len)
-    orelse(error) { eprintln(error) return false }
+  var ast =
+    switch parse_project(".", file_path)
+    case ok(ast) ast
+    case error(error) { eprintln(error) return false }
   if command is ast then { println(ast) return true }
-  var ast = ast.prepare()
-    orelse(error) { print_on_same_line(error) return false }
 
   print_on_same_line("Monoing")
-  var mono = ast.compile()
-    orelse(error) { print_on_same_line(error) return false }
+  var mono =
+    switch ast.compile()
+    case ok(mono) mono
+    case error(error) { print_on_same_line(error) return false }
 
   print_on_same_line("Memory layouting")
   var layouts = mono.type_defs.mem_layout_all_types()
-  if command is mono then { println(mono) return true }
 
   print_on_same_line("Monoing reflection functions")
   mono.&.compile_builtins(layouts)
+  if command is mono then { println(mono) return true }
 
   if command is recipe then {
     print_on_same_line("Assembling recipe")
@@ -4321,26 +4488,22 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
     return true
   }
 
-  print_on_same_line("Assembling byte code")
-  var byte_code = mono.byte_code(layouts)
-  print_on_same_line("Compiled to byte code. Enjoy!")
-
   todo()
 
   true
 }
 
-fun wrong_usage(): Never { print_usage_info(stderr) exit(1:U8) }
+fun wrong_usage(): Never { print_usage_info(stderr) exit(1) }
 
 fun main(args: Slice[Str]): Never {
   eprintln("Welcome to Martinaise 6.")
 
   | Note the program name itself is also an additional argument at the front.
   if args.len < 2 then wrong_usage()
-  var command = parse_command(args.get(1)) orelse wrong_usage()
+  var command = parse_command(args.get(1)) or wrong_usage()
   if command is help then {
     print_usage_info(stdout)
-    exit(0:U8)
+    exit(0)
   }
   if args.len < 3 then wrong_usage()
   var file_path = args.get(2)
@@ -4349,5 +4512,5 @@ fun main(args: Slice[Str]): Never {
   | TODO: support -- and additional args for the run command
 
   var was_successful = run_pipeline(command, file_path)
-  exit(if was_successful then 0:U8 else 1:U8)
+  exit(if was_successful then 0 else 1)
 }
