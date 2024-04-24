@@ -463,13 +463,13 @@ fun remainder(left: Int, right: Int): Int asm {
 fun modulo(a: Byte, b: Byte): Byte { a.remainder(b) }
 fun modulo(a: Int, b: Int): Int { a.remainder(b) } | TODO: not correct!!
 
-fun and(left: Byte, right: Byte): Byte asm {
+fun &(left: Byte, right: Byte): Byte asm {
   moveib a 8 add a sp loadb a a | left
   moveib b 9 add b sp loadb b b | right
   move c sp load c c | return value address
   and a b storeb c a ret
 }
-fun and(left: Int, right: Int): Int asm {
+fun &(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
   move c sp load c c | return value address

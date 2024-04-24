@@ -4269,24 +4269,24 @@ fun globalize(byte_code: ByteCode, label: Str): Result[Str, Str] {
 }
 
 fun push_word(vec: &Vec[Byte], n: Int) {
-  vec.push(n.and(16#ff).lower_byte())
-  vec.push({n / 16#100}.and(16#ff).lower_byte())
-  vec.push({n / 16#10000}.and(16#ff).lower_byte())
-  vec.push({n / 16#1000000}.and(16#ff).lower_byte())
-  vec.push({n / 16#100000000}.and(16#ff).lower_byte())
-  vec.push({n / 16#10000000000}.and(16#ff).lower_byte())
-  vec.push({n / 16#1000000000000}.and(16#ff).lower_byte())
-  vec.push({n / 16#100000000000000}.and(16#ff).lower_byte())
+  vec.push({n & 16#ff}.lower_byte())
+  vec.push({n / 16#100 & 16#ff}.lower_byte())
+  vec.push({n / 16#10000 & 16#ff}.lower_byte())
+  vec.push({n / 16#1000000 & 16#ff}.lower_byte())
+  vec.push({n / 16#100000000 & 16#ff}.lower_byte())
+  vec.push({n / 16#10000000000 & 16#ff}.lower_byte())
+  vec.push({n / 16#1000000000000 & 16#ff}.lower_byte())
+  vec.push({n / 16#100000000000000 & 16#ff}.lower_byte())
 }
 fun overwrite_int(vec: &Vec[Byte], pos: Int, n: Int) {
-  vec.get_ref(pos + 0).* = n.and(16#ff).lower_byte()
-  vec.get_ref(pos + 1).* = {n / 16#100}.and(16#ff).lower_byte()
-  vec.get_ref(pos + 2).* = {n / 16#10000}.and(16#ff).lower_byte()
-  vec.get_ref(pos + 3).* = {n / 16#1000000}.and(16#ff).lower_byte()
-  vec.get_ref(pos + 4).* = {n / 16#100000000}.and(16#ff).lower_byte()
-  vec.get_ref(pos + 5).* = {n / 16#10000000000}.and(16#ff).lower_byte()
-  vec.get_ref(pos + 6).* = {n / 16#1000000000000}.and(16#ff).lower_byte()
-  vec.get_ref(pos + 7).* = {n / 16#100000000000000}.and(16#ff).lower_byte()
+  vec.get_ref(pos + 0).* = {n & 16#ff}.lower_byte()
+  vec.get_ref(pos + 1).* = {n / 16#100 & 16#ff}.lower_byte()
+  vec.get_ref(pos + 2).* = {n / 16#10000 & 16#ff}.lower_byte()
+  vec.get_ref(pos + 3).* = {n / 16#1000000 & 16#ff}.lower_byte()
+  vec.get_ref(pos + 4).* = {n / 16#100000000 & 16#ff}.lower_byte()
+  vec.get_ref(pos + 5).* = {n / 16#10000000000 & 16#ff}.lower_byte()
+  vec.get_ref(pos + 6).* = {n / 16#1000000000000 & 16#ff}.lower_byte()
+  vec.get_ref(pos + 7).* = {n / 16#100000000000000 & 16#ff}.lower_byte()
 }
 
 fun emit(asm: &ByteCode, byte: Byte) { asm.bytes.&.push(byte) }
