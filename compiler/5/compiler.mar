@@ -2258,25 +2258,10 @@ fun compile(ast: Ast): Result[Mono, Str] {
   type("Nothing").compile(map[Str, Type](), ast, mono.&)?
 
   var main =
-    switch ast.lookup_fun("main",
-      none[Vec[Type]](), vec(type("Slice", vec(type("Str")))))
+    switch ast.lookup_fun("main", none[Vec[Type]](), vec[Type]())
     case ok(main_with_args) main_with_args.fun_
-    case error(error) {
-      switch ast.lookup_fun("main", none[Vec[Type]](), vec[Type]())
-      case error return error[Mono, Str](
-        "Your project must have one of these functions: main(Slice[Str]) or
-        ' main()")
-      | Generate a main(Slice[Str]) function that just calls main()
-      case ok AstFun {
-        name = "main",
-        type_args = vec[Str](),
-        args = vec(
-          AstFunArg { name = "args", type = type("Slice", vec(type("Str"))) },
-        ),
-        returns = type("Never"),
-        kind = AstFunKind.body(vec(AstExpr.name("main").call())),
-      }
-    }
+    case error(error)
+      return error[Mono, Str]("Your project must have a main() function")
 
   var main_signature = main.compile(map[Str, Type](), context.&, ast, mono.&)
     orelse(error) return error[Mono, Str]({
@@ -2290,7 +2275,7 @@ fun compile(ast: Ast): Result[Mono, Str] {
   var return_type = mono.funs.get(main_signature).return_type
   if not(return_type.is_never()) then return error[Mono, Str](
     "The main function should return Never, but it returns {return_type}.
-    '{newline}You can call exit(0:U8) if you want the program to stop.")
+    '{newline}You can call exit(0) if you want the program to stop.")
 
   ok[Mono, Str](mono)
 }
@@ -3619,7 +3604,7 @@ fun assemble[Assembler](
   asm.label("_run_main")
   asm.moveib(Reg.a, 0:U8)
   asm.store(Reg.sp, Reg.a)
-  asm.call("main(Slice[Str])")
+  asm.call("main()")
 
   var arg_layouts = map[Str, MemLayout]() | fun signature to arg layouts
   for fun_ in mono.funs do {

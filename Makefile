@@ -3,9 +3,9 @@ martinaise: compiler/4/martinaise compiler/4/stdlib.mar
 	@cp compiler/4/stdlib.mar stdlib.mar
 	@echo "# Done with bootstrapping"
 
-martinaise-dev: compiler/5/martinaise compiler/5/stdlib.mar
+martinaise-dev: compiler/5/martinaise compiler/6/stdlib.mar
 	@cp compiler/5/martinaise martinaise-dev
-	@cp compiler/5/stdlib.mar stdlib.mar
+	@cp compiler/6/stdlib.mar stdlib.mar
 	@echo "# Ready for dev work"
 
 compiler/0/martinaise: $(wildcard compiler/0/src/*) compiler/0/build.zig

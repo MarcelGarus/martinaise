@@ -1365,6 +1365,38 @@ fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
 |   str.* = str.substr(prefix.len)
 | }
 
+| Process Arguments  
+
+fun get_process_args(): Slice[Str] {
+  var argc = get_argc()
+  var args = uninitialized_slice[Str](argc)
+  for i in 0..argc do {
+    var cap = 8
+    loop {
+      var buffer = uninitialized_slice[Byte](cap)
+      if read_argv(i, buffer) < cap then {
+        args.get_ref(i).* = buffer.to_str()
+        break
+      }
+      cap = cap * 2
+    }
+  }
+  args
+}
+fun get_argc(): Int asm {
+  move b sp load b b | return value address
+  syscall 9
+  store b a ret
+}
+fun read_argv(index: Int, buffer: Slice[Byte]): Int asm {
+  moveib a 8 add a sp load a a  | index
+  moveib b 16 add b sp load b b | buffer.data
+  moveib c 24 add c sp load c c | buffer.len
+  syscall 10
+  move d sp load d d | return value address
+  store d a ret
+}
+
 | Files, Input & Output  
 
 opaque File = 8 bytes big, 8 bytes aligned
