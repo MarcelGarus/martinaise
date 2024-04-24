@@ -3149,7 +3149,7 @@ fun compile_in_current_scope(
       self.continue_scopes.&.push(ContinueScope { continues = vec[Int]() })
 
       var loop_start = self.push_label(source)
-      expr.compile(self)?
+      loop_.body.compile(self)?
       self.push(MonoStatement.jump(MonoJump { target = loop_start }) @ source)
 
       var after_loop = self.push_label(source)
@@ -4268,7 +4268,7 @@ fun globalize(byte_code: ByteCode, label: Str): Result[Str, Str] {
   ok[Str, Str](global.to_str())
 }
 
-fun push_Int(vec: &Vec[Byte], n: Int) {
+fun push_word(vec: &Vec[Byte], n: Int) {
   vec.push(n.and(16#ff).lower_byte())
   vec.push({n / 16#100}.and(16#ff).lower_byte())
   vec.push({n / 16#10000}.and(16#ff).lower_byte())
@@ -4278,7 +4278,7 @@ fun push_Int(vec: &Vec[Byte], n: Int) {
   vec.push({n / 16#1000000000000}.and(16#ff).lower_byte())
   vec.push({n / 16#100000000000000}.and(16#ff).lower_byte())
 }
-fun overwrite_Int(vec: &Vec[Byte], pos: Int, n: Int) {
+fun overwrite_int(vec: &Vec[Byte], pos: Int, n: Int) {
   vec.get_ref(pos + 0).* = n.and(16#ff).lower_byte()
   vec.get_ref(pos + 1).* = {n / 16#100}.and(16#ff).lower_byte()
   vec.get_ref(pos + 2).* = {n / 16#10000}.and(16#ff).lower_byte()
@@ -4290,7 +4290,7 @@ fun overwrite_Int(vec: &Vec[Byte], pos: Int, n: Int) {
 }
 
 fun emit(asm: &ByteCode, byte: Byte) { asm.bytes.&.push(byte) }
-fun emit(asm: &ByteCode, word: Int) { asm.bytes.&.push_Int(word) }
+fun emit(asm: &ByteCode, word: Int) { asm.bytes.&.push_word(word) }
 fun emit(asm: &ByteCode, bytes: Slice[Byte]) {
   for byte in bytes do asm.bytes.&.push(byte)
 }
@@ -4372,7 +4372,7 @@ fun negate(asm: &ByteCode, a: Reg)         { asm.emit(16#b3.lower_byte()) asm.em
 
 fun fix_patches(asm: &ByteCode) {
   for patch in asm.patches do
-    asm.bytes.&.overwrite_Int(patch.where,
+    asm.bytes.&.overwrite_int(patch.where,
       asm.labels_to_pos.get_maybe(patch.label)
         or panic("label {patch.label} is referenced, but doesn't exist"))
   asm.patches.len = 0
@@ -4395,25 +4395,25 @@ fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Slice[Byte] {
 
   | byte code section
   out.&.push(0.lower_byte())
-  out.&.push_Int(byte_code.bytes.len)
+  out.&.push_word(byte_code.bytes.len)
   out.&.push_all(byte_code.bytes.to_slice())
 
   | initial memory section
   out.&.push(1.lower_byte())
-  out.&.push_Int(data.len)
+  out.&.push_word(data.len)
   out.&.push_all(data.to_slice())
 
   | labels section
   out.&.push(3.lower_byte())
   var out_len = out.&.len
-  out.&.push_Int(0)
-  out.&.push_Int(byte_code.labels.len)
+  out.&.push_word(0)
+  out.&.push_word(byte_code.labels.len)
   for label in byte_code.labels do {
-    out.&.push_Int(byte_code.labels_to_pos.get(label))
-    out.&.push_Int(label.len)
+    out.&.push_word(byte_code.labels_to_pos.get(label))
+    out.&.push_word(label.len)
     for char in label do out.&.push(char.byte)
   }
-  out.&.overwrite_Int(out_len, out.len - out_len - 8)
+  out.&.overwrite_int(out_len, out.len - out_len - 8)
 
   out.to_slice()
 }
@@ -4497,6 +4497,7 @@ fun wrong_usage(): Never { print_usage_info(stderr) exit(1) }
 
 fun main(args: Slice[Str]): Never {
   eprintln("Welcome to Martinaise 6.")
+  for arg in args do eprintln("Arg: {arg}")
 
   | Note the program name itself is also an additional argument at the front.
   if args.len < 2 then wrong_usage()
