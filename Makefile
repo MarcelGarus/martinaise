@@ -1,10 +1,10 @@
-martinaise: compiler/4/martinaise compiler/4/stdlib.mar
-	@cp compiler/4/martinaise martinaise
-	@cp compiler/4/stdlib.mar stdlib.mar
+martinaise: compiler/5/martinaise compiler/6/stdlib.mar
+	@cp compiler/5/martinaise martinaise
+	@cp compiler/6/stdlib.mar stdlib.mar
 	@echo "# Done with bootstrapping"
 
-martinaise-dev: compiler/5/martinaise compiler/6/stdlib.mar
-	@cp compiler/5/martinaise martinaise-dev
+martinaise.soil: compiler/6/martinaise.soil compiler/6/stdlib.mar
+	@cp compiler/6/martinaise.soil martinaise.soil
 	@cp compiler/6/stdlib.mar stdlib.mar
 	@echo "# Ready for dev work"
 
@@ -49,6 +49,11 @@ compiler/5/martinaise: compiler/5/compiler.mar compiler/4/martinaise compiler/4/
 		chmod a+x compiler && \
 		mv compiler ../5/martinaise && \
 		rm compiler.s
+
+compiler/6/martinaise.soil: compiler/5/martinaise compiler/6/stdlib.mar compiler/6/compiler.mar
+	@echo "# Martinaise 6"
+	cd compiler/6; \
+		../5/martinaise soil compiler > martinaise.soil
 
 skip-zig:
 	cd compiler/1; \
