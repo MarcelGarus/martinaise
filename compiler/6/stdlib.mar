@@ -391,27 +391,13 @@ fun assert(condition: Bool, message: Str) {
 | Int  
 | If you write a number such as 3 in the code, it's an Int.
 
-opaque Byte = 1 byte big,  1 byte aligned
-opaque Int  = 8 bytes big, 8 bytes aligned
+opaque Int = 8 bytes big, 8 bytes aligned
 
-fun +(left: Byte, right: Byte): Byte asm {
-  moveib a 8 add a sp loadb a a | left
-  moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
-  add a b storeb c a ret
-}
 fun +(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
   move c sp load c c | return value address
   add a b store c a ret
-}
-
-fun -(left: Byte, right: Byte): Byte asm {
-  moveib a 8 add a sp loadb a a | left
-  moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
-  sub a b storeb c a ret
 }
 fun -(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
@@ -419,25 +405,11 @@ fun -(left: Int, right: Int): Int asm {
   move c sp load c c | return value address
   sub a b store c a ret
 }
-
-fun *(left: Byte, right: Byte): Byte asm {
-  moveib a 8 add a sp loadb a a | left
-  moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
-  mul a b storeb c a ret
-}
 fun *(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
   move c sp load c c | return value address
   mul a b store c a ret
-}
-
-fun /(left: Byte, right: Byte): Byte asm {
-  moveib a 8 add a sp loadb a a | left
-  moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
-  div a b storeb c a ret
 }
 fun /(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
@@ -445,41 +417,18 @@ fun /(left: Int, right: Int): Int asm {
   move c sp load c c | return value address
   div a b store c a ret
 }
-
-fun remainder(left: Byte, right: Byte): Byte asm {
-  moveib a 8 add a sp loadb a a | left
-  moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
-  rem a b storeb c a ret
-}
-fun remainder(left: Int, right: Int): Int asm {
+fun %(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
   move c sp load c c | return value address
   rem a b store c a ret
 }
-
-fun modulo(a: Byte, b: Byte): Byte { a.remainder(b) }
-fun modulo(a: Int, b: Int): Int { a.remainder(b) } | TODO: not correct!!
-
-fun &(left: Byte, right: Byte): Byte asm {
-  moveib a 8 add a sp loadb a a | left
-  moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
-  and a b storeb c a ret
-}
+fun modulo(a: Int, b: Int): Int { a % b } | TODO: not correct!!
 fun &(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
   move c sp load c c | return value address
   and a b store c a ret
-}
-
-fun or(left: Byte, right: Byte): Byte asm {
-  moveib a 8 add a sp loadb a a | left
-  moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
-  or a b storeb c a ret
 }
 fun or(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
@@ -487,30 +436,23 @@ fun or(left: Int, right: Int): Int asm {
   move c sp load c c | return value address
   or a b store c a ret
 }
-
-fun xor(left: Byte, right: Byte): Byte asm {
-  moveib a 8 add a sp loadb a a | left
-  moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
-  xor a b storeb c a ret
-}
-fun xor(left: Int, right: Int): Int asm {
+fun ^(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
   move c sp load c c | return value address
   xor a b store c a ret
 }
-
-fun <=>(left: Byte, right: Byte): Ordering asm {
-  moveib a 8 add a sp loadb a a | left
-  moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
-  sub a b
-  move st a isless cjump .less
-  move st a isgreater cjump .greater
-  .equal:   moveib b 1 storeb c b ret
-  .less:    moveib b 0 storeb c b ret
-  .greater: moveib b 2 storeb c b ret
+fun <<(left: Int, by: Int): Int {
+  for i in 0..by do left = left * 2
+  left
+}
+fun >>(left: Int, by: Int): Int {
+  for i in 0..by do left = left / 2
+  left
+}
+fun abs(value: Int): Int { if value >= 0 then value else 0 - value }
+fun round_up_to_multiple_of(number: Int, factor: Int): Int {
+  {number + factor.dec()} / factor * factor
 }
 fun <=>(left: Int, right: Int): Ordering asm {
   | TODO: handle very big numbers correctly
@@ -523,38 +465,31 @@ fun <=>(left: Int, right: Int): Ordering asm {
   .less:    moveib b 0 storeb c b ret
   .greater: moveib b 2 storeb c b ret
 }
-
-fun to_int(n: Byte): Int asm {
-  moveib a 8 add a sp loadb a a | n
-  move b sp load b b | return value address
-  store b a ret
-}
 fun lower_byte(n: Int): Byte asm {
   moveib a 8 add a sp load a a | n
   move b sp load b b | return value address
   storeb b a ret
 }
 
-fun inc(a: Byte): Byte   { a + 1.lower_byte() }
 fun inc(a: Int): Int { a + 1 }
-fun dec(a: Byte): Byte   { a - 1.lower_byte() }
 fun dec(a: Int): Int { a - 1 }
+fun ==(a: Int, b: Int): Bool { if a <=> b is equal then true else false }
 
-fun round_up_to_multiple_of(number: Int, factor: Int): Int {
-  {number + factor.dec()} / factor * factor
+fun parse_int(str: Str): Int {
+  var num = 0
+  for char in str do {
+    if not({#0..=#9}.contains(char))
+    then panic("non-digit in supposed number")
+    num = num * 10 + {char - #0}.to_int()
+  }
+  num
 }
 
-fun ==(a: Byte, b: Byte): Bool   { if a <=> b is equal then true else false }
-fun ==(a: Int, b: Int): Bool { if a <=> b is equal then true else false }
-fun hash(hasher: &Hasher, int: Byte)  { hasher.hash(int.to_int()) }
-
-fun write[W](writer: W, int: Byte)  { writer.write(radix(int, 10)) }
 fun write[W](writer: W, int: Int) {
   if int < 0
   then writer."-{ {0 - int}.radix(10)}"
   else writer."{int.radix(10)}"
 }
-fun radix(int: Byte, radix: Int): RadixFormat { radix(int.to_int(), radix) }
 fun radix(int: Int, radix: Int): RadixFormat { RadixFormat { radix, int } }
 struct RadixFormat { radix: Int, int: Int }
 fun write[W](writer: W, format: RadixFormat) {
@@ -570,19 +505,90 @@ fun write[W](writer: W, format: RadixFormat) {
     divisor = divisor / format.radix
   }
 }
+
+| Byte  
+
+| A byte is one byte big. Who would have known?
+opaque Byte = 1 byte big, 1 byte aligned
+
+fun +(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
+  add a b storeb c a ret
+}
+fun -(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
+  sub a b storeb c a ret
+}
+fun *(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
+  mul a b storeb c a ret
+}
+fun /(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
+  div a b storeb c a ret
+}
+fun %(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
+  rem a b storeb c a ret
+}
+fun modulo(a: Byte, b: Byte): Byte { a % b }
+fun &(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
+  and a b storeb c a ret
+}
+fun or(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
+  or a b storeb c a ret
+}
+fun ^(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
+  xor a b storeb c a ret
+}
+fun <=>(left: Byte, right: Byte): Ordering asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  move c sp load c c | return value address
+  sub a b
+  move st a isless cjump .less
+  move st a isgreater cjump .greater
+  .equal:   moveib b 1 storeb c b ret
+  .less:    moveib b 0 storeb c b ret
+  .greater: moveib b 2 storeb c b ret
+}
+fun to_int(n: Byte): Int asm {
+  moveib a 8 add a sp loadb a a | n
+  move b sp load b b | return value address
+  store b a ret
+}
+
+fun inc(a: Byte): Byte   { a + 1.lower_byte() }
+fun dec(a: Byte): Byte   { a - 1.lower_byte() }
+
+fun ==(a: Byte, b: Byte): Bool   { if a <=> b is equal then true else false }
+fun hash(hasher: &Hasher, int: Byte)  { hasher.hash(int.to_int()) }
+
+fun write[W](writer: W, int: Byte)  { writer.write(radix(int, 10)) }
+fun radix(int: Byte, radix: Int): RadixFormat { radix(int.to_int(), radix) }
 fun digit_to_char(digit: Byte): Char {
   if digit.to_int() > 9
   then {digit - 10.lower_byte() + #a.byte}.to_char()
   else {digit + #0.byte}.to_char()
-}
-fun parse_int(str: Str): Int {
-  var num = 0
-  for char in str do {
-    if not({#0..=#9}.contains(char))
-    then panic("non-digit in supposed number")
-    num = num * 10 + {char - #0}.to_int()
-  }
-  num
 }
 
 | Comparisons  
