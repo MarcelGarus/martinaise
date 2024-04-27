@@ -716,18 +716,25 @@ fun to_reference[T](address: Address): &T asm {
   store b a ret
 }
 
+fun to_int(address: Address): Int asm {
+  moveib a 8 add a sp load a a | address
+  move b sp load b b | return value address
+  store b a ret
+}
+fun to_address(number: Int): Address asm {
+  moveib a 8 add a sp load a a | number
+  move b sp load b b | return value address
+  store b a ret
+}
+
 | Casts an A to a B by reinterpreting the memory of A. This is unsafe, so only
 | use it if you know what you're doing.
 fun cast[A, B](a: A): B {
   | at least a small sanity check
-  assert(
-    size_of[A]() == size_of[B](), "cast between types of different sizes",
-  )
-  a.&.to_address().to_reference[B]().*
+  assert(size_of[A]() == size_of[B](), "cast between types of different sizes")
+  a.unchecked_cast[A, B]()
 }
-
-fun to_int(address: Address): Int { address.cast[Address, Int]() }
-fun to_address(number: Int): Address { number.cast[Int, Address]() }
+fun unchecked_cast[A, B](a: A): B { a.&.to_address().to_reference[B]().* }
 
 var null = 0.to_address() | Million dollar mistake?
 
@@ -1037,11 +1044,11 @@ var tab = 9.lower_byte().to_char()
 
 fun to_char(byte: Byte): Char { Char { byte } }
 
-fun to_str(chars: Slice[Char]): Str { chars.cast[Slice[Char], Str]() }
-fun to_str(bytes: Slice[Byte]): Str { bytes.cast[Slice[Byte], Str]() }
+fun to_str(chars: Slice[Char]): Str { chars.unchecked_cast[Slice[Char], Str]() }
+fun to_str(bytes: Slice[Byte]): Str { bytes.unchecked_cast[Slice[Byte], Str]() }
 fun to_str(chars: Vec[Char]): Str { chars.to_slice().to_str() }
-fun chars(str: Str): Slice[Char] { str.cast[Str, Slice[Char]]() }
-fun bytes(str: Str): Slice[Byte] { str.cast[Str, Slice[Byte]]() }
+fun chars(str: Str): Slice[Char] { str.unchecked_cast[Str, Slice[Char]]() }
+fun bytes(str: Str): Slice[Byte] { str.unchecked_cast[Str, Slice[Byte]]() }
 
 fun parse_digit(char: Char): Byte {
   if {#0..=#9}.contains(char.byte) then return char.byte - #0.byte
