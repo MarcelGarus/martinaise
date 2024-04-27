@@ -764,7 +764,7 @@ fun malloc_impl(size: Int, alignment: Int): Address asm {
   moveib a 8  add a sp load a a | size
   moveib b 16 add b sp load b b | alignment
   movei c heap_head load c c | heap_head
-  moveib d 1 cmp b d isequal cjump .align
+  moveib d 1 cmp b d isequal cjump .bump_head
   moveib d 2 cmp b d isequal cjump .align
   moveib d 4 cmp b d isequal cjump .align
   moveib d 8 cmp b d isequal cjump .align
