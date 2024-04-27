@@ -995,16 +995,14 @@ fun parse_switch(parser: &Parser): Result[Maybe[AstExpr], Str] {
     parser.consume_keyword("case") or break
     var variant = parser.parse_lower_name()
       or return bad_input[AstExpr]("Expected a variant.")
-    eprintln("Parsed case {variant}")
     var binding = none[AstStr]()
-    eprintln("Next: {parser.rest().substr(0, 5)}...")
     var opening_paren = parser.consume_prefix("(")
     if opening_paren is some then {
       binding = some(parser.parse_lower_name()
         or return bad_input[AstExpr]("Expected the name of the binding."))
       parser.consume_prefix(")")
         or return bad_input[AstExpr]("Expected a closing parenthesis.")
-    } else eprintln("No binding: {opening_paren}")
+    }
     var body = parser.parse_expr()?
       or return bad_input[AstExpr]("Expected a case expression.")
     cases.&.push(AstCase { variant, binding, body })
@@ -1594,15 +1592,15 @@ fun parse_file_and_dependencies(
   if out.contains(file) then return ok[Nothing, Str]({})
 
   var path = "{home}/{file}.mar"
-  eprintln("Reading {path}")
+  print_on_same_line("Reading {path}")
   var content = read_file(path).unwrap("couldn't read {path}").to_str()
 
   print_on_same_line("Parsing {path}")
   var ast = content.parse_single_file(file)?
   out.put(file, ast)
 
-  eprintln("Imports:")
-  for import in ast.imports do eprintln("- {import.str}")
+  | eprintln("Imports:")
+  | for import in ast.imports do eprintln("- {import.str}")
 
   for import in ast.imports do
     parse_file_and_dependencies(out, home, import.str)?
@@ -1636,7 +1634,6 @@ fun parse_project(home: Str, entry_file: Str): Result[Ast, Str] {
   var funs = map[Str, Vec[AstFun]]()
 
   for ast in asts do {
-    eprintln("Collecting defs from {ast.key}")
     for def in ast.value.defs do {
       switch def
       case opaque_(opaque_) {
@@ -1675,8 +1672,8 @@ fun parse_project(home: Str, entry_file: Str): Result[Ast, Str] {
     }
   }
 
-  eprintln("Types:")
-  for type in types do eprintln("- {type.key}")
+  | eprintln("Types:")
+  | for type in types do eprintln("- {type.key}")
 
   for type in types do
     switch type.value
@@ -4495,9 +4492,10 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
 
 fun wrong_usage(): Never { print_usage_info(stderr) exit(1) }
 
-fun main(args: Slice[Str]): Never {
+fun main(): Never {
   eprintln("Welcome to Martinaise 6.")
-  for arg in args do eprintln("Arg: {arg}")
+  var args = get_process_args()
+  eprintln("Args: {args}")
 
   | Note the program name itself is also an additional argument at the front.
   if args.len < 2 then wrong_usage()
