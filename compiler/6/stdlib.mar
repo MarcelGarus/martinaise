@@ -1370,23 +1370,22 @@ fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
 fun get_process_args(): Slice[Str] {
   var argc = get_argc()
   var args = uninitialized_slice[Str](argc)
-  for i in 0..argc do {
-    var cap = 8
-    loop {
-      var buffer = uninitialized_slice[Byte](cap)
-      if read_argv(i, buffer) < cap then {
-        args.get_ref(i).* = buffer.to_str()
-        break
-      }
-      cap = cap * 2
-    }
-  }
+  for i in 0..argc do args.get_ref(i).* = read_argv(i)
   args
 }
 fun get_argc(): Int asm {
   move b sp load b b | return value address
   syscall 9
   store b a ret
+}
+fun read_argv(index: Int): Str {
+  var cap = 32
+  loop {
+    var buffer = uninitialized_slice[Byte](cap)
+    var read = read_argv(index, buffer)
+    if read < cap then return buffer.subslice(0..read).to_str()
+    cap = cap * 2
+  }
 }
 fun read_argv(index: Int, buffer: Slice[Byte]): Int asm {
   moveib a 8 add a sp load a a  | index
