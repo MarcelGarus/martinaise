@@ -1441,9 +1441,10 @@ fun read(file: File, buffer: Slice[Byte]): Result[Int, Nothing] asm {
 }
 fun read_byte(file: File): Result[Maybe[Byte], Nothing] {
   var char = 0.lower_byte()
-  var buffer = Slice { data = char.&, len = 1 }
   ok[Maybe[Byte], Nothing](
-    if file.read(buffer)? == 0 then none[Byte]() else some(char)
+    if file.read(Slice { data = char.&, len = 1 })? == 0
+    then none[Byte]()
+    else some(char)
   )
 }
 
