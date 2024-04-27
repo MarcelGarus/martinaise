@@ -11,7 +11,6 @@
 | Todos  
 | TODO: language features
 | TODO:   var bool = foo is some?
-| TODO:   and, or
 | TODO:   enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
 | TODO:   support getting reference to enum payload
 | TODO:   provide way to get memory layouts of types as runtime values
@@ -28,9 +27,9 @@
 | TODO:   more efficient reading of files (append to end of heap)
 | TODO:   segment tree
 | TODO:   treap
-| TODO:   Int.to_byte
 | TODO: tooling
 | TODO:   breakpoint
+| TODO:   fuzzing
 
 | Nothing (aka Unit or Void)  
 | Nothing is a type with only one instance. From an information theoretical
