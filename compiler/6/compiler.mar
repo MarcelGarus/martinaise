@@ -77,6 +77,63 @@ struct Source { file: Str, span: Range[Int] }
 
 fun source(file: Str, span: Range[Int]): Source { Source { file, span } }
 
+| Errors  
+| When an error occurs, we need to highlight the faulty piece of code. Depending
+| on the medium, this might either result in a message in the terminal showing
+| a piece of the code, or a squiggly line in the IDE directly at the error
+| location.
+
+struct Error { source: Source, title: Str, description: Str }
+
+fun write[W](writer: W, error: Error, home: Str) {
+  var path = "{home}/{error.source.file}.mar"
+  var code =
+    switch read_file(path)
+    case ok(content) content.to_str()
+    case error {
+      writer."{error.source.file} 
+        '{error.source.span.start} – {error.source.span.end}: 
+        '{error.title}{newline}
+        '{error.description}"
+      return {}
+    }
+
+  var lines = vec[Str]()
+  var current_line = string_builder().&
+  var offset_in_line = 0
+  for i in 0..code.len do {
+    if i == error.source.span.start then offset_in_line = current_line.len()
+    if code.get(i) == newline
+    then {
+      lines.&.push(current_line.to_str())
+      current_line = string_builder().&
+      if i >= error.source.span.start then break
+    }
+    else current_line.write(code.get(i))
+  }
+  | Now, lines contains all lines up to the line that contains the error.
+  | offset_in_line is the offset into the last complete line.
+  var num_lines_to_display = min(lines.len, 4)
+  writer."{error.source.file}.mar{newline}"
+  for line_number in {lines.len - num_lines_to_display}..lines.len do {
+    writer.write_line_number(line_number)
+    writer." | {lines.get(line_number)}{newline}"
+  }
+  for i in 0..{7 + offset_in_line} do writer." "
+  for i in error.source.span do writer."^"
+  writer."{newline}"
+  for i in 0..{7 + offset_in_line} do writer." "
+  writer.write(error.title)
+  writer.write(newline)
+  writer.write(error.description)
+}
+fun write_line_number[W](writer: W, n: Int) {
+  if n >= 1000 then writer.write(n)
+  else if n >= 100 then writer.write(" {n}")
+  else if n >= 10 then writer.write("  {n}")
+  else writer.write("   {n}")
+}
+
 | The Abstract Syntax Tree  
 | An input file is parsed into an abstract syntax tree. This tree is a
 | representation of the program that roughly corresponds to the structure of the
@@ -1507,53 +1564,23 @@ fun parse_imports(parser: &Parser): Result[Vec[AstStr], Str] {
   ok[Vec[AstStr], Str](imports)
 }
 
-fun parse_single_file(input: Str, file: Str): Result[FileAst, Str] {
+fun parse_single_file(input: Str, file: Str): Result[FileAst, Error] {
   var parser = Parser { file, code = input, cursor = 0 }
   var imports =
     switch parser.&.parse_imports()
     case ok(imports) imports
-    case error(error) return error[FileAst, Str](format_error_with_context(
-      input, parser.cursor, error))
+    case error(message) return error[FileAst, Error](Error {
+      source = source(file, parser.cursor..{parser.cursor + 1}),
+      title = message, description = "",
+    })
   var defs =
     switch parser.&.parse_defs()
     case ok(defs) defs
-    case error(error) return error[FileAst, Str](format_error_with_context(
-      input, parser.cursor, error))
-  ok[FileAst, Str](FileAst { imports, defs })
-}
-fun format_error_with_context(code: Str, offset: Int, error: Str): Str {
-  var lines = vec[Str]()
-  var current_line = string_builder().&
-  var offset_in_line = 0
-  for i in 0..code.len do {
-    if i == offset then offset_in_line = current_line.len()
-    if code.get(i) == newline
-    then {
-      lines.&.push(current_line.to_str())
-      current_line = string_builder().&
-      if i >= offset then break
-    }
-    else current_line.write(code.get(i))
-  }
-  | Now, lines contains all lines up to the line that contains the error.
-  | offset_in_line is the offset into the last complete line.
-  var num_lines_to_display = min(lines.len, 4)
-  var out = string_builder().&
-  for line_number in {lines.len - num_lines_to_display}..lines.len do {
-    out.write_line_number(line_number)
-    out." | {lines.get(line_number)}{newline}"
-  }
-  for i in 0..{7 + offset_in_line} do out." "
-  out."^{newline}"
-  for i in 0..{7 + offset_in_line} do out." "
-  out.write(error)
-  out.to_str()
-}
-fun write_line_number[W](writer: W, n: Int) {
-  if n >= 1000 then writer.write(n)
-  else if n >= 100 then writer.write(" {n}")
-  else if n >= 10 then writer.write("  {n}")
-  else writer.write("   {n}")
+    case error(message) return error[FileAst, Error](Error {
+      source = source(file, parser.cursor..{parser.cursor + 1}),
+      title = message, description = "",
+    })
+  ok[FileAst, Error](FileAst { imports, defs })
 }
 
 | Joining Asts From Multiple Files  
@@ -1586,10 +1613,17 @@ fun write[W](writer: W, type: AstType) {
   case enum_(e) writer."{e}"
 }
 
+fun source(type: AstType): Source {
+  switch type
+  case opaque_(type) type.name.source
+  case struct_(type) type.name.source
+  case enum_(type) type.name.source
+}
+
 fun parse_file_and_dependencies(
   out: &Map[Str, FileAst], home: Str, file: Str
-): Result[Nothing, Str] {
-  if out.contains(file) then return ok[Nothing, Str]({})
+): Result[Nothing, Error] {
+  if out.contains(file) then return ok[Nothing, Error]({})
 
   var path = "{home}/{file}.mar"
   print_on_same_line("Reading {path}")
@@ -1605,10 +1639,10 @@ fun parse_file_and_dependencies(
   for import in ast.imports do
     parse_file_and_dependencies(out, home, import.str)?
 
-  ok[Nothing, Str]({})
+  ok[Nothing, Error]({})
 }
 
-fun parse_project(home: Str, entry_file: Str): Result[Ast, Str] {
+fun parse_project(home: Str, entry_file: Str): Result[Ast, Error] {
   var asts = map[Str, FileAst]()
 
   | Reference types such as &T are type-checked just like any other types. For
@@ -1637,27 +1671,35 @@ fun parse_project(home: Str, entry_file: Str): Result[Ast, Str] {
     for def in ast.value.defs do {
       switch def
       case opaque_(opaque_) {
-        if types.contains(opaque_.name.str) then return error[Ast, Str]('"
-          'Multiple types are named "{{opaque_.name}}". 
-          'Type names have to be unique."')
+        if types.contains(opaque_.name.str) then return error[Ast, Error](Error {
+          source = opaque_.name.source,
+          title = '"Multiple types are named "{{opaque_.name}}"."',
+          description = "Type names have to be unique.",
+        })
         types.&.put(opaque_.name.str, AstType.opaque_(opaque_))
       }
       case struct_(struct_) {
-        if types.contains(struct_.name.str) then return error[Ast, Str]('"
-          'Multiple types are named "{{struct_.name}}". 
-          'Type names have to be unique."')
+        if types.contains(struct_.name.str) then return error[Ast, Error](Error {
+          source = struct_.name.source,
+          title = '"Multiple types are named "{{struct_.name}}"."',
+          description = "Type names have to be unique.",
+        })
         types.&.put(struct_.name.str, AstType.struct_(struct_))
       }
       case enum_(enum_) {
-        if types.contains(enum_.name.str) then return error[Ast, Str]('"
-          'Multiple types are named "{{enum_.name}}". 
-          'Type names have to be unique."')
+        if types.contains(enum_.name.str) then return error[Ast, Error](Error {
+          source = enum_.name.source,
+          title = '"Multiple types are named "{{enum_.name}}"."',
+          description = "Type names have to be unique.",
+        })
         types.&.put(enum_.name.str, AstType.enum_(enum_))
       }
       case var_(global) {
-        if globals.contains(global.name.str) then return error[Ast, Str]('"
-          'Multiple global variables are named "{{global.name}}". 
-          'Names of globals have to be unique."')
+        if globals.contains(global.name.str) then return error[Ast, Error](Error {
+          source = global.name.source,
+          title = '"Multiple global variables are named "{{global.name}}"."',
+          description = "Names of global variables have to be unique.",
+        })
         globals.&.put(global.name.str, global)
       }
       case fun_(fun_)
@@ -1672,9 +1714,6 @@ fun parse_project(home: Str, entry_file: Str): Result[Ast, Str] {
     }
   }
 
-  | eprintln("Types:")
-  | for type in types do eprintln("- {type.key}")
-
   for type in types do
     switch type.value
     case opaque_ {
@@ -1683,43 +1722,65 @@ fun parse_project(home: Str, entry_file: Str): Result[Ast, Str] {
     case struct_(struct_) {
       for arg in struct_.type_args do
         if arg.str.exists(types, vec[AstStr]())
-        then return error[Ast, Str]("
-          '{struct_.name} defines a type argument {arg}, but {arg} is also a
-          'fully defined type.")
+        then return error[Ast, Error](Error {
+          source = arg.source,
+          title = "{struct_.name} defines the type argument {arg}, but {arg} is 
+            'also a concrete type.",
+          description = "",
+        })
       for field in struct_.fields do
         if field.type.exists(types, struct_.type_args) is error(type) then
-          return error[Ast, Str]("
-            '{struct_.name} refers to type {type}, but that doesn't exist.")
+          return error[Ast, Error](Error {
+            source = struct_.name.source,
+            title = "{struct_.name} refers to type {type}, but that doesn't 
+              'exist.",
+            description = "",
+          })
     }
     case enum_(enum_) {
       for arg in enum_.type_args do
-        if arg.str.exists(types, vec[AstStr]())
-        then return error[Ast, Str]("
-          '{enum_.name} defines a type argument {arg}, but {arg} is also a fully
-          'defined type.")
+        if arg.str.exists(types, vec[AstStr]()) then
+          return error[Ast, Error](Error {
+            source = arg.source,
+            title = "{enum_.name} defines the type argument {arg}, but {arg} is 
+              'also a concrete type.",
+            description = "",
+          })
       for variant in enum_.variants do
         if variant.type.exists(types, enum_.type_args) is error(type) then
-          return error[Ast, Str]("
-            '{enum_.name} refers to type {type}, but that doesn't exist.")
+          return error[Ast, Error](Error {
+            source = enum_.name.source,
+            title = "{enum_.name} refers to type {type}, but that doesn't 
+              'exist.",
+            description = "",
+          })
     }
 
   for funs in funs do
     for fun_ in funs.value do {
       for arg in fun_.type_args do
         if arg.str.exists(types, vec[AstStr]()) then
-          return error[Ast, Str]("
-            '{fun_.name} defines a type argument {arg}, but {arg} is also the
-            'name of a concrete type.")
+          return error[Ast, Error](Error {
+            source = arg.source,
+            title = "{fun_.name} defines the type argument {arg}, but {arg} is 
+              'also a concrete type.",
+            description = "",
+          })
       for arg in fun_.args do
         if arg.type.exists(types, fun_.type_args) is error(type) then
-          return error[Ast, Str]("
-            '{fun_.name} refers to type {type}, but that doesn't exist.")
+          return error[Ast, Error](Error {
+            source = fun_.name.source,
+            title = "{fun_.name} refers to type {type}, but that doesn't 
+              'exist.",
+            description = "",
+          })
     }
 
-  ok[Ast, Str](Ast { types, globals, funs })
+  ok[Ast, Error](Ast { types, globals, funs })
 }
 
 | Checks if the type exists.
+| TODO: This is a horrible name for a function that doesn't return a Bool.
 fun exists(
   type: Type, types: Map[Str, AstType], extra: Vec[AstStr],
 ): Result[Nothing, Str] {
@@ -4448,7 +4509,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   var ast =
     switch parse_project(".", file_path)
     case ok(ast) ast
-    case error(error) { eprintln(error) return false }
+    case error(error) { eprintln("") stderr.write(error, ".") return false }
   if command is ast then { println(ast) return true }
 
   print_on_same_line("Monoing")
