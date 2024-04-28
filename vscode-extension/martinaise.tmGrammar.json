@@ -73,31 +73,7 @@
         },
         { "include": "#comments" },
         {
-          "name": "string.quoted.meta.2",
-          "begin": "''\"",
-          "end": "\"''",
-          "patterns": [
-            {
-              "begin": "{{{",
-              "end": "}}}",
-              "patterns": [{ "include": "#all" }]
-            }
-          ]
-        },
-        {
-          "name": "string.quoted.meta.1",
-          "begin": "'\"",
-          "end": "\"'",
-          "patterns": [
-            {
-              "begin": "{{",
-              "end": "}}",
-              "patterns": [{ "include": "#all" }]
-            }
-          ]
-        },
-        {
-          "name": "string.quoted.meta.0",
+          "name": "string.quoted.double",
           "begin": "\"",
           "end": "\"",
           "patterns": [
@@ -105,6 +81,10 @@
               "begin": "{",
               "end": "}",
               "patterns": [{ "include": "#all" }]
+            },
+            {
+              "name": "constant.character.escape",
+              "match": "\\\\."
             }
           ]
         },
