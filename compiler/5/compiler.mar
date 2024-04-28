@@ -749,78 +749,60 @@ fun parse_str(parser: &Parser): Result[Maybe[AstExpr], Str] {
   parsed(AstExpr.body(body))
 }
 | Parses a string literal, potentially with interpolation, into expressions.
-| Metaness 0: "Hello" -> ["Hello"]
-|             "Hello, {3}!" -> ["Hello", 3]
-| Metaness 1: '"foo " bar"' -> ['foo " bar ']
+| "Hello" -> ["Hello"]
+| "Hello, {3}!" -> ["Hello", 3]
+| "foo \" bar" -> ["foo \" bar "]
 fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
-  parser.consume_whitespace()
-  | strings starts with metaness single quotes, then a double quote
-  var metaness = 0
-  loop
-    if parser.rest().get(metaness) != #'
-    then break
-    else metaness = metaness + 1
-  if parser.rest().get(metaness) != #"
-  then return if metaness >= 1
-    then bad_input[Vec[AstExpr]]("Expected a double quote.")
-    else no_match[Vec[AstExpr]]()
-  parser.advance_by(metaness + 1)
+  parser.consume_prefix('"""') orelse return no_match[Vec[AstExpr]]()
 
   var parts = vec[AstExpr]()
   var part = vec[Char]()
   loop {
-    | (metaness + 1) braces -> interpolation
-    var num_braces = 0
-    loop
-      if parser.rest().get(num_braces) == #{
-      then num_braces = num_braces + 1
-      else break
-    if num_braces >= {metaness + 1} then {
-      for i in 0..{num_braces - metaness - 1} do part.&.push(#{)
+    var c = parser.current()
+    | double quote -> string ends
+    if c == #" then { parser.advance() break }
+    | brace -> interpolation
+    if c == #{ then {
+      parser.advance()
       if part.is_not_empty() then {
         parts.&.push(AstExpr.str(part.to_str()))
         part = vec[Char]()
       }
-      parser.advance_by(num_braces)
       var expr = parser.parse_expr()? orelse return bad_input[Vec[AstExpr]](
         "Expected an expression as string interpolation.")
       parts.&.push(expr)
-      for i in 0 ..= metaness do
-        parser.consume_prefix("}") orelse return bad_input[Vec[AstExpr]](
-          "Expected a closing brace after string interpolation.")
+      parser.consume_prefix("}") orelse return bad_input[Vec[AstExpr]](
+        "Expected a closing brace after string interpolation.")
       continue
     }
-    | newline -> skip, parse whitespace in next line until quote
-    |   single quote -> newline inserted
-    |   double quote -> no newline inserted
-    if parser.current() == newline then {
+    | backslash -> escaped character
+    if c == #\ then {
       parser.advance()
-      loop {
-        var char = parser.current()
-        if char == #  then { parser.advance() continue }
-        if char == #' then break
-        return bad_input[Vec[AstExpr]](
-          "After a newline, a string needs to have a single quote.")
-      }
+      if parser.current() == #\ then { part.&.push(#\) parser.advance() continue }
+      if parser.current() == #" then { part.&.push(#") parser.advance() continue }
+      if parser.current() == #{ then { part.&.push(#{) parser.advance() continue }
+      if parser.current() == #} then { part.&.push(#}) parser.advance() continue }
+      if parser.current() == #n then { part.&.push(newline) parser.advance() continue }
+      return bad_input[Vec[AstExpr]]("Unknown string escape.")
+    }
+    | newline -> skip, consume whitespace in next line until single quote
+    if c == newline then {
+      parser.advance()
+      loop if parser.current() == space then parser.advance() else break
+      parser.current() == #' orelse return bad_input[Vec[AstExpr]](
+        "After a newline, a string needs to have a single quote.")
       parser.advance()
       continue
-    }
-    | double quote + metaness single quotes -> string ends
-    if parser.current() == #" then if {
-      var is_followed_by_enough_single_quotes = true
-      for j in 1 ..= metaness do
-        if parser.rest().get(j) != #'
-        then is_followed_by_enough_single_quotes = false
-      is_followed_by_enough_single_quotes
-    } then {
-      if part.is_not_empty() then parts.&.push(AstExpr.str(part.to_str()))
-      parser.advance_by(1 + metaness)
-      return parsed(parts)
     }
     | everything else -> literal character
     part.&.push(parser.current())
     parser.advance()
   }
+  if part.is_not_empty() then parts.&.push(AstExpr.str(part.to_str()))
+  | eprint("Parsed string: ")
+  | for part in parts do eprint(switch part case str(s) s default "[...]")
+  | eprintln()
+  parsed(parts)
 }
 
 | Parses either a struct creation such as Foo { foo, bar = 4 } or an enum

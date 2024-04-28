@@ -1953,16 +1953,16 @@ fun write[W](writer: W, json: Json) {
   switch json
   case null writer."null"
   case int(int) writer."{int}"
-  case string(str) writer.'""{{str}}""'
+  case string(str) writer."\"{str}\""
   case array(vec) writer."[{comma_separated(vec)}]"
   case map(map) {
-    writer.'"{"'
+    writer."\{"
     var first = true
     for entry in map do {
       if first then first = false else writer.", "
       writer."{entry.key}: {entry.value}"
     }
-    writer.'"}"'
+    writer."}"
   }
 }
 fun parse_json(json: Str): Result[Json, Nothing] {
@@ -2004,7 +2004,7 @@ fun parse_int(parser: &JsonParser): Result[Maybe[Int], Nothing] {
   ok[Maybe[Int], Nothing](some(num))
 }
 fun parse_string(parser: &JsonParser): Result[Maybe[Str], Nothing] {
-  parser.consume('"""') or return ok[Maybe[Str], Nothing](none[Str]()) | "
+  parser.consume("\"") or return ok[Maybe[Str], Nothing](none[Str]())
   var chars = vec[Char]()
   loop
     if parser.rest().is_empty() then
@@ -2027,7 +2027,8 @@ fun parse_array(parser: &JsonParser): Result[Maybe[Vec[Json]], Nothing] {
   ok[Maybe[Vec[Json]], Nothing](some(array))
 }
 fun parse_map(parser: &JsonParser): Result[Maybe[Map[Str, Json]], Nothing] {
-  parser.consume('"{"') or return ok[Maybe[Map[Str, Json]], Nothing](none[Map[Str, Json]]()) | "}"
+  parser.consume("\{") or
+    return ok[Maybe[Map[Str, Json]], Nothing](none[Map[Str, Json]]())
   var map = map[Str, Json]()
   loop if parser.consume("}") then break else {
     var key = parser.parse_string()? or return error[Maybe[Map[Str, Json]], Nothing]({})

@@ -93,7 +93,7 @@ fun write[W](writer: W, error: Error, home: Str) {
     case error {
       writer."{error.source.file} 
         '{error.source.span.start} – {error.source.span.end}: 
-        '{error.title}{newline}
+        '{error.title}\n
         '{error.description}"
       return {}
     }
@@ -114,14 +114,14 @@ fun write[W](writer: W, error: Error, home: Str) {
   | Now, lines contains all lines up to the line that contains the error.
   | offset_in_line is the offset into the last complete line.
   var num_lines_to_display = min(lines.len, 4)
-  writer."{error.source.file}.mar{newline}"
+  writer."{error.source.file}.mar\n"
   for line_number in {lines.len - num_lines_to_display}..lines.len do {
     writer.write_line_number(line_number)
-    writer." | {lines.get(line_number)}{newline}"
+    writer." | {lines.get(line_number)}\n"
   }
   for i in 0..{7 + offset_in_line} do writer." "
   for i in error.source.span do writer."^"
-  writer."{newline}"
+  writer."\n"
   for i in 0..{7 + offset_in_line} do writer." "
   writer.write(error.title)
   writer.write(newline)
@@ -297,8 +297,8 @@ fun var_(name: AstStr, value: AstExpr): AstExpr {
 }
 
 fun write[W](writer: W, ast: FileAst) {
-  for import in imports do writer."import {import}{newline}"
-  for def in ast.defs do writer."{def}{newline}"
+  for import in imports do writer."import {import}\n"
+  for def in ast.defs do writer."{def}\n"
 }
 fun write[W](writer: W, def: AstDef) {
   switch def
@@ -318,19 +318,19 @@ fun write[W](writer: W, opaque_: AstOpaqueType) {
 }
 fun write[W](writer: W, struct_: AstStruct) {
   writer."struct {struct_.name}{type_args(struct_.type_args)} "
-  if struct_.fields.is_empty() then writer.'"{}"' else {
-    writer.'"{{{newline}}"'
+  if struct_.fields.is_empty() then writer."\{}" else {
+    writer."\{\n\}"
     for field in struct_.fields do
-      writer."  {field.name}: {field.type},{newline}"
+      writer."  {field.name}: {field.type},\n"
     writer."}"
   }
 }
 fun write[W](writer: W, enum_: AstEnum) {
   writer."enum {enum_.name}{type_args(enum_.type_args)} "
-  if enum_.variants.is_empty() then writer.'"{}"' else {
-    writer.'"{{{newline}}"'
+  if enum_.variants.is_empty() then writer."\{}" else {
+    writer."\{\n\}"
     for variant in enum_.variants do
-      writer."  {variant.name}: {variant.type},{newline}"
+      writer."  {variant.name}: {variant.type},\n"
     writer."}"
   }
 }
@@ -359,25 +359,25 @@ fun write[W](writer: W, fun_: AstFun) {
   writer."fun {fun_.name}{type_args(fun_.type_args)}
     '({comma_separated(fun_.args)}): {fun_.returns} "
   switch fun_.kind
-  case builtin writer.'"{ ... }"'
+  case builtin writer."\{ ... \}"
   case body(body) writer.write_block(Indent { amount = 0 }, body)
   case asm_(instructions) {
-    writer.'"asm {{{newline}}"'
-    for instruction in instructions do writer."  {instruction}{newline}"
-    writer.'"}"'
+    writer."asm \{\n"
+    for instruction in instructions do writer."  {instruction}\n"
+    writer."}"
   }
 }
 fun write_block[W](writer: W, indent: Indent, body: Vec[AstExpr]) {
-  if body.is_empty() then { writer.'"{}"' return {} }
-  writer.'"{{{newline}}"'
+  if body.is_empty() then { writer."\{}" return {} }
+  writer."\{\n"
   for expr in body do
-    writer."{indent.inc()}{expr.indented(indent.inc())}{newline}"
-  writer."{indent}}"
+    writer."{indent.inc()}{expr.indented(indent.inc())}\n"
+  writer."{indent}\}"
 }
 fun write[W](writer: W, indent: Indent, expr: AstExpr) {
   switch expr
   case int(int) writer.write(int)
-  case str(str) writer.'""{{str}}""' | TODO: meta-string as necessary
+  case str(str) writer."\"{str}\"" | TODO: escape special characters
   case name(name) writer.write(name)
   case call(call) {
     writer.write(indent, call.callee.*)
@@ -392,11 +392,11 @@ fun write[W](writer: W, indent: Indent, expr: AstExpr) {
   }
   case make_struct(struct_) {
     writer."{struct_.type} "
-    if struct_.fields.is_empty() then writer.'"{}"' else {
-      writer.'"{{{newline}}"'
+    if struct_.fields.is_empty() then writer."\{}" else {
+      writer."\{\n"
       for field in struct_.fields do
         writer."{indent.inc()}{field.name} = 
-          '{field.value.indented(indent.inc())},{newline}"
+          '{field.value.indented(indent.inc())},\n"
       writer."{indent}}"
     }
   }
@@ -409,16 +409,16 @@ fun write[W](writer: W, indent: Indent, expr: AstExpr) {
   case switch_(switch_) {
     writer."switch { {switch_.value.*.indented(indent)} }"
     for case_ in switch_.cases do {
-      writer."{newline}{indent}case {case_.variant}"
+      writer."\n{indent}case {case_.variant}"
       if case_.binding is some(binding) then writer."({binding})"
-      writer.'" { {{newline}}
-        '{{indent.inc()}}{{case_.body.indented(indent.inc())}}{{newline}}
-        '{{indent}}}"'
+      writer." \{\n
+        '{indent.inc()}{case_.body.indented(indent.inc())}\n
+        '{indent}\}"
     }
     if switch_.default_ is some(default_) then
-      writer.'"{{newline}}{{indent}}default { {{newline}}
-        '{{indent.inc()}}{{default_.*.body.indented(indent.inc())}}{{newline}}
-        '{{indent}}}"'
+      writer."\n{indent}default \{\n
+        '{indent.inc()}{default_.*.body.indented(indent.inc())}\n
+        '{indent}}"
   }
   case loop_(loop_) writer."loop {loop_.body.*.indented(indent)}"
   case break_(break_) writer."break({break_.value.*.indented(indent)})"
@@ -646,7 +646,7 @@ fun parse_upper_name(parser: &Parser): Maybe[AstStr] {
 
 fun parse_operator_name(parser: &Parser): Maybe[AstStr] {
   parser.consume_whitespace()
-  var allowed = "%!~@^\`/&*+$-<>=."
+  var allowed = "%!~@^\\`/&*+$-<>=."
   var start = parser.cursor
   loop {
     var char = parser.current()
@@ -857,79 +857,60 @@ fun parse_str(parser: &Parser): Result[Maybe[AstExpr], Str] {
   parsed(AstExpr.block(block))
 }
 | Parses a string literal, potentially with interpolation, into expressions.
-| Metaness 0: "Hello" -> ["Hello"]
-|             "Hello, {3}!" -> ["Hello", 3]
-| Metaness 1: '"foo " bar"' -> ['foo " bar ']
+| "Hello" -> ["Hello"]
+| "Hello, {3}!" -> ["Hello", 3]
+| "foo \" bar" -> ["foo \" bar "]
 fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
-  parser.consume_whitespace()
-  | strings starts with metaness single quotes, then a double quote
-  var metaness = 0
-  loop
-    if parser.rest().get(metaness) != #'
-    then break
-    else metaness = metaness + 1
-  if parser.rest().get(metaness) != #"
-  then return if metaness >= 1
-    then bad_input[Vec[AstExpr]]("Expected a double quote.")
-    else no_match[Vec[AstExpr]]()
-  parser.advance_by(metaness + 1)
+  parser.consume_prefix("\"") or return no_match[Vec[AstExpr]]()
 
   var parts = vec[AstExpr]()
   var part = vec[Char]()
   loop {
-    | (metaness + 1) braces -> interpolation
-    var num_braces = 0
-    loop
-      if parser.rest().get(num_braces) == #{
-      then num_braces = num_braces + 1
-      else break
-    if num_braces >= {metaness + 1} then {
-      for i in 0..{num_braces - metaness - 1} do part.&.push(#{)
+    var c = parser.current()
+    | double quote -> string ends
+    if c == #" then { parser.advance() break }
+    | brace -> interpolation
+    if c == #{ then {
+      parser.advance()
       if part.is_not_empty() then {
         parts.&.push(AstExpr.str(part.to_str()))
         part = vec[Char]()
       }
-      parser.advance_by(num_braces)
       var expr = parser.parse_expr()? or return bad_input[Vec[AstExpr]](
         "Expected an expression as string interpolation.")
       parts.&.push(expr)
-      for i in 0 ..= metaness do
-        parser.consume_prefix("}") or return bad_input[Vec[AstExpr]](
-          "Expected a closing brace after string interpolation.")
+      parser.consume_prefix("}") or return bad_input[Vec[AstExpr]](
+        "Expected a closing brace after string interpolation.")
       continue
     }
-    | newline -> skip, parse whitespace in next line until quote
-    |   single quote -> newline inserted
-    |   double quote -> no newline inserted
-    if parser.current() == newline then {
+    | backslash -> escaped character
+    if c == #\ then {
       parser.advance()
-      loop {
-        var char = parser.current()
-        if char == #  then { parser.advance() continue }
-        if char == #' then break
-        return bad_input[Vec[AstExpr]](
-          "After a newline, a string needs to have a single quote.")
-      }
+      if parser.current() == #\ then { part.&.push(#\) parser.advance() continue }
+      if parser.current() == #" then { part.&.push(#") parser.advance() continue }
+      if parser.current() == #{ then { part.&.push(#{) parser.advance() continue }
+      if parser.current() == #} then { part.&.push(#}) parser.advance() continue }
+      if parser.current() == #n then { part.&.push(newline) parser.advance() continue }
+      return bad_input[Vec[AstExpr]]("Unknown string escape.")
+    }
+    | newline -> skip, consume whitespace in next line until single quote
+    if c == newline then {
+      parser.advance()
+      loop if parser.current() == space then parser.advance() else break
+      parser.current() == #' or return bad_input[Vec[AstExpr]](
+        "After a newline, a string needs to have a single quote.")
       parser.advance()
       continue
-    }
-    | double quote + metaness single quotes -> string ends
-    if parser.current() == #" then if {
-      var is_followed_by_enough_single_quotes = true
-      for j in 1 ..= metaness do
-        if parser.rest().get(j) != #'
-        then is_followed_by_enough_single_quotes = false
-      is_followed_by_enough_single_quotes
-    } then {
-      if part.is_not_empty() then
-        parts.&.push(AstExpr.str(part.to_str()))
-      parser.advance_by(1 + metaness)
-      return parsed(parts)
     }
     | everything else -> literal character
     part.&.push(parser.current())
     parser.advance()
   }
+  if part.is_not_empty() then parts.&.push(AstExpr.str(part.to_str()))
+  | eprint("Parsed string: ")
+  | for part in parts do eprint(switch part case str(s) s default "[...]")
+  | eprintln()
+  parsed(parts)
 }
 
 | Parses either a struct creation such as Foo { foo, bar = 4 } or an enum
@@ -940,7 +921,7 @@ fun parse_make(parser: &Parser): Result[Maybe[AstExpr], Str] {
   var type = parser.parse_type()? or return no_match[AstExpr]()
   var end = parser.cursor
   var type_source = source(parser.file, start..end)
-  if parser.consume_prefix('"{"') is some then {
+  if parser.consume_prefix("\{") is some then {
     var fields = vec[AstMakeStructField]()
     loop {
       var name = parser.parse_lower_name() or break
@@ -975,7 +956,7 @@ fun parse_make(parser: &Parser): Result[Maybe[AstExpr], Str] {
 }
 
 fun parse_block(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
-  parser.consume_prefix('"{"') or return no_match[Vec[AstExpr]]()
+  parser.consume_prefix("\{") or return no_match[Vec[AstExpr]]()
   var statements = vec[AstExpr]()
   loop switch parser.parse_expr()?
   case some(expr) statements.&.push(expr)
@@ -1324,7 +1305,7 @@ fun parse_reg(parser: &Parser): Result[Reg, Str] {
 }
 
 fun parse_asm_str(parser: &Parser): Result[Str, Str] {
-  parser.consume_prefix('"""') or return error[Str, Str]("Expected string.")
+  parser.consume_prefix("\"") or return error[Str, Str]("Expected string.")
   var start = parser.cursor
   loop if parser.current() == #" then break else parser.advance()
   parser.advance()
@@ -1450,9 +1431,9 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
     returns = parser.parse_type()?
       or return bad_input[AstFun]("Expected the return type.")
   var kind =
-    if parser.consume_prefix('"{ ... }"') is some(dots) then
+    if parser.consume_prefix("\{ ... }") is some(dots) then
       AstFunKind.builtin(AstBuiltinDots { dots })
-    else if parser.consume_prefix('"asm {"') is some then {
+    else if parser.consume_prefix("asm \{") is some then {
       var instructions = vec[Instruction]()
       loop instructions.&.push(parser.parse_instruction()? or break)
       parser.consume_prefix("}") or return bad_input[AstFun](
@@ -1472,12 +1453,12 @@ fun parse_opaque(parser: &Parser): Result[Maybe[AstOpaqueType], Str] {
     or return bad_input[AstOpaqueType]("Expected an equals sign.")
   var size = parser.parse_bytes_amount("size")? or unreachable()
   parser.consume_prefix("big")
-    or return bad_input[AstOpaqueType]('"Expected "big"."')
+    or return bad_input[AstOpaqueType]("Expected \"big\".")
   parser.consume_prefix(",")
     or return bad_input[AstOpaqueType]("Expected comma.")
   var alignment = parser.parse_bytes_amount("alignment")? or unreachable()
   parser.consume_prefix("aligned")
-    or return bad_input[AstOpaqueType]('"Expected "aligned"."')
+    or return bad_input[AstOpaqueType]("Expected \"aligned\".")
   parsed(AstOpaqueType { name, size, alignment })
 }
 fun parse_bytes_amount(parser: &Parser, name: Str): Result[Maybe[Int], Str] {
@@ -1486,9 +1467,9 @@ fun parse_bytes_amount(parser: &Parser, name: Str): Result[Maybe[Int], Str] {
     or return bad_input[Int]("Expected {name}.")
   if amount == 1
   then parser.consume_prefix("byte")
-    or return bad_input[Int]('"Expected "byte"."')
+    or return bad_input[Int]("Expected \"byte\".")
   else parser.consume_prefix("bytes")
-    or return bad_input[Int]('"Expected "bytes"."')
+    or return bad_input[Int]("Expected \"bytes\".")
   parsed(amount)
 }
 
@@ -1497,7 +1478,7 @@ fun parse_struct(parser: &Parser): Result[Maybe[AstStruct], Str] {
   var name = parser.parse_upper_name()
     or return bad_input[AstStruct]("Expected an uppercase name.")
   var type_args = parser.parse_type_params()? or vec[AstStr]()
-  parser.consume_prefix('"{"')
+  parser.consume_prefix("\{")
     or return bad_input[AstStruct]("Expected an opening brace.")
   var fields = vec[AstStructField]()
   loop {
@@ -1519,7 +1500,7 @@ fun parse_enum(parser: &Parser): Result[Maybe[AstEnum], Str] {
   var name = parser.parse_upper_name()
     or return bad_input[AstEnum]("Expected an uppercase name.")
   var type_args = parser.parse_type_params()? or vec[AstStr]()
-  parser.consume_prefix('"{"')
+  parser.consume_prefix("\{")
     or return bad_input[AstEnum]("Expected an opening brace.")
   var variants = vec[AstEnumVariant]()
   loop {
@@ -1602,9 +1583,9 @@ struct Ast {
 enum AstType { opaque_: AstOpaqueType, struct_: AstStruct, enum_: AstEnum }
 
 fun write[W](writer: W, ast: Ast) {
-  for type in ast.types do writer."{type.value}{newline}"
-  for global in ast.globals do writer."{global.value}{newline}"
-  for funs in ast.funs do for f in funs.value do writer."{f}{newline}"
+  for type in ast.types do writer."{type.value}\n"
+  for global in ast.globals do writer."{global.value}\n"
+  for funs in ast.funs do for f in funs.value do writer."{f}\n"
 }
 fun write[W](writer: W, type: AstType) {
   switch type
@@ -1673,7 +1654,7 @@ fun parse_project(home: Str, entry_file: Str): Result[Ast, Error] {
       case opaque_(opaque_) {
         if types.contains(opaque_.name.str) then return error[Ast, Error](Error {
           source = opaque_.name.source,
-          title = '"Multiple types are named "{{opaque_.name}}"."',
+          title = "Multiple types are named \"{opaque_.name}\".",
           description = "Type names have to be unique.",
         })
         types.&.put(opaque_.name.str, AstType.opaque_(opaque_))
@@ -1681,7 +1662,7 @@ fun parse_project(home: Str, entry_file: Str): Result[Ast, Error] {
       case struct_(struct_) {
         if types.contains(struct_.name.str) then return error[Ast, Error](Error {
           source = struct_.name.source,
-          title = '"Multiple types are named "{{struct_.name}}"."',
+          title = "Multiple types are named \"{struct_.name}\".",
           description = "Type names have to be unique.",
         })
         types.&.put(struct_.name.str, AstType.struct_(struct_))
@@ -1689,7 +1670,7 @@ fun parse_project(home: Str, entry_file: Str): Result[Ast, Error] {
       case enum_(enum_) {
         if types.contains(enum_.name.str) then return error[Ast, Error](Error {
           source = enum_.name.source,
-          title = '"Multiple types are named "{{enum_.name}}"."',
+          title = "Multiple types are named \"{enum_.name}\".",
           description = "Type names have to be unique.",
         })
         types.&.put(enum_.name.str, AstType.enum_(enum_))
@@ -1697,7 +1678,7 @@ fun parse_project(home: Str, entry_file: Str): Result[Ast, Error] {
       case var_(global) {
         if globals.contains(global.name.str) then return error[Ast, Error](Error {
           source = global.name.source,
-          title = '"Multiple global variables are named "{{global.name}}"."',
+          title = "Multiple global variables are named \"{global.name}\".",
           description = "Names of global variables have to be unique.",
         })
         globals.&.put(global.name.str, global)
@@ -1825,7 +1806,7 @@ fun add(sink: &TypeSink, type: Type): Result[Nothing, Str] {
       ok[Nothing, Str]({})
     }
     case none return error[Nothing, Str]("
-      ' expected: {current}{newline}
+      ' expected: {current}\n
       '   actual: {type}")
   }
 }
@@ -1913,8 +1894,8 @@ fun finish(solver: TypeSolver): Result[Map[Str, Type], Str] {
     if not(solver.env.contains(var_)) then return error[Map[Str, Type], Str]({
       var out = string_builder().&
       if solver.env.size > 0 then {
-        out."These type variables are bound:{newline}"
-        for entry in solver.env do out." - {entry.key} = {entry.value}{newline}"
+        out."These type variables are bound:\n"
+        for entry in solver.env do out." - {entry.key} = {entry.value}\n"
       }
       out."The type variable {var_} is unbound."
       out.to_str()
@@ -2060,7 +2041,7 @@ fun print_status(context: Context) {
 fun lookup_type(ast: Ast, name: Str): Result[AstType, Str] {
   switch ast.types.get_maybe(name)
   case some(match) ok[AstType, Str](match)
-  case none return error[AstType, Str]('"There is no type named "{{name}}"."')
+  case none return error[AstType, Str]("There is no type named \"{name}\".")
 }
 
 | Looks up the global variable with the given name. Names of global variables
@@ -2077,8 +2058,8 @@ fun lookup_fun(
   name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type],
 ): Result[LookupFunSolution, Str] {
   var name_matches = ast.funs.get_maybe(name)
-    or return error[LookupFunSolution, Str]('"
-      'There are no defintions named "{{name}}"."')
+    or return error[LookupFunSolution, Str]("
+      'There are no defintions named \"{name}\".")
 
   var full_matches = vec[LookupFunSolution]()
   for fun_ in name_matches do {
@@ -2100,10 +2081,10 @@ fun lookup_fun(
       switch solver.finish()
       case ok(env) env
       case error(error) return error[LookupFunSolution, Str](
-        "Found a function matching a call:{newline}
-        '  call: {signature(name, type_args, arg_types)}{newline}
-        ' match: {fun_.stripped_signature()}{newline}{newline}
-        'However, resolving the call doesn't work:{newline}
+        "Found a function matching a call:\n
+        '  call: {signature(name, type_args, arg_types)}\n
+        ' match: {fun_.stripped_signature()}\n
+        'However, resolving the call doesn't work:\n
         '{error}")
     full_matches.&.push(LookupFunSolution { fun_, type_env })
   }
@@ -2111,26 +2092,26 @@ fun lookup_fun(
   if full_matches.is_empty() then return error[LookupFunSolution, Str]({
     var out = string_builder().&
     out."
-      'This call doesn't work:{newline}
-      ' > {signature(name, type_args, arg_types)}{newline}{newline}"
+      'This call doesn't work:\n
+      ' > {signature(name, type_args, arg_types)}\n"
     if name_matches.is_empty()
-    then out.'"There are no defintions named "{{name}}"."'
+    then out."There are no defintions named \"{name}\"."
     else {
       out."These definitions have the same name, but arguments don't match:"
       for match in name_matches do
-        out."{newline} - {match.stripped_signature()}"
+        out."\n - {match.stripped_signature()}"
     }
     out.to_str()
   })
   if full_matches.len > 1 then return error[LookupFunSolution, Str]({
     var out = string_builder().&
     out.
-      "This call matches multiple functions:{newline}
-      '  call: {signature(name, type_args, arg_types)}{newline}"
+      "This call matches multiple functions:\n
+      '  call: {signature(name, type_args, arg_types)}\n"
     for match in full_matches do {
       var padded_signature = match.fun_.stripped_signature().format()
         .pad_right(30, # )
-      out."{newline} match: {padded_signature}"
+      out."\n match: {padded_signature}"
       if match.type_env.is_not_empty() then {
         out." with "
         var first = true
@@ -2287,22 +2268,22 @@ fun @(statement: MonoStatement, source: Source): MonoStatementAndSource {
 }
 
 fun write[W](writer: W, mono: Mono) {
-  writer."Types:{newline}"
+  writer."Types:\n"
   | TODO: add keys and value iters to stdlib
-  for entry in mono.type_defs do writer." - {entry.key}{newline}"
+  for entry in mono.type_defs do writer." - {entry.key}\n"
 
-  writer."Globals:{newline}"
+  writer."Globals:\n"
   for entry in mono.globals do
-    writer." - {entry.key}: {entry.value.return_type}{newline}"
+    writer." - {entry.key}: {entry.value.return_type}\n"
 
-  writer."Funs:{newline}"
+  writer."Funs:\n"
   for entry in mono.funs do {
     writer.write(entry.key, entry.value)
     writer.write(newline)
   }
 }
 fun write[W](writer: W, name: Str, fun_: MonoFun) {
-  writer."{name}{newline}"
+  writer."{name}\n"
   switch fun_.kind
   case builtin writer."<builtin>"
   case body(body) {
@@ -2315,10 +2296,10 @@ fun write[W](writer: W, name: Str, fun_: MonoFun) {
       case uninitialized writer."uninitialized"
       case arg(i) writer."arg_{i}"
       case int(int) writer.write(int)
-      case str(str) writer.'""{{str}}""'
+      case str(str) writer."\"{str}\""
     }
     for statement in body.statements do
-      writer."{newline}  {statement.statement}"
+      writer."\n  {statement.statement}"
   }
   case asm_(code) writer.write(code)
 }
@@ -2477,16 +2458,16 @@ fun compile(ast: Ast): Result[Mono, Str] {
     case ok(signature) signature
     case error(error) return error[Mono, Str]({
       var out = string_builder().&
-      out."Error when compiling{newline}"
-      for signature in context.signatures do out." - {signature}{newline}"
-      out."{newline}{error}"
+      out."Error when compiling\n"
+      for signature in context.signatures do out." - {signature}\n"
+      out."\n{error}"
       out.to_str()
     })
 
   var return_type = mono.funs.get(main_signature).return_type
   if not(return_type.is_never()) then return error[Mono, Str](
     "The main function should return Never, but it returns {return_type}.
-    '{newline}You can call exit(0.lower_byte()) if you want the program to stop.")
+    '\nYou can call exit(0.lower_byte()) if you want the program to stop.")
 
   ok[Mono, Str](mono)
 }
@@ -2610,7 +2591,7 @@ fun compile(
     @ global.name.source)
   if compile_fun.return_type.&.add(value.type) is error(error) then
     return error[Nothing, Str](
-      "The value of the variable doesn't match its expected type.{newline}
+      "The value of the variable doesn't match its expected type.\n
       '{error}")
 
   mono.globals.&.put(global.name.str, MonoFun {
@@ -2702,7 +2683,7 @@ fun compile(
       if compile_fun.return_type.&.add(body_result.type) is error(error) then
         return error[Str, Str](
           "The last expression of the function body doesn't match the return 
-          'type.{newline}{error}")
+          'type.\n{error}")
       return_type = compile_fun.return_type.finish()
 
       MonoFunKind.body(MonoFunBody {
@@ -2825,7 +2806,7 @@ fun compile_in_current_scope(
           MonoExpr { kind = MonoExprKind.global(name.str), type }
         }
         | TODO: print which variables are in scope
-        case none return error[MonoExpr, Str]('""{{name}}" is not in scope."')
+        case none return error[MonoExpr, Str]("\"{name}\" is not in scope.")
       }
     }
     case call(call) {
@@ -2838,8 +2819,8 @@ fun compile_in_current_scope(
           member.name
         }
         default return error[MonoExpr, Str](
-          "This expression can't be called:{newline}
-          ' > {call.callee.*.indented(indent(2))}{newline}")
+          "This expression can't be called:\n
+          ' > {call.callee.*.indented(indent(2))}\n")
       var type_args =
         switch call.type_args
         case none none[Vec[Type]]()
@@ -2867,8 +2848,8 @@ fun compile_in_current_scope(
       for field in struct_.fields do
         if not(fields.contains(field.name.str))
         then return error[MonoExpr, Str](
-          '"You tried to create a {{make_struct.type.name}}, but the 
-          '"{{field.name}}" field is missing."')
+          "You tried to create a {{make_struct.type.name}}, but the 
+          '\"{field.name}\" field is missing.")
 
       var solver = create_type_solver(struct_.type_args)
       | TODO: Foo[] { ... } should not be treated like Foo { ... }
@@ -2896,8 +2877,8 @@ fun compile_in_current_scope(
           'have that.")
         if not(solver.&.unify(type_in_struct, value.type)?)
         then return error[MonoExpr, Str](
-          '"Tried to assign {{value.type}} to field "{{name}}" of type 
-          '{{type_in_struct}}."')
+          "Tried to assign {value.type} to field \"{name}\" of type 
+          '{type_in_struct}.")
       }
       var type_env = solver.finish()?
 
@@ -2987,16 +2968,16 @@ fun compile_in_current_scope(
         case struct_(s) s
         default return error[MonoExpr, Str](
           "You tried to access a field on {of.type}, but it's not a struct.
-          '{newline}")
+          '\n")
       var type = {
         var field_type = none[Type]()
         for field in struct_.fields do
           if field.name == member.name.str then field_type = some(field.type)
         field_type or return error[MonoExpr, Str]({
           var out = string_builder().&
-          out.'""{{member.name}}" is not a field on {{of.type}}.{{newline}}
-            'It only contains these fields:"'
-          for field in struct_.fields do out."{newline} - {field.name}"
+          out."\"{member.name}\" is not a field on {of.type}.\n
+            'It only contains these fields:"
+          for field in struct_.fields do out."\n - {field.name}"
           out.to_str()
         })
       }
@@ -3063,8 +3044,8 @@ fun compile_in_current_scope(
       for case_ in switch_.cases do {
         if handled.contains(case_.variant.str)
         then return error[MonoExpr, Str](
-          '"When switching on {{value.type}}, you handle the "{{case_.variant}}"
-          ' variant multiple times."')
+          "When switching on {value.type}, you handle the \"{case_.variant}\"
+          ' variant multiple times.")
         | TODO: when supporting continue with label, use that
         var handled_this_case = false
         for variant in enum_.variants do
@@ -3075,18 +3056,18 @@ fun compile_in_current_scope(
         if handled_this_case then continue
         return error[MonoExpr, Str]({
           var out = string_builder().&
-          out.'"You switched on {{value.type}}, which doesn't have a 
-           '"{{case_.variant}}" variant.{{newline}}
-           'It only has these variants."'
-          for variant in enum_.variants do out."{newline} - {variant.name}"
+          out."You switched on {value.type}, which doesn't have a 
+           '\"{case_.variant}\" variant.\n
+           'It only has these variants."
+          for variant in enum_.variants do out."\n - {variant.name}"
           out.to_str()
         })
       }
       if switch_.default_ is none then
         for variant in enum_.variants do
           handled.contains(variant.name) or return error[MonoExpr, Str](
-            '"You switched on {{value.type}}, but you don't handle the 
-             '"{{variant.name}}" variant."')
+            "You switched on {value.type}, but you don't handle the 
+             '\"{variant.name}\" variant.")
 
       var jump_table_jumps = map[Str, Int]()
       for case_ in switch_.cases do
@@ -3134,10 +3115,10 @@ fun compile_in_current_scope(
           case none type = some(body.type)
           case some(expected) {
             body.type == expected or return error[MonoExpr, Str](
-              '"When lowering this:{{newline}}
-               '{{AstExpr.switch_(switch_).indented(indent(0))}}{{newline}}
-               'Previous switch cases return {{expected}}, but the case for 
-               '"{{case_.variant}}" returns {{body.type}}."')
+              "When lowering this:\n
+               '{AstExpr.switch_(switch_).indented(indent(0))}\n
+               'Previous switch cases return {expected}, but the case for 
+               '\"{case_.variant}\" returns {body.type}.")
             {}
           }
           self.push_assign(result.expr(self), body, source)
@@ -3256,7 +3237,7 @@ fun compile_in_current_scope(
       if self.return_type.&.add(value.type) is error(error) then
         return error[MonoExpr, Str](
           "The type of a return doesn't match the return type up to this point:
-          '{newline}{error}")
+          '\n{error}")
       self.push(MonoStatement.return_(value) @ return_.keyword.source)
       never_expr
     }
@@ -3271,8 +3252,8 @@ fun compile_in_current_scope(
       value.type.args.get(1) == return_type.args.get(1)
         or return error[MonoExpr, Str](
           "You used ? on a Result where the error type doesn't match the error 
-          'type of the function.{newline}{newline}
-          '  type of ? value: Result[..., {value.type.args.get(1)}]{newline}
+          'type of the function.\n
+          '  type of ? value: Result[..., {value.type.args.get(1)}]\n
           ' type of function: Result[..., {return_type.args.get(1)}]")
 
       var ok_type = value.type.args.get(0)
@@ -3576,7 +3557,7 @@ fun write[W](writer: W, layout: MemLayout) {
     writer."▏{"{byte}".fit_to_size(7)}"
     byte = byte + 8
   }
-  writer."{newline}"
+  writer."\n"
 
   for line in mem_writer.lines.iter().enumerate() do {
     writer.write(line.item.to_str())
@@ -3972,7 +3953,7 @@ fun assemble_body[Assembler](
           case uninitialized "uninitialized"
           case arg(i) "arg_{i}"
           case int(int) "{int}"
-          case str(str) '""{{str}}""'
+          case str(str) "\"{str}\""
         }")
     }
 
@@ -4231,9 +4212,9 @@ fun write_bytes(asm: &Recipe, bytes: Slice[Byte]) {
   asm.builder.&.write_bytes(bytes)
 }
 
-fun comment(asm: &Recipe, comment: Str) { asm."  | {comment}{newline}" }
+fun comment(asm: &Recipe, comment: Str) { asm."  | {comment}\n" }
 
-fun label(asm: &Recipe, label: Str) { asm.'""{{label}}":{{newline}}"' }
+fun label(asm: &Recipe, label: Str) { asm."\"{label}\":\n" }
 fun data_label(asm: &Recipe, label: Str, where: Int) {}
 fun disambiguated_label(asm: &Recipe, prefix: Str): Str {
   var label = "{prefix}.{asm.builder.len()}"
@@ -4242,43 +4223,41 @@ fun disambiguated_label(asm: &Recipe, prefix: Str): Str {
 }
 
 | Instructions
-fun nop(asm: &Recipe)                    { asm."  nop{newline}" }
-fun panic(asm: &Recipe)                  { asm."  panic{newline}" }
-fun move(asm: &Recipe, a: Reg, b: Reg)   { asm."  move {a} {b}{newline}" }
-fun movei(asm: &Recipe, a: Reg, b: Int)  { asm."  movei {a} {b}{newline}" }
-fun movei(asm: &Recipe, a: Reg, b: Str)  {
-  asm.'"  movei {{a}} "{{b}}"{{newline}}"'
-}
-fun moveib(asm: &Recipe, a: Reg, b: Byte)  { asm."  moveib {a} {b}{newline}" }
-fun load(asm: &Recipe, a: Reg, b: Reg)   { asm."  load {a} {b}{newline}" }
-fun loadb(asm: &Recipe, a: Reg, b: Reg)  { asm."  loadb {a} {b}{newline}" }
-fun store(asm: &Recipe, a: Reg, b: Reg)  { asm."  store {a} {b}{newline}" }
-fun storeb(asm: &Recipe, a: Reg, b: Reg) { asm."  storeb {a} {b}{newline}" }
-fun push(asm: &Recipe, a: Reg)           { asm."  push {a}{newline}" }
-fun pop(asm: &Recipe, a: Reg)            { asm."  pop {a}{newline}" }
-fun jump(asm: &Recipe, a: Int)           { asm."  jump {a}{newline}" }
-fun jump(asm: &Recipe, a: Str)           { asm.'"  jump "{{a}}"{{newline}}"' }
-fun cjump(asm: &Recipe, a: Int)          { asm."  cjump {a}{newline}" }
-fun cjump(asm: &Recipe, a: Str)          { asm.'"  cjump "{{a}}"{{newline}}"' }
-fun call(asm: &Recipe, a: Int)           { asm."  call {a}{newline}" }
-fun call(asm: &Recipe, a: Str)           { asm.'"  call "{{a}}"{{newline}}"' }
-fun ret(asm: &Recipe)                    { asm."  ret{newline}" }
-fun syscall(asm: &Recipe, a: Byte)         { asm."  syscall {a}{newline}" }
-fun cmp(asm: &Recipe, a: Reg, b: Reg)    { asm."  cmp {a} {b}{newline}" }
-fun isequal(asm: &Recipe)                { asm."  isequal{newline}" }
-fun isless(asm: &Recipe)                 { asm."  isless{newline}" }
-fun isgreater(asm: &Recipe)              { asm."  isgreater{newline}" }
-fun islessequal(asm: &Recipe)            { asm."  islessequal{newline}" }
-fun isgreaterequal(asm: &Recipe)         { asm."  isgreaterequal{newline}" }
-fun add(asm: &Recipe, a: Reg, b: Reg)    { asm."  add {a} {b}{newline}" }
-fun sub(asm: &Recipe, a: Reg, b: Reg)    { asm."  sub {a} {b}{newline}" }
-fun mul(asm: &Recipe, a: Reg, b: Reg)    { asm."  mul {a} {b}{newline}" }
-fun div(asm: &Recipe, a: Reg, b: Reg)    { asm."  div {a} {b}{newline}" }
-fun rem(asm: &Recipe, a: Reg, b: Reg)    { asm."  rem {a} {b}{newline}" }
-fun and(asm: &Recipe, a: Reg, b: Reg)    { asm."  and {a} {b}{newline}" }
-fun or(asm: &Recipe, a: Reg, b: Reg)     { asm."  or {a} {b}{newline}" }
-fun xor(asm: &Recipe, a: Reg, b: Reg)    { asm."  xor {a} {b}{newline}" }
-fun negate(asm: &Recipe, a: Reg)         { asm."  negate {a}{newline}" }
+fun nop(asm: &Recipe)                    { asm."  nop\n" }
+fun panic(asm: &Recipe)                  { asm."  panic\n" }
+fun move(asm: &Recipe, a: Reg, b: Reg)   { asm."  move {a} {b}\n" }
+fun movei(asm: &Recipe, a: Reg, b: Int)  { asm."  movei {a} {b}\n" }
+fun movei(asm: &Recipe, a: Reg, b: Str)  { asm."  movei {a} \"{b}\"\n" }
+fun moveib(asm: &Recipe, a: Reg, b: Byte) { asm."  moveib {a} {b}\n" }
+fun load(asm: &Recipe, a: Reg, b: Reg)   { asm."  load {a} {b}\n" }
+fun loadb(asm: &Recipe, a: Reg, b: Reg)  { asm."  loadb {a} {b}\n" }
+fun store(asm: &Recipe, a: Reg, b: Reg)  { asm."  store {a} {b}\n" }
+fun storeb(asm: &Recipe, a: Reg, b: Reg) { asm."  storeb {a} {b}\n" }
+fun push(asm: &Recipe, a: Reg)           { asm."  push {a}\n" }
+fun pop(asm: &Recipe, a: Reg)            { asm."  pop {a}\n" }
+fun jump(asm: &Recipe, a: Int)           { asm."  jump {a}\n" }
+fun jump(asm: &Recipe, a: Str)           { asm."  jump \"{a}\"\n" }
+fun cjump(asm: &Recipe, a: Int)          { asm."  cjump {a}\n" }
+fun cjump(asm: &Recipe, a: Str)          { asm."  cjump \"{a}\"\n" }
+fun call(asm: &Recipe, a: Int)           { asm."  call {a}\n" }
+fun call(asm: &Recipe, a: Str)           { asm."  call \"{a}\"\n" }
+fun ret(asm: &Recipe)                    { asm."  ret\n" }
+fun syscall(asm: &Recipe, a: Byte)       { asm."  syscall {a}\n" }
+fun cmp(asm: &Recipe, a: Reg, b: Reg)    { asm."  cmp {a} {b}\n" }
+fun isequal(asm: &Recipe)                { asm."  isequal\n" }
+fun isless(asm: &Recipe)                 { asm."  isless\n" }
+fun isgreater(asm: &Recipe)              { asm."  isgreater\n" }
+fun islessequal(asm: &Recipe)            { asm."  islessequal\n" }
+fun isgreaterequal(asm: &Recipe)         { asm."  isgreaterequal\n" }
+fun add(asm: &Recipe, a: Reg, b: Reg)    { asm."  add {a} {b}\n" }
+fun sub(asm: &Recipe, a: Reg, b: Reg)    { asm."  sub {a} {b}\n" }
+fun mul(asm: &Recipe, a: Reg, b: Reg)    { asm."  mul {a} {b}\n" }
+fun div(asm: &Recipe, a: Reg, b: Reg)    { asm."  div {a} {b}\n" }
+fun rem(asm: &Recipe, a: Reg, b: Reg)    { asm."  rem {a} {b}\n" }
+fun and(asm: &Recipe, a: Reg, b: Reg)    { asm."  and {a} {b}\n" }
+fun or(asm: &Recipe, a: Reg, b: Reg)     { asm."  or {a} {b}\n" }
+fun xor(asm: &Recipe, a: Reg, b: Reg)    { asm."  xor {a} {b}\n" }
+fun negate(asm: &Recipe, a: Reg)         { asm."  negate {a}\n" }
 
 fun recipe(mono: Mono, layouts: Map[Type, MemLayout]): Str {
   var asm = Recipe { builder = string_builder() }
@@ -4493,14 +4472,14 @@ fun parse_command(command: Str): Maybe[Command] {
 
 fun print_usage_info[W](writer: W) {
   writer."
-    'Usage: martinaise <command> <file>{newline}{newline}
-    'Commands:{newline}
-    '  help    prints this help{newline}
-    '  ast     shows the abstract syntax tree{newline}
-    '  mono    shows the monomorphized code{newline}
-    '  recipe  compiles to a Soil recipe{newline}
-    '  soil    compiles to a Soil binary{newline}
-    '  run     compiles and runs{newline}"
+    'Usage: martinaise <command> <file>\n
+    'Commands:\n
+    '  help    prints this help\n
+    '  ast     shows the abstract syntax tree\n
+    '  mono    shows the monomorphized code\n
+    '  recipe  compiles to a Soil recipe\n
+    '  soil    compiles to a Soil binary\n
+    '  run     compiles and runs\n"
 }
 
 | Runs the pipeline that matches the command. Errors are handled internally
