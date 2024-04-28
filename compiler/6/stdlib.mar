@@ -353,8 +353,9 @@ fun write_bytes(print: Print, bytes: Slice[Byte]) asm {
 struct Log {}
 var stderr = Log {}
 fun eprint[T](value: T) { stderr.write(value) }
-fun eprintln[T](value: T) { eprint(value) eprint(newline) }
-fun log[T](value: T) { eprint(value) eprint(newline) }
+fun eprintln() { eprint(newline) }
+fun eprintln[T](value: T) { eprint(value) eprintln() }
+fun log[T](value: T) { eprint(value) eprintln() }
 fun write_byte(log: Log, byte: Byte) asm {
   moveib a 8 add a sp | byte.&
   moveib b 1

@@ -83,9 +83,25 @@ fun source(file: Str, span: Range[Int]): Source { Source { file, span } }
 | a piece of the code, or a squiggly line in the IDE directly at the error
 | location.
 
-struct Error { source: Source, title: Str, description: Str }
+struct Error { source: Source, title: Str, description: Str, context: Vec[Str] }
+
+fun make_error(
+  source: Source, title: Str, description: Str, context: Vec[Str]
+): Error { Error { source, title, description, context } }
+fun make_error(source: Source, title: Str, description: Str): Error {
+  make_error(source, title, description, vec[Str]())
+}
+fun make_error(source: Source, title: Str): Error {
+  make_error(source, title, "")
+}
 
 fun write[W](writer: W, error: Error, home: Str) {
+  if error.context.is_not_empty() then {
+    writer."Error when compiling\n"
+    for entry in error.context do writer." - {entry}\n"
+    writer."\n"
+  }
+
   var path = "{home}/{error.source.file}.mar"
   var code =
     switch read_file(path)
@@ -124,8 +140,11 @@ fun write[W](writer: W, error: Error, home: Str) {
   writer."\n"
   for i in 0..{7 + offset_in_line} do writer." "
   writer.write(error.title)
-  writer.write(newline)
-  writer.write(error.description)
+  if error.description.is_not_empty() then {
+    writer.write(newline)
+    writer.write(newline)
+    writer.write(error.description)
+  }
 }
 fun write_line_number[W](writer: W, n: Int) {
   if n >= 1000 then writer.write(n)
@@ -1550,17 +1569,15 @@ fun parse_single_file(input: Str, file: Str): Result[FileAst, Error] {
   var imports =
     switch parser.&.parse_imports()
     case ok(imports) imports
-    case error(message) return error[FileAst, Error](Error {
-      source = source(file, parser.cursor..{parser.cursor + 1}),
-      title = message, description = "",
-    })
+    case error(message) return error[FileAst, Error](make_error(
+      source(file, parser.cursor..{parser.cursor + 1}), message
+    ))
   var defs =
     switch parser.&.parse_defs()
     case ok(defs) defs
-    case error(message) return error[FileAst, Error](Error {
-      source = source(file, parser.cursor..{parser.cursor + 1}),
-      title = message, description = "",
-    })
+    case error(message) return error[FileAst, Error](make_error(
+      source(file, parser.cursor..{parser.cursor + 1}), message
+    ))
   ok[FileAst, Error](FileAst { imports, defs })
 }
 
@@ -1652,35 +1669,23 @@ fun parse_project(home: Str, entry_file: Str): Result[Ast, Error] {
     for def in ast.value.defs do {
       switch def
       case opaque_(opaque_) {
-        if types.contains(opaque_.name.str) then return error[Ast, Error](Error {
-          source = opaque_.name.source,
-          title = "Multiple types are named \"{opaque_.name}\".",
-          description = "Type names have to be unique.",
-        })
+        if types.contains(opaque_.name.str) then return error[Ast, Error](
+          conflicting_names_error("types", opaque_.name))
         types.&.put(opaque_.name.str, AstType.opaque_(opaque_))
       }
       case struct_(struct_) {
-        if types.contains(struct_.name.str) then return error[Ast, Error](Error {
-          source = struct_.name.source,
-          title = "Multiple types are named \"{struct_.name}\".",
-          description = "Type names have to be unique.",
-        })
+        if types.contains(struct_.name.str) then return error[Ast, Error](
+          conflicting_names_error("types", struct_.name))
         types.&.put(struct_.name.str, AstType.struct_(struct_))
       }
       case enum_(enum_) {
-        if types.contains(enum_.name.str) then return error[Ast, Error](Error {
-          source = enum_.name.source,
-          title = "Multiple types are named \"{enum_.name}\".",
-          description = "Type names have to be unique.",
-        })
+        if types.contains(enum_.name.str) then return error[Ast, Error](
+          conflicting_names_error("types", enum_.name))
         types.&.put(enum_.name.str, AstType.enum_(enum_))
       }
       case var_(global) {
-        if globals.contains(global.name.str) then return error[Ast, Error](Error {
-          source = global.name.source,
-          title = "Multiple global variables are named \"{global.name}\".",
-          description = "Names of global variables have to be unique.",
-        })
+        if globals.contains(global.name.str) then return error[Ast, Error](
+          conflicting_names_error("global variables", global.name))
         globals.&.put(global.name.str, global)
       }
       case fun_(fun_)
@@ -1702,59 +1707,29 @@ fun parse_project(home: Str, entry_file: Str): Result[Ast, Error] {
     }
     case struct_(struct_) {
       for arg in struct_.type_args do
-        if arg.str.exists(types, vec[AstStr]())
-        then return error[Ast, Error](Error {
-          source = arg.source,
-          title = "{struct_.name} defines the type argument {arg}, but {arg} is 
-            'also a concrete type.",
-          description = "",
-        })
+        if arg.str.exists(types, vec[AstStr]()) then return error[Ast, Error](
+          concrete_type_used_as_arg_error(struct_.name, arg))
       for field in struct_.fields do
         if field.type.exists(types, struct_.type_args) is error(type) then
-          return error[Ast, Error](Error {
-            source = struct_.name.source,
-            title = "{struct_.name} refers to type {type}, but that doesn't 
-              'exist.",
-            description = "",
-          })
+          return error[Ast, Error](type_doesnt_exist_error(struct_.name, type))
     }
     case enum_(enum_) {
       for arg in enum_.type_args do
-        if arg.str.exists(types, vec[AstStr]()) then
-          return error[Ast, Error](Error {
-            source = arg.source,
-            title = "{enum_.name} defines the type argument {arg}, but {arg} is 
-              'also a concrete type.",
-            description = "",
-          })
+        if arg.str.exists(types, vec[AstStr]()) then return error[Ast, Error](
+          concrete_type_used_as_arg_error(enum_.name, arg))
       for variant in enum_.variants do
         if variant.type.exists(types, enum_.type_args) is error(type) then
-          return error[Ast, Error](Error {
-            source = enum_.name.source,
-            title = "{enum_.name} refers to type {type}, but that doesn't 
-              'exist.",
-            description = "",
-          })
+          return error[Ast, Error](type_doesnt_exist_error(enum_.name, type))
     }
 
   for funs in funs do
     for fun_ in funs.value do {
       for arg in fun_.type_args do
-        if arg.str.exists(types, vec[AstStr]()) then
-          return error[Ast, Error](Error {
-            source = arg.source,
-            title = "{fun_.name} defines the type argument {arg}, but {arg} is 
-              'also a concrete type.",
-            description = "",
-          })
+        if arg.str.exists(types, vec[AstStr]()) then return error[Ast, Error](
+          concrete_type_used_as_arg_error(fun_.name, arg))
       for arg in fun_.args do
         if arg.type.exists(types, fun_.type_args) is error(type) then
-          return error[Ast, Error](Error {
-            source = fun_.name.source,
-            title = "{fun_.name} refers to type {type}, but that doesn't 
-              'exist.",
-            description = "",
-          })
+          return error[Ast, Error](type_doesnt_exist_error(fun_.name, type))
     }
 
   ok[Ast, Error](Ast { types, globals, funs })
@@ -1775,6 +1750,26 @@ fun exists(type: Str, types: Map[Str, AstType], extra: Vec[AstStr]): Bool {
     for extra in extra do if extra.str == type then return true
     false
   }
+}
+
+fun conflicting_names_error(group: Str, name: AstStr): Error {
+  make_error(
+    name.source,
+    "Multiple {group} are named \"{name}\".",
+    "All {group} need to have different names.",
+  )
+}
+fun concrete_type_used_as_arg_error(who: AstStr, arg: AstStr): Error {
+  make_error(
+    who.source,
+    "{who} uses {arg} as a type argument, but it's also a concrete type.",
+    "Type arguments can't be named like concrete types.",
+  )
+}
+fun type_doesnt_exist_error(who: AstStr, type: Str): Error {
+  make_error(
+    who.source, "{who} refers to {type}, but that type doesn't exist."
+  )
 }
 
 | Type Sinks  
@@ -2038,10 +2033,11 @@ fun print_status(context: Context) {
 | Ast Lookup  
 
 | Looks up the type with the given name. Type names have to be unique.
-fun lookup_type(ast: Ast, name: Str): Result[AstType, Str] {
+fun lookup_type(ast: Ast, name: Str): Result[AstType, Error] {
   switch ast.types.get_maybe(name)
-  case some(match) ok[AstType, Str](match)
-  case none return error[AstType, Str]("There is no type named \"{name}\".")
+  case some(match) ok[AstType, Error](match)
+  case none return error[AstType, Error](
+    make_error(source("todo", 0..00), "There is no type named \"{name}\"."))
 }
 
 | Looks up the global variable with the given name. Names of global variables
@@ -2054,12 +2050,11 @@ fun lookup_global(ast: Ast, name: Str): Maybe[AstVar] {
 | (none means they are inferred) and the args of the given types.
 struct LookupFunSolution { fun_: AstFun, type_env: Map[Str, Type] }
 fun lookup_fun(
-  ast: Ast,
-  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type],
-): Result[LookupFunSolution, Str] {
-  var name_matches = ast.funs.get_maybe(name)
-    or return error[LookupFunSolution, Str]("
-      'There are no defintions named \"{name}\".")
+  ast: Ast, name: AstStr, type_args: Maybe[Vec[Type]], arg_types: Vec[Type]
+): Result[LookupFunSolution, Error] {
+  var name_matches = ast.funs.get_maybe(name.str)
+    or return error[LookupFunSolution, Error](
+      make_error(name.source, "There are no defintions named \"{name}\"."))
 
   var full_matches = vec[LookupFunSolution]()
   for fun_ in name_matches do {
@@ -2067,63 +2062,76 @@ fun lookup_fun(
     if type_args is some(type_args_) then {
       if type_args_.len != fun_.type_args.len then continue
       for i in 0..type_args_.len do
-        solver.&
-          .unify(type(fun_.type_args.get(i).str), type_args_.get(i))?
-          .assert()
+        switch solver.&
+          .unify(type(fun_.type_args.get(i).str), type_args_.get(i))
+        case ok(worked) worked.assert()
+        case error(message) return error[LookupFunSolution, Error](
+          make_error(name.source, message))
     }
     if arg_types.len != fun_.args.len then continue
     var matches = true
     for i in 0..arg_types.len do
-      solver.&.unify(fun_.args.get(i).type, arg_types.get(i))?
-        or { matches = false break }
+      switch solver.&.unify(fun_.args.get(i).type, arg_types.get(i))
+      case ok(works) works or { matches = false break }
+      case error(message) return error[LookupFunSolution, Error](
+        make_error(name.source, message))
     if not(matches) then continue
     var type_env =
       switch solver.finish()
       case ok(env) env
-      case error(error) return error[LookupFunSolution, Str](
+      case error(error) return error[LookupFunSolution, Error](make_error(
+        name.source,
         "Found a function matching a call:\n
-        '  call: {signature(name, type_args, arg_types)}\n
+        '  call: {signature(name.str, type_args, arg_types)}\n
         ' match: {fun_.stripped_signature()}\n
         'However, resolving the call doesn't work:\n
-        '{error}")
+        '{error}"
+      ))
     full_matches.&.push(LookupFunSolution { fun_, type_env })
   }
 
-  if full_matches.is_empty() then return error[LookupFunSolution, Str]({
-    var out = string_builder().&
-    out."
-      'This call doesn't work:\n
-      ' > {signature(name, type_args, arg_types)}\n"
-    if name_matches.is_empty()
-    then out."There are no defintions named \"{name}\"."
-    else {
-      out."These definitions have the same name, but arguments don't match:"
-      for match in name_matches do
-        out."\n - {match.stripped_signature()}"
-    }
-    out.to_str()
-  })
-  if full_matches.len > 1 then return error[LookupFunSolution, Str]({
-    var out = string_builder().&
-    out.
-      "This call matches multiple functions:\n
-      '  call: {signature(name, type_args, arg_types)}\n"
-    for match in full_matches do {
-      var padded_signature = match.fun_.stripped_signature().format()
-        .pad_right(30, # )
-      out."\n match: {padded_signature}"
-      if match.type_env.is_not_empty() then {
-        out." with "
-        var first = true
-        for entry in match.type_env do {
-          if first then first = false else out.", "
-          out."{entry.key} = {entry.value}"
+  if full_matches.is_empty() then
+    return error[LookupFunSolution, Error](make_error(
+      name.source,
+      "This call doesn't work.",
+      {
+        var out = string_builder().&
+        out."
+          'This is the signature:\n
+          ' > {signature(name.str, type_args, arg_types)}\n"
+        if name_matches.is_empty()
+        then out."There are no defintions named \"{name}\"."
+        else {
+          out."These definitions have the same name, but arguments don't match:"
+          for match in name_matches do out."\n - {match.stripped_signature()}"
         }
+        out.to_str()
       }
-    }
-    out.to_str()
-  })
-  ok[LookupFunSolution, Str](full_matches.get(0))
+    ))
+  if full_matches.len > 1 then
+    return error[LookupFunSolution, Error](make_error(
+      name.source,
+      "This call matches multiple functions.",
+      {
+        var out = string_builder().&
+        out."  call: {signature(name.str, type_args, arg_types)}\n"
+        for match in full_matches do {
+          var padded_signature = match.fun_.stripped_signature().format()
+            .pad_right(30, # )
+          out."\n match: {padded_signature}"
+          if match.type_env.is_not_empty() then {
+            out." with "
+            var first = true
+            for entry in match.type_env do {
+              if first then first = false else out.", "
+              out."{entry.key} = {entry.value}"
+            }
+          }
+        }
+        out.to_str()
+      }
+    ))
+  ok[LookupFunSolution, Error](full_matches.get(0))
 }
 
 | Mono  
@@ -2412,7 +2420,7 @@ fun expr(slot: MonoSlotRef, self: CompileFun): MonoExpr {
 | function is encountered recursively, only its signature is needed to figure
 | out how to use it.
 
-fun compile(ast: Ast): Result[Mono, Str] {
+fun compile(ast: Ast): Result[Mono, Error] {
   var context = context()
   var mono = Mono {
     type_defs = map[Type, MonoTypeDef](),
@@ -2424,52 +2432,42 @@ fun compile(ast: Ast): Result[Mono, Str] {
   type("Never").compile(map[Str, Type](), ast, mono.&)?
   type("Nothing").compile(map[Str, Type](), ast, mono.&)?
 
+  var source = source("_main", 0..0)
   var main =
-    switch ast.lookup_fun("main",
-      none[Vec[Type]](), vec(type("Slice", vec(type("Str")))))
-    case ok(main_with_args) main_with_args.fun_
-    case error(error) {
-      switch ast.lookup_fun("main", none[Vec[Type]](), vec[Type]())
-      case error return error[Mono, Str](
-        "Your project must have one of these functions: main(Slice[Str]) or
-        ' main()")
-      | Generate a main(Slice[Str]) function that just calls main()
-      case ok {
-        var source = source("_main", 0..0)
-        AstFun {
-          name = "main" @ source,
-          type_args = vec[AstStr](),
-          args = vec(
-            AstFunArg {
-              name = "args" @ source,
-              type = type("Slice", vec(type("Str"))),
-            },
-          ),
-          returns = type("Never"),
-          kind = AstFunKind.body(vec(
-            AstExpr.name("main" @ source).call("(" @ source)
-          )),
-        }
-      }
+    switch ast.lookup_fun("main" @ source, none[Vec[Type]](), vec[Type]())
+    case error return error[Mono, Error](make_error(
+      source, "Your project must have a main() function."
+    ))
+    case ok AstFun {
+      name = "main" @ source,
+      type_args = vec[AstStr](),
+      args = vec(
+        AstFunArg {
+          name = "args" @ source,
+          type = type("Slice", vec(type("Str"))),
+        },
+      ),
+      returns = type("Never"),
+      kind = AstFunKind.body(vec(
+        AstExpr.name("main" @ source).call("(" @ source)
+      )),
     }
 
   var main_signature =
     switch main.compile(map[Str, Type](), context.&, ast, mono.&)
     case ok(signature) signature
-    case error(error) return error[Mono, Str]({
-      var out = string_builder().&
-      out."Error when compiling\n"
-      for signature in context.signatures do out." - {signature}\n"
-      out."\n{error}"
-      out.to_str()
-    })
+    case error(error) return error[Mono, Error](make_error(
+      error.source, error.title, error.description, context.signatures
+    ))
 
   var return_type = mono.funs.get(main_signature).return_type
-  if not(return_type.is_never()) then return error[Mono, Str](
-    "The main function should return Never, but it returns {return_type}.
-    '\nYou can call exit(0.lower_byte()) if you want the program to stop.")
+  if not(return_type.is_never()) then return error[Mono, Error](make_error(
+    main.name.source,
+    "The main function should return Never, but it returns {return_type}.",
+    "You can call exit(0.lower_byte()) if you want the program to stop.",
+  ))
 
-  ok[Mono, Str](mono)
+  ok[Mono, Error](mono)
 }
 
 | Monomorphizes a type, outputting all the required type defs into the Mono. For
@@ -2479,7 +2477,7 @@ fun compile(ast: Ast): Result[Mono, Str] {
 | Also saves the corresponding layout in the Mono.
 fun compile(
   type: Type, type_env: Map[Str, Type], ast: Ast, mono: &Mono,
-): Result[Type, Str] {
+): Result[Type, Error] {
   | TODO: Make sure generic types don't have parameters.
   var type = type_env.get_maybe(type.name) or {
     var args = vec[Type]()
@@ -2487,9 +2485,9 @@ fun compile(
     Type { name = type.name, args }
   }
 
-  if type.is_incomplete() then return ok[Type, Str](type)
+  if type.is_incomplete() then return ok[Type, Error](type)
 
-  if mono.type_defs.contains(type) then return ok[Type, Str](type)
+  if mono.type_defs.contains(type) then return ok[Type, Error](type)
 
   | Types are allowed to contain themselves. For example, you can do this:
   |
@@ -2521,9 +2519,12 @@ fun compile(
   }
   case struct_(struct_) {
     var inner_type_env = map[Str, Type]()
-    type.args.len == struct_.type_args.len or return error[Type, Str](
-      "You tried to use a {type}, but {struct_.name} takes 
-      '{struct_.type_args.len} type arguments.")
+    type.args.len == struct_.type_args.len or
+      return error[Type, Error](make_error(
+        source("todo", 0..0),
+        "You tried to use a {type}, but {struct_.name} takes 
+          '{struct_.type_args.len} type arguments."
+      ))
     for zip in zip(struct_.type_args.iter(), type.args.iter()) do
       inner_type_env.&.put(zip.a.str, zip.b)
 
@@ -2539,9 +2540,12 @@ fun compile(
   }
   case enum_(enum_) {
     var inner_type_env = map[Str, Type]()
-    type.args.len == enum_.type_args.len or return error[Type, Str](
-      "You tried to use a {type}, but {enum_.name} takes {enum_.type_args.len} 
-      'type arguments.")
+    type.args.len == enum_.type_args.len or
+      return error[Type, Error](make_error(
+        source("todo", 0..0),
+        "You tried to use a {type}, but {enum_.name} takes {enum_.type_args.len} 
+          'type arguments."
+      ))
     for i in 0..type.args.len do
       inner_type_env.&.put(enum_.type_args.get(i).str, type.args.get(i))
 
@@ -2555,7 +2559,7 @@ fun compile(
     mono.type_defs.&.put(type, MonoTypeDef.enum_(MonoEnum { variants }))
   }
 
-  ok[Type, Str](type)
+  ok[Type, Error](type)
 }
 
 | You can use _ to infer parts of the type, for example like Maybe[_].
@@ -2571,8 +2575,8 @@ fun is_incomplete(type: Type): Bool { not(type.is_complete()) }
 | other global variables, and functions into the Mono.
 fun compile(
   global: AstVar, context: &Context, ast: Ast, mono: &Mono,
-): Result[Nothing, Str] {
-  if mono.globals.contains(global.name.str) then return ok[Nothing, Str]({})
+): Result[Nothing, Error] {
+  if mono.globals.contains(global.name.str) then return ok[Nothing, Error]({})
 
   context.push("var {global.name}")
 
@@ -2590,9 +2594,9 @@ fun compile(
   compile_fun.statements.&.push(MonoStatement.return_(value)
     @ global.name.source)
   if compile_fun.return_type.&.add(value.type) is error(error) then
-    return error[Nothing, Str](
-      "The value of the variable doesn't match its expected type.\n
-      '{error}")
+    return error[Nothing, Error](make_error(
+      global.name.source, "Type mismatch.", error
+    ))
 
   mono.globals.&.put(global.name.str, MonoFun {
     type_args = vec[Type](),
@@ -2606,7 +2610,7 @@ fun compile(
   mono.globals_init_order.&.push(global.name.str)
 
   context.&.pop()
-  ok[Nothing, Str]({})
+  ok[Nothing, Error]({})
 }
 
 | Monos a function with a type env, outputting it into the Mono. Returns the
@@ -2616,7 +2620,7 @@ fun compile(
 fun compile(
   fun_: AstFun, type_env: Map[Str, Type],
   context: &Context, ast: Ast, mono: &Mono,
-): Result[Str, Str] {
+): Result[Str, Error] {
   var type_args = vec[Type]()
   for arg in fun_.type_args do
     type_args.&.push(type(arg.str).compile(type_env, ast, mono)?)
@@ -2626,7 +2630,7 @@ fun compile(
     arg_types.&.push(arg.type.compile(type_env, ast, mono)?)
 
   var signature = signature(fun_.name.str, some(type_args), arg_types).format()
-  if mono.funs.contains(signature) then return ok[Str, Str](signature)
+  if mono.funs.contains(signature) then return ok[Str, Error](signature)
   context.&.push(signature)
 
   var return_type = fun_.returns.compile(type_env, ast, mono)?
@@ -2640,21 +2644,24 @@ fun compile(
   var kind =
     switch fun_.kind
     case builtin(builtin) {
+      var source = fun_.name.source
       if fun_.name.str == "size_of" then MonoFunKind.builtin(builtin.dots)
       else if fun_.name.str == "alignment_of" then
         MonoFunKind.builtin(builtin.dots)
       else if fun_.name.str == "type" then {
         type("Type").compile(map[Str, Type](), ast, mono)?
-        var make_vec = ast.lookup_fun("vec", none[Vec[Type]](), vec[Type]())
+        var make_vec = ast
+          .lookup_fun("vec" @ source, none[Vec[Type]](), vec[Type]())
           .unwrap("vec function doesn't exist")
           .fun_.compile(map[Str, Type](), context, ast, mono)?
         var push = ast
-          .lookup_fun("push", none[Vec[Type]](),
+          .lookup_fun("push" @ source, none[Vec[Type]](),
             vec[Type](type("Vec", vec(type("Type")))))
           .unwrap("push function doesn't exist")
         push.fun_.compile(push.type_env, context, ast, mono)?
         MonoFunKind.builtin(builtin.dots)
-      } else return error[Str, Str]("Unknown builtin {fun_.name}")
+      } else return error[Str, Error](
+        make_error(fun_.name.source, "Unknown builtin {fun_.name}"))
     }
     case asm_(code) MonoFunKind.asm_(code)
     case body(body) {
@@ -2681,9 +2688,12 @@ fun compile(
       | For builtin functions and asm functions, we trust the fully specified
       | return type. For Martinaise functions, we take the inferred return type.
       if compile_fun.return_type.&.add(body_result.type) is error(error) then
-        return error[Str, Str](
+        return error[Str, Error](make_error(
+          fun_.name.source,
           "The last expression of the function body doesn't match the return 
-          'type.\n{error}")
+            'type.",
+          error,
+        ))
       return_type = compile_fun.return_type.finish()
 
       MonoFunKind.body(MonoFunBody {
@@ -2697,7 +2707,7 @@ fun compile(
   })
   context.pop()
 
-  ok[Str, Str](signature)
+  ok[Str, Error](signature)
 }
 
 struct CompileFun {
@@ -2767,27 +2777,27 @@ fun expr(slot: MonoSlotRef, self: &CompileFun): MonoExpr {
 |   var a = a
 |   var b = a  | works
 | }
-fun compile(expr: AstExpr, self: &CompileFun): Result[MonoExpr, Str] {
+fun compile(expr: AstExpr, self: &CompileFun): Result[MonoExpr, Error] {
   var scope = self.vars.snapshot()
   var mono = expr.compile_in_current_scope(self)
   self.vars.&.restore(scope)
   mono
 }
-fun compile(body: Vec[AstExpr], self: &CompileFun): Result[MonoExpr, Str] {
+fun compile(body: Vec[AstExpr], self: &CompileFun): Result[MonoExpr, Error] {
   var scope = self.vars.snapshot()
   var last = none[MonoExpr]()
   for expr in body do last = some(expr.compile_in_current_scope(self)?)
   self.vars.&.restore(scope)
-  ok[MonoExpr, Str](last or nothing_expr)
+  ok[MonoExpr, Error](last or nothing_expr)
 }
 fun compile_in_current_scope(
   expr: AstExpr, self: &CompileFun,
-): Result[MonoExpr, Str] {
+): Result[MonoExpr, Error] {
   var context = self.context
   var ast = self.ast
   var mono = self.mono
 
-  ok[MonoExpr,Str](
+  ok[MonoExpr, Error](
     switch expr
     case int(int) self.slots.&.push(type("Int"), MonoSlotValue.int(int))
       .expr(self)
@@ -2806,7 +2816,8 @@ fun compile_in_current_scope(
           MonoExpr { kind = MonoExprKind.global(name.str), type }
         }
         | TODO: print which variables are in scope
-        case none return error[MonoExpr, Str]("\"{name}\" is not in scope.")
+        case none return error[MonoExpr, Error](make_error(
+          name.source, "\"{name}\" is not in scope."))
       }
     }
     case call(call) {
@@ -2818,9 +2829,9 @@ fun compile_in_current_scope(
           callee = some(member.of.compile(self)?)
           member.name
         }
-        default return error[MonoExpr, Str](
-          "This expression can't be called:\n
-          ' > {call.callee.*.indented(indent(2))}\n")
+        default return error[MonoExpr, Error](make_error(
+          call.opening_parenthesis.source, "This expression can't be called."
+        ))
       var type_args =
         switch call.type_args
         case none none[Vec[Type]]()
@@ -2838,32 +2849,37 @@ fun compile_in_current_scope(
       var struct_ =
         switch ast.lookup_type(make_struct.type.name)?
         case struct_(s) s
-        default return error[MonoExpr, Str](
-          "Tried to create a struct, but {make_struct.type.name} is not a 
-          'struct type.")
+        default return error[MonoExpr, Error](make_error(
+          make_struct.type_source,
+          "{make_struct.type.name} is not a struct type."
+        ))
       var fields = map[Str, MonoExpr]() {
         for field in make_struct.fields do
           fields.&.put(field.name.str, field.value.compile(self)?)
       }
       for field in struct_.fields do
         if not(fields.contains(field.name.str))
-        then return error[MonoExpr, Str](
-          "You tried to create a {{make_struct.type.name}}, but the 
-          '\"{field.name}\" field is missing.")
+        then return error[MonoExpr, Error](make_error(
+          make_struct.type_source,
+          "The \"{field.name}\" field is missing.",
+          "You need to initialize it with a {field.type}."
+        ))
 
       var solver = create_type_solver(struct_.type_args)
       | TODO: Foo[] { ... } should not be treated like Foo { ... }
       if make_struct.type.args.is_not_empty() then {
         make_struct.type.args.len == struct_.type_args.len
-          or return error[MonoExpr, Str](
-            "Tried to create struct {struct_.name} with 
-            '{make_struct.type.args.len} type arguments, but it needs 
-            '{struct_.type_args.len}.")
+          or return error[MonoExpr, Error](make_error(
+            make_struct.type_source,
+            "You provided the wrong number of type arguments.",
+            "A {struct_.name} needs {make_struct.type.args.len} type arguments, 
+              'you provided {struct_.type_args.len}."
+          ))
         for i in 0..struct_.type_args.len do
           solver.&.unify(
             type(struct_.type_args.get(i).str),
             make_struct.type.args.get(i).compile(self.type_env, ast, mono)?,
-          )? or panic("unifying type args always works")
+          ).unwrap() or panic("unifying type args always works")
       }
       for field in fields do {
         var name = field.key
@@ -2872,15 +2888,28 @@ fun compile_in_current_scope(
         for f in struct_.fields do
           if f.name.str == name then type_in_struct = some(f.type)
 
-        var type_in_struct = type_in_struct or return error[MonoExpr, Str](
-          "Tried to initialize field {name} of {struct_.name}, but it doesn't 
-          'have that.")
-        if not(solver.&.unify(type_in_struct, value.type)?)
-        then return error[MonoExpr, Str](
-          "Tried to assign {value.type} to field \"{name}\" of type 
-          '{type_in_struct}.")
+        var type_in_struct = type_in_struct or
+          return error[MonoExpr, Error](make_error(
+            make_struct.type_source,
+            "Tried to initialize field {name}, but {struct_.name} doesn't have 
+              'that."
+          ))
+        switch solver.&.unify(type_in_struct, value.type)
+        case error(message) return error[MonoExpr, Error](make_error(
+          make_struct.type_source, message
+        ))
+        case ok(works) if not(works) then
+          return error[MonoExpr, Error](make_error(
+            make_struct.type_source,
+            "Tried to assign {value.type} to field \"{name}\" of type 
+              '{type_in_struct}."
+          ))
       }
-      var type_env = solver.finish()?
+      var type_env =
+        switch solver.finish()
+        case ok(env) env
+        case error(error) return error[MonoExpr, Error](
+          make_error(make_struct.type_source, error))
 
       var unspecialized_type = make_struct.type
       if make_struct.type.args.is_empty() & struct_.type_args.is_not_empty()
@@ -2900,44 +2929,60 @@ fun compile_in_current_scope(
       var enum_ =
         switch ast.lookup_type(make_enum.type.name)?
         case enum_(e) e
-        default return error[MonoExpr, Str](
-          "Tried to create an enum, but {make_enum.type.name} is not an enum 
-          'type.")
+        default return error[MonoExpr, Error](make_error(
+          make_enum.variant.source, "{make_enum.type.name} is not an enum type."
+        ))
       var arg = make_enum.arg.compile(self)?
       var variant_type = {
         var type = none[Type]()
         for variant in enum_.variants do
           if variant.name.str == make_enum.variant.str then
             type = some(variant.type)
-        type or return error[MonoExpr, Str](
-          "Unknown variant {make_enum.type.name}.{make_enum.variant}.")
+        type or return error[MonoExpr, Error](make_error(
+          make_enum.variant.source,
+          "Unknown variant {make_enum.type.name}.{make_enum.variant}."
+        ))
       }
 
       var solver = create_type_solver(enum_.type_args)
       | TODO: Maybe[].some(3) should not be treated like Maybe.some(3)
       if make_enum.type.args.is_not_empty() then {
-        if make_enum.type.args.len != enum_.type_args.len
-        then return error[MonoExpr, Str](
-          "Tried to create enum {enum_.name} with {make_enum.type.args.len} 
-          'type arguments, but it needs {enum_.type_args.len}.")
-        for i in 0..enum_.type_args.len do {
-          solver.&.unify(
+        if make_enum.type.args.len != enum_.type_args.len then
+          return error[MonoExpr, Error](make_error(
+            make_enum.variant.source,
+            "Tried to create enum {enum_.name} with {make_enum.type.args.len} 
+              'type arguments, but it needs {enum_.type_args.len}."
+          ))
+        for i in 0..enum_.type_args.len do
+          switch solver.&.unify(
             type(enum_.type_args.get(i).str),
             make_enum.type.args.get(i).compile(self.type_env, ast, mono)?
-          )? or panic("unifying type args always works")
-        }
+          )
+          case error(message) return error[MonoExpr, Error](make_error(
+            make_enum.variant.source, message
+          ))
+          case ok(works) assert(works, "unifying type args always works")
       }
-      solver.&.unify(variant_type, arg.type)?
-        or return error[MonoExpr, Str](
-          "Tried to create {make_enum.type.name}.{make_enum.variant} with 
-          '{arg.type}, but it needs a {variant_type}.")
-      var type_env = solver.finish()?
+      switch solver.&.unify(variant_type, arg.type)
+      case error(message) return error[MonoExpr, Error](make_error(
+        make_enum.variant.source, message
+      ))
+      case ok(works) works or return error[MonoExpr, Error](make_error(
+        make_enum.variant.source,
+        "Tried to create {make_enum.type.name}.{make_enum.variant} with 
+          '{arg.type}, but it needs a {variant_type}."
+      ))
+      var type_env =
+        switch solver.finish()
+        case ok(env) env
+        case error(error) return error[MonoExpr, Error](
+          make_error(make_enum.variant.source, error))
 
       var unspecialized_type = make_enum.type
-      if make_enum.type.args.is_empty() & enum_.type_args.is_not_empty()
-      then for a in enum_.type_args do
-        unspecialized_type.args.&
-          .push(type(a.str).compile(type_env, ast, mono)?)
+      if make_enum.type.args.is_empty() & enum_.type_args.is_not_empty() then
+        for a in enum_.type_args do
+          unspecialized_type.args.&
+            .push(type(a.str).compile(type_env, ast, mono)?)
       var type = unspecialized_type.compile(self.type_env, ast, mono)?
 
       var slot = self.slots.&.push(type)
@@ -2954,7 +2999,7 @@ fun compile_in_current_scope(
           .compile(self.type_env, ast, mono)?
         var slot = self.slots.&.push(ref_type)
         self.push_ref(slot, of, member.name.source)
-        return ok[MonoExpr,Str](slot.expr(self))
+        return ok[MonoExpr, Error](slot.expr(self))
       }
       | When accessing a member on a reference, we automatically dereference the
       | receiver as often as necessary. For example, you can access point.x if
@@ -2966,20 +3011,25 @@ fun compile_in_current_scope(
       var struct_ =
         switch mono.type_defs.get(of.type)
         case struct_(s) s
-        default return error[MonoExpr, Str](
-          "You tried to access a field on {of.type}, but it's not a struct.
-          '\n")
+        default return error[MonoExpr, Error](make_error(
+          member.name.source,
+          "Invalid field access.",
+          "{of.type} is not a struct."
+        ))
       var type = {
         var field_type = none[Type]()
         for field in struct_.fields do
           if field.name == member.name.str then field_type = some(field.type)
-        field_type or return error[MonoExpr, Str]({
-          var out = string_builder().&
-          out."\"{member.name}\" is not a field on {of.type}.\n
-            'It only contains these fields:"
-          for field in struct_.fields do out."\n - {field.name}"
-          out.to_str()
-        })
+        field_type or
+          return error[MonoExpr, Error](make_error(
+            member.name.source, "This is not a field on {of.type}.",
+            {
+              var out = string_builder().&
+              out."It only contains these fields:"
+              for field in struct_.fields do out."\n - {field.name}"
+              out.to_str()
+            }
+          ))
       }
 
       of.member(member.name.str, type)
@@ -2994,8 +3044,11 @@ fun compile_in_current_scope(
     case assign(assign) {
       var to = assign.to.compile(self)?
       var value = assign.value.compile(self)?
-      value.type == to.type or return error[MonoExpr, Str](
-        "Tried to assign {value.type} to a variable of type {to.type}.")
+      value.type == to.type or return error[MonoExpr, Error](make_error(
+        assign.equal_sign.source,
+        "Invalid assign",
+        "The variable needs a {to.type}, the value is a {value.type}."
+      ))
       self.push_assign(to, value, assign.equal_sign.source)
       nothing_expr
     }
@@ -3034,18 +3087,21 @@ fun compile_in_current_scope(
       var enum_ =
         switch mono.type_defs.get(value.type)
         case enum_(e) e
-        default return error[MonoExpr, Str](
-          "You tried to switch on {value.type}, but you can only switch on 
-          'enums.")
+        default return error[MonoExpr, Error](make_error(
+          switch_.keyword.source,
+          "{value.type} is not an enum.",
+          "You can only switch on enums."
+        ))
 
       | Ensure all cases refer to enum variants and all variants are handled
       | exactly once.
       var handled = set[Str]()
       for case_ in switch_.cases do {
-        if handled.contains(case_.variant.str)
-        then return error[MonoExpr, Str](
-          "When switching on {value.type}, you handle the \"{case_.variant}\"
-          ' variant multiple times.")
+        if handled.contains(case_.variant.str) then
+          return error[MonoExpr, Error](make_error(
+            case_.variant.source,
+            "You handle the \"{case_.variant}\" variant multiple times."
+          ))
         | TODO: when supporting continue with label, use that
         var handled_this_case = false
         for variant in enum_.variants do
@@ -3054,20 +3110,23 @@ fun compile_in_current_scope(
             handled_this_case = true
           }
         if handled_this_case then continue
-        return error[MonoExpr, Str]({
-          var out = string_builder().&
-          out."You switched on {value.type}, which doesn't have a 
-           '\"{case_.variant}\" variant.\n
-           'It only has these variants."
-          for variant in enum_.variants do out."\n - {variant.name}"
-          out.to_str()
-        })
+        return error[MonoExpr, Error](make_error(
+          case_.variant.source, "This is not a variant.",
+          {
+            var out = string_builder().&
+            out."{value.type} only has these variants:"
+            for variant in enum_.variants do out."\n - {variant.name}"
+            out.to_str()
+          }
+        ))
       }
       if switch_.default_ is none then
         for variant in enum_.variants do
-          handled.contains(variant.name) or return error[MonoExpr, Str](
-            "You switched on {value.type}, but you don't handle the 
-             '\"{variant.name}\" variant.")
+          handled.contains(variant.name) or
+            return error[MonoExpr, Error](make_error(
+              switch_.keyword.source,
+              "You don't handle {value.type}.{variant.name}."
+            ))
 
       var jump_table_jumps = map[Str, Int]()
       for case_ in switch_.cases do
@@ -3114,15 +3173,14 @@ fun compile_in_current_scope(
           switch type
           case none type = some(body.type)
           case some(expected) {
-            body.type == expected or return error[MonoExpr, Str](
-              "When lowering this:\n
-               '{AstExpr.switch_(switch_).indented(indent(0))}\n
-               'Previous switch cases return {expected}, but the case for 
-               '\"{case_.variant}\" returns {body.type}.")
+            body.type == expected or return error[MonoExpr, Error](make_error(
+              case_.variant.source,
+              "This case evaluates to a {body.type}, but previous cases to 
+                '{expected}."
+            ))
             {}
           }
-          self.push_assign(result.expr(self), body, source)
-            .ignore()
+          self.push_assign(result.expr(self), body, source).ignore()
         }
         after_switch_jumps.&.push(self.push_placeholder(source))
       }
@@ -3205,17 +3263,23 @@ fun compile_in_current_scope(
       result.expr(self)
     }
     case break_(break_) {
-      if self.break_scopes.is_empty() then return error[MonoExpr, Str](
-        "There's a break outside out a loop.")
+      if self.break_scopes.is_empty() then
+        return error[MonoExpr, Error](make_error(
+          break_.keyword.source, "This break is outside a loop.",
+          "Breaks can only be inside loops."
+        ))
       var scope = self.break_scopes.top_ref()
 
       var source = break_.keyword.source
       var value = break_.value.compile(self)?
 
       if scope.type is some(expected) then
-        value.type == expected or return error[MonoExpr, Str](
-          "A previous break returned {expected}, but this break returns 
-          '{value.type}.")
+        value.type == expected or return error[MonoExpr, Error](make_error(
+          break_.keyword.source,
+          "Inconsistent break values.",
+          "  previous break > {expected}\n
+          '      this break > {value.type}"
+        ))
       scope.type = some(value.type)
       | TODO: This is not correct. The type of the slot is only updated after
       | the loop body is fully lowered. The created slot expr still has the
@@ -3226,8 +3290,11 @@ fun compile_in_current_scope(
       never_expr
     }
     case continue_(continue_) {
-      if self.continue_scopes.is_empty() then return error[MonoExpr, Str](
-        "There's a continue outside out a loop.")
+      if self.continue_scopes.is_empty() then
+        return error[MonoExpr, Error](make_error(
+          continue_.keyword.source,
+          "This continue is outside of a loop."
+        ))
       var scope = self.continue_scopes.top_ref()
       scope.continues.&.push(self.push_placeholder(continue_.keyword.source))
       never_expr
@@ -3235,26 +3302,36 @@ fun compile_in_current_scope(
     case return_(return_) {
       var value = return_.value.compile(self)?
       if self.return_type.&.add(value.type) is error(error) then
-        return error[MonoExpr, Str](
-          "The type of a return doesn't match the return type up to this point:
-          '\n{error}")
+        return error[MonoExpr, Error](make_error(
+          return_.keyword.source, "Inconsistent return types.", error
+        ))
       self.push(MonoStatement.return_(value) @ return_.keyword.source)
       never_expr
     }
     case try(try_) {
       var source = try_.question_mark.source
       var value = try_.value.compile(self)?
-      value.type.name == "Result" or return error[MonoExpr, Str](
-        "The try operator ? can only be used on Results.")
+      value.type.name == "Result" or return error[MonoExpr, Error](make_error(
+        try_.question_mark.source,
+        "The ? operator can only be used on Results.",
+        "The value on the left has the type {value.type}."
+      ))
       var return_type = self.return_type.finish()
-      return_type.name == "Result" or return error[MonoExpr, Str](
-        "The try operator ? can only be used in functions that return Result.")
+      return_type.name == "Result" or return error[MonoExpr, Error](make_error(
+        try_.question_mark.source,
+        "? is not allowed in this function.",
+        "The try operator ? can only be used in functions that return Result. 
+          'This function returns a {return_type}."
+      ))
       value.type.args.get(1) == return_type.args.get(1)
-        or return error[MonoExpr, Str](
+        or return error[MonoExpr, Error](make_error(
+          try_.question_mark.source,
+          "? has the wrong type.",
           "You used ? on a Result where the error type doesn't match the error 
-          'type of the function.\n
-          '  type of ? value: Result[..., {value.type.args.get(1)}]\n
-          ' type of function: Result[..., {return_type.args.get(1)}]")
+            'type of the function.\n
+            '  type of ? value: Result[..., {value.type.args.get(1)}]\n
+            ' type of function: Result[..., {return_type.args.get(1)}]"
+        ))
 
       var ok_type = value.type.args.get(0)
       var error_type = value.type.args.get(1)
@@ -3293,7 +3370,7 @@ fun compile_call(
   callee: Maybe[MonoExpr],
   type_args: Maybe[Vec[Type]],
   explicit_args: Vec[MonoExpr],
-): Result[MonoExpr, Str] {
+): Result[MonoExpr, Error] {
   var context = self.context
   var ast = self.ast
   var mono = self.mono
@@ -3302,7 +3379,7 @@ fun compile_call(
   | of type &T, we first look for functions matching foo(&T). If none match, we
   | try dereferencing the value and look for functions matching foo(T). If we
   | find one, your code acts as if it was value.*.foo().
-  var first_error = none[Str]()
+  var first_error = none[Error]()
   loop {
     var args = vec[MonoExpr]()
     var arg_types = vec[Type]()
@@ -3315,7 +3392,7 @@ fun compile_call(
       arg_types.&.push(arg.type)
     }
 
-    switch ast.lookup_fun(name.str, type_args, arg_types)
+    switch ast.lookup_fun(name, type_args, arg_types)
     case error(error) {
       if first_error is none then first_error = some(error)
       if callee is some(c) then if c.type.name == "&" then {
@@ -3323,7 +3400,7 @@ fun compile_call(
         callee = some(c.member("*", c.type.args.get(0)))
         continue
       }
-      return error[MonoExpr, Str](first_error.unwrap("error: no error"))
+      return error[MonoExpr, Error](first_error.unwrap("error: no error"))
     }
     case ok(solution) {
       var fun_ = solution.fun_.compile(solution.type_env, context, ast, mono)?
@@ -3331,7 +3408,7 @@ fun compile_call(
       self.push(
         MonoStatement.call(MonoCall { to = result, fun_, args }) @ name.source
       )
-      return ok[MonoExpr, Str](result.expr(self))
+      return ok[MonoExpr, Error](result.expr(self))
     }
   }
 }
@@ -4488,14 +4565,14 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   var ast =
     switch parse_project(".", file_path)
     case ok(ast) ast
-    case error(error) { eprintln("") stderr.write(error, ".") return false }
+    case error(error) { eprintln() stderr.write(error, ".") return false }
   if command is ast then { println(ast) return true }
 
   print_on_same_line("Monoing")
   var mono =
     switch ast.compile()
     case ok(mono) mono
-    case error(error) { print_on_same_line(error) return false }
+    case error(error) { eprintln() stderr.write(error, ".") return false }
 
   print_on_same_line("Memory layouting")
   var layouts = mono.type_defs.mem_layout_all_types()
