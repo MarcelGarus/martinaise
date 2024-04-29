@@ -1954,7 +1954,16 @@ fun write[W](writer: W, json: Json) {
   switch json
   case null writer."null"
   case int(int) writer."{int}"
-  case string(str) writer."\"{str}\""
+  case string(str) {
+    writer."\""
+    for char in str do {
+      if char == newline then writer."\\n"
+      else if char == #\ then writer."\\\\"
+      else if char == #" then writer."\""
+      else writer."{char}"
+    }
+    writer."\""
+  }
   case array(vec) writer."[{comma_separated(vec)}]"
   case map(map) {
     writer."\{"
@@ -1977,54 +1986,71 @@ fun current(parser: JsonParser): Char {
   parser.input.chars().get(parser.cursor)
 }
 fun rest(parser: JsonParser): Str { parser.input.without_first(parser.cursor) }
+fun is_done(parser: JsonParser): Bool { parser.rest().is_empty() }
 fun advance(parser: &JsonParser, n: Int) { parser.cursor = parser.cursor + n }
+fun advance(parser: &JsonParser): Char {
+  var char = parser.current()
+  parser.advance(1)
+  char
+}
 fun consume_whitespace(parser: &JsonParser) {
-  loop if parser.current() == space then parser.advance(1) else break
+  loop if parser.consume(space) then continue else break
+}
+fun consume(parser: &JsonParser, char: Char): Bool {
+  parser.consume_whitespace()
+  if parser.current() == char then { parser.advance() true } else false
 }
 fun consume(parser: &JsonParser, prefix: Str): Bool {
   parser.consume_whitespace()
-  if parser.rest().starts_with(prefix) then {
-    parser.advance(prefix.len)
-    true
-  } else false
+  if parser.rest().starts_with(prefix)
+  then { parser.advance(prefix.len) true }
+  else false
 }
 fun parse_null(parser: &JsonParser): Maybe[Nothing] {
-  if parser.consume("null") then some[Nothing]({}) else none[Nothing]()
+  if parser.consume("null") then some({}) else none[Nothing]()
 }
 fun parse_int(parser: &JsonParser): Result[Maybe[Int], Nothing] {
   var start = parser.cursor
   var num = 0
   loop
-    if parser.rest().is_empty() then break
-    else if {#0..=#9}.contains(parser.current()) then {
-      num = num * 10 + {parser.current() - #0}.to_int()
-      parser.advance(1)
-      continue
-    } else break
-  if parser.cursor == start then return ok[Maybe[Int], Nothing](none[Int]())
-  ok[Maybe[Int], Nothing](some(num))
+    if parser.is_done() then break
+    else if {#0..=#9}.contains(parser.current()) then
+      num = num * 10 + {parser.advance() - #0}.to_int()
+    else break
+  if parser.cursor == start then return ok[_, Nothing](none[Int]())
+  ok[_, Nothing](some(num))
 }
 fun parse_string(parser: &JsonParser): Result[Maybe[Str], Nothing] {
   parser.consume("\"") or return ok[Maybe[Str], Nothing](none[Str]())
   var chars = vec[Char]()
-  loop
-    if parser.rest().is_empty() then
+  loop {
+    if parser.is_done() then
       return error[Maybe[Str], Nothing]({}) | string doesn't end
-    else if parser.current() == #" then {
-      parser.advance(1)
+    if parser.current() == #" then {
+      parser.advance()
       return ok[Maybe[Str], Nothing](some(chars.to_str()))
+    }
+    if parser.current() == #\ then {
+      parser.advance()
+      if parser.current() == #\ then chars.&.push(#\)
+      else if parser.current() == #" then chars.&.push(#")
+      else if parser.current() == #n then chars.&.push(newline)
+      else return error[Maybe[Str], Nothing]({}) | invalid escape
+      parser.advance()
     } else {
       chars.&.push(parser.current())
-      parser.advance(1)
+      parser.advance()
     }
+  }
 }
 fun parse_array(parser: &JsonParser): Result[Maybe[Vec[Json]], Nothing] {
   parser.consume("[") or return ok[Maybe[Vec[Json]], Nothing](none[Vec[Json]]())
   var array = vec[Json]()
-  loop if parser.consume("]") then break else {
+  loop if parser.current() == #] then break else {
     array.&.push(parser.parse()?)
-    parser.consume(",")
+    parser.consume(",") or break
   }
+  parser.consume("]") orelse 
   ok[Maybe[Vec[Json]], Nothing](some(array))
 }
 fun parse_map(parser: &JsonParser): Result[Maybe[Map[Str, Json]], Nothing] {
