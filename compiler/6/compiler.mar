@@ -669,7 +669,7 @@ fun parse_name(parser: &Parser): Maybe[AstStr] {
   }
   var end = parser.cursor
   if start == end then return none[AstStr]()
-  some(parser.code.substr(start, end) @ source(parser.file, start..end))
+  some(parser.code.substr(start..end) @ source(parser.file, start..end))
 }
 
 fun parse_lower_name(parser: &Parser): Maybe[AstStr] {
@@ -697,7 +697,7 @@ fun parse_operator_name(parser: &Parser): Maybe[AstStr] {
   }
   var end = parser.cursor
   if start == end then return none[AstStr]()
-  var name = parser.code.substr(start, end)
+  var name = parser.code.substr(start..end)
   | disallow some patterns
   if name == "=" then { parser.cursor = start return none[AstStr]() }
   if name == "." then { parser.cursor = start return none[AstStr]() }
@@ -1328,7 +1328,7 @@ fun parse_asm_name(parser: &Parser): Maybe[AstStr] {
   }
   var end = parser.cursor
   if start == end then return none[AstStr]()
-  some(parser.code.substr(start, end) @ source(parser.file, start..end))
+  some(parser.code.substr(start..end) @ source(parser.file, start..end))
 }
 fun parse_reg(parser: &Parser): Result[Reg, Str] {
   var name = {parser.parse_asm_name()
@@ -1349,7 +1349,7 @@ fun parse_asm_str(parser: &Parser): Result[Str, Str] {
   var start = parser.cursor
   loop if parser.current() == #" then break else parser.advance()
   parser.advance()
-  ok[Str, Str](parser.code.substr(start, parser.cursor - 1))
+  ok[Str, Str](parser.code.substr(start..{parser.cursor - 1}))
 }
 
 fun parse_asm_num(parser: &Parser): Result[Int, Str] {
@@ -2046,7 +2046,7 @@ fun print_status(context: Context) {
     var i = 0
     for char in signature.iter().enumerate() do
       if {char.item == #(} / {char.item == #[} then { i = char.index break }
-    out.write(signature.substr(0, i))
+    out.write(signature.substr(0..i))
     if out.len() > 80 then break
   }
   if out.len() > 80 then {
@@ -4375,7 +4375,7 @@ fun globalize(byte_code: ByteCode, label: Str): Result[Str, Str] {
     then num_dots = num_dots + 1
     else break
   if num_dots == 0 then return ok[Str, Str](label)
-  label = label.substr(num_dots, label.len)
+  label = label.substr(num_dots..label.len)
   var shared_prefix = 0
   loop {
     if shared_prefix >= byte_code.last_label.len then {
@@ -4389,7 +4389,7 @@ fun globalize(byte_code: ByteCode, label: Str): Result[Str, Str] {
     shared_prefix = shared_prefix + 1
   }
   var global = vec[Char]()
-  global.&.push_all(byte_code.last_label.substr(0, shared_prefix).chars())
+  global.&.push_all(byte_code.last_label.substr(0..shared_prefix).chars())
   global.&.push(#.)
   for i in 0..label.len do global.&.push(label.chars().get(i))
   ok[Str, Str](global.to_str())

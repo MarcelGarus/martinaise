@@ -1131,9 +1131,9 @@ fun next(iter: &Iter[Char, StrIter]): Maybe[Char] {
   }
 }
 
-fun substr(str: Str, from: Int, to: Int): Str {
-  to <= str.len or panic("substr needs to be inside original str")
-  str.chars().subslice(from..to).to_str()
+fun substr(str: Str, range: Range[Int]): Str {
+  range.end <= str.len or panic("substr needs to be inside original str")
+  str.chars().subslice(range).to_str()
 }
 fun first(str: Str): Char {
   assert(str.is_not_empty(), "first only works on non-empty strs")
@@ -1141,7 +1141,7 @@ fun first(str: Str): Char {
 }
 fun first(str: Str, amount: Int): Str {
   assert(amount <= str.len, "first amount too big")
-  str.substr(0, amount)
+  str.substr(0..amount)
 }
 fun last(str: Str): T {
   assert(str.is_not_empty(), "last only works on non-empty strs")
@@ -1149,15 +1149,15 @@ fun last(str: Str): T {
 }
 fun last(str: Str, amount: Int): Str {
   assert(amount <= str.len, "last amount too big")
-  str.substr(str.len - amount, str.len)
+  str.substr({str.len - amount}..str.len)
 }
 fun without_first(str: Str, amount: Int): Str {
   assert(amount <= str.len, "without_first amount too big")
-  str.substr(amount, str.len)
+  str.substr(amount..str.len)
 }
 fun without_last(str: Str, amount: Int): Str {
   assert(amount <= str.len, "without_last amount too big")
-  str.substr(0, str.len - amount)
+  str.substr(0..{str.len - amount})
 }
 fun starts_with(str: Str, prefix: Str): Bool {
   str.chars().starts_with(prefix.chars())
