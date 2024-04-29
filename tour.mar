@@ -3,7 +3,7 @@
 | This is easier to follow if you have some experience in other programming
 | languages.
 
-import stdlib
+import stdlib.mar
 
 | Comments  
 | Use the pipe character to start comments. They go to the end of the line. If
@@ -218,7 +218,7 @@ fun custom_asm_fun() {
 
 | Run everything  
 
-fun main(args: Slice[Str]): Never {
+fun main(): Never {
   functions()
   variables()
   structs_and_enums()

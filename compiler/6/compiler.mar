@@ -104,16 +104,15 @@ fun make_error(source: Source, title: Str): Error {
   make_error(source, title, "")
 }
 
-fun write[W](writer: W, error: Error, home: Str) {
+fun write[W](writer: W, error: Error) {
   if error.context.is_not_empty() then {
     writer."Error when compiling\n"
     for entry in error.context do writer." - {entry}\n"
     writer."\n"
   }
 
-  var path = "{home}/{error.source.file}.mar"
   var code =
-    switch read_file(path)
+    switch read_file(error.source.file)
     case ok(content) content.to_str()
     case error {
       writer."{error.source.file} 
@@ -139,7 +138,7 @@ fun write[W](writer: W, error: Error, home: Str) {
   | Now, lines contains all lines up to the line that contains the error.
   | offset_in_line is the offset into the last complete line.
   var num_lines_to_display = min(lines.len, 4)
-  writer."{error.source.file}.mar\n"
+  writer."{error.source.file}\n"
   for line_number in {lines.len - num_lines_to_display}..lines.len do {
     writer.write_line_number(line_number)
     writer." | {lines.get(line_number)}\n"
@@ -1658,20 +1657,19 @@ fun source(type: AstType): Source {
 }
 
 fun parse_file_and_dependencies(
-  out: &Map[Str, FileAst], home: Str, file: Str
+  out: &Map[Str, FileAst], file: Str
 ): Result[Nothing, Error] {
   if out.contains(file) then return ok[Nothing, Error]({})
 
-  var path = "{home}/{file}.mar"
-  print_status("Reading {path}")
+  print_status("Reading {file}")
   var content =
-    switch read_file(path)
+    switch read_file(file)
     case ok(bytes) bytes.to_str()
     case error return error[Nothing, Error](make_error(
-      source(file, 0..0), "Couldn't read {path}."
+      source(file, 0..0), "Couldn't read {file}."
     ))
 
-  print_status("Parsing {path}")
+  print_status("Parsing {file}")
   var ast = content.parse_single_file(file)?
   out.put(file, ast)
 
@@ -1679,12 +1677,12 @@ fun parse_file_and_dependencies(
   | for import in ast.imports do eprintln("- {import.str}")
 
   for import in ast.imports do
-    parse_file_and_dependencies(out, home, import.str)?
+    parse_file_and_dependencies(out, import.str)?
 
   ok[Nothing, Error]({})
 }
 
-fun parse_project(home: Str, entry_file: Str): Result[Ast, Error] {
+fun parse_project(entry_file: Str): Result[Ast, Error] {
   var asts = map[Str, FileAst]()
 
   | Reference types such as &T are type-checked just like any other types. For
@@ -1703,7 +1701,7 @@ fun parse_project(home: Str, entry_file: Str): Result[Ast, Error] {
   }))
   asts.&.put("_ref", ref)
 
-  asts.&.parse_file_and_dependencies(home, entry_file)?
+  asts.&.parse_file_and_dependencies(entry_file)?
 
   var types = map[Str, AstType]()
   var globals = map[Str, AstVar]()
@@ -4592,12 +4590,12 @@ fun print_usage_info[W](writer: W) {
 | (stuff is printed to stderr). Returns whether it ran through successfully.
 fun run_pipeline(command: Command, file_path: Str): Bool {
   var ast =
-    switch parse_project(".", file_path)
+    switch parse_project(file_path)
     case ok(ast) ast
     case error(error) {
       if json_output
       then println(error.to_json())
-      else { eprintln() stderr.write(error, ".") eprintln() }
+      else { eprintln() stderr.write(error) eprintln() }
       return false
     }
   if command is ast then { println(ast) return true }
@@ -4609,7 +4607,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
     case error(error) {
       if json_output
       then println(error.to_json())
-      else { eprintln() stderr.write(error, ".") eprintln() }
+      else { eprintln() stderr.write(error) eprintln() }
       return false
     }
 
