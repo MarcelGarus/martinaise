@@ -1173,6 +1173,17 @@ fun trim_suffix(str: &Str, suffix: Str) {
   assert(str.ends_with(suffix), "trim_suffix doesn't match suffix")
   str.* = str.without_last(suffix.len)
 }
+fun trim(str: Str): Str {
+  var start = 0
+  var end = str.len
+  loop if start < str.len and str.get(start).is_whitespace()
+    then start = start + 1
+    else break
+  loop if end > 0 and str.get(end - 1).is_whitespace() and not(start == end)
+    then end = end - 1
+    else break
+  str.substr(start..end)
+}
 fun split(str: Str, separator: Str): Slice[Str] {
   var parts = vec[Str]()
   for part in str.iter().split(separator.chars()) do parts.&.push(part.to_str())
