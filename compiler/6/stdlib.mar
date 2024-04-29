@@ -1970,7 +1970,7 @@ fun write[W](writer: W, json: Json) {
     var first = true
     for entry in map do {
       if first then first = false else writer.", "
-      writer."{entry.key}: {entry.value}"
+      writer."\"{entry.key}\": {entry.value}"
     }
     writer."}"
   }

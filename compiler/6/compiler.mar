@@ -49,6 +49,14 @@
 
 import stdlib
 
+| Compatibility With Editor Tooling  
+| To enable further tooling such as editor extensions to be built, the compiler
+| supports a -json flag, which causes all output to be displayed in a structured
+| JSON format.
+| TODO: Describe why Martinaise doesn't natively support the LSP.
+
+var json_output = false
+
 | Terminal utilities  
 
 fun clear_terminal() {
@@ -63,7 +71,8 @@ fun write_ansi_escape_sequence[W](writer: W, sequence: Str) {
   writer.write(27.lower_byte().to_char())
   writer.write(sequence)
 }
-fun print_on_same_line(message: Str) {
+fun print_status(message: Str) {
+  if json_output then return {}
   stderr.write_ansi_escape_sequence("[1A") | move cursor up one line
   stderr.write_ansi_escape_sequence("[K")  | erase the current line
   eprintln(message)
@@ -151,6 +160,21 @@ fun write_line_number[W](writer: W, n: Int) {
   else if n >= 100 then writer.write(" {n}")
   else if n >= 10 then writer.write("  {n}")
   else writer.write("   {n}")
+}
+
+fun to_json(error: Error): Json {
+  var source_obj = map[Str, Json]()
+  source_obj.&.put("file", Json.string(error.source.file))
+  source_obj.&.put("start", Json.int(error.source.span.start))
+  source_obj.&.put("end", Json.int(error.source.span.end))
+  var context_array = vec[Json]()
+  for entry in error.context do context_array.&.push(Json.string(entry))
+  var obj = map[Str, Json]()
+  obj.&.put("source", Json.map(source_obj))
+  obj.&.put("title", Json.string(error.title))
+  obj.&.put("description", Json.string(error.description))
+  obj.&.put("context", Json.array(context_array))
+  Json.map(obj)
 }
 
 | The Abstract Syntax Tree  
@@ -1624,10 +1648,15 @@ fun parse_file_and_dependencies(
   if out.contains(file) then return ok[Nothing, Error]({})
 
   var path = "{home}/{file}.mar"
-  print_on_same_line("Reading {path}")
-  var content = read_file(path).unwrap("couldn't read {path}").to_str()
+  print_status("Reading {path}")
+  var content =
+    switch read_file(path)
+    case ok(bytes) bytes.to_str()
+    case error return error[Nothing, Error](make_error(
+      source(file, 0..0), "Couldn't read {path}."
+    ))
 
-  print_on_same_line("Parsing {path}")
+  print_status("Parsing {path}")
   var ast = content.parse_single_file(file)?
   out.put(file, ast)
 
@@ -1997,7 +2026,7 @@ fun context(): Context { Context { signatures = vec[Str]() } }
 
 fun push(context: &Context, signature: Str) {
   context.signatures.&.push(signature)
-  context.print_status()
+  if not(json_output) then context.print_status()
   if context.signatures.len >= 100 then {
     for signature in context.signatures do eprintln(signature)
     panic("overflow")
@@ -2027,7 +2056,7 @@ fun print_status(context: Context) {
     out.truncate_to_len(77)
     out.write("...")
   }
-  print_on_same_line(out.to_str())
+  print_status(out.to_str())
 }
 
 | Ast Lookup  
@@ -2438,20 +2467,7 @@ fun compile(ast: Ast): Result[Mono, Error] {
     case error return error[Mono, Error](make_error(
       source, "Your project must have a main() function."
     ))
-    case ok AstFun {
-      name = "main" @ source,
-      type_args = vec[AstStr](),
-      args = vec(
-        AstFunArg {
-          name = "args" @ source,
-          type = type("Slice", vec(type("Str"))),
-        },
-      ),
-      returns = type("Never"),
-      kind = AstFunKind.body(vec(
-        AstExpr.name("main" @ source).call("(" @ source)
-      )),
-    }
+    case ok(main) main.fun_
 
   var main_signature =
     switch main.compile(map[Str, Type](), context.&, ast, mono.&)
@@ -3912,7 +3928,7 @@ fun assemble[Assembler](
   asm.label("_run_main")
   asm.moveib(Reg.a, 0.lower_byte())
   asm.store(Reg.sp, Reg.a)
-  asm.call("main(Slice[Str])")
+  asm.call("main()")
 
   var arg_layouts = map[Str, MemLayout]() | fun signature to arg layouts
   for fun_ in mono.funs do {
@@ -4536,14 +4552,13 @@ fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Slice[Byte] {
 | The command line interface which you use to interact with the Martinaise
 | compiler.
 
-enum Command { help, ast, mono, recipe, soil, run }
+enum Command { help, ast, mono, recipe, soil }
 fun parse_command(command: Str): Maybe[Command] {
   if command == "help"   then return some(Command.help)
   if command == "ast"    then return some(Command.ast)
   if command == "mono"   then return some(Command.mono)
   if command == "recipe" then return some(Command.recipe)
   if command == "soil"   then return some(Command.soil)
-  if command == "run"    then return some(Command.run)
   none[Command]()
 }
 
@@ -4555,8 +4570,7 @@ fun print_usage_info[W](writer: W) {
     '  ast     shows the abstract syntax tree\n
     '  mono    shows the monomorphized code\n
     '  recipe  compiles to a Soil recipe\n
-    '  soil    compiles to a Soil binary\n
-    '  run     compiles and runs\n"
+    '  soil    compiles to a Soil binary\n"
 }
 
 | Runs the pipeline that matches the command. Errors are handled internally
@@ -4565,54 +4579,68 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   var ast =
     switch parse_project(".", file_path)
     case ok(ast) ast
-    case error(error) { eprintln() stderr.write(error, ".") return false }
+    case error(error) {
+      if json_output
+      then println(error.to_json())
+      else { eprintln() stderr.write(error, ".") eprintln() }
+      return false
+    }
   if command is ast then { println(ast) return true }
 
-  print_on_same_line("Monoing")
+  print_status("Monoing")
   var mono =
     switch ast.compile()
     case ok(mono) mono
-    case error(error) { eprintln() stderr.write(error, ".") return false }
+    case error(error) {
+      if json_output
+      then println(error.to_json())
+      else { eprintln() stderr.write(error, ".") eprintln() }
+      return false
+    }
 
-  print_on_same_line("Memory layouting")
+  print_status("Memory layouting")
   var layouts = mono.type_defs.mem_layout_all_types()
 
-  print_on_same_line("Monoing reflection functions")
+  print_status("Monoing reflection functions")
   mono.&.compile_builtins(layouts)
   if command is mono then { println(mono) return true }
 
   if command is recipe then {
-    print_on_same_line("Assembling recipe")
+    print_status("Assembling recipe")
     var recipe = mono.recipe(layouts)
-    print_on_same_line("Writing recipe")
+    print_status("Writing recipe")
     var buffered = stdout.buffered_writer(1024).&
     buffered.writeln(recipe)
     buffered.flush()
-    print_on_same_line("Compiled to recipe. Enjoy!")
+    print_status("Compiled to recipe. Enjoy!")
     return true
   }
 
   if command is soil then {
-    print_on_same_line("Assembling Soil binary")
+    print_status("Assembling Soil binary")
     var soil = mono.soil(layouts)
     var buffered = stdout.buffered_writer(1024).&
     buffered.write_bytes(soil)
     buffered.flush()
-    print_on_same_line("Compiled to Soil binary ({soil.len} bytes). Enjoy!")
+    print_status("Compiled to Soil binary ({soil.len} bytes). Enjoy!")
     return true
   }
 
-  todo()
-
-  true
+  unreachable()
 }
 
 fun wrong_usage(): Never { print_usage_info(stderr) exit(1) }
 
 fun main(): Never {
-  eprintln("Welcome to Martinaise 6.")
   var args = get_process_args()
-  eprintln("Args: {args}")
+
+  for i in 0..args.len do if args.get(i) == "-json" then {
+    args.&.remove(i..{i + 1})
+    json_output = true
+    break
+  }
+
+  if not(json_output) then eprintln("Welcome to Martinaise 6.")
 
   | Note the program name itself is also an additional argument at the front.
   if args.len < 2 then wrong_usage()
