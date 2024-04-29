@@ -608,9 +608,6 @@ fun current(parser: Parser): Char { parser.code.get(parser.cursor) }
 fun rest(parser: Parser): Str { parser.code.without_first(parser.cursor) }
 fun advance(parser: &Parser) { parser.advance_by(1) }
 fun advance_by(parser: &Parser, n: Int) { parser.cursor = parser.cursor + n }
-fun is_whitespace(char: Char): Bool {
-  {char == space} / {char == tab} / {char == newline}
-}
 
 fun consume_whitespace(parser: &Parser) {
   loop {

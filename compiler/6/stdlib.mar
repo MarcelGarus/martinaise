@@ -1051,10 +1051,19 @@ fun to_str(chars: Vec[Char]): Str { chars.to_slice().to_str() }
 fun chars(str: Str): Slice[Char] { str.unchecked_cast[Str, Slice[Char]]() }
 fun bytes(str: Str): Slice[Byte] { str.unchecked_cast[Str, Slice[Byte]]() }
 
+fun is_lower(char: Char): Bool { {#a..=#z}.contains(char) }
+fun is_upper(char: Char): Bool { {#A..=#Z}.contains(char) }
+fun is_alpha(char: Char): Bool { char.is_lower() or char.is_upper() }
+fun is_numeric(char: Char): Bool { {#0..=#9}.contains(char) }
+fun is_alphanumeric(char: Char): Bool { char.is_alpha() or char.is_numeric() }
+fun is_whitespace(char: Char): Bool {
+  char == space or char == newline or char == tab
+}
+
 fun parse_digit(char: Char): Byte {
-  if {#0..=#9}.contains(char.byte) then return char.byte - #0.byte
-  if {#a..=#z}.contains(char.byte) then return char.byte - #a.byte + 16
-  if {#A..=#Z}.contains(char.byte) then return char.byte - #A.byte + 16
+  if char.is_numeric() then return char.byte - #0.byte
+  if char.is_lower() then return char.byte - #a.byte + 16
+  if char.is_upper() then return char.byte - #A.byte + 16
   panic("not a digit")
 }
 fun <=>(a: Char, b: Char): Ordering { a.byte <=> b.byte }
