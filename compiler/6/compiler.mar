@@ -1575,9 +1575,27 @@ fun parse_defs(parser: &Parser): Result[Vec[AstDef], Str] {
 
 fun parse_import(parser: &Parser): Result[Maybe[AstStr], Str] {
   parser.consume_keyword("import") or return no_match[AstStr]()
-  var imported = parser.parse_lower_name()
-    or return bad_input[AstStr]("Expected an import (a lowercase name).")
-  parsed(imported)
+  | The imported thing goes until the end of the line.
+  var start = parser.cursor
+  loop {
+    if parser.cursor >= parser.code.len then break
+    if parser.current() == newline then break
+    parser.cursor = parser.cursor + 1
+  }
+  var end = parser.cursor
+  | Trim it.
+  loop if start < end and parser.code.get(start).is_whitespace()
+    then start = start + 1
+    else break
+  loop if end > start and parser.code.get(end - 1).is_whitespace()
+    then end = end - 1
+    else break
+  if start == end then
+    return bad_input[AstStr]("Expected an import (a file path).")
+  parsed(AstStr {
+    source = source(parser.file, start..end),
+    str = parser.code.substr(start..end),
+  })
 }
 fun parse_imports(parser: &Parser): Result[Vec[AstStr], Str] {
   var imports = vec[AstStr]()
