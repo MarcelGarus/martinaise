@@ -1,47 +1,163 @@
 import * as child_process from "child_process";
+import { readFile } from "fs/promises";
 import * as stream from "stream";
 import * as vs from "vscode";
 import {
-  LanguageClient,
-  StreamInfo
+  StreamInfo,
+  integer
 } from "vscode-languageclient/node";
 
-let client: LanguageClient | undefined;
-const enableLogging = false;
-
 export async function activate(context: vs.ExtensionContext) {
-  console.log("Activated Martinaise extension!");
+  console.info("Activated Martinaise extension!");
+  loadCompiler();
 
-  // const clientOptions: LanguageClientOptions = {
-  //   outputChannelName: "Martinaise Language Server",
-  //   initializationOptions: {},
-  // };
+  diagnosticCollection = vs.languages.createDiagnosticCollection("martinaise");
+  context.subscriptions.push(diagnosticCollection);
 
-  // client = new LanguageClient(
-  //   "martinaiseLanguageServer",
-  //   "Martinaise Language Server",
-  //   spawnServer,
-  //   clientOptions,
-  // );
-  // await client.start();
+  vs.window.onDidChangeVisibleTextEditors(() => {
+    update();
+  });
+  // vs.workspace.onDidCloseTextDocument((document) => {
+  //   // hints.delete(document.uri.toString());
+  // });
 
   context.subscriptions.push(
-        vs.languages.registerCodeLensProvider("martinaise", new MartinaiseCodeLensProvider()));
+    vs.languages.registerCodeLensProvider(
+      "martinaise",
+      new MartinaiseCodeLensProvider(),
+    ),
+  );
   context.subscriptions.push(
-    vs.languages.registerCodeActionsProvider("martinaise", new MartinaiseCodeActionsProvider());
-  )
+    vs.languages.registerCodeActionsProvider(
+      "martinaise",
+      new MartinaiseCodeActionsProvider(),
+    ),
+  );
 
   // context.subscriptions.push(new ServerStatusService(client));
   // context.subscriptions.push(new HintsDecorations(client));
 }
-
 export function deactivate(): Thenable<void> | undefined {
-  if (!client) {
-    return undefined;
-  }
-
-  return client.stop();
+  return undefined;
 }
+
+// The Soil binary that is the compiler. It's only loaded once at the beginning
+// instead of every time we want to execute the compiler.
+let compiler: Buffer | null = null;
+async function loadCompiler() {
+  console.info("Loading compiler");
+  compiler = await readFile(`/home/marcel/projects/martinaise/martinaise.soil`);
+  console.log(`Loaded compiler (${compiler.byteLength} bytes)`);
+}
+
+let diagnosticCollection: vs.DiagnosticCollection;
+
+function update() {
+  for (const editor of vs.window.visibleTextEditors) {
+    const uri = editor.document.uri.toString();
+    if (!uri.endsWith(".mar")) continue;
+
+    check(uri).then(errors => {
+      diagnosticCollection.clear();
+      let diagnosticMap: Map<string, vs.Diagnostic[]> = new Map();
+      errors.forEach(error => {
+        let canonicalFile = vs.Uri.file(`${error.source.file}.mar`).toString();
+        let range = new vs.Range(1, 1, 1, 3);
+        let diagnostics = diagnosticMap.get(canonicalFile) ?? [];
+        diagnostics.push(new vs.Diagnostic(range, error.title, vs.DiagnosticSeverity.Error));
+        diagnosticMap.set(canonicalFile, diagnostics);
+      });
+      diagnosticMap.forEach((diags, file) => {
+        diagnosticCollection.set(vs.Uri.parse(file), diags);
+      });
+    });
+
+    // type Item = vs.DecorationOptions & {
+    //   renderOptions: { after: { contentText: string } };
+    // };
+    // const decorations: Item[] = [];
+    // for (const hint of hints) {
+    //   const position = this.client.protocol2CodeConverter.asPosition(
+    //     hint.position,
+    //   );
+    //   decorations.push({
+    //     range: new vs.Range(new vs.Position(1, 1), new vs.Position(1, 3)),
+    //     renderOptions: { after: { contentText: "Test hint" } },
+    //   });
+    // }
+    // editor.setDecorations(this.decorationType, decorations);
+  }
+}
+
+function workspaceFolder(): string | undefined {
+  let folders = vs.workspace.workspaceFolders;
+  if (!folders) return undefined;
+  let folder = folders[0];
+  if (!folder) return undefined;
+  return folder.uri.toString();
+}
+function streamToString(stream: stream.Readable): Promise<string> {
+  const chunks: any[] = [];
+  return new Promise((resolve, reject) => {
+    stream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+    stream.on('error', (err) => reject(err));
+    stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+  });
+}
+async function check(path: string): Promise<MartinaiseError[]> {
+  // return [];
+  
+  console.info("Spawning /home/marcel/projects/soil/soil-asm");
+  // const ls = child_process.spawn("ls", ["-lh", "/usr"]);
+  // ls.stdout.on("data", (data) => {
+  //   console.log(`ls stdout: ${data}`);
+  // });
+
+  let soil = child_process.spawn(
+    "/home/marcel/projects/soil/soil-asm",
+    ["soil", path],
+    {
+      // "-json", "soil", path
+      // cwd: workspaceFolder(),
+      // shell: true,
+    },
+  );
+  soil.on("error", (data) => console.error(`Spawning soil failed: ${data}`));
+  soil.stdin.write(compiler);
+  soil.stdout.on("data", (data) => {
+    console.log(`soil stdout: ${data}`);
+  });
+  soil.stderr.on("data", (data) => {
+    console.log(`soil stderr: ${data}`);
+  });
+  // console.log("Spawned");
+  // let compiler = await readFile(`${workspaceFolder()}/martinaise.soil`)
+  // console.log("Writing compiler");
+  // soil.stdin.write(compiler);
+  // console.log("Closing stdin");
+  // soil.stdin.destroy();
+
+  // console.log("Waiting for exit");
+  // await new Promise((resolve) => process.on("exit", () => resolve(null)));
+  // let exitCode = process.exitCode;
+  // console.info("Martinaise exited with " + exitCode);
+  // let output = await streamToString(process.stderr);
+  // console.info(output);
+
+  // let diagnostics = output.split("\n").map((line) => JSON.parse(line));
+  // console.error(diagnostics);
+  return [];
+}
+type MartinaiseError = {
+  source: {
+    file: string,
+    start: integer,
+    end: integer,
+  },
+  title: string,
+  description: string,
+  context: string[],
+};
 
 class MartinaiseCodeLensProvider implements vs.CodeLensProvider {
   public provideCodeLenses(_: vs.TextDocument, __: vs.CancellationToken): vs.CodeLens[] {
@@ -62,7 +178,7 @@ class MartinaiseCodeLensProvider implements vs.CodeLensProvider {
 }
 
 class MartinaiseCodeActionsProvider implements vs.CodeActionProvider {
-  provideCodeActions(document: vs.TextDocument, range: vs.Range | vs.Selection, context: vs.CodeActionContext, token: vs.CancellationToken): vs.ProviderResult<(vs.Command | vs.CodeAction)[]> {
+  provideCodeActions(_: vs.TextDocument, __: vs.Range | vs.Selection, ___: vs.CodeActionContext, ____: vs.CancellationToken): vs.ProviderResult<(vs.Command | vs.CodeAction)[]> {
     var command: vs.Command = {
       title: "Fuzz",
       command: "fuzz",
@@ -73,10 +189,9 @@ class MartinaiseCodeActionsProvider implements vs.CodeActionProvider {
       command
     ];
   }
-  resolveCodeAction?(codeAction: vs.CodeAction, token: vs.CancellationToken): vs.ProviderResult<vs.CodeAction> {
+  resolveCodeAction?(codeAction: vs.CodeAction, _: vs.CancellationToken): vs.ProviderResult<vs.CodeAction> {
     return codeAction;
   }
-
 }
 
 // The following code is taken (and slightly modified) from https://github.com/Dart-Code/Dart-Code
