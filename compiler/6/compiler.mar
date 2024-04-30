@@ -1676,10 +1676,39 @@ fun parse_file_and_dependencies(
   | eprintln("Imports:")
   | for import in ast.imports do eprintln("- {import.str}")
 
-  for import in ast.imports do
-    parse_file_and_dependencies(out, import.str)?
+  for import_ in ast.imports do
+    parse_file_and_dependencies(out, file.relative_import(import_.str))?
 
   ok[Nothing, Error]({})
+}
+| Resolves the path relative to the base.
+| "/foo/tour.mar".relative_import("stdin.mar") -> "/foo/stdin.mar"
+| "hey.mar".relative_import("../foo.mar") -> "../foo.mar"
+fun relative_import(base: Str, path: Str): Str {
+  if path.starts_with("/") then return path
+  base = base.remove_last_component()
+  | We could just return "{base}/{path}", but that results in un-canonical
+  | paths such as "foo/bar/../baz.mar". So, each "../" at the beginning of the
+  | path cancels out the last component of the base.
+  loop {
+    if base.is_empty() then return path
+    if path.starts_with("../") then {
+      base = base.remove_last_component()
+      path = path.without_first(3)
+      continue
+    }
+    break
+  }
+  "{base}/{path}"
+}
+fun remove_last_component(path: Str): Str {
+  var end = path.len
+  loop {
+    if end == 0 then break
+    if path.get(end - 1) == #/ then { end = end - 1 break }
+    end = end - 1
+  }
+  path.substr(0..end)
 }
 
 fun parse_project(entry_file: Str): Result[Ast, Error] {
