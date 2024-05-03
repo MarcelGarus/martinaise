@@ -2052,8 +2052,8 @@ fun parse_int(parser: &JsonParser): Result[Maybe[Int], Nothing] {
     else if {#0..=#9}.contains(parser.current()) then
       num = num * 10 + {parser.advance() - #0}.to_int()
     else break
-  if parser.cursor == start then return ok[_, Nothing](none[Int]())
-  ok[_, Nothing](some(num))
+  if parser.cursor == start then return ok[Maybe[Int], Nothing](none[Int]())
+  ok[Maybe[Int], Nothing](some(num))
 }
 fun parse_string(parser: &JsonParser): Result[Maybe[Str], Nothing] {
   parser.consume("\"") or return ok[Maybe[Str], Nothing](none[Str]())
@@ -2085,7 +2085,7 @@ fun parse_array(parser: &JsonParser): Result[Maybe[Vec[Json]], Nothing] {
     array.&.push(parser.parse()?)
     parser.consume(",") or break
   }
-  parser.consume("]") orelse 
+  parser.consume("]") or return error[Maybe[Vec[Json]], Nothing]({})
   ok[Maybe[Vec[Json]], Nothing](some(array))
 }
 fun parse_map(parser: &JsonParser): Result[Maybe[Map[Str, Json]], Nothing] {
