@@ -367,6 +367,9 @@ fun write_bytes(log: Log, bytes: Slice[Byte]) asm {
   syscall 2 ret
 }
 
+var stdin = create_stdin()
+fun create_stdin(): File asm { move a sp load a a moveib b 0 store a b ret }
+
 | Halting, Exiting, and Panicking  
 
 fun halt(): Never { loop {} }
@@ -1501,6 +1504,18 @@ fun read_byte(file: File): Result[Maybe[Byte], Nothing] {
     else some(char)
   )
 }
+fun read_line(file: File): Result[Maybe[Str], Nothing] {
+  var content = vec[Byte]()
+  loop {
+    var byte = file.read_byte()? or {
+      if content.is_empty() then return ok[Maybe[Str], Nothing](none[Str]())
+      break
+    }
+    if byte == newline.byte then break
+    content.&.push(byte)
+  }
+  ok[Maybe[Str], Nothing](some(content.to_slice().to_str()))
+}
 
 fun write_bytes_safely(
   file: File, buffer: Slice[Byte],
@@ -1979,7 +1994,7 @@ fun write[W](writer: W, json: Json) {
     for char in str do {
       if char == newline then writer."\\n"
       else if char == #\ then writer."\\\\"
-      else if char == #" then writer."\""
+      else if char == #" then writer."\\\""
       else writer."{char}"
     }
     writer."\""
