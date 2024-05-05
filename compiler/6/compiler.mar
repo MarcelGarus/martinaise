@@ -55,7 +55,42 @@ import stdlib
 | JSON format.
 | TODO: Describe why Martinaise doesn't natively support the LSP.
 
-var json_output = false
+var tooling_mode = false
+
+fun read_source(path: Str): Result[Str, Str] {
+  ok[Str, Str](if tooling_mode then {
+    var obj = map[Str, Json]()
+    obj.&.put("type", Json.string("read_file"))
+    obj.&.put("path", Json.string(path))
+    println(Json.map(obj))
+    var response = stdin.read_line()
+      or return error[Str, Str]("Couldn't read from stdin.")
+    var response = response
+      or return error[Str, Str]("Stdin ended without response.")
+    var response = response.parse_json()
+      or return error[Str, Str]("Response was not JSON.")
+    var response =
+      switch response
+      case map(map) map
+      default return error[Str, Str]("Response was not a JSON map.")
+    var type = response.get_maybe("type")
+      or return error[Str, Str]("Response doesn't have a type.")
+    var type =
+      switch type
+      case string(str) str
+      default return error[Str, Str]("Response type is not a string.")
+    type == "read_file"
+      or return error[Str, Str]("Response wasn't of type read_file.")
+    var success = response.get_maybe("success")
+      or return error[Str, Str]("Response didn't have success field.")
+    response.get_maybe("content")
+      or return error[Str, Str]("Response doesn't contain content.")
+  } else {
+    switch read_file(path)
+    case ok(content) content.to_str()
+    case error return error[Str, Str]("Couldn't read file.")
+  })
+}
 
 | Terminal utilities  
 
@@ -72,7 +107,7 @@ fun write_ansi_escape_sequence[W](writer: W, sequence: Str) {
   writer.write(sequence)
 }
 fun print_status(message: Str) {
-  if json_output then return {}
+  if tooling_mode then return {}
   stderr.write_ansi_escape_sequence("[1A") | move cursor up one line
   stderr.write_ansi_escape_sequence("[K")  | erase the current line
   eprintln(message)
@@ -111,16 +146,13 @@ fun write[W](writer: W, error: Error) {
     writer."\n"
   }
 
-  var code =
-    switch read_file(error.source.file)
-    case ok(content) content.to_str()
-    case error {
-      writer."{error.source.file} 
-        '{error.source.span.start} – {error.source.span.end}: 
-        '{error.title}\n
-        '{error.description}"
-      return {}
-    }
+  var code = read_source(error.source.file) or {
+    writer."{error.source.file} 
+      '{error.source.span.start} – {error.source.span.end}: 
+      '{error.title}\n
+      '{error.description}"
+    return {}
+  }
 
   var lines = vec[Str]()
   var current_line = string_builder().&
@@ -169,6 +201,7 @@ fun to_json(error: Error): Json {
   var context_array = vec[Json]()
   for entry in error.context do context_array.&.push(Json.string(entry))
   var obj = map[Str, Json]()
+  obj.&.put("type", Json.string("error"))
   obj.&.put("source", Json.map(source_obj))
   obj.&.put("title", Json.string(error.title))
   obj.&.put("description", Json.string(error.description))
@@ -1663,10 +1696,10 @@ fun parse_file_and_dependencies(
 
   print_status("Reading {file}")
   var content =
-    switch read_file(file)
-    case ok(bytes) bytes.to_str()
-    case error return error[Nothing, Error](make_error(
-      source(file, 0..0), "Couldn't read {file}."
+    switch read_source(file)
+    case ok(content) content
+    case error(error) return error[Nothing, Error](make_error(
+      source(file, 0..0), "Couldn't read {file}: {error}"
     ))
 
   print_status("Parsing {file}")
@@ -2068,7 +2101,7 @@ fun context(): Context { Context { signatures = vec[Str]() } }
 
 fun push(context: &Context, signature: Str) {
   context.signatures.&.push(signature)
-  if not(json_output) then context.print_status()
+  if not(tooling_mode) then context.print_status()
   if context.signatures.len >= 100 then {
     for signature in context.signatures do eprintln(signature)
     panic("overflow")
@@ -4594,13 +4627,14 @@ fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Slice[Byte] {
 | The command line interface which you use to interact with the Martinaise
 | compiler.
 
-enum Command { help, ast, mono, recipe, soil }
+enum Command { help, ast, mono, recipe, soil, analyze }
 fun parse_command(command: Str): Maybe[Command] {
-  if command == "help"   then return some(Command.help)
-  if command == "ast"    then return some(Command.ast)
-  if command == "mono"   then return some(Command.mono)
-  if command == "recipe" then return some(Command.recipe)
-  if command == "soil"   then return some(Command.soil)
+  if command == "help"    then return some(Command.help)
+  if command == "ast"     then return some(Command.ast)
+  if command == "mono"    then return some(Command.mono)
+  if command == "recipe"  then return some(Command.recipe)
+  if command == "soil"    then return some(Command.soil)
+  if command == "analyze" then return some(Command.analyze)
   none[Command]()
 }
 
@@ -4608,11 +4642,12 @@ fun print_usage_info[W](writer: W) {
   writer."
     'Usage: martinaise <command> <file>\n
     'Commands:\n
-    '  help    prints this help\n
-    '  ast     shows the abstract syntax tree\n
-    '  mono    shows the monomorphized code\n
-    '  recipe  compiles to a Soil recipe\n
-    '  soil    compiles to a Soil binary\n"
+    '  help     prints this help\n
+    '  ast      shows the abstract syntax tree\n
+    '  mono     shows the monomorphized code\n
+    '  recipe   compiles to a Soil recipe\n
+    '  soil     compiles to a Soil binary\n
+    '  analyze  for tooling: analizes a file\n"
 }
 
 | Runs the pipeline that matches the command. Errors are handled internally
@@ -4622,7 +4657,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
     switch parse_project(file_path)
     case ok(ast) ast
     case error(error) {
-      if json_output
+      if tooling_mode
       then println(error.to_json())
       else { eprintln() stderr.write(error) eprintln() }
       return false
@@ -4634,7 +4669,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
     switch ast.compile()
     case ok(mono) mono
     case error(error) {
-      if json_output
+      if tooling_mode
       then println(error.to_json())
       else { eprintln() stderr.write(error) eprintln() }
       return false
@@ -4668,6 +4703,8 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
     return true
   }
 
+  if command is analyze then return true
+
   unreachable()
 }
 
@@ -4676,14 +4713,6 @@ fun wrong_usage(): Never { print_usage_info(stderr) exit(1) }
 fun main(): Never {
   var args = get_process_args()
 
-  for i in 0..args.len do if args.get(i) == "-json" then {
-    args.&.remove(i..{i + 1})
-    json_output = true
-    break
-  }
-
-  if not(json_output) then eprintln("Welcome to Martinaise 6.")
-
   | Note the program name itself is also an additional argument at the front.
   if args.len < 2 then wrong_usage()
   var command = parse_command(args.get(1)) or wrong_usage()
@@ -4691,12 +4720,15 @@ fun main(): Never {
     print_usage_info(stdout)
     exit(0)
   }
+  if command is analyze then tooling_mode = true
+
+  if not(tooling_mode) then eprintln("Welcome to Martinaise 6.")
   if args.len < 3 then wrong_usage()
-  var file_path = args.get(2)
+  var path = args.get(2)
 
   | TODO: throw if additional args are given
   | TODO: support -- and additional args for the run command
 
-  var was_successful = run_pipeline(command, file_path)
+  var was_successful = run_pipeline(command, path)
   exit(if was_successful then 0 else 1)
 }
