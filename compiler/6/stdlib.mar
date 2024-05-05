@@ -2011,12 +2011,19 @@ fun min[T](slice: Set[T]): Maybe[T] {
 | everyone reading the code, including myself. So, sadly, the parsed structure
 | is called Json, just because that's the industry standard (tm).
 
-| TODO: Floats instead of ints
-enum Json { null, int: Int, string: Str, array: Vec[Json], map: Map[Str, Json] }
+enum Json {
+  null,
+  bool: Bool,
+  int: Int, | TODO: Floats instead of ints
+  string: Str,
+  array: Vec[Json],
+  map: Map[Str, Json],
+}
 
 fun write[W](writer: W, json: Json) {
   switch json
   case null writer."null"
+  case bool(bool) writer."{bool}"
   case int(int) writer."{int}"
   case string(str) {
     writer."\""
@@ -2058,7 +2065,7 @@ fun advance(parser: &JsonParser): Char {
   char
 }
 fun consume_whitespace(parser: &JsonParser) {
-  loop if parser.consume(space) then continue else break
+  loop if parser.current().is_whitespace() then parser.advance(1) else break
 }
 fun consume(parser: &JsonParser, char: Char): Bool {
   parser.consume_whitespace()
@@ -2073,6 +2080,11 @@ fun consume(parser: &JsonParser, prefix: Str): Bool {
 fun parse_null(parser: &JsonParser): Maybe[Nothing] {
   if parser.consume("null") then some({}) else none[Nothing]()
 }
+fun parse_bool(parser: &JsonParser): Maybe[Bool] {
+  if parser.consume("true")  then return some(true)
+  if parser.consume("false") then return some(false)
+  none[Bool]()
+}
 fun parse_int(parser: &JsonParser): Result[Maybe[Int], Nothing] {
   var start = parser.cursor
   var num = 0
@@ -2085,7 +2097,7 @@ fun parse_int(parser: &JsonParser): Result[Maybe[Int], Nothing] {
   ok[Maybe[Int], Nothing](some(num))
 }
 fun parse_string(parser: &JsonParser): Result[Maybe[Str], Nothing] {
-  parser.consume("\"") or return ok[Maybe[Str], Nothing](none[Str]())
+  parser.consume(#") or return ok[Maybe[Str], Nothing](none[Str]())
   var chars = vec[Char]()
   loop {
     if parser.is_done() then
@@ -2108,34 +2120,35 @@ fun parse_string(parser: &JsonParser): Result[Maybe[Str], Nothing] {
   }
 }
 fun parse_array(parser: &JsonParser): Result[Maybe[Vec[Json]], Nothing] {
-  parser.consume("[") or return ok[Maybe[Vec[Json]], Nothing](none[Vec[Json]]())
+  parser.consume(#[) or return ok[Maybe[Vec[Json]], Nothing](none[Vec[Json]]())
   var array = vec[Json]()
   loop if parser.current() == #] then break else {
     array.&.push(parser.parse()?)
-    parser.consume(",") or break
+    parser.consume(#,) or break
   }
-  parser.consume("]") or return error[Maybe[Vec[Json]], Nothing]({})
+  parser.consume(#]) or return error[Maybe[Vec[Json]], Nothing]({})
   ok[Maybe[Vec[Json]], Nothing](some(array))
 }
 fun parse_map(parser: &JsonParser): Result[Maybe[Map[Str, Json]], Nothing] {
-  parser.consume("\{") or
+  parser.consume(#{) or
     return ok[Maybe[Map[Str, Json]], Nothing](none[Map[Str, Json]]())
   var map = map[Str, Json]()
-  loop if parser.consume("}") then break else {
+  loop if parser.consume(#}) then break else {
     var key = parser.parse_string()? or return error[Maybe[Map[Str, Json]], Nothing]({})
-    parser.consume(":") or return error[Maybe[Map[Str, Json]], Nothing]({})
+    parser.consume(#:) or return error[Maybe[Map[Str, Json]], Nothing]({})
     var value = parser.parse()?
     map.&.put(key, value)
-    parser.consume(",")
+    parser.consume(#,)
   }
   ok[Maybe[Map[Str, Json]], Nothing](some(map))
 }
 fun parse(parser: &JsonParser): Result[Json, Nothing] {
   parser.consume_whitespace()
   if parser.parse_null() is some then return ok[Json, Nothing](Json.null)
-  if parser.parse_int()? is some(int) then return ok[Json, Nothing](Json.int(int))
-  if parser.parse_string()? is some(string) then return ok[Json, Nothing](Json.string(string))
-  if parser.parse_array()? is some(array) then return ok[Json, Nothing](Json.array(array))
-  if parser.parse_map()? is some(map) then return ok[Json, Nothing](Json.map(map))
+  if parser.parse_bool() is some(b) then return ok[Json, Nothing](Json.bool(b))
+  if parser.parse_int()? is some(i) then return ok[Json, Nothing](Json.int(i))
+  if parser.parse_string()? is some(s) then return ok[Json, Nothing](Json.string(s))
+  if parser.parse_array()? is some(a) then return ok[Json, Nothing](Json.array(a))
+  if parser.parse_map()? is some(m) then return ok[Json, Nothing](Json.map(m))
   error[Json, Nothing]({})
 }
