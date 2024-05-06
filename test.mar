@@ -1,0 +1,10 @@
+import stdlib.mar
+
+fun main(): Never {
+  var args = get_process_args()
+  println("There are {args.len} args")
+  for arg in argt do println(arg)
+  exit(0)
+}
+
+fun foo(a: Int, b: Int): Int { a + b }

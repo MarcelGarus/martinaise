@@ -1,10 +1,31 @@
-import stdlib
+import stdlib.mar
 
 fun main(): Never {
-  var rng = prng()
-  | Generate some random Vec[Int]s.
-  for i in 0..10 do println(generator[Vec[Int]](rng.&).generate())
+  fuzz_add()
   exit(0)
+}
+
+fun fuzz_add() {
+  var rng = prng()
+  for i in 0..10 do {
+    var left  = generator[Int](rng.&).generate()
+    var right = generator[Int](rng.&).generate()
+    print("{left} + {right}")
+    var res = left + right
+    println(" = {res}")
+  }
+}
+
+| Fuzzes fun push[T](vec: &Vec[T], item: T) {}
+fun fuzz_push() {
+  var rng = prng()
+  for i in 0..10 do {
+    var vec = generator[Vec[Int]](rng.&).generate()
+    var item = generator[Int](rng.&).generate()
+    print("push({vec}, {item})")
+    push(vec.&, item)
+    println(" -> {vec}")
+  }
 }
 
 struct Generator[T] { rng: &Prng }
