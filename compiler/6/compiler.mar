@@ -83,6 +83,11 @@ fun read_source(path: Str): Result[Str, Str] {
       or return error[Str, Str]("Response wasn't of type read_file.")
     var success = response.get_maybe("success")
       or return error[Str, Str]("Response didn't have success field.")
+    var success =
+      switch success
+      case bool(s) s
+      default return error[Str, Str]("Response success isn't a bool.")
+    success or return error[Str, Str]("Couldn't read file.")
     response.get_maybe("content")
       or return error[Str, Str]("Response doesn't contain content.")
   } else {
@@ -1690,7 +1695,7 @@ fun source(type: AstType): Source {
 }
 
 fun parse_file_and_dependencies(
-  out: &Map[Str, FileAst], file: Str
+  out: &Map[Str, FileAst], file: Str, parent_import: Maybe[AstStr],
 ): Result[Nothing, Error] {
   if out.contains(file) then return ok[Nothing, Error]({})
 
@@ -1699,7 +1704,10 @@ fun parse_file_and_dependencies(
     switch read_source(file)
     case ok(content) content
     case error(error) return error[Nothing, Error](make_error(
-      source(file, 0..0), "Couldn't read {file}: {error}"
+      switch parent_import
+      case some(import_) import_.source
+      case none source(file, 0..0),
+      "Couldn't read {file}: {error}"
     ))
 
   print_status("Parsing {file}")
@@ -1710,7 +1718,11 @@ fun parse_file_and_dependencies(
   | for import in ast.imports do eprintln("- {import.str}")
 
   for import_ in ast.imports do
-    parse_file_and_dependencies(out, file.relative_import(import_.str))?
+    parse_file_and_dependencies(
+      out,
+      file.relative_import(import_.str),
+      some(import_)
+    )?
 
   ok[Nothing, Error]({})
 }
@@ -1763,7 +1775,7 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
   }))
   asts.&.put("_ref", ref)
 
-  asts.&.parse_file_and_dependencies(entry_file)?
+  asts.&.parse_file_and_dependencies(entry_file, none[AstStr]())?
 
   var types = map[Str, AstType]()
   var globals = map[Str, AstVar]()
