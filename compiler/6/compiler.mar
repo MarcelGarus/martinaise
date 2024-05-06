@@ -4635,17 +4635,26 @@ fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Slice[Byte] {
   out.to_slice()
 }
 
+| Fuzzing  
+| Martinaise supports exploring code by finding sensible inputs for functions
+| through fuzzing. This is only supported for functions that don't take type
+| args.
+
+fun is_fuzzable(fun_: AstFun): Bool { fun_.type_args.is_empty() }
+
 | Command Line Interface  
 | The command line interface which you use to interact with the Martinaise
 | compiler.
 
-enum Command { help, ast, mono, recipe, soil, analyze }
+enum Command { help, ast, mono, recipe, soil, funs, fuzz, analyze }
 fun parse_command(command: Str): Maybe[Command] {
   if command == "help"    then return some(Command.help)
   if command == "ast"     then return some(Command.ast)
   if command == "mono"    then return some(Command.mono)
   if command == "recipe"  then return some(Command.recipe)
   if command == "soil"    then return some(Command.soil)
+  if command == "funs"    then return some(Command.funs)
+  if command == "fuzz"    then return some(Command.fuzz)
   if command == "analyze" then return some(Command.analyze)
   none[Command]()
 }
@@ -4655,11 +4664,12 @@ fun print_usage_info[W](writer: W) {
     'Usage: martinaise <command> <file>\n
     'Commands:\n
     '  help     prints this help\n
-    '  ast      shows the abstract syntax tree\n
-    '  mono     shows the monomorphized code\n
+    '  ast      prints the abstract syntax tree\n
+    '  mono     prints the monomorphized code\n
     '  recipe   compiles to a Soil recipe\n
     '  soil     compiles to a Soil binary\n
-    '  analyze  for tooling: analizes a file\n"
+    '  funs     prints all functions\n
+    '  analyze  for tooling: analyzes a file\n"
 }
 
 | Runs the pipeline that matches the command. Errors are handled internally
@@ -4675,6 +4685,22 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
       return false
     }
   if command is ast then { println(ast) return true }
+
+  if command is funs then {
+    print_status("Functions:")
+    var all_names = vec[Str]()
+    for entry in ast.funs do all_names.&.push(entry.key)
+    all_names.to_slice().&.sort()
+    for name in all_names do for f in ast.funs.get(name) do {
+      println("[{if f.is_fuzzable() then "fuzz" else "    "}] 
+        '{stripped_signature(f)}")
+    }
+    return true
+  }
+
+  if command is fuzz then {
+    todo()
+  }
 
   print_status("Monoing")
   var mono =
