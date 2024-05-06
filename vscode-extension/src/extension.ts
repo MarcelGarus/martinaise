@@ -112,6 +112,7 @@ async function check(path: string): Promise<MartinaiseError[]> {
         soil.stdin.write("\n");
       } else {
         soil.stdin.write(JSON.stringify({ type: "read_file", success: false }));
+        soil.stdin.write("\n");
       }
     }
     if (message.type == "error") {
