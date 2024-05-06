@@ -53,7 +53,7 @@ compiler/5/martinaise: compiler/5/compiler.mar compiler/4/martinaise compiler/4/
 compiler/6/martinaise.soil: compiler/5/martinaise compiler/6/stdlib.mar compiler/6/compiler.mar
 	@echo "# Martinaise 6"
 	cd compiler/6; \
-		../5/martinaise soil compiler > martinaise.soil
+		../5/martinaise soil compiler.mar > martinaise.soil
 
 skip-zig:
 	cd compiler/1; \

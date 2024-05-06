@@ -47,7 +47,7 @@
 |
 | Plural forms have an "s" at the end (as in "args" or "defs").
 
-import stdlib
+import stdlib.mar
 
 | Compatibility With Editor Tooling  
 | To enable further tooling such as editor extensions to be built, the compiler
