@@ -95,7 +95,7 @@ function workspaceFolder(): string | undefined {
 /// system.
 async function readSource(uri: vs.Uri): Promise<string | null> {
   for (const doc of vs.workspace.textDocuments)
-    if (doc.uri.toString() == uri.toString()) return doc.getText(); else console.log("URIs don't match: " + doc.uri + " and " + uri);
+    if (doc.uri.toString() == uri.toString()) return doc.getText();
   try {
     const bytes = await vs.workspace.fs.readFile(uri);
     return new TextDecoder("utf8").decode(bytes);
