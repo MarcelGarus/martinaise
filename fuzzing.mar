@@ -8,11 +8,14 @@ fun main(): Never {
 fun fuzz_add() {
   var rng = prng()
   for i in 0..10 do {
-    var left  = generator[Int](rng.&).generate()
-    var right = generator[Int](rng.&).generate()
+    var checkpoint = heap_checkpoint()
+    var rng = rng.&.child()
+    var left  = generator[Int](rng.&.child().&).generate()
+    var right = generator[Int](rng.&.child().&).generate()
     print("{left} + {right}")
     var res = left + right
     println(" = {res}")
+    free_everything_after(checkpoint)
   }
 }
 

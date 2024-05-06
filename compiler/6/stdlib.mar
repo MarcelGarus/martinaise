@@ -663,6 +663,7 @@ fun clamp[T](a: T, low: T, high: T): T { max(low, min(high, a)) }
 | TODO: The implementation doesn't work correctly. Probably because of overflow.
 struct Prng { a: Int, b: Int, c: Int, d: Int }
 fun prng(): Prng { Prng { a = 1, b = 2, c = 3, d = 4 } }
+fun prng(seed: Int): Prng { Prng { a = seed, b = 2, c = 3, d = 4 } }
 fun rotl(x: Int, k: Int): Int { {x << k}.or(x >> {64 - k}) }
 fun next_int(rng: &Prng): Int {
   var res = {rng.a + rng.d}.rotl(23) + rng.a
@@ -675,6 +676,7 @@ fun next_int(rng: &Prng): Int {
   rng.d = rng.d.rotl(45)
   res
 }
+fun child(rng: &Prng): Prng { prng(rng.next_int()) }
 
 | Type Information  
 | Using some builtin functions that only take type arguments (no value
@@ -816,8 +818,8 @@ fun add_stride_offset[T](ref: &T, index: Int): &T {
 
 var heap_head = end_of_initial_data()
 fun end_of_initial_data(): Address asm {
-  move a sp load a a | return value address
-  movei b _end_of_initial_data
+  move a sp load a a           | return value address
+  movei b _end_of_initial_data | defined by the compiler
   store a b
   ret
 }
@@ -829,7 +831,7 @@ fun malloc(size: Int, alignment: Int): Address {
 fun malloc_impl(size: Int, alignment: Int): Address asm {
   moveib a 8  add a sp load a a | size
   moveib b 16 add b sp load b b | alignment
-  movei c heap_head load c c | heap_head
+  movei c heap_head load c c    | heap_head
   moveib d 1 cmp b d isequal cjump .bump_head
   moveib d 2 cmp b d isequal cjump .align
   moveib d 4 cmp b d isequal cjump .align
@@ -845,16 +847,19 @@ fun malloc_impl(size: Int, alignment: Int): Address asm {
 }
 
 struct Checkpoint { heap_head: Address }
-fun heap_checkpoint(): Checkpoint asm {
-  | use malloc
-  movei a malloc.head load a a
+fun heap_checkpoint(): Checkpoint {
+  heap_head
+  heap_checkpoint_impl()
+}
+fun heap_checkpoint_impl(): Checkpoint asm {
+  movei a heap_head load a a
   move b sp load b b | return value address
   store b a ret
 }
 fun free_everything_after(checkpoint: Checkpoint) asm {
   | use malloc
   moveib a 8 add a sp load a a | checkpoint.heap_head
-  movei b malloc.head load b b | malloc.head
+  movei b heap_head load b b   | heap_head
   cmp b a isgreaterequal cjump .done move b a .done: ret
 }
 
@@ -1638,6 +1643,25 @@ fun write_bytes[W](self: &BufferedWriter[W], bytes: Slice[Byte]) {
     else self.inner.write_bytes(bytes)
   }
 }
+
+| Fuzzing  
+
+struct Generator[T] { rng: &Prng }
+fun generator[T](rng: &Prng): Generator[T] { Generator[T] { rng } }
+
+| Generator implementations for specific types:
+
+fun generate(generator: Generator[Str]): Str { "test" }
+fun generate(generator: Generator[Int]): Int { generator.rng.next_int() % 100 }
+fun generate[T](generator: Generator[Vec[T]]): Vec[T] {
+  var len = generator.rng.next_int().abs() % 10
+  var vec = vec[T]() | todo: allocate enough capacity upfront
+  for i in 0..len do vec.&.push(generator[T](generator.rng).generate())
+  vec
+}
+| Todo: Implement fallback keyword. If multiple functions match, the fallback
+| function does not apply.
+| fallback fun generate[T](generator: Generator[T]): T { ... }
 
 | Tuples  
 fun tuple[A, B](a: A, b: B): Tuple2[A, B] { Tuple2 { a, b } }

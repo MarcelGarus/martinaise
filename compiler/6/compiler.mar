@@ -4002,7 +4002,7 @@ fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, Int] {
 }
 
 fun assemble[Assembler](
-  mono: Mono, layouts: Map[Type, MemLayout],
+  mono: Mono, entry_point: Str, layouts: Map[Type, MemLayout],
   asm: &Assembler, data: &Vec[Byte],
 ) {
   asm.label("_start")
@@ -4012,10 +4012,10 @@ fun assemble[Assembler](
     asm.store(Reg.sp, Reg.a)
     asm.call("{global}.init")
   }
-  asm.label("_run_main")
+  asm.label("_entry_point")
   asm.moveib(Reg.a, 0.lower_byte())
   asm.store(Reg.sp, Reg.a)
-  asm.call("main()")
+  asm.call(entry_point)
 
   var arg_layouts = map[Str, MemLayout]() | fun signature to arg layouts
   for fun_ in mono.funs do {
@@ -4439,10 +4439,10 @@ fun or(asm: &Recipe, a: Reg, b: Reg)     { asm."  or {a} {b}\n" }
 fun xor(asm: &Recipe, a: Reg, b: Reg)    { asm."  xor {a} {b}\n" }
 fun negate(asm: &Recipe, a: Reg)         { asm."  negate {a}\n" }
 
-fun recipe(mono: Mono, layouts: Map[Type, MemLayout]): Str {
+fun recipe(mono: Mono, entry_point: Str, layouts: Map[Type, MemLayout]): Str {
   var asm = Recipe { builder = string_builder() }
   var data = vec[Byte]()
-  mono.assemble(layouts, asm.&, data.&)
+  mono.assemble(entry_point, layouts, asm.&, data.&)
   "{asm.builder}"
 }
 
@@ -4595,7 +4595,9 @@ fun fix_patches(asm: &ByteCode) {
   asm.patches.len = 0
 }
 
-fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Slice[Byte] {
+fun soil(
+  mono: Mono, entry_point: Str, layouts: Map[Type, MemLayout]
+): Slice[Byte] {
   var byte_code = ByteCode {
     bytes = vec[Byte](),
     last_label = "",
@@ -4604,7 +4606,7 @@ fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Slice[Byte] {
     patches = vec[Patch](),
   }
   var data = vec[Byte]()
-  mono.assemble(layouts, byte_code.&, data.&)
+  mono.assemble(entry_point, layouts, byte_code.&, data.&)
   byte_code.&.fix_patches()
 
   var out = vec[Byte]()
@@ -4642,6 +4644,119 @@ fun soil(mono: Mono, layouts: Map[Type, MemLayout]): Slice[Byte] {
 
 fun is_fuzzable(fun_: AstFun): Bool { fun_.type_args.is_empty() }
 
+fun generate_fuzzer_for(ast: &Ast, fun_: AstFun) {
+  var src = source("fuzzer", 0..0)
+  var opening_paren = "(" @ src
+
+  | Generate the body of the fuzzer loop. An rng: Prng is in scope.
+  var fuzzing_iteration = vec(
+    var_("checkpoint" @ src,
+      AstExpr.name("heap_checkpoint" @ src).call(opening_paren)),
+    var_("rng" @ src,
+      AstExpr.name("rng" @ src).member("&" @ src)
+        .member("child" @ src).call(opening_paren)),
+  )
+
+  | Generate args.
+  var args = vec[AstExpr]()
+  for arg in fun_.args.iter().enumerate() do {
+    fuzzing_iteration.&.push(var_("arg_{arg.index}" @ src,
+      AstExpr.name("generator" @ src).call(
+        some(vec(arg.item.type)),
+        vec(AstExpr.name("rng" @ src).member("&" @ src)
+          .member("child" @ src).call(opening_paren).member("&" @ src)),
+        opening_paren
+      ).member("generate" @ src).call(opening_paren)
+    ))
+    args.&.push(AstExpr.name("arg_{arg.index}" @ src))
+  }
+
+  | Print call string.
+  fuzzing_iteration.&.push(var_("string_builder" @ src,
+    AstExpr.name("string_builder" @ src).call(opening_paren)))
+  fuzzing_iteration.&.push(AstExpr.name("string_builder" @ src)
+    .member("&" @ src)
+    .member("write" @ src)
+    .call(vec(AstExpr.str("{fun_.name}(")), opening_paren))
+  for arg in fun_.args.iter().enumerate() do {
+    if arg.index > 0 then {
+      fuzzing_iteration.&.push(AstExpr.name("string_builder" @ src)
+        .member("&" @ src)
+        .member("write" @ src).call(vec(AstExpr.str(", ")), opening_paren))
+    }
+    fuzzing_iteration.&.push(AstExpr.name("string_builder" @ src)
+      .member("&" @ src)
+      .member("write" @ src)
+      .call(vec(AstExpr.name("arg_{arg.index}" @ src)), opening_paren)
+    )
+  }
+  fuzzing_iteration.&.push(AstExpr.name("string_builder" @ src)
+    .member("&" @ src)
+    .member("write" @ src).call(vec(AstExpr.str(") = ")), opening_paren))
+  fuzzing_iteration.&.push(AstExpr.name("print" @ src)
+    .call(vec(AstExpr.name("string_builder" @ src)), opening_paren))
+
+  | Do the call.
+  fuzzing_iteration.&.push(var_("result" @ src,
+    AstExpr.name(fun_.name.str @ src).call(args, opening_paren)))
+
+  | Display the result.
+  fuzzing_iteration.&.push(AstExpr.name("println" @ src)
+    .call(vec(AstExpr.name("result" @ src)), opening_paren))
+
+  | Free everything allocated since loop start.
+  fuzzing_iteration.&.push(AstExpr.name("free_everything_after" @ src)
+    .call(vec(AstExpr.name("checkpoint" @ src)), opening_paren))
+
+  var fuzzer = AstFun {
+    name = "$fuzzer" @ src,
+    type_args = vec[AstStr](),
+    args = vec[AstFunArg](),
+    returns = type("Nothing"),
+    kind = AstFunKind.body(vec(
+      var_("rng" @ src, AstExpr.name("prng" @ src).call(opening_paren)),
+      AstExpr.loop_(AstLoop {
+        keyword = "loop" @ src,
+        body = AstExpr.block(fuzzing_iteration).put_on_heap(),
+      })
+    )),
+  }
+  eprintln(fuzzer)
+  ast.funs.&.put("$fuzzer", vec(fuzzer))
+
+  var context = context()
+  var mono = Mono {
+    type_defs = map[Type, MonoTypeDef](),
+    globals = map[Str, MonoFun](),
+    globals_init_order = vec[Str](),
+    funs = map[Str, MonoFun](),
+  }
+
+  type("Never").compile(map[Str, Type](), ast.*, mono.&)
+    or panic("Never didn't compile.")
+  type("Nothing").compile(map[Str, Type](), ast.*, mono.&)
+    or panic("Nothing didn't compile.")
+
+  var fuzzer_signature =
+    switch fuzzer.compile(map[Str, Type](), context.&, ast.*, mono.&)
+    case ok(signature) signature
+    case error(error)
+      panic("Monoing failed: {error.title}\n{error.description}")
+
+  print_status("Memory layouting")
+  var layouts = mono.type_defs.mem_layout_all_types()
+
+  print_status("Monoing reflection functions")
+  mono.&.compile_builtins(layouts)
+
+  print_status("Assembling Soil binary")
+  var soil = mono.soil("$fuzzer()", layouts)
+  var buffered = stdout.buffered_writer(1024).&
+  buffered.write_bytes(soil)
+  buffered.flush()
+  print_status("Compiled to Soil binary ({soil.len} bytes). Good fuzzing!")
+}
+
 | Command Line Interface  
 | The command line interface which you use to interact with the Martinaise
 | compiler.
@@ -4674,7 +4789,7 @@ fun print_usage_info[W](writer: W) {
 
 | Runs the pipeline that matches the command. Errors are handled internally
 | (stuff is printed to stderr). Returns whether it ran through successfully.
-fun run_pipeline(command: Command, file_path: Str): Bool {
+fun run_pipeline(command: Command, file_path: Str, extra_arg: Maybe[Str]): Bool {
   var ast =
     switch parse_project(file_path)
     case ok(ast) ast
@@ -4699,7 +4814,30 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
   }
 
   if command is fuzz then {
-    todo()
+    var signature = extra_arg or {
+      eprintln("Usage: martinaise fuzz <file> <function signature>")
+      return false
+    }
+    var name = {
+      var end = 0
+      loop
+        if end >= signature.len
+        then break
+        else if signature.get(end) == #[ or signature.get(end) == #(
+          then break
+          else end = end + 1
+      signature.substr(0..end)
+    }
+    var fun_ = none[AstFun]()
+    if ast.funs.get_maybe(name) is some(funs) then
+      for f in funs do
+        if "{f.stripped_signature()}" == signature then fun_ = some(f)
+    var fun_ = fun_ or {
+      eprintln("There is no function with the signature \"{signature}\".")
+      return false
+    }
+    ast.&.generate_fuzzer_for(fun_)
+    return true
   }
 
   print_status("Monoing")
@@ -4722,7 +4860,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
 
   if command is recipe then {
     print_status("Assembling recipe")
-    var recipe = mono.recipe(layouts)
+    var recipe = mono.recipe("main()", layouts)
     print_status("Writing recipe")
     var buffered = stdout.buffered_writer(1024).&
     buffered.writeln(recipe)
@@ -4733,7 +4871,7 @@ fun run_pipeline(command: Command, file_path: Str): Bool {
 
   if command is soil then {
     print_status("Assembling Soil binary")
-    var soil = mono.soil(layouts)
+    var soil = mono.soil("main()", layouts)
     var buffered = stdout.buffered_writer(1024).&
     buffered.write_bytes(soil)
     buffered.flush()
@@ -4767,6 +4905,6 @@ fun main(): Never {
   | TODO: throw if additional args are given
   | TODO: support -- and additional args for the run command
 
-  var was_successful = run_pipeline(command, path)
+  var was_successful = run_pipeline(command, path, args.get_maybe(3))
   exit(if was_successful then 0 else 1)
 }
