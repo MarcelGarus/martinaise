@@ -4761,13 +4761,14 @@ fun generate_fuzzer_for(ast: &Ast, fun_: AstFun) {
 | The command line interface which you use to interact with the Martinaise
 | compiler.
 
-enum Command { help, ast, mono, recipe, soil, funs, fuzz, analyze }
+enum Command { help, ast, mono, recipe, soil, run, funs, fuzz, analyze }
 fun parse_command(command: Str): Maybe[Command] {
   if command == "help"    then return some(Command.help)
   if command == "ast"     then return some(Command.ast)
   if command == "mono"    then return some(Command.mono)
   if command == "recipe"  then return some(Command.recipe)
   if command == "soil"    then return some(Command.soil)
+  if command == "run"     then return some(Command.run)
   if command == "funs"    then return some(Command.funs)
   if command == "fuzz"    then return some(Command.fuzz)
   if command == "analyze" then return some(Command.analyze)
@@ -4783,7 +4784,9 @@ fun print_usage_info[W](writer: W) {
     '  mono     prints the monomorphized code\n
     '  recipe   compiles to a Soil recipe\n
     '  soil     compiles to a Soil binary\n
+    '  run      compiles and runs the file\n
     '  funs     prints all functions\n
+    '  fuzz     fuzzes the given function\n
     '  analyze  for tooling: analyzes a file\n"
 }
 
@@ -4880,6 +4883,13 @@ fun run_pipeline(command: Command, file_path: Str, extra_arg: Maybe[Str]): Bool 
   }
 
   if command is analyze then return true
+
+  if command is run then {
+    print_status("Assembling Soil binary.")
+    var soil = mono.soil("main()", layouts)
+    print_status("Compiled ({soil.len} bytes). Running!")
+    exec(soil)
+  }
 
   unreachable()
 }
