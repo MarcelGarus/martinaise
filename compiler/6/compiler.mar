@@ -126,6 +126,10 @@ struct Source { file: Str, span: Range[Int] }
 
 fun source(file: Str, span: Range[Int]): Source { Source { file, span } }
 
+fun write[W](writer: W, source: Source) {
+  writer."{source.file} {source.span.start} – {source.span.end}"
+}
+
 | Errors  
 | When an error occurs, we need to highlight the faulty piece of code. Depending
 | on the medium, this might either result in a message in the terminal showing
@@ -2423,7 +2427,7 @@ fun write[W](writer: W, name: Str, fun_: MonoFun) {
       case str(str) writer."\"{str}\""
     }
     for statement in body.statements do
-      writer."\n  {statement.statement}"
+      writer."\n  {"{statement.statement}".pad_right(40)} {statement.source}"
   }
   case asm_(code) writer.write(code)
 }

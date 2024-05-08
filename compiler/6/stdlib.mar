@@ -1233,6 +1233,7 @@ fun pad_right(str: Str, len: Int, char: Char): Str {
   loop if string.len() < len then string.write(char) else break
   string.to_str()
 }
+fun pad_right(str: Str, len: Int): Str { str.pad_right(len, space) }
 
 | Range  
 | Ranges have an inclusive start and exclusive end value.
