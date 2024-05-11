@@ -3980,6 +3980,9 @@ fun compile_reflection(type: Type, out: &CompileTypeFun): MonoExpr {
 |
 | This way, the assembly instructions are type checked in Martinaise (for
 | example, you can't add a Int to a Reg).
+| 
+| The compiler can also call set_source() to change which source emitted
+| instructions are attributed to.
 
 fun mangle(name: Str): Str {
   var contains_dot = false
@@ -4009,6 +4012,7 @@ fun assemble[Assembler](
   mono: Mono, entry_point: Str, layouts: Map[Type, MemLayout],
   asm: &Assembler, data: &Vec[Byte],
 ) {
+  asm.set_source(source("_setup", 0..0))
   asm.label("_start")
   asm.push(Reg.a)
   for global in mono.globals_init_order do {
@@ -4177,6 +4181,8 @@ fun assemble_body[Assembler](
       var statement = statement.statement
 
       if statement is label then {} else asm.comment("{statement}")
+
+      asm.set_source(source)
 
       switch statement
       case label(label) asm.label("{label}")
@@ -4406,6 +4412,8 @@ fun disambiguated_label(asm: &Recipe, prefix: Str): Str {
   label
 }
 
+fun set_source(asm: &Recipe, source: Source) {}
+
 | Instructions
 fun nop(asm: &Recipe)                    { asm."  nop\n" }
 fun panic(asm: &Recipe)                  { asm."  panic\n" }
@@ -4455,10 +4463,12 @@ fun recipe(mono: Mono, entry_point: Str, layouts: Map[Type, MemLayout]): Str {
 
 struct ByteCode {
   bytes: Vec[Byte],
+  sources: Vec[Source],
   last_label: Str,
   labels: Vec[Str],
   labels_to_pos: Map[Str, Int],
   patches: Vec[Patch],
+  current_source: Source,
 }
 struct Patch { label: Str, where: Int }
 
@@ -4510,10 +4520,19 @@ fun overwrite_int(vec: &Vec[Byte], pos: Int, n: Int) {
   vec.get_ref(pos + 7).* = {n / 16#100000000000000 & 16#ff}.lower_byte()
 }
 
-fun emit(asm: &ByteCode, byte: Byte) { asm.bytes.&.push(byte) }
-fun emit(asm: &ByteCode, word: Int) { asm.bytes.&.push_word(word) }
+fun emit(asm: &ByteCode, byte: Byte) {
+  asm.bytes.&.push(byte)
+  asm.sources.&.push(asm.current_source)
+}
+fun emit(asm: &ByteCode, word: Int) {
+  asm.bytes.&.push_word(word)
+  for i in 0..8 do asm.sources.&.push(asm.current_source)
+}
 fun emit(asm: &ByteCode, bytes: Slice[Byte]) {
-  for byte in bytes do asm.bytes.&.push(byte)
+  for byte in bytes do {
+    asm.bytes.&.push(byte)
+    asm.sources.&.push(asm.current_source)
+  }
 }
 fun emit(asm: &ByteCode, a: Reg) { asm.emit(a.to_bits()) }
 fun emit(asm: &ByteCode, a: Reg, b: Reg) {
@@ -4552,6 +4571,10 @@ fun disambiguated_label(asm: &ByteCode, prefix: Str): Str {
   var label = "{prefix}.{asm.bytes.len()}"
   asm.label(label)
   label
+}
+
+fun set_source(asm: &ByteCode, source: Source) {
+  asm.current_source = source
 }
 
 | Instructions
@@ -4604,10 +4627,12 @@ fun soil(
 ): Slice[Byte] {
   var byte_code = ByteCode {
     bytes = vec[Byte](),
+    sources = vec[Source](),
     last_label = "",
     labels = vec[Str](),
     labels_to_pos = map[Str, Int](),
     patches = vec[Patch](),
+    current_source = source("_nowhere", 0..0),
   }
   var data = vec[Byte]()
   mono.assemble(entry_point, layouts, byte_code.&, data.&)
