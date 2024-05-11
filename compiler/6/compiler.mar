@@ -260,7 +260,7 @@ struct AstFun {
 }
 struct AstFunArg { name: AstStr, type: Type }
 enum AstFunKind {
-  builtin: AstBuiltinDots, body: Vec[AstExpr], asm_: Vec[Instruction]
+  builtin: AstBuiltinDots, body: Vec[AstExpr], asm_: Vec[AstInstruction]
 }
 struct AstBuiltinDots { dots: AstStr }
 enum AstExpr {
@@ -307,8 +307,8 @@ struct AstContinue { keyword: AstStr }
 struct AstReturn { keyword: AstStr, value: &AstExpr }
 struct AstTry { value: &AstExpr, question_mark: AstStr }
 
-struct Instruction { kind: InstructionKind, mnemonic: AstStr }
-enum InstructionKind {
+struct AstInstruction { kind: AstInstructionKind, mnemonic: AstStr }
+enum AstInstructionKind {
   label: AstStr, | Not really an instruction, but meh.
   nop,
   panic,
@@ -513,7 +513,7 @@ fun write[W](writer: W, indent: Indent, expr: AstExpr) {
 }
 fun write[W](writer: W, arg: AstFunArg) { writer."{arg.name}: {arg.type}" }
 
-fun write[W](writer: W, instruction: Instruction) {
+fun write[W](writer: W, instruction: AstInstruction) {
   switch instruction.kind
   case label(label) writer."{label}:"
   case nop writer."nop"
@@ -1418,71 +1418,71 @@ fun parse_asm_byte(parser: &Parser): Result[Byte, Str] {
   ok[Byte, Str](num.lower_byte())
 }
 
-fun parse_instruction(parser: &Parser): Result[Maybe[Instruction], Str] {
-  var name = parser.parse_asm_name() or return no_match[Instruction]()
+fun parse_instruction(parser: &Parser): Result[Maybe[AstInstruction], Str] {
+  var name = parser.parse_asm_name() or return no_match[AstInstruction]()
   if parser.consume_prefix(":") is some then
-    return parsed(Instruction {
-      kind = InstructionKind.label(name), mnemonic = name
+    return parsed(AstInstruction {
+      kind = AstInstructionKind.label(name), mnemonic = name
     })
   var kind = {
     var name = name.str
-    if name == "nop" then InstructionKind.nop
-    else if name == "panic" then InstructionKind.panic
-    else if name == "move" then InstructionKind.move(
+    if name == "nop" then AstInstructionKind.nop
+    else if name == "panic" then AstInstructionKind.panic
+    else if name == "move" then AstInstructionKind.move(
       parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "movei" then InstructionKind.movei(
+    else if name == "movei" then AstInstructionKind.movei(
       parser.parse_reg()? & parser.parse_asm_word()?)
-    else if name == "moveib" then InstructionKind.moveib(
+    else if name == "moveib" then AstInstructionKind.moveib(
       parser.parse_reg()? & parser.parse_asm_byte()?)
-    else if name == "load" then InstructionKind.load(
+    else if name == "load" then AstInstructionKind.load(
       parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "loadb" then InstructionKind.loadb(
+    else if name == "loadb" then AstInstructionKind.loadb(
       parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "store" then InstructionKind.store(
+    else if name == "store" then AstInstructionKind.store(
       parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "storeb" then InstructionKind.storeb(
+    else if name == "storeb" then AstInstructionKind.storeb(
       parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "push" then InstructionKind.push(parser.parse_reg()?)
-    else if name == "pop" then InstructionKind.pop(parser.parse_reg()?)
-    else if name == "jump" then InstructionKind.jump(
-      parser.parse_asm_name() or return bad_input[Instruction](
+    else if name == "push" then AstInstructionKind.push(parser.parse_reg()?)
+    else if name == "pop" then AstInstructionKind.pop(parser.parse_reg()?)
+    else if name == "jump" then AstInstructionKind.jump(
+      parser.parse_asm_name() or return bad_input[AstInstruction](
         "Expected a label to jump to."))
-    else if name == "cjump" then InstructionKind.cjump(
-      parser.parse_asm_name() or return bad_input[Instruction](
+    else if name == "cjump" then AstInstructionKind.cjump(
+      parser.parse_asm_name() or return bad_input[AstInstruction](
         "Expected a label to cjump to."))
-    else if name == "call" then InstructionKind.call(
-      parser.parse_asm_name() or return bad_input[Instruction](
+    else if name == "call" then AstInstructionKind.call(
+      parser.parse_asm_name() or return bad_input[AstInstruction](
         "Expected a label to call."))
-    else if name == "ret" then InstructionKind.ret
-    else if name == "syscall" then InstructionKind.syscall(
+    else if name == "ret" then AstInstructionKind.ret
+    else if name == "syscall" then AstInstructionKind.syscall(
       parser.parse_asm_byte()?)
-    else if name == "cmp" then InstructionKind.cmp(
+    else if name == "cmp" then AstInstructionKind.cmp(
       parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "isequal" then InstructionKind.isequal
-    else if name == "isless" then InstructionKind.isless
-    else if name == "isgreater" then InstructionKind.isgreater
-    else if name == "islessequal" then InstructionKind.islessequal
-    else if name == "isgreaterequal" then InstructionKind.isgreaterequal
-    else if name == "add" then InstructionKind.add(
+    else if name == "isequal" then AstInstructionKind.isequal
+    else if name == "isless" then AstInstructionKind.isless
+    else if name == "isgreater" then AstInstructionKind.isgreater
+    else if name == "islessequal" then AstInstructionKind.islessequal
+    else if name == "isgreaterequal" then AstInstructionKind.isgreaterequal
+    else if name == "add" then AstInstructionKind.add(
       parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "sub" then InstructionKind.sub(
+    else if name == "sub" then AstInstructionKind.sub(
       parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "mul" then InstructionKind.mul(
+    else if name == "mul" then AstInstructionKind.mul(
       parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "div" then InstructionKind.div(
+    else if name == "div" then AstInstructionKind.div(
       parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "rem" then InstructionKind.rem(
+    else if name == "rem" then AstInstructionKind.rem(
       parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "and" then InstructionKind.and(
+    else if name == "and" then AstInstructionKind.and(
       parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "or" then InstructionKind.or(
+    else if name == "or" then AstInstructionKind.or(
       parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "xor" then InstructionKind.xor(
+    else if name == "xor" then AstInstructionKind.xor(
       parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "negate" then InstructionKind.negate(parser.parse_reg()?)
-    else return bad_input[Instruction]("Unknown command {name}.")
+    else if name == "negate" then AstInstructionKind.negate(parser.parse_reg()?)
+    else return bad_input[AstInstruction]("Unknown command {name}.")
   }
-  parsed(Instruction { kind, mnemonic = name })
+  parsed(AstInstruction { kind, mnemonic = name })
 }
 
 fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
@@ -1515,7 +1515,7 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
     if parser.consume_prefix("\{ ... }") is some(dots) then
       AstFunKind.builtin(AstBuiltinDots { dots })
     else if parser.consume_prefix("asm \{") is some then {
-      var instructions = vec[Instruction]()
+      var instructions = vec[AstInstruction]()
       loop instructions.&.push(parser.parse_instruction()? or break)
       parser.consume_prefix("}") or return bad_input[AstFun](
         "Expected an instruction or closing brace.")
@@ -2340,7 +2340,11 @@ struct MonoFun {
   kind: MonoFunKind,
 }
 
-enum MonoFunKind { builtin: AstStr, body: MonoFunBody, asm_: Vec[Instruction] }
+enum MonoFunKind {
+  builtin: AstStr,
+  body: MonoFunBody,
+  asm_: Vec[AstInstruction],
+}
 struct MonoFunBody {
   slots: Vec[MonoSlot],
   statements: Vec[MonoStatementAndSource],
@@ -2745,7 +2749,7 @@ fun compile(
   | TODO: explain
   mono.funs.&.put(signature, MonoFun {
     type_args, arg_types, return_type,
-    kind = MonoFunKind.asm_(vec[Instruction]()),
+    kind = MonoFunKind.asm_(vec[AstInstruction]()),
   })
 
   var kind =
@@ -4400,41 +4404,20 @@ struct Assembler_ {
   current_source: Source,
 }
 struct SoilBinary {
-  instructions: Vec[Tuple2[Instruction, Source]],
+  instructions: Vec[Tuple2[AstInstruction, Source]],
   initial_memory: Vec[Byte],
   labels: Vec[Str],
   labels_to_pos: Map[Str, Int],
 }
 
 | Instrumentation  
-| For fuzzing, the binary is instrumented to track how near the execution got to
-| a desired place.
-|
-| To do that, the compiler analyzes the control flow graph of the program and
-| calculates some metrics:
-|
-| - Which instructions can reach a given instruction (excluding returns)?
-| - What's the minimal amount of cjumps that need to happen to reach a return?
-|
-| first calculates which instructions reach a given instruction, and then what's
-| the minimal amount of cjumps that need to happen to reach a desired target.
-| 
-| index | code         | come | cjumps | cjumps
-|       |              | from | to ret | to target
-| ------| -------------|------|--------|------
-|     0 |   call foo   | -    | -      | 2
-|     1 |   cjump baz  | -    | -      | 1
-|       |   ...        |      |        | 
-|       | foo:         |      |        | 
-|     2 |   cmp a b    | -    | 1      | 
-|     3 |   cjump .bar | 2    | 1      | 
-|     4 |   jump .end  | 3    | 0      | 
-|       | .bar:        |      |        | 
-|     5 |   panic      | 3    | -      | 
-|       | .end:        |      |        | 
-|     6 |   ret        | 4    | 0      | 
-|       | baz:         |      |        | 
-|     7 |   <target>   | 1    | -      | 0
+| For fuzzing, we want to exercise many different code paths. If we find an
+| input that runs a new path, we want to focus on that input and mutate it to
+| find similar ones.
+| To do that, the compiler needs to track the coverage. I chose to track the
+| branch coverage, aka the information which cjumps are taken. To make tracking
+| efficient, the compiler inserts some instructions before every cjump
+| instruction, updating a global bitset of which cjumps were taken.
 
 fun instrument(bin: SoilBinary) {
   | For each instruction, which other instructions jump to it
