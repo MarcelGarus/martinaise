@@ -11,8 +11,8 @@ export function activate(context: vs.ExtensionContext) {
   diagnosticCollection = vs.languages.createDiagnosticCollection("martinaise");
   context.subscriptions.push(diagnosticCollection);
 
-  vs.window.onDidChangeVisibleTextEditors(() => update());
-  vs.workspace.onDidChangeTextDocument(() => update());
+  vs.window.onDidChangeVisibleTextEditors(() => onlyRunOneAtATime(update));
+  vs.workspace.onDidChangeTextDocument(() => onlyRunOneAtATime(update));
 
   context.subscriptions.push(
     vs.languages.registerCodeLensProvider(
@@ -31,13 +31,36 @@ export function deactivate(): Thenable<void> | undefined {
   return undefined;
 }
 
-function update() {
+// Updates can be triggered very frequently (on every keystroke), but they can
+// take long – for example, when editing the Martinaise compiler itself, simply
+// analyzing the files takes some time. Thus, here we make sure that only one
+// update runs at a time.
+
+var newestScheduled = performance.now();
+var currentRun = Promise.resolve(null);
+
+async function onlyRunOneAtATime(callback: () => Promise<void>) {
+  console.log("Scheduling update");
+  var myTime = performance.now();
+  newestScheduled = myTime;
+  await currentRun;
+  if (newestScheduled != myTime) return; // a newer update exists and will run
+  currentRun = new Promise(async (resolve) => {
+    await callback();
+    resolve(null);
+  });
+}
+
+async function update() {
   console.log("Updating");
+  let promises = [];
   for (const editor of vs.window.visibleTextEditors) {
     const uri = editor.document.uri.toString();
     if (!uri.endsWith(".mar")) continue;
 
-    void check(uri).then((errors) => {
+    const checked = check(uri);
+    promises.push(checked);
+    checked.then((errors) => {
       diagnosticCollection.clear();
       const diagnosticMap = new Map<string, vs.Diagnostic[]>();
       for (const error of errors) {
@@ -62,6 +85,7 @@ function update() {
       );
     });
   }
+  await Promise.all(promises);
 }
 
 /// Returns the source code of the given URI. Prefers the content of open text
