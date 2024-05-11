@@ -4392,6 +4392,96 @@ fun copy_memory[Assembler](
   }
 }
 
+| Assembler  
+
+struct Assembler_ {
+  last_label: Str,
+  patches: Vec[Patch],
+  current_source: Source,
+}
+struct SoilBinary {
+  instructions: Vec[Tuple2[Instruction, Source]],
+  initial_memory: Vec[Byte],
+  labels: Vec[Str],
+  labels_to_pos: Map[Str, Int],
+}
+
+| Instrumentation  
+| For fuzzing, the binary is instrumented to track how near the execution got to
+| a desired place.
+|
+| To do that, the compiler analyzes the control flow graph of the program and
+| calculates some metrics:
+|
+| - Which instructions can reach a given instruction (excluding returns)?
+| - What's the minimal amount of cjumps that need to happen to reach a return?
+|
+| first calculates which instructions reach a given instruction, and then what's
+| the minimal amount of cjumps that need to happen to reach a desired target.
+| 
+| index | code         | come | cjumps | cjumps
+|       |              | from | to ret | to target
+| ------| -------------|------|--------|------
+|     0 |   call foo   | -    | -      | 2
+|     1 |   cjump baz  | -    | -      | 1
+|       |   ...        |      |        | 
+|       | foo:         |      |        | 
+|     2 |   cmp a b    | -    | 1      | 
+|     3 |   cjump .bar | 2    | 1      | 
+|     4 |   jump .end  | 3    | 0      | 
+|       | .bar:        |      |        | 
+|     5 |   panic      | 3    | -      | 
+|       | .end:        |      |        | 
+|     6 |   ret        | 4    | 0      | 
+|       | baz:         |      |        | 
+|     7 |   <target>   | 1    | -      | 0
+
+fun instrument(bin: SoilBinary) {
+  | For each instruction, which other instructions jump to it
+  | (excluding returns).
+  var come_from = filled_slice(bin.instructions.len, vec[Int]())
+  for instruction in bin.instructions.iter().enumerate() do {
+    var index       = instruction.index
+    var instruction = instruction.value
+
+    switch instruction
+    case ret {}
+    case call(target) {
+      come_from.get_mut(target).push(index)
+      | var next = index + 1
+      | if next < bin.instructions.len then come_from.get_mut(next).push(index)
+    }
+    case jump(target) {
+      come_from.get_mut(target).push(index)
+    }
+    case cjump(target) {
+      come_from.get_mut(target).push(index)
+      var next = index + 1
+      if next < bin.instructions.len then come_from.get_mut(next).push(index)
+    }
+    default {
+      var next = index + 1
+      if next < bin.instructions.len then come_from.get_mut(next).push(index)
+    }
+  }
+
+  | For each instruction, the minimum amount of cjumps that need to be taken to
+  | reach the target.
+  var distances = filled_slice(bin.instructions.len, 999)
+  var queue = priority_queue[Int]() | prio = distance, item = instruction
+  queue.&.push(tuple(target, 0))
+  loop switch queue.take() case none break case some(tuple) {
+    var index    = tuple.x
+    var distance = tuple.y
+    if distances.get(index) <= distance then continue
+    distances
+  }
+}
+
+
+
+
+
 | Textual Recipe Assembler  
 | This backend produces textual Soil code (a "recipe").
 
