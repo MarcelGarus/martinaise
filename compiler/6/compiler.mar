@@ -57,44 +57,49 @@ import stdlib.mar
 
 var tooling_mode = false
 
+var sources = map[Str, Str]()
 fun read_source(path: Str): Result[Str, Str] {
-  ok[Str, Str](if tooling_mode then {
-    var obj = map[Str, Json]()
-    obj.&.put("type", Json.string("read_file"))
-    obj.&.put("path", Json.string(path))
-    println(Json.map(obj))
-    var response = stdin.read_line()
-      or return error[Str, Str]("Couldn't read from stdin.")
-    var response = response
-      or return error[Str, Str]("Stdin ended without response.")
-    var response = response.parse_json()
-      or return error[Str, Str]("Response was not JSON.")
-    var response =
-      switch response
-      case map(map) map
-      default return error[Str, Str]("Response was not a JSON map.")
-    var type = response.get_maybe("type")
-      or return error[Str, Str]("Response doesn't have a type.")
-    var type =
-      switch type
-      case string(str) str
-      default return error[Str, Str]("Response type is not a string.")
-    type == "read_file"
-      or return error[Str, Str]("Response wasn't of type read_file.")
-    var success = response.get_maybe("success")
-      or return error[Str, Str]("Response didn't have success field.")
-    var success =
-      switch success
-      case bool(s) s
-      default return error[Str, Str]("Response success isn't a bool.")
-    success or return error[Str, Str]("Couldn't read file.")
-    response.get_maybe("content")
-      or return error[Str, Str]("Response doesn't contain content.")
-  } else {
-    switch read_file(path)
-    case ok(content) content.to_str()
-    case error return error[Str, Str]("Couldn't read file.")
-  })
+  if sources.get_maybe(path) is some(content) then return ok[Str, Str](content)
+  var content =
+    if tooling_mode then {
+      var obj = map[Str, Json]()
+      obj.&.put("type", Json.string("read_file"))
+      obj.&.put("path", Json.string(path))
+      println(Json.map(obj))
+      var response = stdin.read_line()
+        or return error[Str, Str]("Couldn't read from stdin.")
+      var response = response
+        or return error[Str, Str]("Stdin ended without response.")
+      var response = response.parse_json()
+        or return error[Str, Str]("Response was not JSON.")
+      var response =
+        switch response
+        case map(map) map
+        default return error[Str, Str]("Response was not a JSON map.")
+      var type = response.get_maybe("type")
+        or return error[Str, Str]("Response doesn't have a type.")
+      var type =
+        switch type
+        case string(str) str
+        default return error[Str, Str]("Response type is not a string.")
+      type == "read_file"
+        or return error[Str, Str]("Response wasn't of type read_file.")
+      var success = response.get_maybe("success")
+        or return error[Str, Str]("Response didn't have success field.")
+      var success =
+        switch success
+        case bool(s) s
+        default return error[Str, Str]("Response success isn't a bool.")
+      success or return error[Str, Str]("Couldn't read file.")
+      response.get_maybe("content")
+        or return error[Str, Str]("Response doesn't contain content.")
+    } else {
+      switch read_file(path)
+      case ok(content) content.to_str()
+      case error return error[Str, Str]("Couldn't read file.")
+    }
+  sources.&.put(path, content)
+  ok[Str, Str](content)
 }
 
 | Terminal utilities  
