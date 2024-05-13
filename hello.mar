@@ -1,4 +1,6 @@
+import stdlib.mar
+
 fun main(): Never {
   println("Hello, world!")
-  exit(0:U8)
+  exit(0)
 }
