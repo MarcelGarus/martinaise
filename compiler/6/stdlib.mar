@@ -963,12 +963,13 @@ fun iter[T](slice: Slice[T]): Iter[T, _] {
 struct SliceIter[T] { slice: Slice[T], index: Int }
 fun next[T](iter: &Iter[T, SliceIter[T]]): Maybe[T] {
   var state = iter.state.&
-  var item =
-    if state.index < state.slice.len
-    then some(state.slice.get(state.index))
-    else none[T]()
-  state.index = state.index + 1
-  item
+  if state.index < state.slice.len
+  then {
+    var item = state.slice.get(state.index)
+    state.index = state.index + 1
+    some(item)
+  }
+  else none[T]()
 }
 
 fun rev_iter[T](slice: Slice[T]): Iter[T, _] {
