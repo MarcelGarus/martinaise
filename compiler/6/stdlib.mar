@@ -816,11 +816,11 @@ fun add_stride_offset[T](ref: &T, index: Int): &T {
 | system free all memory at once when the program ends. That simplifies things
 | for Martinaise code and generally leads to better runtime performance.
 
-var heap_head = end_of_initial_data()
-fun end_of_initial_data(): Address asm {
-  move a sp load a a           | return value address
-  movei b _end_of_initial_data | defined by the compiler
-  store a b
+var heap_head = end_of_initial_memory()
+fun end_of_initial_memory(): Address asm {
+  move b sp load b b          | return value address
+  call _end_of_initial_memory | defined by the compiler, moves end into a
+  store b a
   ret
 }
 
@@ -1647,6 +1647,7 @@ fun write_bytes[W](self: &BufferedWriter[W], bytes: Slice[Byte]) {
 
 | Executing compiled byte code  
 
+| TODO: remove from stdlib?
 fun exec(binary: Slice[Byte]): Never asm {
   moveib a 8  add a sp load a a | binary.data
   moveib b 16 add b sp load b b | binary.len

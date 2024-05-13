@@ -3670,7 +3670,9 @@ fun assemble[Assembler](
     fun_.assemble_body(signature, mono, layouts, arg_layouts, asm, data)
   }
 
-  asm.data_label("_end_of_initial_data", data.len)
+  asm.label("_end_of_initial_memory")
+  asm.smart_movei(Reg.a, data.len)
+  asm.ret()
 }
 
 fun smart_movei[Assembler](asm: &Assembler, reg: Reg, immediate: U64) {
