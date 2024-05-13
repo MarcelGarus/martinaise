@@ -4966,8 +4966,7 @@ var usage_info = "
   '  ast <file>         prints the abstract syntax tree\n
   '  mono <file>        prints the monomorphized code\n
   '  soil <file>        prints the soil instructions\n
-  '  recipe <file>      compiles to a Soil recipe\n
-  '  binary <file>      compiles to a Soil binary\n
+  '  compile <file>     compiles the file to a Soil binary\n
   '  run <file>         compiles and runs the file\n
   '  funs <file>        prints all functions\n
   '  fuzz <file> <fun>  fuzzes the given function\n
@@ -4978,8 +4977,7 @@ enum Command {
   ast: Str,
   mono: Str,
   soil: Str,
-  recipe: Str,
-  binary: Str,
+  compile: Str,
   run: Str,
   funs: Str,
   fuzz: FuzzCommand,
@@ -5010,18 +5008,11 @@ fun parse_args(): Result[Command, Str] {
     args.len == 3 or return error[Command, Str]("Usage: martinaise soil <file>")
     return ok[Command, Str](Command.soil(args.get(2)))
   }
-  | TODO: add command to print Soil
-  if command == "recipe" then {
-    | TODO: automatically write to file
+  if command == "compile" then {
+    | TODO: support specifying output file
     args.len == 3 or
-      return error[Command, Str]("Usage: martinaise recipe <file>")
-    return ok[Command, Str](Command.recipe(args.get(2)))
-  }
-  if command == "binary" then {
-    | TODO: automatically write to file
-    args.len == 3 or
-      return error[Command, Str]("Usage: martinaise binary <file>")
-    return ok[Command, Str](Command.binary(args.get(2)))
+      return error[Command, Str]("Usage: martinaise compile <file>")
+    return ok[Command, Str](Command.compile(args.get(2)))
   }
   if command == "run" then {
     | TODO: support passing args
@@ -5047,7 +5038,7 @@ fun parse_args(): Result[Command, Str] {
   error[Command, Str](usage_info)
 }
 
-fun wrong_usage(message: Str): Never { stderr."{message}" exit(1) }
+fun wrong_usage(message: Str): Never { stderr."{message}\n" exit(1) }
 fun error_occurred(error: Error): Never {
   if tooling_mode
   then println(error.to_json())
@@ -5071,12 +5062,15 @@ fun main(): Never {
     case ast(path) path
     case mono(path) path
     case soil(path) path
-    case recipe(path) path
-    case binary(path) path
+    case compile(path) path
     case run(path) path
     case funs(path) path
     case fuzz(fuzz) fuzz.path
     case analyze(path) path
+  if not(path.ends_with(".mar")) then {
+    eprintln("Expected a .mar file, got: {path}")
+    exit(1)
+  }
 
   var ast =
     switch parse_project(path)
@@ -5140,25 +5134,15 @@ fun main(): Never {
     case error(error) error_occurred(error)
   if command is soil then { println(soil) exit(0) }
 
-  if command is recipe then {
-    print_status("Assembling recipe")
-    var recipe = soil.to_recipe()
-    print_status("Writing recipe")
-    var buffered = stdout.buffered_writer(1024).&
-    buffered.writeln(recipe)
-    buffered.flush()
-    print_status("Compiled to recipe. Enjoy!")
-    exit(0)
-  }
-
-  if command is binary then {
+  if command is compile then {
     print_status("Assembling binary")
     var binary = soil.to_binary()
     print_status("Writing binary")
-    var buffered = stdout.buffered_writer(1024).&
-    buffered.write_bytes(binary)
-    buffered.flush()
-    print_status("Compiled to Soil binary ({binary.len} bytes). Enjoy!")
+    var out_file = path
+    out_file.&.trim_suffix(".mar")
+    out_file = "{out_file}.soil"
+    write_file(out_file, binary)
+    print_status("Compiled to {out_file} ({binary.len} bytes). Enjoy!")
     exit(0)
   }
 
