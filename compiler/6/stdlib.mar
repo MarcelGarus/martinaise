@@ -1665,15 +1665,6 @@ fun write_bytes[W](self: &BufferedWriter[W], bytes: Slice[Byte]) {
   }
 }
 
-| Executing compiled byte code  
-
-| TODO: remove from stdlib?
-fun exec(binary: Slice[Byte]): Never asm {
-  moveib a 8  add a sp load a a | binary.data
-  moveib b 16 add b sp load b b | binary.len
-  syscall 12
-}
-
 | Fuzzing  
 
 struct Generator[T] { rng: &Prng }

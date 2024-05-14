@@ -4872,7 +4872,7 @@ fun instrument(bin: Soil) {
 
 fun is_fuzzable(fun_: AstFun): Bool { fun_.type_args.is_empty() }
 
-fun generate_fuzzer_for(ast: &Ast, fun_: AstFun) {
+fun compile_fuzzer_for(ast: &Ast, fun_: AstFun): Mono {
   var src = source("fuzzer", 0..0)
   var opening_paren = "(" @ src
 
@@ -4971,18 +4971,7 @@ fun generate_fuzzer_for(ast: &Ast, fun_: AstFun) {
     case error(error)
       panic("Monoing failed: {error.title}\n{error.description}")
 
-  print_status("Memory layouting")
-  var layouts = mono.type_defs.mem_layout_all_types()
-
-  print_status("Monoing reflection functions")
-  mono.&.compile_builtins(layouts)
-
-  print_status("Assembling Soil binary")
-  var binary = mono.soil("$fuzzer()", layouts).unwrap().to_binary()
-  var buffered = stdout.buffered_writer(1024).&
-  buffered.write_bytes(binary)
-  buffered.flush()
-  print_status("Compiled to Soil binary ({binary.len} bytes). Good fuzzing!")
+  mono
 }
 
 | Command Line Interface  
@@ -5120,7 +5109,11 @@ fun main(): Never {
     exit(0)
   }
 
-  if command is fuzz(fuzz) then {
+  print_status("Monoing")
+  | For a better feel for how long it takes the compile the separate compiler
+  | stages, we compile the monoing before the fuzzer.
+  if false then ast.compile()
+  var mono_and_entry_point = if command is fuzz(fuzz) then {
     var signature = fuzz.signature
     var name = {
       var end = 0
@@ -5140,15 +5133,15 @@ fun main(): Never {
       eprintln("There is no function with the signature \"{signature}\".")
       exit(1)
     }
-    ast.&.generate_fuzzer_for(fun_)
-    exit(0)
-  }
-
-  print_status("Monoing")
-  var mono =
+    tuple(ast.&.compile_fuzzer_for(fun_), "$fuzzer()")
+  } else tuple(
     switch ast.compile()
     case ok(mono) mono
-    case error(error) error_occurred(error)
+    case error(error) error_occurred(error),
+    "main()"
+  )
+  var mono = mono_and_entry_point.a
+  var entry_point = mono_and_entry_point.b
 
   print_status("Memory layouting")
   var layouts = mono.type_defs.mem_layout_all_types()
@@ -5159,14 +5152,17 @@ fun main(): Never {
 
   print_status("Assembling")
   var soil =
-    switch mono.soil("main()", layouts)
+    switch mono.soil(entry_point, layouts)
     case ok(soil) soil
     case error(error) error_occurred(error)
   if command is soil then { println(soil) exit(0) }
 
+  if command is analyze then exit(0)
+
+  print_status("Assembling binary")
+  var binary = soil.to_binary()
+
   if command is compile then {
-    print_status("Assembling binary")
-    var binary = soil.to_binary()
     print_status("Writing binary")
     var out_file = path
     out_file.&.trim_suffix(".mar")
@@ -5176,14 +5172,21 @@ fun main(): Never {
     exit(0)
   }
 
-  if command is analyze then exit(0)
-
   if command is run then {
-    print_status("Assembling binary")
-    var binary = soil.to_binary()
     print_status("Compiled ({binary.len} bytes). Running!")
     exec(binary)
   }
 
+  if command is fuzz then {
+    print_status("Generated fuzzer ({binary.len} bytes). Fuzzing!")
+    exec(binary)
+  }
+
   unreachable()
+}
+
+fun exec(binary: Slice[Byte]): Never asm {
+  moveib a 8  add a sp load a a | binary.data
+  moveib b 16 add b sp load b b | binary.len
+  syscall 12
 }
