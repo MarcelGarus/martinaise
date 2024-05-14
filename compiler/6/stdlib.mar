@@ -1064,6 +1064,18 @@ fun sort[T](slice: &Slice[T]) {
   sort(slice.subslice(min(i.inc(), slice.len.dec())..slice.len).&)
 }
 
+| Returns the position of the leftmost item of the ordered slice that is equal
+| or greater to the given item.
+fun binary_search_leftmost_greater_equal(slice: Slice[Int], item: Int): Int {
+  var left  = 0         | inclusive
+  var right = slice.len | exclusive
+  loop if left >= right then break else {
+    var mid = {left + right} / 2
+    if slice.get(mid) < item then left = mid + 1 else right = mid
+  }
+  left
+}
+
 | Strings & Chars  
 | A Char (short for Character) is a wrapper around a Byte. When you write
 | something like #a in your code, that gets turned into a Char. Don't confuse
@@ -1235,6 +1247,13 @@ fun pad_right(str: Str, len: Int, char: Char): Str {
   string.to_str()
 }
 fun pad_right(str: Str, len: Int): Str { str.pad_right(len, space) }
+fun pad_left(str: Str, len: Int, char: Char): Str {
+  var string = string_builder().&
+  loop if string.len() + str.len < len then string.write(char) else break
+  string.write(str)
+  string.to_str()
+}
+fun pad_left(str: Str, len: Int): Str { str.pad_left(len, space) }
 
 | Range  
 | Ranges have an inclusive start and exclusive end value.

@@ -57,9 +57,11 @@ import stdlib.mar
 
 var tooling_mode = false
 
-var sources = map[Str, Str]()
+var sources_cache = map[Str, Str]() | maps file path to content
+
+fun read_cached_source(path: Str): Maybe[Str] { sources_cache.get_maybe(path) }
 fun read_source(path: Str): Result[Str, Str] {
-  if sources.get_maybe(path) is some(content) then return ok[Str, Str](content)
+  if read_cached_source(path) is some(content) then return ok[Str, Str](content)
   var content =
     if tooling_mode then {
       var obj = map[Str, Json]()
@@ -98,19 +100,11 @@ fun read_source(path: Str): Result[Str, Str] {
       case ok(content) content.to_str()
       case error return error[Str, Str]("Couldn't read file.")
     }
-  sources.&.put(path, content)
+  sources_cache.&.put(path, content)
   ok[Str, Str](content)
 }
 
 | Terminal utilities  
-
-fun clear_terminal() {
-  todo()
-  | var clear = std.ChildProcess.init(&[_]Str{"clear"}, alloc)
-  | clear.stdout = std.io.getStdOut()
-  | clear.stderr = std.io.getStdErr()
-  | _ = try clear.spawnAndWait()
-}
 
 fun write_ansi_escape_sequence[W](writer: W, sequence: Str) {
   writer.write(27.lower_byte().to_char())
@@ -133,6 +127,37 @@ fun source(file: Str, span: Range[Int]): Source { Source { file, span } }
 
 fun write[W](writer: W, source: Source) {
   writer."{source.file} {source.span.start} – {source.span.end}"
+}
+
+| Maps each file path to a slice that contains for every line at which byte it
+| starts.
+var line_cache = map[Str, Slice[Int]]()
+
+struct CodePosition { line: Int, column: Int }
+
+fun get_lines_of_file(file: Str): Maybe[Slice[Int]] {
+  if line_cache.get_maybe(file) is some(lines) then return some(lines)
+  var content = read_cached_source(file) or return none[Slice[Int]]()
+  var lines = vec(0)
+  for it in content.iter().enumerate() do
+    if it.item == newline then lines.&.push(it.index + 1)
+  var lines = lines.to_slice()
+  line_cache.&.put(file, lines)
+  some(lines)
+}
+
+fun byte_offset_to_code_position(file: Str, offset: Int): Maybe[CodePosition] {
+  var lines = get_lines_of_file(file) or return none[CodePosition]()
+  var line = lines.binary_search_leftmost_greater_equal(offset + 1) - 1
+  var column = offset - lines.get(line)
+  some(CodePosition { line, column })
+}
+fun to_code_range(source: Source): Maybe[Range[CodePosition]] {
+  var start = source.file.byte_offset_to_code_position(source.span.start)
+    or return none[Range[CodePosition]]()
+  var end   = source.file.byte_offset_to_code_position(source.span.end)
+    or return none[Range[CodePosition]]()
+  some(start..end)
 }
 
 | Errors  
@@ -4026,9 +4051,20 @@ fun write[W](writer: W, soil: Soil) {
   var index_to_label = map[Int, Str]()
   for it in soil.labels_to_index do index_to_label.&.put(it.value, it.key)
   for it in soil.instructions.iter().zip(soil.sources.iter()).enumerate() do {
-    writer."{"{it.index}".pad_right(6)} | {"{it.item.a}".pad_right(20)} | 
-      '{it.item.b}{
-        if index_to_label.get_maybe(it.index) is some(label)
+    var index = it.index
+    var instruction = it.item.a
+    var source = it.item.b
+
+    writer."{"{index}".pad_left(6)} | {"{instruction}".pad_right(20)} | {
+        switch source.to_code_range()
+        case some(range) "{source.file} {range.start.line + 1}:{range.start.column + 1}"
+        case none source.file
+      }{
+        switch read_cached_source(source.file)
+        case some(code) " {code.substr(source.span)}"
+        case none ""
+      }{
+        if index_to_label.get_maybe(index) is some(label)
         then " {label}"
         else ""
       }\n"
@@ -4069,17 +4105,6 @@ fun write[W](writer: W, instruction: Instr) {
   case or(args)       { writer."or {args.first} {args.second}" }
   case xor(args)      { writer."xor {args.first} {args.second}" }
   case negate(arg)    { writer."negate {arg}" }
-}
-
-| Turns the Soil program into a Soil recipe (the name of textual Soil assembly).
-fun to_recipe(soil: Soil): Str {
-  var builder = string_builder().&
-
-  for instruction in soil.instructions do builder."  {instruction}\n"
-  builder."@memory\n"
-  for byte in soil.initial_mem do builder."byte {byte}\n"
-
-  builder.to_str()
 }
 
 | Turns the Soil program into a Soil binary, containing instructions and byte
