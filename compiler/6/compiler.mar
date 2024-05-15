@@ -4870,9 +4870,28 @@ fun instrument(bin: Soil) {
 | through fuzzing. This is only supported for functions that don't take type
 | args.
 
+struct Signature { name: AstStr, args: Vec[Type] }
+
+fun parse_signature(parser: &Parser): Result[Signature, Str] {
+  var name = parser.parse_lower_name()
+    or return error[Signature, Str]("Expected a function name.")
+  parser.consume_prefix("(")
+    or return error[Signature, Str]("Expected an opening parenthesis.")
+  var args = vec[Type]()
+  loop {
+    args.&.push(parser.parse_type()? or break)
+    parser.consume_prefix(",") or break
+  }
+  parser.consume_prefix(")")
+    or return error[Signature, Str]("Expected a closing parenthesis.")
+  ok[Signature, Str](Signature { name, args })
+}
+
 fun is_fuzzable(fun_: AstFun): Bool { fun_.type_args.is_empty() }
 
-fun compile_fuzzer_for(ast: &Ast, fun_: AstFun): Mono {
+fun compile_fuzzer_for(
+  ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]
+): Mono {
   var src = source("fuzzer", 0..0)
   var opening_paren = "(" @ src
 
@@ -4890,7 +4909,7 @@ fun compile_fuzzer_for(ast: &Ast, fun_: AstFun): Mono {
   for arg in fun_.args.iter().enumerate() do {
     fuzzing_iteration.&.push(var_("arg_{arg.index}" @ src,
       AstExpr.name("generator" @ src).call(
-        some(vec(arg.item.type)),
+        some(vec(arg.item.type.specialize(type_env).unwrap())),
         vec(AstExpr.name("rng" @ src).member("&" @ src)
           .member("child" @ src).call(opening_paren).member("&" @ src)),
         opening_paren
@@ -5002,7 +5021,7 @@ enum Command {
   fuzz: FuzzCommand,
   analyze: Str,
 }
-struct FuzzCommand { path: Str, signature: Str }
+struct FuzzCommand { path: Str, signature: Signature }
 
 fun parse_args(): Result[Command, Str] {
   var args = get_process_args()
@@ -5045,8 +5064,20 @@ fun parse_args(): Result[Command, Str] {
   if command == "fuzz" then {
     args.len == 4 or
       return error[Command, Str]("Usage: martinaise fuzz <file> <fun>")
+    var parser = Parser { file = "_cli", code = args.get(3), cursor = 0 }
+    var signature =
+      switch parser.&.parse_signature()
+      case ok(sig) sig
+      case error(error) return error[Command, Str]({
+        var sb = string_builder().&
+        sb."Usage: martinaise fuzz <file> <fun>\n\n"
+        sb."{args.get(3)}\n"
+        for i in 0..parser.cursor do sb." "
+        sb."^\n{error}"
+        sb.to_str()
+      })
     return ok[Command, Str](Command.fuzz(FuzzCommand {
-      path = args.get(2), signature = args.get(3)
+      path = args.get(2), signature
     }))
   }
   if command == "analyze" then {
@@ -5115,25 +5146,17 @@ fun main(): Never {
   if false then ast.compile()
   var mono_and_entry_point = if command is fuzz(fuzz) then {
     var signature = fuzz.signature
-    var name = {
-      var end = 0
-      loop
-        if end >= signature.len
-        then break
-        else if signature.get(end) == #[ or signature.get(end) == #(
-          then break
-          else end = end + 1
-      signature.substr(0..end)
-    }
-    var fun_ = none[AstFun]()
-    if ast.funs.get_maybe(name) is some(funs) then
-      for f in funs do
-        if "{f.stripped_signature()}" == signature then fun_ = some(f)
-    var fun_ = fun_ or {
-      eprintln("There is no function with the signature \"{signature}\".")
-      exit(1)
-    }
-    tuple(ast.&.compile_fuzzer_for(fun_), "$fuzzer()")
+    var lookup_solution =
+      switch ast.lookup_fun(signature.name, none[Vec[Type]](), signature.args)
+      case ok(solution) solution
+      case error(error) {
+        eprintln(error)
+        exit(1)
+      }
+    tuple(
+      ast.&.compile_fuzzer_for(lookup_solution.fun_, lookup_solution.type_env),
+      "$fuzzer()",
+    )
   } else tuple(
     switch ast.compile()
     case ok(mono) mono
@@ -5179,7 +5202,12 @@ fun main(): Never {
 
   if command is fuzz then {
     print_status("Generated fuzzer ({binary.len} bytes). Fuzzing!")
-    exec(binary)
+    | exec(binary)
+
+    var num_cjumps = 0
+    for instruction in soil.instructions do
+      if instruction is cjump then num_cjumps = num_cjumps + 1
+    println("Number of cjumps: {num_cjumps}")
   }
 
   unreachable()

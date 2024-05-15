@@ -712,6 +712,19 @@ fun write[W, T](writer: W, type_args: TypeArgsFormat[T]) {
   then writer."[{comma_separated(type_args.args)}]"
 }
 
+fun specialize(type: Type, type_env: Map[Str, Type]): Result[Type, Str] {
+  if type_env.get_maybe(type.name) is some(concrete) then {
+    type.args.is_empty()
+      or return error[Type, Str](
+        "Type {type.name} is generic, but contains arguments.")
+    ok[Type, Str](concrete)
+  } else {
+    var args = vec[Type]()
+    for arg in type.args do args.&.push(arg.specialize(type_env)?)
+    ok[Type, Str](Type { name = type.name, args })
+  }
+}
+
 fun ==(a: Type, b: Type): Bool {
   a.name == b.name or return false
   a.args.len == b.args.len or return false
@@ -1672,6 +1685,9 @@ fun generator[T](rng: &Prng): Generator[T] { Generator[T] { rng } }
 
 | Generator implementations for specific types:
 
+fun generate[T](generator: Generator[&T]): &T {
+  generator[T](generator.rng).generate().put_on_heap()
+}
 fun generate(generator: Generator[Str]): Str { "test" }
 fun generate(generator: Generator[Int]): Int { generator.rng.next_int() % 100 }
 fun generate[T](generator: Generator[Vec[T]]): Vec[T] {
