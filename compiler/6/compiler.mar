@@ -2390,6 +2390,7 @@ fun lookup_fun(
 struct Mono {
   | Monomorphized type definitions.
   type_defs: Map[Type, MonoTypeDef],
+  layouts: Map[Type, MemLayout],
 
   | Global variables. They map to a function that computes the value.
   globals: Map[Str, MonoFun],
@@ -2419,7 +2420,6 @@ struct MonoFun {
 }
 
 enum MonoFunKind {
-  builtin: AstStr,
   body: MonoFunBody,
   asm_: Vec[AstInstr],
 }
@@ -2495,7 +2495,6 @@ fun write[W](writer: W, mono: Mono) {
 fun write[W](writer: W, name: Str, fun_: MonoFun) {
   writer."{name}\n"
   switch fun_.kind
-  case builtin writer."<builtin>"
   case body(body) {
     for zip in body.slots.iter().enumerate() do {
       var index = zip.index
@@ -2628,16 +2627,17 @@ fun compile_entry_point(
   var context = context()
   var mono = Mono {
     type_defs = map[Type, MonoTypeDef](),
+    layouts = map[Type, MemLayout](),
     globals = map[Str, MonoFun](),
     globals_init_order = vec[Str](),
     funs = map[Str, MonoFun](),
   }
 
-  type("Never").compile(map[Str, Type](), ast, mono.&)?
-  type("Nothing").compile(map[Str, Type](), ast, mono.&)?
+  type("Never").compile(ast, mono.&)?
+  type("Nothing").compile(ast, mono.&)?
 
   var signature =
-    switch fun_.fun_.compile(fun_.type_env, context.&, ast, mono.&)
+    switch fun_.compile(context.&, ast, mono.&)
     case ok(signature) signature
     case error(error) return error[Tuple2[Mono, Str], Error](make_error(
       error.source, error.title, error.description, context.signatures
@@ -2651,6 +2651,9 @@ fun compile_entry_point(
 | and also creates all the required defs (Map[Int, Bool], MapBucket[Int, Bool],
 | Slice[MapBucket[Int, Bool]], etc.)
 | Also saves the corresponding layout in the Mono.
+fun compile(type: Type, ast: Ast, mono: &Mono): Result[Type, Error] {
+  type.compile(map[Str, Type](), ast, mono)
+}
 fun compile(
   type: Type, type_env: Map[Str, Type], ast: Ast, mono: &Mono,
 ): Result[Type, Error] {
@@ -2735,6 +2738,8 @@ fun compile(
     mono.type_defs.&.put(type, MonoTypeDef.enum_(MonoEnum { variants }))
   }
 
+  mono.layouts.&.put(type, type.mem_layout(mono.layouts.&, mono.type_defs))
+
   ok[Type, Error](type)
 }
 
@@ -2795,6 +2800,12 @@ fun compile(
 | results in the function signature foo(Int) and creates all required types and
 | functions on the Mono.
 fun compile(
+  lookup_solution: LookupFunSolution,
+  context: &Context, ast: Ast, mono: &Mono,
+): Result[Str, Error] {
+  lookup_solution.fun_.compile(lookup_solution.type_env, context, ast, mono)
+}
+fun compile(
   fun_: AstFun, type_env: Map[Str, Type],
   context: &Context, ast: Ast, mono: &Mono,
 ): Result[Str, Error] {
@@ -2820,26 +2831,10 @@ fun compile(
 
   var kind =
     switch fun_.kind
-    case builtin(builtin) {
-      var source = fun_.name.source
-      if fun_.name.str == "size_of" then MonoFunKind.builtin(builtin.dots)
-      else if fun_.name.str == "alignment_of" then
-        MonoFunKind.builtin(builtin.dots)
-      else if fun_.name.str == "type" then {
-        type("Type").compile(map[Str, Type](), ast, mono)?
-        var make_vec = ast
-          .lookup_fun("vec" @ source, none[Vec[Type]](), vec[Type]())
-          .unwrap("vec function doesn't exist")
-          .fun_.compile(map[Str, Type](), context, ast, mono)?
-        var push = ast
-          .lookup_fun("push" @ source, none[Vec[Type]](),
-            vec[Type](type("Vec", vec(type("Type")))))
-          .unwrap("push function doesn't exist")
-        push.fun_.compile(push.type_env, context, ast, mono)?
-        MonoFunKind.builtin(builtin.dots)
-      } else return error[Str, Error](
-        make_error(fun_.name.source, "Unknown builtin {fun_.name}"))
-    }
+    case builtin(builtin) MonoFunKind.body(compile_builtin(
+      fun_.name.str, type_args, builtin.dots.source,
+      context, ast, mono
+    )?)
     case asm_(code) MonoFunKind.asm_(code)
     case body(body) {
       var slots = vec[MonoSlot]()
@@ -2979,7 +2974,7 @@ fun compile_in_current_scope(
     case int(int) self.slots.&.push(type("Int"), MonoSlotValue.int(int))
       .expr(self)
     case str(str) {
-      type("Str").compile(map[Str, Type](), ast, mono)?
+      type("Str").compile(ast, mono)?
       self.slots.&.push(type("Str"), MonoSlotValue.str(str)).expr(self)
     }
     case name(name) {
@@ -3580,7 +3575,7 @@ fun compile_call(
       return error[MonoExpr, Error](first_error.unwrap("error: no error"))
     }
     case ok(solution) {
-      var fun_ = solution.fun_.compile(solution.type_env, context, ast, mono)?
+      var fun_ = solution.compile(context, ast, mono)?
       var result = self.slots.&.push(mono.funs.get(fun_).return_type)
       self.push(
         MonoStatement.call(MonoCall { to = result, fun_, args }) @ name.source
@@ -3605,18 +3600,6 @@ enum MemLayoutKind {
 enum MemLayoutStructPart { padding: Int, field: MemLayoutField }
 struct MemLayoutField { name: Str, layout: MemLayout }
 struct MemLayoutVariant { name: Str, layout: MemLayout }
-
-fun mem_layout_all_types(
-  type_defs: Map[Type, MonoTypeDef],
-): Map[Type, MemLayout] {
-  var layouts = map[Type, MemLayout]()
-  for type in type_defs do {
-    var type = type.key
-    var layout = type.mem_layout(layouts.&, type_defs)
-    layouts.&.put(type, layout)
-  }
-  layouts
-}
 
 fun mem_layout(
   type: Type, layouts: &Map[Type, MemLayout], type_defs: Map[Type, MonoTypeDef],
@@ -3924,68 +3907,83 @@ fun write_n[W](writer: W, n: Int, str: Str) {
 
 | Builtin Functions  
 
-| Replace builtin funs such as size_of[T]() with normal funs. The body is code
-| that returns the correct value.
-fun compile_builtins(mono: &Mono, layouts: Map[Type, MemLayout]) {
-  for fun_ in mono.funs do {
-    var name = fun_.key
-    var fun_ = fun_.value
-    if fun_.kind is builtin(dots_in_code) then {
-      | Modifying the map while we iterate on it feels hacky, but because the
-      | key stays the same, this is guaranteed not to cause the map to grow.
-      var body = compile_builtin(
-        name, fun_.type_args, mono, layouts, dots_in_code
-      )
-      fun_.kind = MonoFunKind.body(body)
-      mono.funs.&.put(name, fun_)
-    }
-  }
-}
-
 fun compile_builtin(
-  name: Str, type_args: Vec[Type], mono: &Mono, layouts: Map[Type, MemLayout],
-  dots_in_code: AstStr
-): MonoFunBody {
-  | All builtin functions have exactly one type arg.
-  var type = type_args.get(0)
+  name: Str, type_args: Vec[Type], source: Source,
+  context: &Context, ast: Ast, mono: &Mono
+): Result[MonoFunBody, Error] {
+  if name == "size_of" then {
+    type_args.len == 1 or return error[MonoFunBody, Error](make_error(
+      source, "size_of should take exactly one type argument."
+    ))
+    type("Int").compile(ast, mono)?
+    return ok[MonoFunBody, Error](MonoFunBody {
+      slots = vec(MonoSlot {
+        type = type("Int"),
+        initial_value = MonoSlotValue.int(
+          mono.layouts.get(type_args.get(0)).size
+        ),
+      }),
+      statements = vec(MonoStatement.return_(
+        MonoSlotRef { index = 0 }.expr(type("Int"))
+      ) @ source),
+    })
+  }
 
-  if name.starts_with("size_of") then MonoFunBody {
-    slots = vec(MonoSlot {
-      type = type("Int"),
-      initial_value = MonoSlotValue.int(layouts.get(type).size),
-    }),
-    statements = vec(MonoStatement.return_(
-      MonoSlotRef { index = 0 }.expr(type("Int"))
-    ) @ dots_in_code.source),
+  if name == "alignment_of" then {
+    type_args.len == 1 or return error[MonoFunBody, Error](make_error(
+      source, "alignment_of should take exactly one type argument."
+    ))
+    type("Int").compile(ast, mono)?
+    return ok[MonoFunBody, Error](MonoFunBody {
+      slots = vec(MonoSlot {
+        type = type("Int"),
+        initial_value = MonoSlotValue.int(
+          mono.layouts.get(type_args.get(0)).alignment
+        ),
+      }),
+      statements = vec(MonoStatement.return_(
+        MonoSlotRef { index = 0 }.expr(type("Int"))
+      ) @ source),
+    })
   }
-  else if name.starts_with("alignment_of") then MonoFunBody {
-    slots = vec(MonoSlot {
-      type = type("Int"),
-      initial_value = MonoSlotValue.int(layouts.get(type).alignment),
-    }),
-    statements = vec(MonoStatement.return_(
-      MonoSlotRef { index = 0 }.expr(type("Int"))
-    ) @ dots_in_code.source),
-  }
-  else if name.starts_with("type") then {
+
+  if name == "type" then {
+    type_args.len == 1 or return error[MonoFunBody, Error](make_error(
+      source, "type should take exactly one type argument."
+    ))
+    eprintln("Compiling Type")
+    type("Type").compile(ast, mono)?
+    eprintln("Compiling Vec[Type]")
+    type("Vec", vec(type("Type"))).compile(ast, mono)?
+    eprintln("Compiling vec[Type]()")
+    var make_vec = ast
+      .lookup_fun("vec" @ source, some(vec(type("Type"))), vec[Type]())?
+      .compile(context, ast, mono)?
+    eprintln("Compiling push[Type](...)")
+    var push = ast
+      .lookup_fun("push" @ source, none[Vec[Type]](),
+        vec(type("&", vec(type("Vec", vec(type("Type"))))), type("Type")))?
+      .compile(context, ast, mono)?
+
     var compile_fun = CompileTypeFun {
       slots = vec[MonoSlot](), statements = vec[MonoStatementAndSource](),
-      source = dots_in_code.source,
+      source = source,
     }
-    var reflected = type.compile_reflection(compile_fun.&)
+    var reflected = compile_fun.&.compile(type_args.get(0))
     compile_fun.statements.&.push(MonoStatement.return_(reflected)
-      @ dots_in_code.source)
-    MonoFunBody {
-      slots = compile_fun.slots, statements = compile_fun.statements,
-    }
+      @ source)
+    return ok[MonoFunBody, Error](MonoFunBody {
+      slots = compile_fun.slots, statements = compile_fun.statements
+    })
   }
-  else panic("Unknown builtin fds {name}") | TODO
+
+  error[MonoFunBody, Error](make_error(source, "Unknown builtin {name}"))
 }
 
 struct CompileTypeFun {
   slots: Vec[MonoSlot], statements: Vec[MonoStatementAndSource], source: Source
 }
-fun compile_reflection(type: Type, out: &CompileTypeFun): MonoExpr {
+fun compile(out: &CompileTypeFun, type: Type): MonoExpr {
   var source = out.source
 
   | Almost looks like we're writing C now.
@@ -4008,8 +4006,8 @@ fun compile_reflection(type: Type, out: &CompileTypeFun): MonoExpr {
 
   for arg in type.args do {
     var arg_slot = out.slots.&.push(nothing_t)
-    var push = "push[Type](Vec[Type])"
-    var arg = arg.compile_reflection(out)
+    var arg = out.compile(arg)
+    var push = "push[Type](&Vec[Type], Type)"
     out.statements.&.push_call(
       arg_slot, push, vec(ref_vec_slot.expr(ref_of_vec_of_type_t), arg),
       source
@@ -4419,12 +4417,10 @@ fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, Int] {
   offsets
 }
 
-fun assemble(
-  mono: Mono, entry_point: Str, layouts: Map[Type, MemLayout], asm: &Asm
-): Result[Nothing, Error] {
+fun assemble(mono: Mono, entry_point: Str, asm: &Asm): Result[Nothing, Error] {
   for global in mono.globals do {
     asm.define_mem_label(global.key)
-    for i in 0..layouts.get(global.value.return_type).size do
+    for i in 0..mono.layouts.get(global.value.return_type).size do
       asm.soil.initial_mem.&.push(0.lower_byte())
   }
 
@@ -4451,7 +4447,7 @@ fun assemble(
       })
     arg_layouts.&.put(name, calculate_mem_layout(
       type("arguments of {name}"), MonoTypeDef.struct_(arg_struct),
-      layouts.&, mono.type_defs,
+      mono.layouts.&, mono.type_defs,
     ))
   }
 
@@ -4463,14 +4459,14 @@ fun assemble(
       kind = MemLayoutKind.struct_(vec[MemLayoutStructPart]()),
     })
     asm.define_label("{global.key}.init")
-    global.value.assemble_body(global.key, mono, layouts, arg_layouts, asm)?
+    global.value.assemble_body(global.key, mono, arg_layouts, asm)?
   }
 
   for fun_ in mono.funs do {
     var signature = fun_.key
     var fun_ = fun_.value
     asm.define_label(signature.mangle())
-    fun_.assemble_body(signature, mono, layouts, arg_layouts, asm)?
+    fun_.assemble_body(signature, mono, arg_layouts, asm)?
   }
 
   asm.define_label("_end_of_initial_memory")
@@ -4500,13 +4496,12 @@ fun smart_addi(asm: &Asm, to: Reg, value: Int, scratch: Reg) {
 
 fun assemble_body(
   fun_: MonoFun, signature: Str,
-  mono: Mono, layouts: Map[Type, MemLayout], arg_layouts: Map[Str, MemLayout],
-  asm: &Asm,
+  mono: Mono, arg_layouts: Map[Str, MemLayout], asm: &Asm,
 ): Result[Nothing, Error] {
+  var layouts = mono.layouts
   asm.set_source(fun_.name.source)
 
   switch fun_.kind
-  case builtin panic("Mono still contains builtins")
   case body(body) {
     var arg_offsets =
       if arg_layouts.get(signature).kind is struct_(fields)
@@ -4827,9 +4822,7 @@ fun fix_patches(asm: &Asm): Result[Nothing, Error] {
   ok[Nothing, Error]({})
 }
 
-fun soil(
-  mono: Mono, entry_point: Str, layouts: Map[Type, MemLayout]
-): Result[Soil, Error] {
+fun soil(mono: Mono, entry_point: Str): Result[Soil, Error] {
   var asm = Asm {
     current_source = source("_nowhere", 0..0),
     last_label = "",
@@ -4843,7 +4836,7 @@ fun soil(
       labels = vec[Str](),
     },
   }
-  mono.assemble(entry_point, layouts, asm.&)?
+  mono.assemble(entry_point, asm.&)?
   asm.&.fix_patches()?
 
   ok[Soil, Error](asm.soil)
@@ -5246,17 +5239,11 @@ fun main(): Never {
   if not(return_type.is_never()) then wrong_usage(
     "The {entry_point} function should return Never, but it returns 
     '{return_type}. You can call exit(0) if you want the program to stop.")
-
-  print_status("Memory layouting")
-  var layouts = mono.type_defs.mem_layout_all_types()
-
-  print_status("Monoing reflection functions")
-  mono.&.compile_builtins(layouts)
   if command is mono then { println(mono) exit(0) }
 
   print_status("Assembling")
   var soil =
-    switch mono.soil(entry_point, layouts)
+    switch mono.soil(entry_point)
     case ok(soil) soil
     case error(error) error_occurred(error)
   if command is soil then { println(soil) exit(0) }
