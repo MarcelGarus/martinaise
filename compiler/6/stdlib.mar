@@ -334,6 +334,8 @@ fun or[O, E](result: Result[O, E]): ControlFlow[O] {
 
 | Printing and Logging  
 
+fun write[W, T](writer: W, value: &T) { writer.write(value.*) }
+
 struct Print {}
 var stdout = Print {}
 fun print[T](value: T) { stdout.write(value) }
@@ -1679,6 +1681,17 @@ fun write_bytes[W](self: &BufferedWriter[W], bytes: Slice[Byte]) {
 }
 
 | Fuzzing  
+
+fun fuzzer_main[Input](): Never {
+  var rng = prng()
+  for i in 0..100 do {
+    var input = generator[Input](rng.&).generate()
+    print("Fuzzing ({comma_separated(input.arg_strings())}) = ")
+    var res = input.run()
+    println("{res}")
+  }
+  exit(0)
+}
 
 struct Generator[T] { rng: &Prng }
 fun generator[T](rng: &Prng): Generator[T] { Generator[T] { rng } }

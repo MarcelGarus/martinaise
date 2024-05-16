@@ -1,49 +1,9 @@
 import stdlib.mar
 
-fun main(): Never {
-  fuzz_add()
-  exit(0)
+fun stuff(a: Bool, b: Bool, c: Bool): Bool {
+  a or b and c
 }
 
-fun fuzz_add() {
-  var rng = prng()
-  for i in 0..10 do {
-    var checkpoint = heap_checkpoint()
-    var rng = rng.&.child()
-    var left  = generator[Int](rng.&.child().&).generate()
-    var right = generator[Int](rng.&.child().&).generate()
-    print("{left} + {right}")
-    var res = left + right
-    println(" = {res}")
-    free_everything_after(checkpoint)
-  }
+fun generate(generator: Generator[Bool]): Bool {
+  generator.rng.next_int() % 2 == 0
 }
-
-| Fuzzes fun push[T](vec: &Vec[T], item: T) {}
-fun fuzz_push() {
-  var rng = prng()
-  for i in 0..10 do {
-    var vec = generator[Vec[Int]](rng.&).generate()
-    var item = generator[Int](rng.&).generate()
-    print("push({vec}, {item})")
-    push(vec.&, item)
-    println(" -> {vec}")
-  }
-}
-
-struct Generator[T] { rng: &Prng }
-fun generator[T](rng: &Prng): Generator[T] { Generator[T] { rng } }
-
-| Generator implementations for specific types:
-
-fun generate(generator: Generator[Str]): Str { "test" }
-fun generate(generator: Generator[Int]): Int { generator.rng.next_int() % 100 }
-fun generate[T](generator: Generator[Vec[T]]): Vec[T] {
-  var len = generator.rng.next_int().abs() % 10
-  var vec = vec[T]() | todo: allocate enough capacity upfront
-  for i in 0..len do vec.&.push(generator[T](generator.rng).generate())
-  vec
-}
-| Todo: Implement fallback keyword. If multiple functions match, the fallback
-| function does not apply.
-| fallback fun generate[T](generator: Generator[T]): T { ... }

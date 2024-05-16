@@ -2574,7 +2574,9 @@ fun expr(slot: MonoSlotRef, self: CompileFun): MonoExpr {
 | function is encountered recursively, only its signature is needed to figure
 | out how to use it.
 
-fun compile(ast: Ast): Result[Mono, Error] {
+fun compile_entry_point(
+  ast: Ast, fun_: LookupFunSolution
+): Result[Tuple2[Mono, Str], Error] {
   var context = context()
   var mono = Mono {
     type_defs = map[Type, MonoTypeDef](),
@@ -2586,29 +2588,14 @@ fun compile(ast: Ast): Result[Mono, Error] {
   type("Never").compile(map[Str, Type](), ast, mono.&)?
   type("Nothing").compile(map[Str, Type](), ast, mono.&)?
 
-  var source = source("_main", 0..0)
-  var main =
-    switch ast.lookup_fun("main" @ source, none[Vec[Type]](), vec[Type]())
-    case error return error[Mono, Error](make_error(
-      source, "Your project must have a main() function."
-    ))
-    case ok(main) main.fun_
-
-  var main_signature =
-    switch main.compile(map[Str, Type](), context.&, ast, mono.&)
+  var signature =
+    switch fun_.fun_.compile(fun_.type_env, context.&, ast, mono.&)
     case ok(signature) signature
-    case error(error) return error[Mono, Error](make_error(
+    case error(error) return error[Tuple2[Mono, Str], Error](make_error(
       error.source, error.title, error.description, context.signatures
     ))
 
-  var return_type = mono.funs.get(main_signature).return_type
-  if not(return_type.is_never()) then return error[Mono, Error](make_error(
-    main.name.source,
-    "The main function should return Never, but it returns {return_type}.",
-    "You can call exit(0.lower_byte()) if you want the program to stop.",
-  ))
-
-  ok[Mono, Error](mono)
+  ok[Tuple2[Mono, Str], Error](tuple(mono, signature))
 }
 
 | Monomorphizes a type, outputting all the required type defs into the Mono. For
@@ -4865,10 +4852,9 @@ fun instrument(bin: Soil) {
   }
 }
 
-| Fuzzing  
+| Fuzzing Hooks  
 | Martinaise supports exploring code by finding sensible inputs for functions
-| through fuzzing. This is only supported for functions that don't take type
-| args.
+| through fuzzing.
 
 struct Signature { name: AstStr, args: Vec[Type] }
 
@@ -4889,108 +4875,142 @@ fun parse_signature(parser: &Parser): Result[Signature, Str] {
 
 fun is_fuzzable(fun_: AstFun): Bool { fun_.type_args.is_empty() }
 
-fun compile_fuzzer_for(
-  ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]
-): Mono {
-  var src = source("fuzzer", 0..0)
+fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
+  var arg_types = vec[Type]()
+  for arg in fun_.args do
+    arg_types.&.push(arg.type.specialize(type_env).unwrap())
+
+  var src = source("fuzzing", 0..0)
   var opening_paren = "(" @ src
 
-  | Generate the body of the fuzzer loop. An rng: Prng is in scope.
-  var fuzzing_iteration = vec(
-    var_("checkpoint" @ src,
-      AstExpr.name("heap_checkpoint" @ src).call(opening_paren)),
-    var_("rng" @ src,
-      AstExpr.name("rng" @ src).member("&" @ src)
-        .member("child" @ src).call(opening_paren)),
-  )
-
-  | Generate args.
-  var args = vec[AstExpr]()
-  for arg in fun_.args.iter().enumerate() do {
-    fuzzing_iteration.&.push(var_("arg_{arg.index}" @ src,
-      AstExpr.name("generator" @ src).call(
-        some(vec(arg.item.type.specialize(type_env).unwrap())),
-        vec(AstExpr.name("rng" @ src).member("&" @ src)
-          .member("child" @ src).call(opening_paren).member("&" @ src)),
-        opening_paren
-      ).member("generate" @ src).call(opening_paren)
-    ))
-    args.&.push(AstExpr.name("arg_{arg.index}" @ src))
-  }
-
-  | Print call string.
-  fuzzing_iteration.&.push(var_("string_builder" @ src,
-    AstExpr.name("string_builder" @ src).call(opening_paren)))
-  fuzzing_iteration.&.push(AstExpr.name("string_builder" @ src)
-    .member("&" @ src)
-    .member("write" @ src)
-    .call(vec(AstExpr.str("{fun_.name}(")), opening_paren))
-  for arg in fun_.args.iter().enumerate() do {
-    if arg.index > 0 then {
-      fuzzing_iteration.&.push(AstExpr.name("string_builder" @ src)
-        .member("&" @ src)
-        .member("write" @ src).call(vec(AstExpr.str(", ")), opening_paren))
-    }
-    fuzzing_iteration.&.push(AstExpr.name("string_builder" @ src)
-      .member("&" @ src)
-      .member("write" @ src)
-      .call(vec(AstExpr.name("arg_{arg.index}" @ src)), opening_paren)
-    )
-  }
-  fuzzing_iteration.&.push(AstExpr.name("string_builder" @ src)
-    .member("&" @ src)
-    .member("write" @ src).call(vec(AstExpr.str(") = ")), opening_paren))
-  fuzzing_iteration.&.push(AstExpr.name("print" @ src)
-    .call(vec(AstExpr.name("string_builder" @ src)), opening_paren))
-
-  | Do the call.
-  fuzzing_iteration.&.push(var_("result" @ src,
-    AstExpr.name(fun_.name.str @ src).call(args, opening_paren)))
-
-  | Display the result.
-  fuzzing_iteration.&.push(AstExpr.name("println" @ src)
-    .call(vec(AstExpr.name("result" @ src)), opening_paren))
-
-  | Free everything allocated since loop start.
-  fuzzing_iteration.&.push(AstExpr.name("free_everything_after" @ src)
-    .call(vec(AstExpr.name("checkpoint" @ src)), opening_paren))
-
-  var fuzzer = AstFun {
-    name = "$fuzzer" @ src,
-    type_args = vec[AstStr](),
-    args = vec[AstFunArg](),
-    returns = type("Nothing"),
-    kind = AstFunKind.body(vec(
-      var_("rng" @ src, AstExpr.name("prng" @ src).call(opening_paren)),
-      AstExpr.loop_(AstLoop {
-        keyword = "loop" @ src,
-        body = AstExpr.block(fuzzing_iteration).put_on_heap(),
+  { | struct $Input { arg_0: TypeOfArg0, arg_1: TypeOfArg1, ... }
+    var fields = vec[AstStructField]()
+    for it in arg_types.iter().enumerate() do
+      fields.&.push(AstStructField {
+        name = "arg_{it.index}" @ src, type = it.item
       })
-    )),
-  }
-  eprintln(fuzzer)
-  ast.funs.&.put("$fuzzer", vec(fuzzer))
-
-  var context = context()
-  var mono = Mono {
-    type_defs = map[Type, MonoTypeDef](),
-    globals = map[Str, MonoFun](),
-    globals_init_order = vec[Str](),
-    funs = map[Str, MonoFun](),
+    ast.types.&.put("$Input", AstType.struct_(AstStruct {
+      name = "$Input" @ src, type_args = vec[AstStr](), fields
+    }))
   }
 
-  type("Never").compile(map[Str, Type](), ast.*, mono.&)
-    or panic("Never didn't compile.")
-  type("Nothing").compile(map[Str, Type](), ast.*, mono.&)
-    or panic("Nothing didn't compile.")
+  | fun generate(generator: Generator[$Input]): $Input {
+  |   $Input {
+  |     arg_0 = generator[TypeOfArg0](generator.rng).generate(),
+  |     arg_1 = generator[TypeOfArg1](generator.rng).generate(),
+  |     ...
+  |   }
+  | }
+  {
+    var fields = vec[AstMakeStructField]()
+    for it in arg_types.iter().enumerate() do
+      fields.&.push(AstMakeStructField {
+        name = "arg_{it.index}" @ src,
+        value = AstExpr.name("generator" @ src)
+          .call(
+            some(vec(it.item)),
+            vec(AstExpr.name("generator" @ src).member("rng" @ src)),
+            opening_paren
+          )
+          .member("generate" @ src).call(opening_paren)
+      })
+    var generate = AstFun {
+      name = "generate" @ src,
+      type_args = vec[AstStr](),
+      args = vec[AstFunArg](AstFunArg {
+        name = "generator" @ src, type = type("Generator", vec(type("$Input")))
+      }),
+      returns = type("$Input"),
+      kind = AstFunKind.body(vec(
+        AstExpr.make_struct(AstMakeStruct {
+          type = type("$Input"), type_source = src, fields
+        })
+      )),
+    }
+    eprintln(generate)
+    | TODO: FIXME: stuff
+    if ast.funs.contains("generate")
+    then {
+      | TODO: update once there exists Map.get_ref
+      var overloads = ast.funs.get("generate")
+      overloads.&.push(generate)
+      ast.funs.&.put("generate", overloads)
+    }
+    else ast.funs.&.put("generate", vec(generate))
+  }
 
-  var fuzzer_signature =
-    switch fuzzer.compile(map[Str, Type](), context.&, ast.*, mono.&)
-    case ok(signature) signature
-    case error(error)
-      panic("Monoing failed: {error.title}\n{error.description}")
+  { | fun run(input: $Input): _ { <fun to fuzz>(input.arg_0, input.arg_1, ...) }
+    var args = vec[AstExpr]()
+    for index in 0..arg_types.len do
+      args.&.push(AstExpr.name("input" @ src).member("arg_{index}" @ src))
+    var run = AstFun {
+      name = "run" @ src,
+      type_args = vec[AstStr](),
+      args = vec[AstFunArg](AstFunArg {
+        name = "input" @ src, type = type("$Input")
+      }),
+      returns = type("_"),
+      kind = AstFunKind.body(vec(
+        AstExpr.name(fun_.name).call(args, opening_paren)
+      )),
+    }
+    eprintln(run)
+    if ast.funs.contains("run")
+    then {
+      | TODO: update once there exists Map.get_ref
+      var overloads = ast.funs.get("run")
+      overloads.&.push(run)
+      ast.funs.&.put("run", overloads)
+    }
+    else ast.funs.&.put("run", vec(run))
+  }
 
-  mono
+  | fun arg_strings(input: $Input): Vec[Str] {
+  |   var v = vec()
+  |   { var sb = string_builder() sb.&.write(input.arg_0) v.&.push(sb.to_str()) }
+  |   { var sb = string_builder() sb.&.write(input.arg_1) v.&.push(sb.to_str()) }
+  |   v
+  | }
+  {
+    var outer_body = vec[AstExpr]()
+    outer_body.&.push(var_("v" @ src,
+      AstExpr.name("vec" @ src).call(
+        some(vec(type("Str"))), vec[AstExpr](), opening_paren
+      )))
+    for index in 0..arg_types.len do {
+      var body = vec[AstExpr]()
+      body.&.push(var_("sb" @ src,
+        AstExpr.name("string_builder" @ src).call(opening_paren)))
+      body.&.push(AstExpr.name("sb" @ src).member("&" @ src)
+        .member("write" @ src).call(vec(
+          AstExpr.name("input" @ src).member("arg_{index}" @ src)
+        ), opening_paren))
+      body.&.push(AstExpr.name("v" @ src).member("&" @ src)
+        .member("push" @ src).call(vec(
+          AstExpr.name("sb" @ src).member("to_str" @ src).call(opening_paren)
+        ), opening_paren))
+      outer_body.&.push(AstExpr.block(body))
+    }
+    outer_body.&.push(AstExpr.name("v" @ src))
+    var arg_strings = AstFun {
+      name = "arg_strings" @ src,
+      type_args = vec[AstStr](),
+      args = vec[AstFunArg](AstFunArg {
+        name = "input" @ src, type = type("$Input")
+      }),
+      returns = type("_"),
+      kind = AstFunKind.body(outer_body),
+    }
+    eprintln(arg_strings)
+    if ast.funs.contains("arg_strings")
+    then {
+      | TODO: update once there exists Map.get_ref
+      var overloads = ast.funs.get("arg_strings")
+      overloads.&.push(arg_strings)
+      ast.funs.&.put("arg_strings", overloads)
+    }
+    else ast.funs.&.put("arg_strings", vec(arg_strings))
+  }
 }
 
 | Command Line Interface  
@@ -5117,10 +5137,8 @@ fun main(): Never {
     case funs(path) path
     case fuzz(fuzz) fuzz.path
     case analyze(path) path
-  if not(path.ends_with(".mar")) then {
-    eprintln("Expected a .mar file, got: {path}")
-    exit(1)
-  }
+  if not(path.ends_with(".mar")) then
+    wrong_usage("Expected a .mar file, got: {path}")
 
   var ast =
     switch parse_project(path)
@@ -5140,31 +5158,43 @@ fun main(): Never {
     exit(0)
   }
 
-  print_status("Monoing")
-  | For a better feel for how long it takes the compile the separate compiler
-  | stages, we compile the monoing before the fuzzer.
-  if false then ast.compile()
-  var mono_and_entry_point = if command is fuzz(fuzz) then {
+  if command is fuzz(fuzz) then {
+    print_status("Generating fuzzing hooks")
     var signature = fuzz.signature
     var lookup_solution =
       switch ast.lookup_fun(signature.name, none[Vec[Type]](), signature.args)
       case ok(solution) solution
-      case error(error) {
-        eprintln(error)
-        exit(1)
-      }
-    tuple(
-      ast.&.compile_fuzzer_for(lookup_solution.fun_, lookup_solution.type_env),
-      "$fuzzer()",
-    )
-  } else tuple(
-    switch ast.compile()
-    case ok(mono) mono
-    case error(error) error_occurred(error),
-    "main()"
-  )
+      case error(error) error_occurred(error)
+    | Generates an $Input struct for the fuzzed function as well as functions:
+    | generate(Generator[$Input]): $Input
+    | run($Input): _
+    ast.&.generate_fuzzing_hooks(lookup_solution.fun_, lookup_solution.type_env)
+  }
+
+  print_status("Monoing")
+  var src = source("_entry_point", 0..0)
+  var mono_and_entry_point = if command is fuzz then {
+    var fuzzer_main = ast.lookup_fun(
+      "fuzzer_main" @ src, some(vec(type("$Input"))), vec[Type]()
+      ) or wrong_usage(
+        "Your project must have a fuzzer_main[Input]() function."
+      )
+    switch ast.compile_entry_point(fuzzer_main)
+    case ok(entry) entry
+    case error(error) error_occurred(error)
+  } else {
+    var main = ast.lookup_fun("main" @ src, none[Vec[Type]](), vec[Type]())
+      or wrong_usage("Your project must have a main() function.")
+    switch ast.compile_entry_point(main)
+    case ok(entry) entry
+    case error(error) error_occurred(error)
+  }
   var mono = mono_and_entry_point.a
   var entry_point = mono_and_entry_point.b
+  var return_type = mono.funs.get(entry_point).return_type
+  if not(return_type.is_never()) then wrong_usage(
+    "The {entry_point} function should return Never, but it returns 
+    '{return_type}. You can call exit(0) if you want the program to stop.")
 
   print_status("Memory layouting")
   var layouts = mono.type_defs.mem_layout_all_types()
@@ -5208,6 +5238,7 @@ fun main(): Never {
     for instruction in soil.instructions do
       if instruction is cjump then num_cjumps = num_cjumps + 1
     println("Number of cjumps: {num_cjumps}")
+    exec(binary)
   }
 
   unreachable()
