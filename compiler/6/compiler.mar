@@ -283,6 +283,7 @@ struct AstEnumVariant { name: AstStr, type: Type }
 
 struct AstFun {
   name: AstStr,
+  is_fallback: Bool,
   type_args: Vec[AstStr],
   args: Vec[AstFunArg],
   returns: Type,
@@ -470,7 +471,8 @@ fun write[W](writer: W, indent: Indent, var_: AstVar) {
   writer."var {var_.name} = {var_.value.*.indented(indent)}"
 }
 fun write[W](writer: W, fun_: AstFun) {
-  writer."fun {fun_.name}{type_args(fun_.type_args)}
+  writer."{if fun_.is_fallback then "fallback " else ""}
+    'fun {fun_.name}{type_args(fun_.type_args)}
     '({comma_separated(fun_.args)}): {fun_.returns} "
   switch fun_.kind
   case builtin writer."\{ ... \}"
@@ -1516,7 +1518,12 @@ fun parse_instruction(parser: &Parser): Result[Maybe[AstInstr], Str] {
 }
 
 fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
-  parser.consume_keyword("fun") or return no_match[AstFun]()
+  var is_fallback =
+    if parser.consume_keyword("fallback") is some then true else false
+  parser.consume_keyword("fun")
+    or return if is_fallback
+      then bad_input[AstFun]("Expected a fun keyword after fallback.")
+      else no_match[AstFun]()
   var fun_name = parser.parse_lower_name()
     or parser.parse_operator_name()
     or return bad_input[AstFun]("
@@ -1553,7 +1560,9 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
     }
     else if parser.parse_block()? is some(block) then AstFunKind.body(block)
     else return bad_input[AstFun]("Expected a function body.")
-  parsed(AstFun { name = fun_name, type_args, args, returns, kind })
+  parsed(AstFun {
+    name = fun_name, is_fallback, type_args, args, returns, kind
+  })
 }
 
 fun parse_opaque(parser: &Parser): Result[Maybe[AstOpaqueType], Str] {
@@ -2257,14 +2266,22 @@ fun lookup_fun(
         out.to_str()
       }
     ))
-  if full_matches.len > 1 then
+
+  var non_fallback_matches = vec[LookupFunSolution]()
+  var fallback_matches = vec[LookupFunSolution]()
+  for match in full_matches do
+    {if match.fun_.is_fallback
+     then fallback_matches.&
+     else non_fallback_matches.&}.push(match)
+
+  if non_fallback_matches.len > 1 then
     return error[LookupFunSolution, Error](make_error(
       name.source,
       "This call matches multiple functions.",
       {
         var out = string_builder().&
         out."  call: {signature(name.str, type_args, arg_types)}\n"
-        for match in full_matches do {
+        for match in non_fallback_matches do {
           var padded_signature = match.fun_.stripped_signature().format()
             .pad_right(30, # )
           out."\n match: {padded_signature}"
@@ -2280,7 +2297,38 @@ fun lookup_fun(
         out.to_str()
       }
     ))
-  ok[LookupFunSolution, Error](full_matches.get(0))
+  if non_fallback_matches.len == 1 then
+    return ok[LookupFunSolution, Error](non_fallback_matches.get(0))
+  
+  | There are zero non-fallback matches. Check the fallback matches.
+  if fallback_matches.len > 1 then
+    return error[LookupFunSolution, Error](make_error(
+      name.source,
+      "This call matches multiple fallback functions.",
+      {
+        var out = string_builder().&
+        out."  call: {signature(name.str, type_args, arg_types)}\n"
+        for match in fallback_matches do {
+          var padded_signature = match.fun_.stripped_signature().format()
+            .pad_right(30, # )
+          out."\n match: {padded_signature}"
+          if match.type_env.is_not_empty() then {
+            out." with "
+            var first = true
+            for entry in match.type_env do {
+              if first then first = false else out.", "
+              out."{entry.key} = {entry.value}"
+            }
+          }
+        }
+        out.to_str()
+      }
+    ))
+
+  | We checked above for zero matches in total. As we know that we have zero
+  | non-fallback matches and <= 1 fallback matches, we know there is exactly one
+  | fallback match.
+  ok[LookupFunSolution, Error](fallback_matches.get(0))
 }
 
 | Mono  
@@ -4916,6 +4964,7 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
       })
     var generate = AstFun {
       name = "generate" @ src,
+      is_fallback = true,
       type_args = vec[AstStr](),
       args = vec[AstFunArg](AstFunArg {
         name = "generator" @ src, type = type("Generator", vec(type("$Input")))
@@ -4945,6 +4994,7 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
       args.&.push(AstExpr.name("input" @ src).member("arg_{index}" @ src))
     var run = AstFun {
       name = "run" @ src,
+      is_fallback = false,
       type_args = vec[AstStr](),
       args = vec[AstFunArg](AstFunArg {
         name = "input" @ src, type = type("$Input")
@@ -4994,6 +5044,7 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
     outer_body.&.push(AstExpr.name("v" @ src))
     var arg_strings = AstFun {
       name = "arg_strings" @ src,
+      is_fallback = true,
       type_args = vec[AstStr](),
       args = vec[AstFunArg](AstFunArg {
         name = "input" @ src, type = type("$Input")
