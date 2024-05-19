@@ -42,6 +42,7 @@
 | env  = environment
 | expr = expression
 | fun  = function
+| src  = source
 | str  = string
 | var  = variable
 |
@@ -57,11 +58,11 @@ import stdlib.mar
 
 var tooling_mode = false
 
-var sources_cache = map[Str, Str]() | maps file path to content
+var code_cache = map[Str, Str]() | maps file path to content
 
-fun read_cached_source(path: Str): Maybe[Str] { sources_cache.get_maybe(path) }
-fun read_source(path: Str): Result[Str, Str] {
-  if read_cached_source(path) is some(content) then return ok[Str, Str](content)
+fun read_cached_code(path: Str): Maybe[Str] { code_cache.get_maybe(path) }
+fun read_code(path: Str): Result[Str, Str] {
+  if read_cached_code(path) is some(content) then return ok[Str, Str](content)
   var content =
     if tooling_mode then {
       var obj = map[Str, Json]()
@@ -100,7 +101,7 @@ fun read_source(path: Str): Result[Str, Str] {
       case ok(content) content.to_str()
       case error return error[Str, Str]("Couldn't read file.")
     }
-  sources_cache.&.put(path, content)
+  code_cache.&.put(path, content)
   ok[Str, Str](content)
 }
 
@@ -121,12 +122,12 @@ fun print_status(message: Str) {
 | When compiling and running code, we want errors to point to the right place in
 | the source code. To do that, locations are carried throughout the pipeline.
 
-struct Source { file: Str, span: Range[Int] }
+struct Src { file: Str, span: Range[Int] }
 
-fun source(file: Str, span: Range[Int]): Source { Source { file, span } }
+fun src(file: Str, span: Range[Int]): Src { Src { file, span } }
 
-fun write[W](writer: W, source: Source) {
-  writer."{source.file} {source.span.start} – {source.span.end}"
+fun write[W](writer: W, src: Src) {
+  writer."{src.file} {src.span.start} – {src.span.end}"
 }
 
 | Maps each file path to a slice that contains for every line at which byte it
@@ -137,7 +138,7 @@ struct CodePosition { line: Int, column: Int }
 
 fun get_lines_of_file(file: Str): Maybe[Slice[Int]] {
   if line_cache.get_maybe(file) is some(lines) then return some(lines)
-  var content = read_cached_source(file) or return none[Slice[Int]]()
+  var content = read_cached_code(file) or return none[Slice[Int]]()
   var lines = vec(0)
   for it in content.iter().enumerate() do
     if it.item == newline then lines.&.push(it.index + 1)
@@ -152,10 +153,10 @@ fun byte_offset_to_code_position(file: Str, offset: Int): Maybe[CodePosition] {
   var column = offset - lines.get(line)
   some(CodePosition { line, column })
 }
-fun to_code_range(source: Source): Maybe[Range[CodePosition]] {
-  var start = source.file.byte_offset_to_code_position(source.span.start)
+fun to_code_range(src: Src): Maybe[Range[CodePosition]] {
+  var start = src.file.byte_offset_to_code_position(src.span.start)
     or return none[Range[CodePosition]]()
-  var end   = source.file.byte_offset_to_code_position(source.span.end)
+  var end   = src.file.byte_offset_to_code_position(src.span.end)
     or return none[Range[CodePosition]]()
   some(start..end)
 }
@@ -166,17 +167,15 @@ fun to_code_range(source: Source): Maybe[Range[CodePosition]] {
 | a piece of the code, or a squiggly line in the IDE directly at the error
 | location.
 
-struct Error { source: Source, title: Str, description: Str, context: Vec[Str] }
+struct Error { src: Src, title: Str, description: Str, context: Vec[Str] }
 
 fun make_error(
-  source: Source, title: Str, description: Str, context: Vec[Str]
-): Error { Error { source, title, description, context } }
-fun make_error(source: Source, title: Str, description: Str): Error {
-  make_error(source, title, description, vec[Str]())
+  src: Src, title: Str, description: Str, context: Vec[Str]
+): Error { Error { src, title, description, context } }
+fun make_error(src: Src, title: Str, description: Str): Error {
+  make_error(src, title, description, vec[Str]())
 }
-fun make_error(source: Source, title: Str): Error {
-  make_error(source, title, "")
-}
+fun make_error(src: Src, title: Str): Error { make_error(src, title, "") }
 
 fun write[W](writer: W, error: Error) {
   if error.context.is_not_empty() then {
@@ -185,9 +184,9 @@ fun write[W](writer: W, error: Error) {
     writer."\n"
   }
 
-  var code = read_source(error.source.file) or {
-    writer."{error.source.file} 
-      '{error.source.span.start} – {error.source.span.end}: 
+  var code = read_code(error.src.file) or {
+    writer."{error.src.file} 
+      '{error.src.span.start} – {error.src.span.end}: 
       '{error.title}\n
       '{error.description}"
     return {}
@@ -197,25 +196,25 @@ fun write[W](writer: W, error: Error) {
   var current_line = string_builder().&
   var offset_in_line = 0
   for i in 0..code.len do {
-    if i == error.source.span.start then offset_in_line = current_line.len()
+    if i == error.src.span.start then offset_in_line = current_line.len()
     if code.get(i) == newline
     then {
       lines.&.push(current_line.to_str())
       current_line = string_builder().&
-      if i >= error.source.span.start then break
+      if i >= error.src.span.start then break
     }
     else current_line.write(code.get(i))
   }
   | Now, lines contains all lines up to the line that contains the error.
   | offset_in_line is the offset into the last complete line.
   var num_lines_to_display = min(lines.len, 4)
-  writer."{error.source.file}\n"
+  writer."{error.src.file}\n"
   for line_number in {lines.len - num_lines_to_display}..lines.len do {
     writer.write_line_number(line_number)
     writer." | {lines.get(line_number)}\n"
   }
   for i in 0..{7 + offset_in_line} do writer." "
-  for i in error.source.span do writer."^"
+  for i in error.src.span do writer."^"
   writer."\n"
   for i in 0..{7 + offset_in_line} do writer." "
   writer.write(error.title)
@@ -233,15 +232,15 @@ fun write_line_number[W](writer: W, n: Int) {
 }
 
 fun to_json(error: Error): Json {
-  var source_obj = map[Str, Json]()
-  source_obj.&.put("file", Json.string(error.source.file))
-  source_obj.&.put("start", Json.int(error.source.span.start))
-  source_obj.&.put("end", Json.int(error.source.span.end))
+  var src_obj = map[Str, Json]()
+  src_obj.&.put("file", Json.string(error.src.file))
+  src_obj.&.put("start", Json.int(error.src.span.start))
+  src_obj.&.put("end", Json.int(error.src.span.end))
   var context_array = vec[Json]()
   for entry in error.context do context_array.&.push(Json.string(entry))
   var obj = map[Str, Json]()
   obj.&.put("type", Json.string("error"))
-  obj.&.put("source", Json.map(source_obj))
+  obj.&.put("src", Json.map(src_obj))
   obj.&.put("title", Json.string(error.title))
   obj.&.put("description", Json.string(error.description))
   obj.&.put("context", Json.array(context_array))
@@ -254,7 +253,7 @@ fun to_json(error: Error): Json {
 | source code.
 
 | A string that appears in the input and knows where it comes from.
-struct AstStr { str: Str, source: Source }
+struct AstStr { str: Str, src: Src }
 
 struct FileAst { imports: Vec[AstStr], defs: Vec[AstDef] }
 enum AstDef {
@@ -319,7 +318,7 @@ struct AstCall {
   args: Vec[AstExpr],
 }
 struct AstMakeStruct {
-  type: Type, type_source: Source, fields: Vec[AstMakeStructField]
+  type: Type, type_src: Src, fields: Vec[AstMakeStructField]
 }
 struct AstMakeStructField { name: AstStr, value: AstExpr }
 struct AstMakeEnum { type: Type, variant: AstStr, arg: &AstExpr }
@@ -386,7 +385,7 @@ fun &(first: Reg, second: Reg): RegAndReg { RegAndReg { first, second } }
 fun &(reg: Reg, word: Word): RegAndWord { RegAndWord { reg, word } }
 fun &(reg: Reg, byte: Byte): RegAndByte { RegAndByte { reg, byte } }
 
-fun @(str: Str, source: Source): AstStr { AstStr { str, source } }
+fun @(str: Str, src: Src): AstStr { AstStr { str, src } }
 
 fun call(
   callee: AstExpr, type_args: Maybe[Vec[Type]], args: Vec[AstExpr],
@@ -398,9 +397,7 @@ fun call(
 }
 fun call(
   callee: AstExpr, args: Vec[AstExpr], opening_parenthesis: AstStr
-): AstExpr {
-  callee.call(none[Vec[Type]](), args, opening_parenthesis)
-}
+): AstExpr { callee.call(none[Vec[Type]](), args, opening_parenthesis) }
 fun call(callee: AstExpr, opening_parenthesis: AstStr): AstExpr {
   callee.call(vec[AstExpr](), opening_parenthesis)
 }
@@ -707,7 +704,7 @@ fun consume_prefix(parser: &Parser, prefix: Str): Maybe[AstStr] {
   parser.rest().starts_with(prefix) or return none[AstStr]()
   parser.advance_by(prefix.len)
   var end = parser.cursor
-  some(prefix @ source(parser.file, start..end))
+  some(prefix @ src(parser.file, start..end))
 }
 | Also makes sure there's a non-letter following, so consume_keyword("fun")
 | doesn't match the code "funny".
@@ -725,7 +722,7 @@ fun consume_keyword(parser: &Parser, keyword: Str): Maybe[AstStr] {
   }
   parser.advance_by(keyword.len)
   var end = parser.cursor
-  some(keyword @ source(parser.file, start..end))
+  some(keyword @ src(parser.file, start..end))
 }
 
 fun parse_name(parser: &Parser): Maybe[AstStr] {
@@ -742,7 +739,7 @@ fun parse_name(parser: &Parser): Maybe[AstStr] {
   }
   var end = parser.cursor
   if start == end then return none[AstStr]()
-  some(parser.code.substr(start..end) @ source(parser.file, start..end))
+  some(parser.code.substr(start..end) @ src(parser.file, start..end))
 }
 
 fun parse_lower_name(parser: &Parser): Maybe[AstStr] {
@@ -776,7 +773,7 @@ fun parse_operator_name(parser: &Parser): Maybe[AstStr] {
   if name == "." then { parser.cursor = start return none[AstStr]() }
   if name.starts_with(".*") / name.starts_with(".&")
   then { parser.cursor = start return none[AstStr]() }
-  some(name @ source(parser.file, start..end))
+  some(name @ src(parser.file, start..end))
 }
 
 | Convenience methods for the three possible results of parsers returning a
@@ -934,14 +931,14 @@ fun parse_char(parser: &Parser): Result[Maybe[AstExpr], Str] {
   parser.consume_prefix("#") or return no_match[AstExpr]()
   var char = parser.current()
   parser.advance()
-  var source = source(parser.file, {parser.cursor - 2}..parser.cursor)
+  var src = src(parser.file, {parser.cursor - 2}..parser.cursor)
   parsed(AstExpr.make_struct(AstMakeStruct {
     type = type("Char"),
-    type_source = source,
+    type_src = src,
     fields = vec(AstMakeStructField {
-      name = "byte" @ source,
+      name = "byte" @ src,
       value = AstExpr.int(char.byte.to_int())
-        .member("lower_byte" @ source).call("(" @ source),
+        .member("lower_byte" @ src).call("(" @ src),
     }),
   }))
 }
@@ -952,21 +949,21 @@ fun parse_str(parser: &Parser): Result[Maybe[AstExpr], Str] {
   var start = parser.cursor
   var parts = parser.parse_str_parts()? or return no_match[AstExpr]()
   var end = parser.cursor
-  var source = source(parser.file, start..end)
+  var src = src(parser.file, start..end)
   if parts.len == 1 then {
     var expr = parts.get(0)
     if expr is str then return parsed(expr)
   }
   var block = vec[AstExpr]()
-  block.&.push(var_("$str" @ source,
-    AstExpr.name("string_builder" @ source)
-      .call(none[Vec[Type]](), vec[AstExpr](), "(" @ source)
-      .member("&" @ source)))
+  block.&.push(var_("$str" @ src,
+    AstExpr.name("string_builder" @ src)
+      .call(none[Vec[Type]](), vec[AstExpr](), "(" @ src)
+      .member("&" @ src)))
   for part in parts do
-    block.&.push(AstExpr.name("$str" @ source).member("write" @ source)
-      .call(vec(part), "(" @ source))
-  block.&.push(AstExpr.name("$str" @ source)
-    .member("to_str" @ source).call("(" @ source))
+    block.&.push(AstExpr.name("$str" @ src).member("write" @ src)
+      .call(vec(part), "(" @ src))
+  block.&.push(AstExpr.name("$str" @ src)
+    .member("to_str" @ src).call("(" @ src))
   parsed(AstExpr.block(block))
 }
 | Parses a string literal, potentially with interpolation, into expressions.
@@ -1033,7 +1030,7 @@ fun parse_make(parser: &Parser): Result[Maybe[AstExpr], Str] {
   var start = parser.cursor
   var type = parser.parse_type()? or return no_match[AstExpr]()
   var end = parser.cursor
-  var type_source = source(parser.file, start..end)
+  var type_src = src(parser.file, start..end)
   if parser.consume_prefix("\{") is some then {
     var fields = vec[AstMakeStructField]()
     loop {
@@ -1048,7 +1045,7 @@ fun parse_make(parser: &Parser): Result[Maybe[AstExpr], Str] {
     }
     parser.consume_prefix("}")
       or return bad_input[AstExpr]("Expected a closing brace.")
-    parsed(AstExpr.make_struct(AstMakeStruct { type, type_source, fields }))
+    parsed(AstExpr.make_struct(AstMakeStruct { type, type_src, fields }))
   } else {
     parser.consume_prefix(".")
       or return bad_input[AstExpr]("Expected struct or enum creation.")
@@ -1102,7 +1099,7 @@ fun parse_if(parser: &Parser): Result[Maybe[AstExpr], Str] {
   var keyword = parser.consume_keyword("if") or return no_match[AstExpr]()
   var condition = parser.parse_expr()? or return bad_input[AstExpr](
     "Expected the condition.")
-  var variant = "true" @ keyword.source
+  var variant = "true" @ keyword.src
   var binding = none[AstStr]()
   if parser.consume_keyword("is") is some then {
     variant = parser.parse_lower_name()
@@ -1119,18 +1116,18 @@ fun parse_if(parser: &Parser): Result[Maybe[AstExpr], Str] {
   var then_ = parser.parse_expr()?
     or return bad_input[AstExpr]("Expected a then expression.")
   var else_ = AstExpr.block(vec[AstExpr]())
-  var else_source = keyword.source
+  var else_src = keyword.src
   if parser.consume_keyword("else") is some(keyword) then {
     else_ = parser.parse_expr()?
       or return bad_input[AstExpr]("Expected an else expression.")
-    else_source = keyword.source
+    else_src = keyword.src
   }
   parsed(AstExpr.switch_(AstSwitch {
     keyword,
     value = condition.put_on_heap(),
     cases = vec(AstCase { variant, binding, body = then_ }),
     default_ = some(AstDefaultCase {
-      keyword = "default" @ else_source,
+      keyword = "default" @ else_src,
       body = else_,
     }.put_on_heap()),
   }))
@@ -1186,7 +1183,7 @@ fun parse_loop(parser: &Parser): Result[Maybe[AstExpr], Str] {
 | }
 fun parse_for(parser: &Parser): Result[Maybe[AstExpr], Str] {
   var keyword = parser.consume_keyword("for") or return no_match[AstExpr]()
-  var source = keyword.source
+  var src = keyword.src
   var iter_var = parser.parse_lower_name()
     or return bad_input[AstExpr](
       "Expected the name of the iteration variable.")
@@ -1199,29 +1196,29 @@ fun parse_for(parser: &Parser): Result[Maybe[AstExpr], Str] {
   var expr = parser.parse_expr()?
     or return bad_input[AstExpr]("Expected a loop expression.")
   parsed(AstExpr.block(vec(
-    var_("$iter" @ source,
-      iter.member("iter" @ source).call("(" @ source).member("&" @ source)),
+    var_("$iter" @ src,
+      iter.member("iter" @ src).call("(" @ src).member("&" @ src)),
     AstExpr.loop_(AstLoop {
       keyword,
       body = AstExpr.block(vec(
         var_(iter_var, AstExpr.switch_(AstSwitch {
           keyword,
-          value = AstExpr.name("$iter" @ source)
-            .member("next" @ source).call("(" @ source).put_on_heap(),
+          value = AstExpr.name("$iter" @ src)
+            .member("next" @ src).call("(" @ src).put_on_heap(),
           cases = vec(
             AstCase {
-              variant = "some" @ source,
-              binding = some("a" @ source),
-              body = AstExpr.name("a" @ source),
+              variant = "some" @ src,
+              binding = some("a" @ src),
+              body = AstExpr.name("a" @ src),
             },
             AstCase {
-              variant = "none" @ source,
+              variant = "none" @ src,
               binding = none[AstStr](),
               body = AstExpr.break_(AstBreak {
-                keyword = "break" @ source,
+                keyword = "break" @ src,
                 value = AstExpr.make_struct(AstMakeStruct {
                   type = type("Nothing"),
-                  type_source = source,
+                  type_src = src,
                   fields = vec[AstMakeStructField](),
                 }).put_on_heap()
               }),
@@ -1248,7 +1245,7 @@ fun parse_break(parser: &Parser): Result[Maybe[AstExpr], Str] {
     }
     else AstExpr.make_struct(AstMakeStruct {
       type = type("Nothing"),
-      type_source = keyword.source,
+      type_src = keyword.src,
       fields = vec[AstMakeStructField](),
     })
   parsed(AstExpr.break_(AstBreak { keyword, value = expr.put_on_heap() }))
@@ -1280,11 +1277,11 @@ fun parse_expr_suffix_member(
     return parsed(current.member(name))
   if parser.parse_str_parts()? is some(parts) then return {
     var block = vec[AstExpr]()
-    block.&.push(var_("$str" @ dot.source, current))
+    block.&.push(var_("$str" @ dot.src, current))
     for part in parts do
-      block.&.push(AstExpr.name("$str" @ dot.source)
-        .member("write" @ dot.source)
-        .call(vec(part), "(" @ dot.source))
+      block.&.push(AstExpr.name("$str" @ dot.src)
+        .member("write" @ dot.src)
+        .call(vec(part), "(" @ dot.src))
     parsed(AstExpr.block(block))
   }
   return bad_input[AstExpr]("Expected the name of a member.")
@@ -1340,15 +1337,15 @@ fun parse_expr_suffix_and(
     or return bad_input[AstExpr]("Expected alternative after and.")
   parsed(AstExpr.switch_(AstSwitch {
     keyword,
-    value = current.member(keyword).call("(" @ keyword.source).put_on_heap(),
+    value = current.member(keyword).call("(" @ keyword.src).put_on_heap(),
     cases = vec(
       AstCase {
-        variant = "short_circuit" @ keyword.source,
-        binding = some("$primary" @ keyword.source),
-        body = AstExpr.name("$primary" @ keyword.source),
+        variant = "short_circuit" @ keyword.src,
+        binding = some("$primary" @ keyword.src),
+        body = AstExpr.name("$primary" @ keyword.src),
       },
       AstCase {
-        variant = "evaluate_alternative" @ keyword.source,
+        variant = "evaluate_alternative" @ keyword.src,
         binding = none[AstStr](),
         body = alternative,
       },
@@ -1365,15 +1362,15 @@ fun parse_expr_suffix_or(
     or return bad_input[AstExpr]("Expected alternative after or.")
   parsed(AstExpr.switch_(AstSwitch {
     keyword,
-    value = current.member(keyword).call("(" @ keyword.source).put_on_heap(),
+    value = current.member(keyword).call("(" @ keyword.src).put_on_heap(),
     cases = vec(
       AstCase {
-        variant = "short_circuit" @ keyword.source,
-        binding = some("$primary" @ keyword.source),
-        body = AstExpr.name("$primary" @ keyword.source),
+        variant = "short_circuit" @ keyword.src,
+        binding = some("$primary" @ keyword.src),
+        body = AstExpr.name("$primary" @ keyword.src),
       },
       AstCase {
-        variant = "evaluate_alternative" @ keyword.source,
+        variant = "evaluate_alternative" @ keyword.src,
         binding = none[AstStr](),
         body = alternative,
       },
@@ -1401,7 +1398,7 @@ fun parse_asm_name(parser: &Parser): Maybe[AstStr] {
   }
   var end = parser.cursor
   if start == end then return none[AstStr]()
-  some(parser.code.substr(start..end) @ source(parser.file, start..end))
+  some(parser.code.substr(start..end) @ src(parser.file, start..end))
 }
 fun parse_reg(parser: &Parser): Result[Reg, Str] {
   var name = {parser.parse_asm_name()
@@ -1673,7 +1670,7 @@ fun parse_import(parser: &Parser): Result[Maybe[AstStr], Str] {
   if start == end then
     return bad_input[AstStr]("Expected an import (a file path).")
   parsed(AstStr {
-    source = source(parser.file, start..end),
+    src = src(parser.file, start..end),
     str = parser.code.substr(start..end),
   })
 }
@@ -1689,13 +1686,13 @@ fun parse_single_file(input: Str, file: Str): Result[FileAst, Error] {
     switch parser.&.parse_imports()
     case ok(imports) imports
     case error(message) return error[FileAst, Error](make_error(
-      source(file, parser.cursor..{parser.cursor + 1}), message
+      src(file, parser.cursor..{parser.cursor + 1}), message
     ))
   var defs =
     switch parser.&.parse_defs()
     case ok(defs) defs
     case error(message) return error[FileAst, Error](make_error(
-      source(file, parser.cursor..{parser.cursor + 1}), message
+      src(file, parser.cursor..{parser.cursor + 1}), message
     ))
   ok[FileAst, Error](FileAst { imports, defs })
 }
@@ -1730,11 +1727,11 @@ fun write[W](writer: W, type: AstType) {
   case enum_(e) writer."{e}"
 }
 
-fun source(type: AstType): Source {
+fun src(type: AstType): Src {
   switch type
-  case opaque_(type) type.name.source
-  case struct_(type) type.name.source
-  case enum_(type) type.name.source
+  case opaque_(type) type.name.src
+  case struct_(type) type.name.src
+  case enum_(type) type.name.src
 }
 
 fun parse_file_and_dependencies(
@@ -1744,12 +1741,12 @@ fun parse_file_and_dependencies(
 
   print_status("Reading {file}")
   var content =
-    switch read_source(file)
+    switch read_code(file)
     case ok(content) content
     case error(error) return error[Nothing, Error](make_error(
       switch parent_import
-      case some(import_) import_.source
-      case none source(file, 0..0),
+      case some(import_) import_.src
+      case none src(file, 0..0),
       "Couldn't read {file}: {error}"
     ))
 
@@ -1807,7 +1804,7 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
   | struct:
   | struct &[T] { *: T }
   var ref_file = "_ref"
-  var invalid_location = source(ref_file, 0..0)
+  var invalid_location = src(ref_file, 0..0)
   var ref = FileAst { imports = vec[AstStr](), defs = vec[AstDef]() }
   ref.defs.&.push(AstDef.struct_(AstStruct {
     name = "&" @ invalid_location,
@@ -1913,21 +1910,21 @@ fun exists(type: Str, types: Map[Str, AstType], extra: Vec[AstStr]): Bool {
 
 fun conflicting_names_error(group: Str, name: AstStr): Error {
   make_error(
-    name.source,
+    name.src,
     "Multiple {group} are named \"{name}\".",
     "All {group} need to have different names.",
   )
 }
 fun concrete_type_used_as_arg_error(who: AstStr, arg: AstStr): Error {
   make_error(
-    who.source,
+    who.src,
     "{who} uses {arg} as a type argument, but it's also a concrete type.",
     "Type arguments can't be named like concrete types.",
   )
 }
 fun type_doesnt_exist_error(who: AstStr, type: Str): Error {
   make_error(
-    who.source, "{who} refers to {type}, but that type doesn't exist."
+    who.src, "{who} refers to {type}, but that type doesn't exist."
   )
 }
 
@@ -2140,7 +2137,7 @@ fun restore[T](vars: &Vars[T], scope: VarScope) {
 
 | Context  
 | When monoing fails, we want to have backtraces – a path from the main function
-| over all monoed function to the failing source. The Context tracks what the
+| over all monoed function to the failing src. The Context tracks what the
 | compiler is currently doing – it's basically a stack of function signatures.
 | Each time a signature is pushed or popped, it also prints a one-line message
 | to the console, something like this:
@@ -2195,7 +2192,7 @@ fun lookup_type(ast: Ast, name: Str): Result[AstType, Error] {
   switch ast.types.get_maybe(name)
   case some(match) ok[AstType, Error](match)
   case none return error[AstType, Error](
-    make_error(source("todo", 0..00), "There is no type named \"{name}\"."))
+    make_error(src("todo", 0..0), "There is no type named \"{name}\"."))
 }
 
 | Looks up the global variable with the given name. Names of global variables
@@ -2212,7 +2209,7 @@ fun lookup_fun(
 ): Result[LookupFunSolution, Error] {
   var name_matches = ast.funs.get_maybe(name.str)
     or return error[LookupFunSolution, Error](
-      make_error(name.source, "There are no defintions named \"{name}\"."))
+      make_error(name.src, "There are no defintions named \"{name}\"."))
 
   var full_matches = vec[LookupFunSolution]()
   for fun_ in name_matches do {
@@ -2224,7 +2221,7 @@ fun lookup_fun(
           .unify(type(fun_.type_args.get(i).str), type_args_.get(i))
         case ok(worked) worked.assert()
         case error(message) return error[LookupFunSolution, Error](
-          make_error(name.source, message))
+          make_error(name.src, message))
     }
     if arg_types.len != fun_.args.len then continue
     var matches = true
@@ -2232,13 +2229,13 @@ fun lookup_fun(
       switch solver.&.unify(fun_.args.get(i).type, arg_types.get(i))
       case ok(works) works or { matches = false break }
       case error(message) return error[LookupFunSolution, Error](
-        make_error(name.source, message))
+        make_error(name.src, message))
     if not(matches) then continue
     var type_env =
       switch solver.finish()
       case ok(env) env
       case error(error) return error[LookupFunSolution, Error](make_error(
-        name.source,
+        name.src,
         "Found a function matching a call:\n
         '  call: {signature(name.str, type_args, arg_types)}\n
         ' match: {fun_.stripped_signature()}\n
@@ -2250,7 +2247,7 @@ fun lookup_fun(
 
   if full_matches.is_empty() then
     return error[LookupFunSolution, Error](make_error(
-      name.source,
+      name.src,
       "This call doesn't work.",
       {
         var out = string_builder().&
@@ -2276,7 +2273,7 @@ fun lookup_fun(
 
   if non_fallback_matches.len > 1 then
     return error[LookupFunSolution, Error](make_error(
-      name.source,
+      name.src,
       "This call matches multiple functions.",
       {
         var out = string_builder().&
@@ -2303,7 +2300,7 @@ fun lookup_fun(
   | There are zero non-fallback matches. Check the fallback matches.
   if fallback_matches.len > 1 then
     return error[LookupFunSolution, Error](make_error(
-      name.source,
+      name.src,
       "This call matches multiple fallback functions.",
       {
         var out = string_builder().&
@@ -2425,17 +2422,14 @@ enum MonoFunKind {
 }
 struct MonoFunBody {
   slots: Vec[MonoSlot],
-  statements: Vec[MonoStatementAndSource],
+  statements: Vec[MonoStatementAndSrc],
 }
 
 struct MonoSlot { type: Type, initial_value: MonoSlotValue }
 enum MonoSlotValue { uninitialized, arg: Int, int: Int, str: Str }
 struct MonoSlotRef { index: Int }
 
-struct MonoStatementAndSource {
-  statement: MonoStatement,
-  source: Source,
-}
+struct MonoStatementAndSrc { statement: MonoStatement, src: Src }
 enum MonoStatement {
   label: MonoLabel,
   assign: MonoAssign,
@@ -2473,8 +2467,8 @@ struct MonoMember { of: &MonoExpr, name: Str }
 fun hash(hasher: &Hasher, slot: MonoSlotRef) { hasher.hash(slot.index) }
 fun ==(a: MonoSlotRef, b: MonoSlotRef): Bool { a.index == b.index }
 
-fun @(statement: MonoStatement, source: Source): MonoStatementAndSource {
-  MonoStatementAndSource { statement, source }
+fun @(statement: MonoStatement, src: Src): MonoStatementAndSrc {
+  MonoStatementAndSrc { statement, src }
 }
 
 fun write[W](writer: W, mono: Mono) {
@@ -2508,7 +2502,7 @@ fun write[W](writer: W, name: Str, fun_: MonoFun) {
       case str(str) writer."\"{str}\""
     }
     for statement in body.statements do
-      writer."\n  {"{statement.statement}".pad_right(40)} {statement.source}"
+      writer."\n  {"{statement.statement}".pad_right(40)} {statement.src}"
   }
   case asm_(code) writer.write(code)
 }
@@ -2551,23 +2545,36 @@ fun get_ref(slots: &Vec[MonoSlot], ref: MonoSlotRef): &MonoSlot {
   slots.get_ref(ref.index)
 }
 
-fun push_assign(
-  statements: &Vec[MonoStatementAndSource], to: MonoExpr, value: MonoExpr,
-  source: Source,
-) {
-  statements.push(MonoStatement.assign(MonoAssign { to, value }) @ source)
+fun mono_label(id: Int): MonoStatement { MonoStatement.label(MonoLabel { id }) }
+fun mono_assign(to: MonoExpr, value: MonoExpr): MonoStatement {
+  MonoStatement.assign(MonoAssign { to, value })
 }
-fun push_call(
-  statements: &Vec[MonoStatementAndSource],
-  to: MonoSlotRef, fun_: Str, args: Vec[MonoExpr], source: Source
-) {
-  statements.push(MonoStatement.call(MonoCall { to, fun_, args }) @ source)
+fun mono_set_enum(
+  slot: MonoSlotRef, variant: Str, value: MonoExpr
+): MonoStatement {
+  MonoStatement.set_enum(MonoSetEnum { slot, variant, value })
 }
-fun push_ref(
-  statements: &Vec[MonoStatementAndSource], to: MonoSlotRef, of: MonoExpr,
-  source: Source
-) {
-  statements.push(MonoStatement.ref(MonoRef { to, of }) @ source)
+fun mono_call(to: MonoSlotRef, fun_: Str, args: Vec[MonoExpr]): MonoStatement {
+  MonoStatement.call(MonoCall { to, fun_, args })
+}
+fun mono_jump(target: MonoLabel): MonoStatement {
+  MonoStatement.jump(MonoJump { target })
+}
+fun mono_jump_if_variant(
+  condition: MonoExpr, variant: Str, target: MonoLabel
+): MonoStatement {
+  MonoStatement.jump_if_variant(MonoJumpIfVariant {
+    condition, variant, target
+  })
+}
+fun mono_get_enum_value(
+  to: MonoSlotRef, of: MonoExpr, variant: Str
+): MonoStatement {
+  MonoStatement.get_enum_value(MonoGetEnumValue { to, of, variant })
+}
+fun mono_return(value: MonoExpr): MonoStatement { MonoStatement.return_(value) }
+fun mono_ref(to: MonoSlotRef, of: MonoExpr): MonoStatement {
+  MonoStatement.ref(MonoRef { to, of })
 }
 
 var nothing_expr =
@@ -2640,7 +2647,7 @@ fun compile_entry_point(
     switch fun_.compile(context.&, ast, mono.&)
     case ok(signature) signature
     case error(error) return error[Tuple2[Mono, Str], Error](make_error(
-      error.source, error.title, error.description, context.signatures
+      error.src, error.title, error.description, context.signatures
     ))
 
   ok[Tuple2[Mono, Str], Error](tuple(mono, signature))
@@ -2700,7 +2707,7 @@ fun compile(
     var inner_type_env = map[Str, Type]()
     type.args.len == struct_.type_args.len or
       return error[Type, Error](make_error(
-        source("todo", 0..0),
+        src("todo", 0..0),
         "You tried to use a {type}, but {struct_.name} takes 
           '{struct_.type_args.len} type arguments."
       ))
@@ -2721,7 +2728,7 @@ fun compile(
     var inner_type_env = map[Str, Type]()
     type.args.len == enum_.type_args.len or
       return error[Type, Error](make_error(
-        source("todo", 0..0),
+        src("todo", 0..0),
         "You tried to use a {type}, but {enum_.name} takes {enum_.type_args.len} 
           'type arguments."
       ))
@@ -2765,19 +2772,17 @@ fun compile(
     context, ast, mono, type_env = map[Str, Type](),
     return_type = type_sink(),
     slots = vec[MonoSlot](),
-    statements = vec[MonoStatementAndSource](),
+    statements = vec[MonoStatementAndSrc](),
     next_label = 0, vars = vars[MonoSlotRef](),
     break_scopes = stack[BreakScope](),
     continue_scopes = stack[ContinueScope](),
   }
 
   var value = global.value.compile(compile_fun.&)?
-  compile_fun.statements.&.push(MonoStatement.return_(value)
-    @ global.name.source)
+  compile_fun.statements.&.push(mono_return(value) @ global.name.src)
   if compile_fun.return_type.&.add(value.type) is error(error) then
     return error[Nothing, Error](make_error(
-      global.name.source, "Type mismatch.", error
-    ))
+      global.name.src, "Type mismatch.", error))
 
   mono.globals.&.put(global.name.str, MonoFun {
     name = global.name,
@@ -2832,8 +2837,7 @@ fun compile(
   var kind =
     switch fun_.kind
     case builtin(builtin) MonoFunKind.body(compile_builtin(
-      fun_.name.str, type_args, builtin.dots.source,
-      context, ast, mono
+      fun_.name.str, type_args, builtin.dots.src, context, ast, mono
     )?)
     case asm_(code) MonoFunKind.asm_(code)
     case body(body) {
@@ -2849,19 +2853,18 @@ fun compile(
       var compile_fun = CompileFun {
         context, ast, mono, type_env,
         return_type = type_sink(return_type),
-        slots, statements = vec[MonoStatementAndSource](),
+        slots, statements = vec[MonoStatementAndSrc](),
         next_label = 0, vars,
         break_scopes = stack[BreakScope](),
         continue_scopes = stack[ContinueScope](),
       }
       var body_result = body.compile(compile_fun.&)?
-      compile_fun.statements.&.push(MonoStatement.return_(body_result)
-        @ fun_.name.source)
+      compile_fun.statements.&.push(mono_return(body_result) @ fun_.name.src)
       | For builtin functions and asm functions, we trust the fully specified
       | return type. For Martinaise functions, we take the inferred return type.
       if compile_fun.return_type.&.add(body_result.type) is error(error) then
         return error[Str, Error](make_error(
-          fun_.name.source,
+          fun_.name.src,
           "The last expression of the function body doesn't match the return 
             'type.",
           error,
@@ -2889,7 +2892,7 @@ struct CompileFun {
   type_env: Map[Str, Type],
   return_type: TypeSink,
   slots: Vec[MonoSlot],
-  statements: Vec[MonoStatementAndSource],
+  statements: Vec[MonoStatementAndSrc],
   next_label: Int,
   vars: Vars[MonoSlotRef],
   | When lowering loops, breaks and continues don't know where to jump yet.
@@ -2901,33 +2904,19 @@ struct CompileFun {
 struct BreakScope { result: MonoSlotRef, type: Maybe[Type], breaks: Vec[Int] }
 struct ContinueScope { continues: Vec[Int] }
 
-fun push(self: &CompileFun, statement: MonoStatementAndSource): Int {
+fun push(self: &CompileFun, statement: MonoStatementAndSrc): Int {
   var index = self.statements.len
   self.statements.&.push(statement)
   index
 }
-fun push_placeholder(self: &CompileFun, source: Source): Int {
-  self.push(MonoStatement.label(MonoLabel { id = 0 }) @ source)
+fun push_placeholder(self: &CompileFun, src: Src): Int {
+  self.push(mono_label(0) @ src)
 }
-fun push_label(self: &CompileFun, source: Source): MonoLabel {
+fun push_label(self: &CompileFun, src: Src): MonoLabel {
   var label = MonoLabel { id = self.next_label }
   self.next_label = self.next_label + 1
-  self.push(MonoStatement.label(label) @ source)
+  self.push(MonoStatement.label(label) @ src)
   label
-}
-fun push_assign(
-  self: &CompileFun, to: MonoExpr, value: MonoExpr, source: Source
-) {
-  self.statements.&.push_assign(to, value, source)
-}
-fun push_call(
-  self: &CompileFun, to: MonoSlotRef, fun_: Str, args: Vec[MonoExpr],
-  source: Source
-) {
-  self.statements.&.push_call(to, fun_, args, source)
-}
-fun push_ref(self: &CompileFun, to: MonoSlotRef, of: MonoExpr, source: Source) {
-  self.statements.&.push_ref(to, of, source)
 }
 
 fun update(self: &CompileFun, index: Int, statement: MonoStatement) {
@@ -2989,7 +2978,7 @@ fun compile_in_current_scope(
         }
         | TODO: print which variables are in scope
         case none return error[MonoExpr, Error](make_error(
-          name.source, "\"{name}\" is not in scope."))
+          name.src, "\"{name}\" is not in scope."))
       }
     }
     case call(call) {
@@ -3002,8 +2991,7 @@ fun compile_in_current_scope(
           member.name
         }
         default return error[MonoExpr, Error](make_error(
-          call.opening_parenthesis.source, "This expression can't be called."
-        ))
+          call.opening_parenthesis.src, "This expression can't be called."))
       var type_args =
         switch call.type_args
         case none none[Vec[Type]]()
@@ -3022,8 +3010,7 @@ fun compile_in_current_scope(
         switch ast.lookup_type(make_struct.type.name)?
         case struct_(s) s
         default return error[MonoExpr, Error](make_error(
-          make_struct.type_source,
-          "{make_struct.type.name} is not a struct type."
+          make_struct.type_src, "{make_struct.type.name} is not a struct type."
         ))
       var fields = map[Str, MonoExpr]() {
         for field in make_struct.fields do
@@ -3032,7 +3019,7 @@ fun compile_in_current_scope(
       for field in struct_.fields do
         if not(fields.contains(field.name.str))
         then return error[MonoExpr, Error](make_error(
-          make_struct.type_source,
+          make_struct.type_src,
           "The \"{field.name}\" field is missing.",
           "You need to initialize it with a {field.type}."
         ))
@@ -3042,7 +3029,7 @@ fun compile_in_current_scope(
       if make_struct.type.args.is_not_empty() then {
         make_struct.type.args.len == struct_.type_args.len
           or return error[MonoExpr, Error](make_error(
-            make_struct.type_source,
+            make_struct.type_src,
             "You provided the wrong number of type arguments.",
             "A {struct_.name} needs {make_struct.type.args.len} type arguments, 
               'you provided {struct_.type_args.len}."
@@ -3060,19 +3047,19 @@ fun compile_in_current_scope(
         for f in struct_.fields do
           if f.name.str == name then type_in_struct = some(f.type)
 
-        var type_in_struct = type_in_struct or
-          return error[MonoExpr, Error](make_error(
-            make_struct.type_source,
+        var type_in_struct = type_in_struct
+          or return error[MonoExpr, Error](make_error(
+            make_struct.type_src,
             "Tried to initialize field {name}, but {struct_.name} doesn't have 
               'that."
           ))
         switch solver.&.unify(type_in_struct, value.type)
         case error(message) return error[MonoExpr, Error](make_error(
-          make_struct.type_source, message
+          make_struct.type_src, message
         ))
         case ok(works) if not(works) then
           return error[MonoExpr, Error](make_error(
-            make_struct.type_source,
+            make_struct.type_src,
             "Tried to assign {value.type} to field \"{name}\" of type 
               '{type_in_struct}."
           ))
@@ -3081,20 +3068,20 @@ fun compile_in_current_scope(
         switch solver.finish()
         case ok(env) env
         case error(error) return error[MonoExpr, Error](
-          make_error(make_struct.type_source, error))
+          make_error(make_struct.type_src, error))
 
       var unspecialized_type = make_struct.type
       if make_struct.type.args.is_empty() & struct_.type_args.is_not_empty()
       then for arg in struct_.type_args do
-        unspecialized_type.args.&.push(type(arg.str).compile(type_env, ast, mono)?)
+        unspecialized_type.args.&
+          .push(type(arg.str).compile(type_env, ast, mono)?)
       var type = unspecialized_type.compile(self.type_env, ast, mono)?
 
       var slot = self.slots.&.push(type).expr(self)
       for field in fields do
-        self.push_assign(
-          slot.member(field.key, field.value.type), field.value,
-          make_struct.type_source,
-        )
+        self.push(
+          mono_assign(slot.member(field.key, field.value.type), field.value)
+          @ make_struct.type_src)
       slot
     }
     case make_enum(make_enum) {
@@ -3102,8 +3089,7 @@ fun compile_in_current_scope(
         switch ast.lookup_type(make_enum.type.name)?
         case enum_(e) e
         default return error[MonoExpr, Error](make_error(
-          make_enum.variant.source, "{make_enum.type.name} is not an enum type."
-        ))
+          make_enum.variant.src, "{make_enum.type.name} is not an enum type."))
       var arg = make_enum.arg.compile(self)?
       var variant_type = {
         var type = none[Type]()
@@ -3111,7 +3097,7 @@ fun compile_in_current_scope(
           if variant.name.str == make_enum.variant.str then
             type = some(variant.type)
         type or return error[MonoExpr, Error](make_error(
-          make_enum.variant.source,
+          make_enum.variant.src,
           "Unknown variant {make_enum.type.name}.{make_enum.variant}."
         ))
       }
@@ -3121,7 +3107,7 @@ fun compile_in_current_scope(
       if make_enum.type.args.is_not_empty() then {
         if make_enum.type.args.len != enum_.type_args.len then
           return error[MonoExpr, Error](make_error(
-            make_enum.variant.source,
+            make_enum.variant.src,
             "Tried to create enum {enum_.name} with {make_enum.type.args.len} 
               'type arguments, but it needs {enum_.type_args.len}."
           ))
@@ -3131,16 +3117,16 @@ fun compile_in_current_scope(
             make_enum.type.args.get(i).compile(self.type_env, ast, mono)?
           )
           case error(message) return error[MonoExpr, Error](make_error(
-            make_enum.variant.source, message
+            make_enum.variant.src, message
           ))
           case ok(works) assert(works, "unifying type args always works")
       }
       switch solver.&.unify(variant_type, arg.type)
       case error(message) return error[MonoExpr, Error](make_error(
-        make_enum.variant.source, message
+        make_enum.variant.src, message
       ))
       case ok(works) works or return error[MonoExpr, Error](make_error(
-        make_enum.variant.source,
+        make_enum.variant.src,
         "Tried to create {make_enum.type.name}.{make_enum.variant} with 
           '{arg.type}, but it needs a {variant_type}."
       ))
@@ -3148,7 +3134,7 @@ fun compile_in_current_scope(
         switch solver.finish()
         case ok(env) env
         case error(error) return error[MonoExpr, Error](
-          make_error(make_enum.variant.source, error))
+          make_error(make_enum.variant.src, error))
 
       var unspecialized_type = make_enum.type
       if make_enum.type.args.is_empty() & enum_.type_args.is_not_empty() then
@@ -3158,9 +3144,8 @@ fun compile_in_current_scope(
       var type = unspecialized_type.compile(self.type_env, ast, mono)?
 
       var slot = self.slots.&.push(type)
-      self.push(MonoStatement.set_enum(MonoSetEnum {
-        slot, variant = make_enum.variant.str, value = arg,
-      }) @ make_enum.variant.source)
+      self.push(mono_set_enum(slot, make_enum.variant.str, arg)
+        @ make_enum.variant.src)
       slot.expr(self)
     }
     case member(member) {
@@ -3170,7 +3155,7 @@ fun compile_in_current_scope(
         var ref_type = type("&", vec(of.type))
           .compile(self.type_env, ast, mono)?
         var slot = self.slots.&.push(ref_type)
-        self.push_ref(slot, of, member.name.source)
+        self.push(mono_ref(slot, of) @ member.name.src)
         return ok[MonoExpr, Error](slot.expr(self))
       }
       | When accessing a member on a reference, we automatically dereference the
@@ -3184,9 +3169,7 @@ fun compile_in_current_scope(
         switch mono.type_defs.get(of.type)
         case struct_(s) s
         default return error[MonoExpr, Error](make_error(
-          member.name.source,
-          "Invalid field access.",
-          "{of.type} is not a struct."
+          member.name.src, "Invalid field access.", "{of.type} is not a struct."
         ))
       var type = {
         var field_type = none[Type]()
@@ -3194,7 +3177,7 @@ fun compile_in_current_scope(
           if field.name == member.name.str then field_type = some(field.type)
         field_type or
           return error[MonoExpr, Error](make_error(
-            member.name.source, "This is not a field on {of.type}.",
+            member.name.src, "This is not a field on {of.type}.",
             {
               var out = string_builder().&
               out."It only contains these fields:"
@@ -3209,7 +3192,7 @@ fun compile_in_current_scope(
     case var_(var_) {
       var value = var_.value.compile(self)?
       var slot = self.slots.&.push(value.type)
-      self.push_assign(slot.expr(self), value, var_.name.source)
+      self.push(mono_assign(slot.expr(self), value) @ var_.name.src)
       self.vars.&.define(var_.name.str, slot)
       nothing_expr
     }
@@ -3217,11 +3200,11 @@ fun compile_in_current_scope(
       var to = assign.to.compile(self)?
       var value = assign.value.compile(self)?
       value.type == to.type or return error[MonoExpr, Error](make_error(
-        assign.equal_sign.source,
+        assign.equal_sign.src,
         "Invalid assign",
         "The variable needs a {to.type}, the value is a {value.type}."
       ))
-      self.push_assign(to, value, assign.equal_sign.source)
+      self.push(mono_assign(to, value) @ assign.equal_sign.src)
       nothing_expr
     }
     | Switch  
@@ -3260,7 +3243,7 @@ fun compile_in_current_scope(
         switch mono.type_defs.get(value.type)
         case enum_(e) e
         default return error[MonoExpr, Error](make_error(
-          switch_.keyword.source,
+          switch_.keyword.src,
           "{value.type} is not an enum.",
           "You can only switch on enums."
         ))
@@ -3271,7 +3254,7 @@ fun compile_in_current_scope(
       for case_ in switch_.cases do {
         if handled.contains(case_.variant.str) then
           return error[MonoExpr, Error](make_error(
-            case_.variant.source,
+            case_.variant.src,
             "You handle the \"{case_.variant}\" variant multiple times."
           ))
         | TODO: when supporting continue with label, use that
@@ -3283,7 +3266,7 @@ fun compile_in_current_scope(
           }
         if handled_this_case then continue
         return error[MonoExpr, Error](make_error(
-          case_.variant.source, "This is not a variant.",
+          case_.variant.src, "This is not a variant.",
           {
             var out = string_builder().&
             out."{value.type} only has these variants:"
@@ -3294,21 +3277,19 @@ fun compile_in_current_scope(
       }
       if switch_.default_ is none then
         for variant in enum_.variants do
-          handled.contains(variant.name) or
-            return error[MonoExpr, Error](make_error(
-              switch_.keyword.source,
+          handled.contains(variant.name)
+            or return error[MonoExpr, Error](make_error(
+              switch_.keyword.src,
               "You don't handle {value.type}.{variant.name}."
             ))
 
       var jump_table_jumps = map[Str, Int]()
       for case_ in switch_.cases do
         jump_table_jumps.&.put(
-          case_.variant.str,
-          self.push_placeholder(case_.variant.source)
-        )
+          case_.variant.str, self.push_placeholder(case_.variant.src))
       var default_jump =
         switch switch_.default_
-        case some(default_) some(self.push_placeholder(default_.keyword.source))
+        case some(default_) some(self.push_placeholder(default_.keyword.src))
         case none none[Int]()
       | Contains indices of statements which will be replaced with unconditional
       | jumps to after the switch.
@@ -3316,13 +3297,11 @@ fun compile_in_current_scope(
 
       | Case bodies
       for case_ in switch_.cases do {
-        var source = case_.variant.source
-        var label = self.push_label(source)
+        var src = case_.variant.src
+        var label = self.push_label(src)
         self.update(
           jump_table_jumps.get(case_.variant.str),
-          MonoStatement.jump_if_variant(MonoJumpIfVariant {
-            condition = value, variant = case_.variant.str, target = label
-          })
+          mono_jump_if_variant(value, case_.variant.str, label)
         )
         var variant_type = {
           var variant_type = none[Type]()
@@ -3332,9 +3311,7 @@ fun compile_in_current_scope(
           variant_type.unwrap("expected variant type")
         }
         var unpacked = self.slots.&.push(variant_type)
-        self.push(MonoStatement.get_enum_value(MonoGetEnumValue {
-          to = unpacked, of = value, variant = case_.variant.str
-        }) @ source)
+        self.push(mono_get_enum_value(unpacked, value, case_.variant.str) @ src)
         var scope = self.vars.snapshot()
         if case_.binding is some(binding) then
           self.vars.&.define(binding.str, unpacked)
@@ -3346,37 +3323,34 @@ fun compile_in_current_scope(
           case none type = some(body.type)
           case some(expected) {
             body.type == expected or return error[MonoExpr, Error](make_error(
-              case_.variant.source,
+              case_.variant.src,
               "This case evaluates to a {body.type}, but previous cases to 
                 '{expected}."
             ))
             {}
           }
-          self.push_assign(result.expr(self), body, source).ignore()
+          self.push(mono_assign(result.expr(self), body) @ src).ignore()
         }
-        after_switch_jumps.&.push(self.push_placeholder(source))
+        after_switch_jumps.&.push(self.push_placeholder(src))
       }
 
       | Default case
       if switch_.default_ is some(default_) then {
-        var source = default_.keyword.source
-        var label = self.push_label(source)
-        self.update(
-          default_jump.unwrap("no default jump"),
-          MonoStatement.jump(MonoJump { target = label }),
-        )
+        var src = default_.keyword.src
+        var label = self.push_label(src)
+        self.update(default_jump.unwrap("no default jump"), mono_jump(label))
         var default_result = default_.body.compile(self)?
         if not(default_result.type.is_never()) then {
           type = some(default_result.type)
-          self.push_assign(result.expr(self), default_result, source).ignore()
+          self.push(mono_assign(result.expr(self), default_result) @ src)
+            .ignore()
         }
-        after_switch_jumps.&.push(self.push_placeholder(source))
+        after_switch_jumps.&.push(self.push_placeholder(src))
       }
 
-      var after_switch = self.push_label(switch_.keyword.source)
+      var after_switch = self.push_label(switch_.keyword.src)
       for jump in after_switch_jumps do
-        self.update(jump,
-          MonoStatement.jump(MonoJump { target = after_switch }))
+        self.update(jump, mono_jump(after_switch))
 
       self.slots.&.get_ref(result).type = type or type("Never")
       result.expr(self)
@@ -3406,7 +3380,7 @@ fun compile_in_current_scope(
     | label_1: <─────┘
     | ...
     case loop_(loop_) {
-      var source = loop_.keyword.source
+      var src = loop_.keyword.src
       var result = self.slots.&.push(type(""))
       self.break_scopes.&.push(BreakScope {
         | TODO: turn this into an expr
@@ -3417,37 +3391,35 @@ fun compile_in_current_scope(
       | TODO: save the loop start instead
       self.continue_scopes.&.push(ContinueScope { continues = vec[Int]() })
 
-      var loop_start = self.push_label(source)
+      var loop_start = self.push_label(src)
       loop_.body.compile(self)?
-      self.push(MonoStatement.jump(MonoJump { target = loop_start }) @ source)
+      self.push(mono_jump(loop_start) @ src)
 
-      var after_loop = self.push_label(source)
+      var after_loop = self.push_label(src)
       var scope = self.break_scopes.&.pop()
       for break_ in scope.breaks do
-        self.update(
-          break_, MonoStatement.jump(MonoJump { target = after_loop }))
+        self.update(break_, mono_jump(after_loop))
 
       self.slots.&.get_ref(result).type = scope.type or type("Never")
       var scope = self.continue_scopes.&.pop()
       for continue_ in scope.continues do
-        self.update(
-          continue_, MonoStatement.jump(MonoJump { target = loop_start }))
+        self.update(continue_, mono_jump(loop_start))
       result.expr(self)
     }
     case break_(break_) {
       if self.break_scopes.is_empty() then
         return error[MonoExpr, Error](make_error(
-          break_.keyword.source, "This break is outside a loop.",
+          break_.keyword.src, "This break is outside a loop.",
           "Breaks can only be inside loops."
         ))
       var scope = self.break_scopes.top_ref()
 
-      var source = break_.keyword.source
+      var src = break_.keyword.src
       var value = break_.value.compile(self)?
 
       if scope.type is some(expected) then
         value.type == expected or return error[MonoExpr, Error](make_error(
-          break_.keyword.source,
+          break_.keyword.src,
           "Inconsistent break values.",
           "  previous break > {expected}\n
           '      this break > {value.type}"
@@ -3456,48 +3428,45 @@ fun compile_in_current_scope(
       | TODO: This is not correct. The type of the slot is only updated after
       | the loop body is fully lowered. The created slot expr still has the
       | wrong type.
-      self.push_assign(scope.result.expr(self), value, source)
+      self.push(mono_assign(scope.result.expr(self), value) @ src)
 
-      scope.breaks.&.push(self.push_placeholder(source))
+      scope.breaks.&.push(self.push_placeholder(src))
       never_expr
     }
     case continue_(continue_) {
       if self.continue_scopes.is_empty() then
         return error[MonoExpr, Error](make_error(
-          continue_.keyword.source,
-          "This continue is outside of a loop."
-        ))
+          continue_.keyword.src, "This continue is outside of a loop."))
       var scope = self.continue_scopes.top_ref()
-      scope.continues.&.push(self.push_placeholder(continue_.keyword.source))
+      scope.continues.&.push(self.push_placeholder(continue_.keyword.src))
       never_expr
     }
     case return_(return_) {
       var value = return_.value.compile(self)?
       if self.return_type.&.add(value.type) is error(error) then
         return error[MonoExpr, Error](make_error(
-          return_.keyword.source, "Inconsistent return types.", error
-        ))
-      self.push(MonoStatement.return_(value) @ return_.keyword.source)
+          return_.keyword.src, "Inconsistent return types.", error))
+      self.push(mono_return(value) @ return_.keyword.src)
       never_expr
     }
     case try(try_) {
-      var source = try_.question_mark.source
+      var src = try_.question_mark.src
       var value = try_.value.compile(self)?
       value.type.name == "Result" or return error[MonoExpr, Error](make_error(
-        try_.question_mark.source,
+        try_.question_mark.src,
         "The ? operator can only be used on Results.",
         "The value on the left has the type {value.type}."
       ))
       var return_type = self.return_type.finish()
       return_type.name == "Result" or return error[MonoExpr, Error](make_error(
-        try_.question_mark.source,
+        try_.question_mark.src,
         "? is not allowed in this function.",
         "The try operator ? can only be used in functions that return Result. 
           'This function returns a {return_type}."
       ))
       value.type.args.get(1) == return_type.args.get(1)
         or return error[MonoExpr, Error](make_error(
-          try_.question_mark.source,
+          try_.question_mark.src,
           "? has the wrong type.",
           "You used ? on a Result where the error type doesn't match the error 
             'type of the function.\n
@@ -3508,28 +3477,20 @@ fun compile_in_current_scope(
       var ok_type = value.type.args.get(0)
       var error_type = value.type.args.get(1)
 
-      var jump_if_ok = self.push_placeholder(source)
+      var jump_if_ok = self.push_placeholder(src)
       var error_payload = self.slots.&.push(error_type)
-      self.push(MonoStatement.get_enum_value(MonoGetEnumValue {
-        to = error_payload, of = value, variant = "error",
-      }) @ source)
+      self.push(mono_get_enum_value(error_payload, value, "error") @ src)
       var error_to_return = self.slots.&.push(return_type)
-      self.push(MonoStatement.set_enum(MonoSetEnum {
-        slot = error_to_return,
-        variant = "error",
-        value = error_payload.expr(self),
-      }) @ source)
-      self.push(MonoStatement.return_(error_to_return.expr(self)) @ source)
+      self.push(
+        mono_set_enum(error_to_return, "error", error_payload.expr(self)) @ src)
+      self.push(mono_return(error_to_return.expr(self)) @ src)
 
-      var after_error_handling = self.push_label(source)
-      self.update(jump_if_ok, MonoStatement.jump_if_variant(MonoJumpIfVariant {
-        condition = value, variant = "ok", target = after_error_handling,
-      }))
+      var after_error_handling = self.push_label(src)
+      self.update(jump_if_ok,
+        mono_jump_if_variant(value, "ok", after_error_handling))
 
       var ok_payload = self.slots.&.push(ok_type)
-      self.push(MonoStatement.get_enum_value(MonoGetEnumValue {
-        to = ok_payload, of = value, variant = "ok",
-      }) @ source)
+      self.push(mono_get_enum_value(ok_payload, value, "ok") @ src)
       ok_payload.expr(self)
     }
     case block(block) block.compile(self)?
@@ -3541,7 +3502,7 @@ fun compile_call(
   name: AstStr,
   callee: Maybe[MonoExpr],
   type_args: Maybe[Vec[Type]],
-  explicit_args: Vec[MonoExpr],
+  value_args: Vec[MonoExpr],
 ): Result[MonoExpr, Error] {
   var context = self.context
   var ast = self.ast
@@ -3559,7 +3520,7 @@ fun compile_call(
       args.&.push(c)
       arg_types.&.push(c.type)
     }
-    for arg in explicit_args do {
+    for arg in value_args do {
       args.&.push(arg)
       arg_types.&.push(arg.type)
     }
@@ -3577,9 +3538,7 @@ fun compile_call(
     case ok(solution) {
       var fun_ = solution.compile(context, ast, mono)?
       var result = self.slots.&.push(mono.funs.get(fun_).return_type)
-      self.push(
-        MonoStatement.call(MonoCall { to = result, fun_, args }) @ name.source
-      )
+      self.push(mono_call(result, fun_, args) @ name.src)
       return ok[MonoExpr, Error](result.expr(self))
     }
   }
@@ -3588,21 +3547,16 @@ fun compile_call(
 | Memory Layout  
 | Finding efficient memory layouts for types is a bit tricky.
 
-struct MemLayout {
-  type: Type,
-  size: Int,
-  alignment: Int,
-  kind: MemLayoutKind,
-}
+struct MemLayout { type: Type, size: Int, alignment: Int, kind: MemLayoutKind }
 enum MemLayoutKind {
-  opaque_, struct_: Vec[MemLayoutStructPart], enum_: Vec[MemLayoutVariant],
+  opaque_, struct_: Vec[MemLayoutStructPart], enum_: Vec[MemLayoutVariant]
 }
 enum MemLayoutStructPart { padding: Int, field: MemLayoutField }
 struct MemLayoutField { name: Str, layout: MemLayout }
 struct MemLayoutVariant { name: Str, layout: MemLayout }
 
 fun mem_layout(
-  type: Type, layouts: &Map[Type, MemLayout], type_defs: Map[Type, MonoTypeDef],
+  type: Type, layouts: &Map[Type, MemLayout], type_defs: Map[Type, MonoTypeDef]
 ): MemLayout {
   if layouts.get_maybe(type) is some(layout) then return layout else {
     var layout = type.calculate_mem_layout(layouts, type_defs)
@@ -3613,8 +3567,7 @@ fun mem_layout(
 fun calculate_mem_layout(
   type: Type, layouts: &Map[Type, MemLayout], type_defs: Map[Type, MonoTypeDef]
 ): MemLayout {
-  if type.name == "&"
-  then return MemLayout {
+  if type.name == "&" then return MemLayout {
     type, size = 8, alignment = 8, kind = MemLayoutKind.opaque_
   }
   calculate_mem_layout(type, type_defs.get(type), layouts, type_defs)
@@ -3908,125 +3861,201 @@ fun write_n[W](writer: W, n: Int, str: Str) {
 | Builtin Functions  
 
 fun compile_builtin(
-  name: Str, type_args: Vec[Type], source: Source,
+  name: Str, type_args: Vec[Type], src: Src,
   context: &Context, ast: Ast, mono: &Mono
 ): Result[MonoFunBody, Error] {
   if name == "size_of" then {
     type_args.len == 1 or return error[MonoFunBody, Error](make_error(
-      source, "size_of should take exactly one type argument."
-    ))
+      src, "size_of should take exactly one type argument."))
     type("Int").compile(ast, mono)?
+    var slots = vec[MonoSlot]()
+    var size = slots.&.push(type("Int"), MonoSlotValue.int(
+      mono.layouts.get(type_args.get(0)).size))
     return ok[MonoFunBody, Error](MonoFunBody {
-      slots = vec(MonoSlot {
-        type = type("Int"),
-        initial_value = MonoSlotValue.int(
-          mono.layouts.get(type_args.get(0)).size
-        ),
-      }),
-      statements = vec(MonoStatement.return_(
-        MonoSlotRef { index = 0 }.expr(type("Int"))
-      ) @ source),
+      slots, statements = vec(mono_return(size.expr(type("Int"))) @ src)
     })
   }
 
   if name == "alignment_of" then {
     type_args.len == 1 or return error[MonoFunBody, Error](make_error(
-      source, "alignment_of should take exactly one type argument."
-    ))
+      src, "alignment_of should take exactly one type argument."))
     type("Int").compile(ast, mono)?
+    var slots = vec[MonoSlot]()
+    var alignment = slots.&.push(type("Int"), MonoSlotValue.int(
+      mono.layouts.get(type_args.get(0)).alignment))
     return ok[MonoFunBody, Error](MonoFunBody {
-      slots = vec(MonoSlot {
-        type = type("Int"),
-        initial_value = MonoSlotValue.int(
-          mono.layouts.get(type_args.get(0)).alignment
-        ),
-      }),
-      statements = vec(MonoStatement.return_(
-        MonoSlotRef { index = 0 }.expr(type("Int"))
-      ) @ source),
+      slots, statements = vec(mono_return(alignment.expr(type("Int"))) @ src)
     })
   }
 
   if name == "type" then {
     type_args.len == 1 or return error[MonoFunBody, Error](make_error(
-      source, "type should take exactly one type argument."
-    ))
-    eprintln("Compiling Type")
+      src, "type should take exactly one type argument."))
     type("Type").compile(ast, mono)?
-    eprintln("Compiling Vec[Type]")
     type("Vec", vec(type("Type"))).compile(ast, mono)?
-    eprintln("Compiling vec[Type]()")
     var make_vec = ast
-      .lookup_fun("vec" @ source, some(vec(type("Type"))), vec[Type]())?
+      .lookup_fun("vec" @ src, some(vec(type("Type"))), vec[Type]())?
       .compile(context, ast, mono)?
-    eprintln("Compiling push[Type](...)")
     var push = ast
-      .lookup_fun("push" @ source, none[Vec[Type]](),
+      .lookup_fun("push" @ src, none[Vec[Type]](),
         vec(type("&", vec(type("Vec", vec(type("Type"))))), type("Type")))?
       .compile(context, ast, mono)?
 
     var compile_fun = CompileTypeFun {
-      slots = vec[MonoSlot](), statements = vec[MonoStatementAndSource](),
-      source = source,
+      slots = vec[MonoSlot](), statements = vec[MonoStatementAndSrc](), src
     }
     var reflected = compile_fun.&.compile(type_args.get(0))
-    compile_fun.statements.&.push(MonoStatement.return_(reflected)
-      @ source)
+    compile_fun.statements.&.push(mono_return(reflected) @ src)
     return ok[MonoFunBody, Error](MonoFunBody {
       slots = compile_fun.slots, statements = compile_fun.statements
     })
   }
 
-  error[MonoFunBody, Error](make_error(source, "Unknown builtin {name}"))
+  if name == "write_debug" then {
+    type_args.len == 2 or return error[MonoFunBody, Error](make_error(
+      src, "write_debug should take exactly two type argument."))
+    type("Str").compile(ast, mono)?
+    var writer_ty = type_args.get(0)
+    var value_ty = type_args.get(1)
+    var write_fun = ast
+      .lookup_fun("write" @ src,
+        none[Vec[Type]](), vec(writer_ty, type("Str")))?
+      .compile(context, ast, mono)?
+
+    var slots = vec[MonoSlot]()
+    var writer = slots.&.push(writer_ty, MonoSlotValue.arg(0))
+    var value = slots.&.push(value_ty, MonoSlotValue.arg(1))
+    var nothing = slots.&.push(type("Nothing"), MonoSlotValue.uninitialized)
+
+    var statements = vec[MonoStatementAndSrc]()
+    switch mono.type_defs.get(value_ty)
+    case opaque_ {
+      var dots = slots.&.push(type("Str"), MonoSlotValue.str("..."))
+        .expr(type("Str"))
+      statements.&.push(mono_call(
+        nothing, write_fun, vec(writer.expr(writer_ty), dots)) @ src)
+    }
+    case struct_(struct_) {
+      statements.&.push(mono_call(nothing, write_fun, vec(
+        writer.expr(writer_ty),
+        slots.&.push(type("Str"), MonoSlotValue.str("{value_ty} \{"))
+          .expr(type("Str"))
+      )) @ src)
+      for it in struct_.fields.iter().enumerate() do {
+        var field = it.item
+        var str =
+          if it.index == 0
+          then " {field.name} = "
+          else ", {field.name} = "
+        var str = slots.&.push(type("Str"), MonoSlotValue.str(str))
+          .expr(type("Str"))
+        statements.&.push(mono_call(
+          nothing, write_fun, vec(writer.expr(writer_ty), str)) @ src)
+        var write_debug_field_fun = ast
+          .lookup_fun("write_debug" @ src,
+            none[Vec[Type]](), vec(writer_ty, field.type))?
+          .compile(context, ast, mono)?
+        statements.&.push(mono_call(nothing, write_debug_field_fun, vec(
+          writer.expr(writer_ty),
+          value.expr(value_ty).member(field.name, field.type)
+        )) @ src)
+      }
+      var str = slots.&.push(type("Str"), MonoSlotValue.str(" }"))
+        .expr(type("Str"))
+      statements.&.push(mono_call(
+        nothing, write_fun, vec(writer.expr(writer_ty), str)) @ src)
+    }
+    case enum_(enum_) {
+      var payloads = vec[MonoSlotRef]()
+      var opening_strs = vec[MonoSlotRef]()
+      for variant in enum_.variants do {
+        payloads.&.push(slots.&.push(variant.type, MonoSlotValue.uninitialized))
+        opening_strs.&.push(slots.&.push(type("Str"),
+          MonoSlotValue.str("{variant.name}(")))
+      }
+      var closing_str = slots.&.push(type("Str"), MonoSlotValue.str(")"))
+
+      for it in enum_.variants.iter().enumerate() do
+        statements.&.push(mono_jump_if_variant(
+          value.expr(value_ty), it.item.name, MonoLabel { id = it.index }
+        ) @ src)
+
+      for it in enum_.variants.iter().enumerate() do {
+        var variant = it.item
+        var payload = payloads.get(it.index)
+        var payload_ty = variant.type
+        var write_debug_fun = ast
+          .lookup_fun("write_debug" @ src,
+            none[Vec[Type]](), vec(writer_ty, payload_ty))?
+          .compile(context, ast, mono)?
+        | TODO: reformat
+        statements.&.push(mono_label(it.index) @ src)
+        statements.&.push(mono_get_enum_value(
+          payload, value.expr(value_ty), variant.name) @ src)
+        statements.&.push(mono_call(nothing, write_fun, vec(
+          writer.expr(writer_ty), opening_strs.get(it.index).expr(type("Str"))))
+          @ src)
+        statements.&.push(mono_call(
+          nothing, write_debug_fun,
+          vec(writer.expr(writer_ty), payload.expr(payload_ty))) @ src)
+        statements.&.push(mono_call(
+          nothing, write_fun,
+          vec(writer.expr(writer_ty), closing_str.expr(type("Str")))) @ src)
+        statements.&.push(mono_jump(MonoLabel { id = enum_.variants.len}) @ src)
+      }
+
+      var label = statements.&.push(mono_label(enum_.variants.len) @ src)
+      | TODO: update jumps
+    }
+    statements.&.push(mono_return(nothing.expr(type("Nothing"))) @ src)
+    return ok[MonoFunBody, Error](MonoFunBody { slots, statements })
+  }
+
+  error[MonoFunBody, Error](make_error(src, "Unknown builtin {name}"))
 }
 
 struct CompileTypeFun {
-  slots: Vec[MonoSlot], statements: Vec[MonoStatementAndSource], source: Source
+  slots: Vec[MonoSlot], statements: Vec[MonoStatementAndSrc], src: Src
 }
 fun compile(out: &CompileTypeFun, type: Type): MonoExpr {
-  var source = out.source
+  var src = out.src
 
-  | Almost looks like we're writing C now.
-  var nothing_t = type("Nothing")
-  var str_t = type("Str")
-  var type_t = type("Type")
-  var vec_of_type_t = type("Vec", vec(type_t))
-  var ref_of_vec_of_type_t = type("&", vec(vec_of_type_t))
+  | TODO: reformat
+  var nothing_ty = type("Nothing")
+  var str_ty = type("Str")
+  var type_ty = type("Type")
+  var vec_of_type_ty = type("Vec", vec(type_ty))
+  var ref_of_vec_of_type_ty = type("&", vec(vec_of_type_ty))
 
-  var name_slot = out.slots.&.push(str_t, MonoSlotValue.str(type.name))
+  var name_slot = out.slots.&.push(str_ty, MonoSlotValue.str(type.name))
 
-  var vec_slot = out.slots.&.push(vec_of_type_t)
+  var vec_slot = out.slots.&.push(vec_of_type_ty)
   var make_vec = "vec[Type]()"
-  out.statements.&.push_call(vec_slot, make_vec, vec[MonoExpr](), source)
+  out.statements.&.push(mono_call(vec_slot, make_vec, vec[MonoExpr]()) @ src)
 
-  var ref_vec_slot = out.slots.&.push(ref_of_vec_of_type_t)
-  out.statements.&.push_ref(
-    ref_vec_slot, vec_slot.expr(ref_of_vec_of_type_t), source
-  )
+  var ref_vec_slot = out.slots.&.push(ref_of_vec_of_type_ty)
+  out.statements.&.push(mono_ref(
+    ref_vec_slot, vec_slot.expr(ref_of_vec_of_type_ty)) @ src)
 
   for arg in type.args do {
-    var arg_slot = out.slots.&.push(nothing_t)
+    var arg_slot = out.slots.&.push(nothing_ty)
     var arg = out.compile(arg)
     var push = "push[Type](&Vec[Type], Type)"
-    out.statements.&.push_call(
-      arg_slot, push, vec(ref_vec_slot.expr(ref_of_vec_of_type_t), arg),
-      source
-    )
+    out.statements.&.push(mono_call(
+      arg_slot, push, vec(ref_vec_slot.expr(ref_of_vec_of_type_ty), arg)) @ src)
   }
 
-  var type_slot = out.slots.&.push(type_t)
-  out.statements.&.push_assign(
-    type_slot.expr(type_t).member("name", str_t),
-    name_slot.expr(str_t),
-    source,
-  )
-  out.statements.&.push_assign(
-    type_slot.expr(type_t).member("args", vec_of_type_t),
-    vec_slot.expr(vec_of_type_t),
-    source,
-  )
+  var type_slot = out.slots.&.push(type_ty)
+  out.statements.&.push(mono_assign(
+    type_slot.expr(type_ty).member("name", str_ty),
+    name_slot.expr(str_ty)
+  ) @ src)
+  out.statements.&.push(mono_assign(
+    type_slot.expr(type_ty).member("args", vec_of_type_ty),
+    vec_slot.expr(vec_of_type_ty)
+  ) @ src)
 
-  type_slot.expr(type_t)
+  type_slot.expr(type_ty)
 }
 
 | Soil Binary  
@@ -4038,7 +4067,7 @@ fun compile(out: &CompileTypeFun, type: Type): MonoExpr {
 struct Soil {
   initial_mem: Vec[Byte],
   instructions: Vec[Instr],
-  sources: Vec[Source],
+  srcs: Vec[Src],
   | TODO: OrderedMap in stdlib
   labels_to_index: Map[Str, Int], | maps label to the instruction index
   labels: Vec[Str], | only so that labels can be printed in order
@@ -4083,18 +4112,18 @@ fun &(reg: Reg, int: Int): RegAndInt { RegAndInt { reg, int } }
 fun write[W](writer: W, soil: Soil) {
   var index_to_label = map[Int, Str]()
   for it in soil.labels_to_index do index_to_label.&.put(it.value, it.key)
-  for it in soil.instructions.iter().zip(soil.sources.iter()).enumerate() do {
+  for it in soil.instructions.iter().zip(soil.srcs.iter()).enumerate() do {
     var index = it.index
     var instruction = it.item.a
-    var source = it.item.b
+    var src = it.item.b
 
     writer."{"{index}".pad_left(6)} | {"{instruction}".pad_right(20)} | {
-        switch source.to_code_range()
-        case some(range) "{source.file} {range.start.line + 1}:{range.start.column + 1}"
-        case none source.file
+        switch src.to_code_range()
+        case some(range) "{src.file} {range.start.line + 1}:{range.start.column + 1}"
+        case none src.file
       }{
-        switch read_cached_source(source.file)
-        case some(code) " {code.substr(source.span)}"
+        switch read_cached_code(src.file)
+        case some(code) " {code.substr(src.span)}"
         case none ""
       }{
         if index_to_label.get_maybe(index) is some(label)
@@ -4286,13 +4315,13 @@ fun to_bits(reg: Reg): Byte {
 | - ...
 |
 | This way, the assembly instructions are type checked in Martinaise (for
-| example, you can't add a Int to a Reg).
+| example, you can't add an Int to a Reg).
 |
-| The compiler can also call set_source() to change which source emitted
+| The compiler can also call set_src() to change which src emitted
 | instructions are attributed to.
 
 struct Asm {
-  current_source: Source,
+  current_src: Src,
   last_label: Str,
   patches: Vec[Patch],
   mem_labels: Map[Str, Int],
@@ -4300,7 +4329,7 @@ struct Asm {
 }
 struct Patch { where: Int, label: Str} | where is the instruction index
 
-fun set_source(asm: &Asm, source: Source) { asm.current_source = source }
+fun set_src(asm: &Asm, src: Src) { asm.current_src = src }
 
 | If the last label was foo.bar, and you define a new label ..baz:, then this
 | gets globalized to foo.bar.baz. In general, for each leading dot, a component
@@ -4359,7 +4388,7 @@ fun mem_label_maybe(asm: &Asm, label: Str): Maybe[Int] {
 | Instructions
 fun emit(asm: &Asm, instruction: Instr) {
   asm.soil.instructions.&.push(instruction)
-  asm.soil.sources.&.push(asm.current_source)
+  asm.soil.srcs.&.push(asm.current_src)
 }
 fun nop(asm: &Asm)                     { asm.emit(Instr.nop) }
 fun panic(asm: &Asm)                   { asm.emit(Instr.panic) }
@@ -4424,7 +4453,7 @@ fun assemble(mono: Mono, entry_point: Str, asm: &Asm): Result[Nothing, Error] {
       asm.soil.initial_mem.&.push(0.lower_byte())
   }
 
-  asm.set_source(source("_setup", 0..0))
+  asm.set_src(src("_setup", 0..0))
   asm.define_label("_start")
   asm.push(Reg.a)
   for global in mono.globals_init_order do {
@@ -4499,7 +4528,7 @@ fun assemble_body(
   mono: Mono, arg_layouts: Map[Str, MemLayout], asm: &Asm,
 ): Result[Nothing, Error] {
   var layouts = mono.layouts
-  asm.set_source(fun_.name.source)
+  asm.set_src(fun_.name.src)
 
   switch fun_.kind
   case body(body) {
@@ -4573,10 +4602,10 @@ fun assemble_body(
     }
 
     for statement in body.statements do {
-      var source = statement.source
+      var src = statement.src
       var statement = statement.statement
 
-      asm.set_source(source)
+      asm.set_src(src)
 
       switch statement
       case label(label) asm.define_label("{label}")
@@ -4683,7 +4712,7 @@ fun assemble_body(
     asm.ret()
   }
   case asm_(instructions) for instruction in instructions do {
-    asm.set_source(instruction.mnemonic.source)
+    asm.set_src(instruction.mnemonic.src)
     switch instruction.kind
     | TODO: Ensure that the label is a local label
     case label(label)     asm.define_label(label.str)
@@ -4692,10 +4721,9 @@ fun assemble_body(
     case move(regs)       asm.move(regs.first, regs.second)
     case movei(args) {
       switch args.word
-      case label(label)   asm.movei(args.reg, asm.mem_label_maybe(label.str) or
-                            return error[Nothing, Error](make_error(
-                              label.source,
-                              "Label {label} doesn't exist.",
+      case label(label)   asm.movei(args.reg, asm.mem_label_maybe(label.str)
+                            or return error[Nothing, Error](make_error(
+                              label.src, "Label {label} doesn't exist.",
                               "Note that movei only accepts labels of globals 
                                 'that your program references in Martinaise 
                                 'code somewhere else.",
@@ -4801,9 +4829,10 @@ fun fix_patches(asm: &Asm): Result[Nothing, Error] {
   for patch in asm.patches do {
     var target = asm.soil.labels_to_index.get_maybe(patch.label)
       or return error[Nothing, Error](make_error(
-        asm.soil.sources.get(patch.where),
+        asm.soil.srcs.get(patch.where),
         "Label {patch.label} doesn't exist",
         {
+          | TODO: reformat
           var builder = string_builder().&
           builder."Note that only functions and constants referenced by 
             'Martinaise code are compiled."
@@ -4824,14 +4853,14 @@ fun fix_patches(asm: &Asm): Result[Nothing, Error] {
 
 fun soil(mono: Mono, entry_point: Str): Result[Soil, Error] {
   var asm = Asm {
-    current_source = source("_nowhere", 0..0),
+    current_src = src("_nowhere", 0..0),
     last_label = "",
     patches = vec[Patch](),
     mem_labels = map[Str, Int](),
     soil = Soil {
       initial_mem = vec[Byte](),
       instructions = vec[Instr](),
-      sources = vec[Source](),
+      srcs = vec[Src](),
       labels_to_index = map[Str, Int](),
       labels = vec[Str](),
     },
@@ -4921,7 +4950,7 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
   for arg in fun_.args do
     arg_types.&.push(arg.type.specialize(type_env).unwrap())
 
-  var src = source("fuzzing", 0..0)
+  var src = src("fuzzing", 0..0)
   var opening_paren = "(" @ src
 
   { | struct $Input { arg_0: TypeOfArg0, arg_1: TypeOfArg1, ... }
@@ -4965,7 +4994,7 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
       returns = type("$Input"),
       kind = AstFunKind.body(vec(
         AstExpr.make_struct(AstMakeStruct {
-          type = type("$Input"), type_source = src, fields
+          type = type("$Input"), type_src = src, fields
         })
       )),
     }
@@ -5216,7 +5245,7 @@ fun main(): Never {
   }
 
   print_status("Monoing")
-  var src = source("_entry_point", 0..0)
+  var src = src("_entry_point", 0..0)
   var mono_and_entry_point = if command is fuzz then {
     var fuzzer_main = ast.lookup_fun(
       "fuzzer_main" @ src, some(vec(type("$Input"))), vec[Type]()
