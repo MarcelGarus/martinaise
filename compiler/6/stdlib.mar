@@ -44,6 +44,7 @@
 struct Nothing {}
 
 fun write[W](writer: W, nothing: Nothing) { writer."nothing" }
+fun write_debug[W](writer: W, nothing: Nothing) { writer."nothing" }
 fun ==(a: Nothing, b: Nothing): Bool { true }
 fun ignore[T](value: T) {}
 
@@ -422,7 +423,7 @@ fun read(stdin: Stdin, buffer: Slice[Byte]): Result[Int, Nothing] asm {
 fun read_byte(stdin: Stdin): Result[Maybe[Byte], Nothing] {
   var char = 0.lower_byte()
   ok[Maybe[Byte], Nothing](
-    if stdin.read(Slice { data = char.&, len = 1 })? == 0
+    if stdin.read(Slice[Byte] { data = char.&.to_address(), len = 1 })? == 0
     then none[Byte]()
     else some(char)
   )
@@ -579,6 +580,7 @@ fun write[W](writer: W, format: RadixFormat) {
     divisor = divisor / format.radix
   }
 }
+fun write_debug[W](writer: W, int: Int) { writer."{int}" }
 
 | Byte  
 
@@ -664,6 +666,7 @@ fun digit_to_char(digit: Byte): Char {
   then {digit - 10.lower_byte() + #a.byte}.to_char()
   else {digit + #0.byte}.to_char()
 }
+fun write_debug[W](writer: W, byte: Byte) { writer."{byte}" }
 
 | Comparisons  
 | You should implement the spaceship operator <=>(T, T): Ordering for types that
@@ -955,19 +958,17 @@ fun memcopy(from: Address, to: Address, amount: Int) asm {
 | ^
 | len 4
 
-struct Slice[T] { data: &T, len: Int }
+struct Slice[T] { data: Address, len: Int }
 
 fun empty_slice[T](): Slice[T] {
   | Storing a reference that is effectively a null pointer is an antipattern.
   | Here, we still do that because storing a Maybe[&T] would make the Slice type
   | bigger. If the len is 0, we know not to follow the data reference.
-  Slice { data = null.to_reference[T](), len = 0 }
+  Slice[T] { data = null, len = 0 }
 }
 fun uninitialized_slice[T](len: Int): Slice[T] {
   if len == 0 then return empty_slice[T]()
-  var data = malloc(len * stride_size_of[T](), alignment_of[T]())
-    .to_reference[T]()
-  Slice { data, len }
+  Slice[T] { data = malloc(len * stride_size_of[T](), alignment_of[T]()), len }
 }
 fun filled_slice[T](len: Int, fill: T): Slice[T] {
   var slice = uninitialized_slice[T](len)
@@ -987,7 +988,7 @@ fun get_ref[T](slice: Slice[T], index: Int): &T {
 }
 fun get_maybe_ref[T](slice: Slice[T], index: Int): Maybe[&T] {
   if {0..slice.len}.contains(index)
-  then some(slice.data.add_stride_offset(index))
+  then some(slice.data.to_reference[T]().add_stride_offset(index))
   else none[&T]()
 }
 
@@ -1009,6 +1010,15 @@ fun ==[T](a: Slice[T], b: Slice[T]): Bool {
 fun hash[T](hasher: &Hasher, slice: Slice[T]) { hasher.hash_all(slice) }
 fun write[W, T](writer: W, slice: Slice[T]) {
   writer.write("[{comma_separated(slice)}]")
+}
+fun write_debug[W, T](writer: W, slice: Slice[T]) {
+  writer."["
+  var first = true
+  for item in slice do {
+    if first then first = false else writer.", "
+    writer.write_debug(item)
+  }
+  writer."]"
 }
 
 fun iter[T](slice: Slice[T]): Iter[T, _] {
@@ -1043,15 +1053,13 @@ fun next[T](iter: &Iter[T, SliceRevIter[T]]): Maybe[T] {
 
 fun copy_to[T](from: Slice[T], to: Slice[T]) {
   assert(from.len == to.len, "copy_to slice lens don't match")
-  memcopy(
-    from.data.to_address(),
-    to.data.to_address(),
-    from.len * stride_size_of[T](),
-  )
+  memcopy(from.data, to.data, from.len * stride_size_of[T]())
 }
 fun subslice[T](slice: Slice[T], range: Range[Int]): Slice[T] {
   assert(range.end <= slice.len, "subslice needs to be inside original slice")
-  Slice { data = slice.data.add_stride_offset(range.start), len = range.len() }
+  Slice[T] {
+    data = slice.data + {stride_size_of[T]() * range.start}, len = range.len()
+  }
 }
 fun remove[T](slice: &Slice[T], range: Range[Int]) {
   slice.subslice(range.end..slice.len)
@@ -1608,7 +1616,7 @@ fun read(file: File, buffer: Slice[Byte]): Result[Int, Nothing] asm {
 fun read_byte(file: File): Result[Maybe[Byte], Nothing] {
   var char = 0.lower_byte()
   ok[Maybe[Byte], Nothing](
-    if file.read(Slice { data = char.&, len = 1 })? == 0
+    if file.read(Slice[Byte] { data = char.&.to_address(), len = 1 })? == 0
     then none[Byte]()
     else some(char)
   )
@@ -1851,6 +1859,9 @@ fun remove[T](vec: &Vec[T], range: Range[Int]) {
 fun ==[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice() == b.to_slice() }
 fun iter[T](vec: Vec[T]): Iter[T, _] { vec.to_slice().iter() }
 fun write[W, T](writer: W, vec: Vec[T]) { writer.write(vec.to_slice()) }
+fun write_debug[W, T](writer: W, vec: Vec[T]) {
+  writer.write_debug(vec.to_slice())
+}
 
 | Stack  
 | Something where you can push and pop items. Essentially just a Vec, but
