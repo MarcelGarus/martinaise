@@ -1017,9 +1017,6 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
     parser.advance()
   }
   if part.is_not_empty() then parts.&.push(AstExpr.str(part.to_str()))
-  | eprint("Parsed string: ")
-  | for part in parts do eprint(switch part case str(s) s default "[...]")
-  | eprintln()
   parsed(parts)
 }
 
@@ -3967,12 +3964,13 @@ fun compile_builtin(
     }
     case enum_(enum_) {
       var payloads = vec[MonoSlotRef]()
-      var opening_strs = vec[MonoSlotRef]()
+      var variant_strs = vec[MonoSlotRef]()
       for variant in enum_.variants do {
         payloads.&.push(slots.&.push(variant.type, MonoSlotValue.uninitialized))
-        opening_strs.&.push(slots.&.push(type("Str"),
-          MonoSlotValue.str("{variant.name}(")))
+        variant_strs.&.push(slots.&.push(type("Str"),
+          MonoSlotValue.str(variant.name)))
       }
+      var opening_str = slots.&.push(type("Str"), MonoSlotValue.str("("))
       var closing_str = slots.&.push(type("Str"), MonoSlotValue.str(")"))
 
       for it in enum_.variants.iter().enumerate() do
@@ -3990,17 +3988,22 @@ fun compile_builtin(
           .compile(context, ast, mono)?
         | TODO: reformat
         statements.&.push(mono_label(it.index) @ src)
-        statements.&.push(mono_get_enum_value(
-          payload, value.expr(value_ty), variant.name) @ src)
         statements.&.push(mono_call(nothing, write_fun, vec(
-          writer.expr(writer_ty), opening_strs.get(it.index).expr(type("Str"))))
+          writer.expr(writer_ty), variant_strs.get(it.index).expr(type("Str"))))
           @ src)
-        statements.&.push(mono_call(
-          nothing, write_debug_fun,
-          vec(writer.expr(writer_ty), payload.expr(payload_ty))) @ src)
-        statements.&.push(mono_call(
-          nothing, write_fun,
-          vec(writer.expr(writer_ty), closing_str.expr(type("Str")))) @ src)
+        if payload_ty != type("Nothing") then {
+          statements.&.push(mono_get_enum_value(
+            payload, value.expr(value_ty), variant.name) @ src)
+          statements.&.push(mono_call(
+            nothing, write_fun,
+            vec(writer.expr(writer_ty), opening_str.expr(type("Str")))) @ src)
+          statements.&.push(mono_call(
+            nothing, write_debug_fun,
+            vec(writer.expr(writer_ty), payload.expr(payload_ty))) @ src)
+          statements.&.push(mono_call(
+            nothing, write_fun,
+            vec(writer.expr(writer_ty), closing_str.expr(type("Str")))) @ src)
+        }
         statements.&.push(mono_jump(MonoLabel { id = enum_.variants.len}) @ src)
       }
 
@@ -4793,7 +4796,7 @@ fun save_address(
         switch layouts.get(member.of.type).kind
         case struct_(s) s.name_to_offset_map().get(member.name)
         case enum_(e) panic("member receiver is an enum")
-        case opaque_(o) panic("{member.of.type} is opaque: {o}")
+        case opaque_(o) panic("can't access member {member.name} on {member.of.type} because it's opaque: {o}")
         default panic("member receiver is always a struct")
       asm.smart_addi(register, offset_in_struct, scratch)
     }
