@@ -1149,7 +1149,7 @@ fun binary_search_leftmost_greater_equal(slice: Slice[Int], item: Int): Int {
 | gets formatted nicely.
 
 struct Char { byte: Byte }
-struct Str { data: &Char, len: Int }
+struct Str { data: Address, len: Int }
 
 var space = # 
 var newline = 10.lower_byte().to_char()
@@ -1229,6 +1229,11 @@ fun ==(a: Str, b: Str): Bool {
 }
 fun hash(hasher: &Hasher, str: Str) { hasher.hash(str.chars()) }
 fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }
+fun write_debug[W](writer: W, str: Str) {
+  writer."\""
+  for char in str do if char == #" then writer."\\\"" else writer."{char}"
+  writer."\""
+}
 
 fun iter(str: Str): Iter[Char, _] {
   Iter[Char, StrIter] { state = StrIter { str, index = 0 } }
