@@ -2839,7 +2839,7 @@ fun compile(
   var kind =
     switch fun_.kind
     case builtin(builtin) MonoFunKind.body(compile_builtin(
-      fun_.name.str, type_args, builtin.dots.src, context, ast, mono
+      fun_.name.str, type_args, arg_types, builtin.dots.src, context, ast, mono
     )?)
     case asm_(code) MonoFunKind.asm_(code)
     case body(body) {
@@ -3867,7 +3867,7 @@ fun write_n[W](writer: W, n: Int, str: Str) {
 | Builtin Functions  
 
 fun compile_builtin(
-  name: Str, type_args: Vec[Type], src: Src,
+  name: Str, type_args: Vec[Type], arg_types: Vec[Type], src: Src,
   context: &Context, ast: Ast, mono: &Mono
 ): Result[MonoFunBody, Error] {
   if name == "size_of" then {
@@ -3918,11 +3918,11 @@ fun compile_builtin(
   }
 
   if name == "write_debug" then {
-    type_args.len == 2 or return error[MonoFunBody, Error](make_error(
-      src, "write_debug should take exactly two type argument."))
+    arg_types.len == 2 or return error[MonoFunBody, Error](make_error(
+      src, "write_debug should take exactly two argument."))
     type("Str").compile(ast, mono)?
-    var writer_ty = type_args.get(0)
-    var value_ty = type_args.get(1)
+    var writer_ty = arg_types.get(0)
+    var value_ty = arg_types.get(1)
     var write_fun = ast
       .lookup_fun("write" @ src,
         none[Vec[Type]](), vec(writer_ty, type("Str")))?
@@ -4014,6 +4014,143 @@ fun compile_builtin(
             vec(writer.expr(writer_ty), closing_str.expr(type("Str")))) @ src)
         }
         statements.&.push(mono_jump(MonoLabel { id = enum_.variants.len}) @ src)
+      }
+
+      var label = statements.&.push(mono_label(enum_.variants.len) @ src)
+      | TODO: update jumps
+    }
+    statements.&.push(mono_return(nothing.expr(type("Nothing"))) @ src)
+    return ok[MonoFunBody, Error](MonoFunBody { slots, statements })
+  }
+
+  if name == "generate" then {
+    arg_types.len == 1 or return error[MonoFunBody, Error](make_error(
+      src, "generate should take exactly argument."))
+    type("Str").compile(ast, mono)?
+    var generator_ty = arg_types.get(0)
+    generator_ty.name == "Generator" or return error[MonoFunBody, Error](
+      make_error(src, "generate should take a Generator."))
+    generator_ty.args.len == 1 or return error[MonoFunBody, Error](make_error(
+      src, "Generator should have one type argument."))
+    var value_ty = generator_ty.args.get(0)
+
+    var slots = vec[MonoSlot]()
+    var generator = slots.&.push(generator_ty, MonoSlotValue.arg(0))
+    var nothing = slots.&.push(type("Nothing"), MonoSlotValue.uninitialized)
+    var value = slots.&.push(value_ty, MonoSlotValue.uninitialized)
+
+    var statements = vec[MonoStatementAndSrc]()
+    switch mono.type_defs.get(value_ty)
+    case opaque_ return error[MonoFunBody, Error](make_error(
+      src, "You need to implement a generate function for opaque types."))
+    case struct_(struct_) {
+      | SomeStruct {
+      |   foo = generator[Foo](generator.rng).generate(),
+      |   bar = generator[Bar](generator.rng).generate(),
+      | }
+      for it in struct_.fields.iter().enumerate() do {
+        var field_ty = it.item.type
+
+        var field_generator = slots.&.push(type("Generator", vec(field_ty)),
+          MonoSlotValue.uninitialized)
+        var generator_fun = ast
+          .lookup_fun("generator" @ src,
+            some(vec(field_ty)), vec(type("&", vec(type("Prng")))))?
+          .compile(context, ast, mono)?
+        statements.&.push(mono_call(field_generator, generator_fun, vec(
+          generator.expr(generator_ty)
+            .member("rng", type("&", vec(type("Prng"))))
+        )) @ src)
+
+        var field = slots.&.push(field_ty)
+        var generate_fun = ast
+          .lookup_fun("generate" @ src, none[Vec[Type]](),
+            vec(type("Generator", vec(field_ty))))?
+          .compile(context, ast, mono)?
+        statements.&.push(mono_call(field, generate_fun, vec[MonoExpr]()) @ src)
+        statements.&.push(mono_assign(
+          value.expr(value_ty).member(it.item.name, it.item.type),
+          field.expr(field_ty),
+        ) @ src)
+      }
+      statements.&.push(mono_return(value.expr(value_ty)) @ src)
+    }
+    case enum_(enum_) {
+      | var variant = generator.rng.next_int(0..2)
+      | if variant == 0 then return SomeEnum.foo
+      | if variant == 1 then
+      |   return SomeEnum.bar(generator[Int](generator.rng).generate())
+      | unreachable()
+      var lower = slots.&.push(type("Int"), MonoSlotValue.int(0))
+      var upper = slots.&.push(type("Int"),
+        MonoSlotValue.int(enum_.variants.len))
+      var range = slots.&.push(type("Range", vec(type("Int"))),
+        MonoSlotValue.uninitialized)
+      var range_fun = ast
+        .lookup_fun(".." @ src, none[Vec[Type]](),
+          vec(type("Int"), type("Int")))?
+        .compile(context, ast, mono)?
+      statements.&.push(mono_call(range, range_fun, vec(
+        lower.expr(type("Int")),
+        upper.expr(type("Int")),
+      )) @ src)
+
+      var variant = slots.&.push(type("Int"), MonoSlotValue.uninitialized)
+      var next_int_fun = ast
+        .lookup_fun("next_int" @ src, none[Vec[Type]](),
+          vec(type("&", vec(type("Prng"))), type("Range", vec(type("Int")))))?
+        .compile(context, ast, mono)?
+      statements.&.push(mono_call(variant, next_int_fun, vec(
+        generator.expr(generator_ty),
+        range.expr(type("Range", vec(type("Int")))),
+      )) @ src)
+
+      var equals_fun = ast
+        .lookup_fun("==" @ src, none[Vec[Type]](),
+          vec(type("Int"), type("Int")))?
+        .compile(context, ast, mono)?
+      for it in enum_.variants.iter().enumerate() do {
+        var check = slots.&.push(type("Bool"), MonoSlotValue.uninitialized)
+        var constant = slots.&.push(type("Int"), MonoSlotValue.int(it.index))
+        statements.&.push(mono_call(check, equals_fun, vec(
+          variant.expr(type("Int")), constant.expr(type("Int"))
+        )) @ src)
+        statements.&.push(mono_jump_if_variant(
+          check.expr(type("Bool")), "true", MonoLabel { id = it.index }
+        ) @ src)
+      }
+
+      for it in enum_.variants.iter().enumerate() do {
+        var variant = it.item
+        statements.&.push(mono_label(it.index) @ src)
+
+        var payload_generator = slots.&.push(
+          type("Generator", vec(variant.type)),
+          MonoSlotValue.uninitialized)
+        var generator_fun = ast
+          .lookup_fun("generator" @ src,
+            some(vec(variant.type)), vec(type("&", vec(type("Prng")))))?
+          .compile(context, ast, mono)?
+        statements.&.push(mono_call(payload_generator, generator_fun, vec(
+          generator.expr(generator_ty)
+            .member("rng", type("&", vec(type("Prng"))))
+        )) @ src)
+
+        var payload = slots.&.push(variant.type, MonoSlotValue.uninitialized)
+        var generate_fun = ast
+          .lookup_fun("generate" @ src, none[Vec[Type]](),
+            vec(type("Generator", vec(variant.type))))?
+          .compile(context, ast, mono)?
+        statements.&.push(mono_call(
+          payload, generate_fun, vec[MonoExpr]()) @ src)
+        statements.&.push(mono_assign(
+          value.expr(value_ty).member(it.item.name, it.item.type),
+          payload.expr(variant.type),
+        ) @ src)
+
+        statements.&.push(mono_set_enum(
+          res, variant.name, payload.expr(variant.type)
+        ) @ src)
       }
 
       var label = statements.&.push(mono_label(enum_.variants.len) @ src)
@@ -5051,7 +5188,7 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
   }
 
   | fun arg_strings(input: $Input): Vec[Str] {
-  |   var v = vec()
+  |   var v = vec[Str]()
   |   { var sb = string_builder() sb.&.write(input.arg_0) v.&.push(sb.to_str()) }
   |   { var sb = string_builder() sb.&.write(input.arg_1) v.&.push(sb.to_str()) }
   |   v
