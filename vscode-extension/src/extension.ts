@@ -36,12 +36,12 @@ export function deactivate(): Thenable<void> | undefined {
 // analyzing the files takes some time. Thus, here we make sure that only one
 // update runs at a time.
 
-var newestScheduled = performance.now();
-var currentRun = Promise.resolve(null);
+let newestScheduled = performance.now();
+let currentRun = Promise.resolve(null);
 
 async function onlyRunOneAtATime(callback: () => Promise<void>) {
   console.log("Scheduling update");
-  var myTime = performance.now();
+  const myTime = performance.now();
   newestScheduled = myTime;
   await currentRun;
   if (newestScheduled != myTime) return; // a newer update exists and will run
@@ -53,37 +53,39 @@ async function onlyRunOneAtATime(callback: () => Promise<void>) {
 
 async function update() {
   console.log("Updating");
-  let promises = [];
+  const promises = [];
   for (const editor of vs.window.visibleTextEditors) {
     const uri = editor.document.uri.toString();
     if (!uri.endsWith(".mar")) continue;
 
     const checked = check(uri);
     promises.push(checked);
-    checked.then((errors) => {
-      diagnosticCollection.clear();
-      const diagnosticMap = new Map<string, vs.Diagnostic[]>();
-      for (const error of errors) {
-        console.info("Error: " + JSON.stringify(error));
-        if (error.source.file != uri) continue;
-        const range = new vs.Range(
-          editor.document.positionAt(error.source.start),
-          editor.document.positionAt(error.source.end),
+    checked
+      .then((errors) => {
+        diagnosticCollection.clear();
+        const diagnosticMap = new Map<string, vs.Diagnostic[]>();
+        for (const error of errors) {
+          console.info("Error: " + JSON.stringify(error));
+          if (error.src.file != uri) continue;
+          const range = new vs.Range(
+            editor.document.positionAt(error.src.start),
+            editor.document.positionAt(error.src.end),
+          );
+          const diagnostics = diagnosticMap.get(error.src.file) ?? [];
+          diagnostics.push(
+            new vs.Diagnostic(
+              range,
+              `${error.title}\n${error.description}`,
+              vs.DiagnosticSeverity.Error,
+            ),
+          );
+          diagnosticMap.set(error.src.file, diagnostics);
+        }
+        diagnosticMap.forEach((diags, file) =>
+          diagnosticCollection.set(vs.Uri.parse(file), diags),
         );
-        const diagnostics = diagnosticMap.get(error.source.file) ?? [];
-        diagnostics.push(
-          new vs.Diagnostic(
-            range,
-            `${error.title}\n${error.description}`,
-            vs.DiagnosticSeverity.Error,
-          ),
-        );
-        diagnosticMap.set(error.source.file, diagnostics);
-      }
-      diagnosticMap.forEach((diags, file) =>
-        diagnosticCollection.set(vs.Uri.parse(file), diags),
-      );
-    });
+      })
+      .catch((error) => console.error(`An error occurred: ${error}`));
   }
   await Promise.all(promises);
 }
@@ -91,7 +93,7 @@ async function update() {
 /// Returns the source code of the given URI. Prefers the content of open text
 /// documents, even if they're not saved yet. If none exists, asks the file
 /// system.
-async function readSource(uri: vs.Uri): Promise<string | null> {
+async function readCode(uri: vs.Uri): Promise<string | null> {
   for (const doc of vs.workspace.textDocuments)
     if (doc.uri.toString() == uri.toString()) return doc.getText();
   try {
@@ -123,7 +125,7 @@ async function check(path: string): Promise<MartinaiseError[]> {
     const message = JSON.parse(line) as MartinaiseMessage;
     if (message.type == "read_file") {
       const uri = vs.Uri.parse(message.path);
-      const content = await readSource(uri);
+      const content = await readCode(uri);
       // console.info("Read file: " + content);
       if (content) {
         soil.stdin.write(
@@ -158,7 +160,7 @@ interface MartinaiseReadFile {
 }
 interface MartinaiseError {
   type: "error";
-  source: {
+  src: {
     file: string;
     start: number;
     end: number;
