@@ -2659,12 +2659,20 @@ fun compile(type: Type, ast: Ast, mono: &Mono): Result[Type, Error] {
   type.compile(map[Str, Type](), ast, mono)
 }
 fun compile(
+  type: Type, type_env: Map[Str, Type], ast: Ast, mono: &Mono
+): Result[Type, Error] {
+  var mono_type = type.mono_type_def(type_env, ast, mono)?
+  if mono_type.is_complete() then
+    mono_type.mem_layout(mono.layouts.&, mono.type_defs).ignore()
+  ok[Type, Error](mono_type)
+}
+fun mono_type_def(
   type: Type, type_env: Map[Str, Type], ast: Ast, mono: &Mono,
 ): Result[Type, Error] {
   | TODO: Make sure generic types don't have parameters.
   var type = type_env.get_maybe(type.name) or {
     var args = vec[Type]()
-    for arg in type.args do args.&.push(arg.compile(type_env, ast, mono)?)
+    for arg in type.args do args.&.push(arg.mono_type_def(type_env, ast, mono)?)
     Type { name = type.name, args }
   }
 
@@ -2715,11 +2723,10 @@ fun compile(
     for field in struct_.fields do
       fields.&.push(MonoStructField {
         name = field.name.str,
-        type = field.type.compile(inner_type_env, ast, mono)?,
+        type = field.type.mono_type_def(inner_type_env, ast, mono)?,
       })
 
-    mono.type_defs.&
-      .put(type, MonoTypeDef.struct_(MonoStruct { fields }))
+    mono.type_defs.&.put(type, MonoTypeDef.struct_(MonoStruct { fields }))
   }
   case enum_(enum_) {
     var inner_type_env = map[Str, Type]()
@@ -2736,13 +2743,11 @@ fun compile(
     for variant in enum_.variants do
       variants.&.push(MonoEnumVariant {
         name = variant.name.str,
-        type = variant.type.compile(inner_type_env, ast, mono)?,
+        type = variant.type.mono_type_def(inner_type_env, ast, mono)?,
       })
 
     mono.type_defs.&.put(type, MonoTypeDef.enum_(MonoEnum { variants }))
   }
-
-  mono.layouts.&.put(type, type.mem_layout(mono.layouts.&, mono.type_defs))
 
   ok[Type, Error](type)
 }
@@ -3578,11 +3583,15 @@ fun calculate_mem_layout(
   layouts: &Map[Type, MemLayout], type_defs: Map[Type, MonoTypeDef]
 ): MemLayout {
   switch def
-  case opaque_(info) MemLayout {
-    type,
-    size = info.size,
-    alignment = info.alignment,
-    kind = MemLayoutKind.opaque_,
+  case opaque_(info) {
+    if info.alignment == 0 then
+      panic("mem layouting unfinished (placeholder) type: {type}")
+    MemLayout {
+      type,
+      size = info.size,
+      alignment = info.alignment,
+      kind = MemLayoutKind.opaque_,
+    }
   }
   case struct_(struct_) {
     | First, layout all the fields and determine this struct's alignment.
@@ -4796,7 +4805,8 @@ fun save_address(
         switch layouts.get(member.of.type).kind
         case struct_(s) s.name_to_offset_map().get(member.name)
         case enum_(e) panic("member receiver is an enum")
-        case opaque_(o) panic("can't access member {member.name} on {member.of.type} because it's opaque: {o}")
+        case opaque_ panic("can't access member {member.of.type}.{member.name} 
+          'because {member.of.type} is opaque")
         default panic("member receiver is always a struct")
       asm.smart_addi(register, offset_in_struct, scratch)
     }
