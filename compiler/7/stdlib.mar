@@ -232,7 +232,6 @@ fun or[O, E](result: Result[O, E]): ControlFlow[O] {
 | You can fuzz almost every Martinaise function. When you do, the compiler
 | generates a $Input struct that contains the inputs to the fuzzed function and
 | then calls fuzzer_main[$Input](). The following functions are also generated:
-| - generate(Generator[$Input]): $Input  | generates a new, random input
 | - run($Input): _                       | runs the fuzzed function
 | - arg_strings($Input): Vec[Str]        | stringifies the arguments
 
@@ -250,6 +249,10 @@ fun fuzzer_main[Input](): Never {
 struct Generator[T] { rng: &Prng }
 
 fun generator[T](rng: &Prng): Generator[T] { Generator[T] { rng } }
+
+| The compiler can auto-implement a generate function for structs and enums.
+fallback fun generate[T](generator: Generator[T]): T { ... }
+
 | Generator implementations for specific types:
 fun generate[T](generator: Generator[&T]): &T {
   generator[T](generator.rng).generate().put_on_heap()
@@ -440,6 +443,17 @@ fun read_line(stdin: Stdin): Result[Maybe[Str], Nothing] {
   }
   ok[Maybe[Str], Nothing](some(content.to_slice().to_str()))
 }
+
+| Debug printing  
+| Just like the write function, you can also implement a write_debug function to
+| customize how a value is formatted when debugging. If you don't, the compiler
+| auto-generates an implementation.
+
+fallback fun write_debug[W, T](writer: W, value: T) { ... }
+
+fun debug[T](value: T): Debug[T] { Debug { value } }
+struct Debug[T] { value: T }
+fun write[W, T](writer: W, debug: Debug[T]) { writer.write_debug(debug.value) }
 
 | Halting, Exiting, and Panicking  
 
@@ -719,6 +733,11 @@ fun next_int(rng: &Prng): Int {
   rng.c = rng.b ^ t
   rng.d = rng.d.rotl(45)
   res
+}
+fun next_int(rng: &Prng, range: Range[Int]): Int {
+  var next = rng.next_int().abs()
+  | println("next: {next}")
+  next % range.len() + range.start
 }
 fun child(rng: &Prng): Prng { prng(rng.next_int()) }
 

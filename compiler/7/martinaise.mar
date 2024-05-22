@@ -4067,7 +4067,9 @@ fun compile_builtin(
           .lookup_fun("generate" @ src, none[Vec[Type]](),
             vec(type("Generator", vec(field_ty))))?
           .compile(context, ast, mono)?
-        statements.&.push(mono_call(field, generate_fun, vec[MonoExpr]()) @ src)
+        statements.&.push(mono_call(field, generate_fun, vec(
+          field_generator.expr(type("Generator", vec(field_ty)))
+        )) @ src)
         statements.&.push(mono_assign(
           value.expr(value_ty).member(it.item.name, it.item.type),
           field.expr(field_ty),
@@ -4101,7 +4103,8 @@ fun compile_builtin(
           vec(type("&", vec(type("Prng"))), type("Range", vec(type("Int")))))?
         .compile(context, ast, mono)?
       statements.&.push(mono_call(variant, next_int_fun, vec(
-        generator.expr(generator_ty),
+        generator.expr(generator_ty)
+          .member("rng", type("&", vec(type("Prng")))),
         range.expr(type("Range", vec(type("Int")))),
       )) @ src)
 
@@ -4141,22 +4144,20 @@ fun compile_builtin(
           .lookup_fun("generate" @ src, none[Vec[Type]](),
             vec(type("Generator", vec(variant.type))))?
           .compile(context, ast, mono)?
-        statements.&.push(mono_call(
-          payload, generate_fun, vec[MonoExpr]()) @ src)
-        statements.&.push(mono_assign(
-          value.expr(value_ty).member(it.item.name, it.item.type),
-          payload.expr(variant.type),
-        ) @ src)
-
+        statements.&.push(mono_call(payload, generate_fun, vec(
+          payload_generator.expr(type("Generator", vec(variant.type)))
+        )) @ src)
         statements.&.push(mono_set_enum(
-          res, variant.name, payload.expr(variant.type)
+          value, variant.name, payload.expr(variant.type)
         ) @ src)
+        statements.&.push(mono_jump(
+          MonoLabel { id = enum_.variants.len }) @ src)
       }
 
       var label = statements.&.push(mono_label(enum_.variants.len) @ src)
       | TODO: update jumps
     }
-    statements.&.push(mono_return(nothing.expr(type("Nothing"))) @ src)
+    statements.&.push(mono_return(value.expr(value_ty)) @ src)
     return ok[MonoFunBody, Error](MonoFunBody { slots, statements })
   }
 
@@ -5114,52 +5115,6 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
     }))
   }
 
-  | fun generate(generator: Generator[$Input]): $Input {
-  |   $Input {
-  |     arg_0 = generator[TypeOfArg0](generator.rng).generate(),
-  |     arg_1 = generator[TypeOfArg1](generator.rng).generate(),
-  |     ...
-  |   }
-  | }
-  {
-    var fields = vec[AstMakeStructField]()
-    for it in arg_types.iter().enumerate() do
-      fields.&.push(AstMakeStructField {
-        name = "arg_{it.index}" @ src,
-        value = AstExpr.name("generator" @ src)
-          .call(
-            some(vec(it.item)),
-            vec(AstExpr.name("generator" @ src).member("rng" @ src)),
-            opening_paren
-          )
-          .member("generate" @ src).call(opening_paren)
-      })
-    var generate = AstFun {
-      name = "generate" @ src,
-      is_fallback = true,
-      type_args = vec[AstStr](),
-      args = vec[AstFunArg](AstFunArg {
-        name = "generator" @ src, type = type("Generator", vec(type("$Input")))
-      }),
-      returns = type("$Input"),
-      kind = AstFunKind.body(vec(
-        AstExpr.make_struct(AstMakeStruct {
-          type = type("$Input"), type_src = src, fields
-        })
-      )),
-    }
-    eprintln(generate)
-    | TODO: FIXME: stuff
-    if ast.funs.contains("generate")
-    then {
-      | TODO: update once there exists Map.get_ref
-      var overloads = ast.funs.get("generate")
-      overloads.&.push(generate)
-      ast.funs.&.put("generate", overloads)
-    }
-    else ast.funs.&.put("generate", vec(generate))
-  }
-
   { | fun run(input: $Input): _ { <fun to fuzz>(input.arg_0, input.arg_1, ...) }
     var args = vec[AstExpr]()
     for index in 0..arg_types.len do
@@ -5176,7 +5131,6 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
         AstExpr.name(fun_.name).call(args, opening_paren)
       )),
     }
-    eprintln(run)
     if ast.funs.contains("run")
     then {
       | TODO: update once there exists Map.get_ref
@@ -5189,8 +5143,12 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
 
   | fun arg_strings(input: $Input): Vec[Str] {
   |   var v = vec[Str]()
-  |   { var sb = string_builder() sb.&.write(input.arg_0) v.&.push(sb.to_str()) }
-  |   { var sb = string_builder() sb.&.write(input.arg_1) v.&.push(sb.to_str()) }
+  |   {
+  |     var sb = string_builder()
+  |     sb.&.write_debug(input.arg_0)
+  |     v.&.push(sb.to_str())
+  |   }
+  |   ...
   |   v
   | }
   {
@@ -5204,7 +5162,7 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
       body.&.push(var_("sb" @ src,
         AstExpr.name("string_builder" @ src).call(opening_paren)))
       body.&.push(AstExpr.name("sb" @ src).member("&" @ src)
-        .member("write" @ src).call(vec(
+        .member("write_debug" @ src).call(vec(
           AstExpr.name("input" @ src).member("arg_{index}" @ src)
         ), opening_paren))
       body.&.push(AstExpr.name("v" @ src).member("&" @ src)
@@ -5224,7 +5182,6 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
       returns = type("_"),
       kind = AstFunKind.body(outer_body),
     }
-    eprintln(arg_strings)
     if ast.funs.contains("arg_strings")
     then {
       | TODO: update once there exists Map.get_ref
