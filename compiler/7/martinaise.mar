@@ -4215,7 +4215,7 @@ fun compile(out: &CompileTypeFun, type: Type): MonoExpr {
 | reading up on it in more detail: https://github.com/MarcelGarus/soil
 
 struct Soil {
-  initial_mem: Vec[Byte],
+  initial_mem: Map[Str, Slice[Byte]], | map from mem label to bytes
   instructions: Vec[Instr],
   srcs: Vec[Src],
   | TODO: OrderedMap in stdlib
@@ -4228,6 +4228,7 @@ enum Instr {
   move: RegAndReg,
   movei: RegAndInt,
   moveib: RegAndByte,
+  moveimem: RegAndStr, | compiles to a movei with the memory address
   load: RegAndReg,
   loadb: RegAndReg,
   store: RegAndReg,
@@ -4255,8 +4256,10 @@ enum Instr {
   xor: RegAndReg,
   negate: Reg,
 }
+struct RegAndStr { reg: Reg, str: Str }
 struct RegAndInt { reg: Reg, int: Int }
 
+fun &(reg: Reg, str: Str): RegAndStr { RegAndStr { reg, str } }
 fun &(reg: Reg, int: Int): RegAndInt { RegAndInt { reg, int } }
 
 fun write[W](writer: W, soil: Soil) {
@@ -4282,7 +4285,10 @@ fun write[W](writer: W, soil: Soil) {
       }\n"
   }
   writer."\nInitial memory:\n"
-  for byte in soil.initial_mem do writer."{byte} "
+  for entry in soil.initial_mem do {
+    writer."{entry.key}:"
+    for byte in entry.value do writer." {byte}"
+  }
 }
 fun write[W](writer: W, instruction: Instr) {
   switch instruction
@@ -4291,6 +4297,7 @@ fun write[W](writer: W, instruction: Instr) {
   case move(args)     { writer."move {args.first} {args.second}" }
   case movei(args)    { writer."movei {args.reg} {args.int}" }
   case moveib(args)   { writer."moveib {args.reg} {args.byte}" }
+  case moveimem(args) { writer."movei {args.reg} {args.str}" }
   case load(args)     { writer."load {args.first} {args.second}" }
   case loadb(args)    { writer."loadb {args.first} {args.second}" }
   case store(args)    { writer."store {args.first} {args.second}" }
@@ -4327,6 +4334,19 @@ fun to_binary(soil: Soil): Slice[Byte] {
   | magic bytes
   bin.emit("soil".bytes())
 
+  | initial memory section
+  bin.emit_byte(1)
+  bin.emit(0) | len, will be overwritten
+  var mem_start = bin.bytes.len
+  var mem_label_to_offset = map[Str, Int]() | mem label to offset
+  for entry in soil.initial_mem do {
+    mem_label_to_offset.&.put(entry.key, bin.bytes.len - mem_start)
+    for byte in entry.value do bin.bytes.&.push(byte)
+  }
+  mem_label_to_offset.&.put("_end_of_initial_memory", bin.bytes.len - mem_start)
+  var mem_end = bin.bytes.len
+  bin.overwrite(mem_start - 8, mem_end - mem_start)
+
   | byte code section
   bin.emit_byte(0)
   bin.emit(0) | len, will be overwritten
@@ -4343,6 +4363,9 @@ fun to_binary(soil: Soil): Slice[Byte] {
     case move(regs)           { bin.emit_byte(16#d0) bin.emit(regs) }
     case movei(reg_and_word)  { bin.emit_byte(16#d1) bin.emit(reg_and_word) }
     case moveib(reg_and_byte) { bin.emit_byte(16#d2) bin.emit(reg_and_byte) }
+    case moveimem(reg_and_str) { bin.emit_byte(16#d1)
+                                bin.emit(reg_and_str.reg &
+                                  mem_label_to_offset.get(reg_and_str.str)) }
     case load(regs)           { bin.emit_byte(16#d3) bin.emit(regs) }
     case loadb(regs)          { bin.emit_byte(16#d4) bin.emit(regs) }
     case store(regs)          { bin.emit_byte(16#d5) bin.emit(regs) }
@@ -4382,11 +4405,6 @@ fun to_binary(soil: Soil): Slice[Byte] {
   }
   var byte_code_end = bin.bytes.len
   bin.overwrite(byte_code_start - 8, byte_code_end - byte_code_start)
-
-  | initial memory section
-  bin.emit_byte(1)
-  bin.emit(soil.initial_mem.len)
-  bin.emit(soil.initial_mem.to_slice())
 
   | labels section
   bin.emit_byte(3)
@@ -4474,7 +4492,6 @@ struct Asm {
   current_src: Src,
   last_label: Str,
   patches: Vec[Patch],
-  mem_labels: Map[Str, Int],
   soil: Soil,
 }
 struct Patch { where: Int, label: Str} | where is the instruction index
@@ -4527,13 +4544,6 @@ fun label(asm: &Asm, label: Str): Int {
   asm.patches.&.push(Patch { where = asm.soil.instructions.len, label })
   0
 }
-fun define_mem_label(asm: &Asm, label: Str) {
-  asm.mem_labels.&.put(label, asm.soil.initial_mem.len)
-}
-fun mem_label(asm: &Asm, label: Str): Int { asm.mem_labels.get(label) }
-fun mem_label_maybe(asm: &Asm, label: Str): Maybe[Int] {
-  asm.mem_labels.get_maybe(label)
-}
 
 | Instructions
 fun emit(asm: &Asm, instruction: Instr) {
@@ -4545,6 +4555,7 @@ fun panic(asm: &Asm)                   { asm.emit(Instr.panic) }
 fun move(asm: &Asm, a: Reg, b: Reg)    { asm.emit(Instr.move(a & b)) }
 fun movei(asm: &Asm, a: Reg, b: Int)   { asm.emit(Instr.movei(a & b)) }
 fun moveib(asm: &Asm, a: Reg, b: Byte) { asm.emit(Instr.moveib(a & b)) }
+fun moveimem(asm: &Asm, a: Reg, b: Str) { asm.emit(Instr.moveimem(a & b)) }
 fun load(asm: &Asm, a: Reg, b: Reg)    { asm.emit(Instr.load(a & b)) }
 fun loadb(asm: &Asm, a: Reg, b: Reg)   { asm.emit(Instr.loadb(a & b)) }
 fun store(asm: &Asm, a: Reg, b: Reg)   { asm.emit(Instr.store(a & b)) }
@@ -4597,17 +4608,16 @@ fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, Int] {
 }
 
 fun assemble(mono: Mono, entry_point: Str, asm: &Asm): Result[Nothing, Error] {
-  for global in mono.globals do {
-    asm.define_mem_label(global.key)
-    for i in 0..mono.layouts.get(global.value.return_type).size do
-      asm.soil.initial_mem.&.push(0.lower_byte())
-  }
+  for global in mono.globals do
+    asm.soil.initial_mem.&.put(global.key,
+      filled_slice(mono.layouts.get(global.value.return_type).size,
+        0.lower_byte()))
 
   asm.set_src(src("_setup", 0..0))
   asm.define_label("_start")
   asm.push(Reg.a)
   for global in mono.globals_init_order do {
-    asm.movei(Reg.a, asm.mem_label(global))
+    asm.moveimem(Reg.a, global)
     asm.store(Reg.sp, Reg.a)
     asm.call(asm.label("{global}.init"))
   }
@@ -4648,9 +4658,21 @@ fun assemble(mono: Mono, entry_point: Str, asm: &Asm): Result[Nothing, Error] {
     fun_.assemble_body(signature, mono, arg_layouts, asm)?
   }
 
-  asm.define_label("_end_of_initial_memory")
-  asm.smart_movei(Reg.a, asm.soil.initial_mem.len)
   asm.ret()
+
+  for it in asm.soil.instructions.iter().enumerate() do
+    if it.item is moveimem(reg_and_label) then {
+      var label = reg_and_label.str
+      if not(asm.soil.initial_mem.contains(label)) and
+        label != "_end_of_initial_memory"
+      then return error[Nothing, Error](make_error(
+        asm.soil.srcs.get(it.index), "Label {label} doesn't exist.",
+        "Note that movei only accepts labels of globals 
+          'that your program references in Martinaise 
+          'code somewhere else.",
+        vec[Str](),
+      ))
+    }
 
   ok[Nothing, Error]({})
 }
@@ -4740,10 +4762,10 @@ fun assemble_body(
         else panic("unknown int size {size}")
       }
       case str(str) {
-        var str_pos = asm.soil.initial_mem.len
-        for byte in str.bytes() do asm.soil.initial_mem.&.push(byte)
+        var str_label = "$str_{asm.soil.initial_mem.size}"
+        asm.soil.initial_mem.&.put(str_label, str.bytes())
         asm.smart_move_and_add_offset(Reg.a, Reg.sp, offset)
-        asm.movei(Reg.b, str_pos)
+        asm.moveimem(Reg.b, str_label)
         asm.store(Reg.a, Reg.b)
         asm.smart_addi(Reg.a, 8, Reg.b)
         asm.smart_movei(Reg.b, str.bytes().len)
@@ -4871,20 +4893,12 @@ fun assemble_body(
     case move(regs)       asm.move(regs.first, regs.second)
     case movei(args) {
       switch args.word
-      case label(label)   asm.movei(args.reg, asm.mem_label_maybe(label.str)
-                            or return error[Nothing, Error](make_error(
-                              label.src, "Label {label} doesn't exist.",
-                              "Note that movei only accepts labels of globals 
-                                'that your program references in Martinaise 
-                                'code somewhere else.",
-                              vec[Str](),
-                            )))
+      case label(label)   asm.moveimem(args.reg, label.str)
       case literal(word)  asm.movei(args.reg, word)
       case str(str) {
-                          var offset = asm.soil.initial_mem.len
-                          for byte in str.bytes() do
-                            asm.soil.initial_mem.&.push(byte)
-                          asm.movei(args.reg, offset)
+                          var str_label = "str_{asm.soil.initial_mem.size}"
+                          asm.soil.initial_mem.&.put(str_label, str.bytes())
+                          asm.moveimem(args.reg, str_label)
       }
     }
     case moveib(args)     asm.moveib(args.reg, args.byte)
@@ -4928,7 +4942,7 @@ fun save_address(
   switch expr.kind
   case nothing {} | you can read zero bytes from anywhere
   case never {}   | you can read zero bytes from anywhere
-  case global(name) asm.movei(register, asm.mem_label(name))
+  case global(name) asm.moveimem(register, name)
   case slot(slot) {
     asm.smart_move_and_add_offset(register, Reg.sp,
       locals_offset + slot_offsets.get(slot))
@@ -5007,9 +5021,8 @@ fun soil(mono: Mono, entry_point: Str): Result[Soil, Error] {
     current_src = src("_nowhere", 0..0),
     last_label = "",
     patches = vec[Patch](),
-    mem_labels = map[Str, Int](),
     soil = Soil {
-      initial_mem = vec[Byte](),
+      initial_mem = map[Str, Slice[Byte]](),
       instructions = vec[Instr](),
       srcs = vec[Src](),
       labels_to_index = map[Str, Int](),
@@ -5027,37 +5040,32 @@ fun soil(mono: Mono, entry_point: Str): Result[Soil, Error] {
 | input that runs a new path, we want to focus on that input and mutate it to
 | find similar ones.
 | To do that, the compiler needs to track the coverage. I chose to track the
-| branch coverage, aka the information which cjumps are taken. To make tracking
-| efficient, the compiler inserts some instructions before every cjump
-| instruction, updating a global bitset of which cjumps were taken.
+| branch coverage, aka which cjumps were taken. To make tracking efficient, the
+| compiler inserts some instructions before every cjump instruction, updating a
+| global bitset of which cjumps were taken.
 
 fun instrument(bin: Soil) {
-  | For each instruction, which other instructions jump to it
-  | (excluding returns).
-  var come_from = filled_slice(bin.instructions.len, vec[Int]())
+  var new_instructions = vec[Instruction]()
+  var mapping = map[Int, Int]()
+
   for instruction in bin.instructions.iter().enumerate() do {
     var index       = instruction.index
     var instruction = instruction.value
 
-    switch instruction
-    case ret {}
-    case call(target) {
-      come_from.get_mut(target).push(index)
-      | var next = index + 1
-      | if next < bin.instructions.len then come_from.get_mut(next).push(index)
-    }
-    case jump(target) {
-      come_from.get_mut(target).push(index)
-    }
-    case cjump(target) {
-      come_from.get_mut(target).push(index)
-      var next = index + 1
-      if next < bin.instructions.len then come_from.get_mut(next).push(index)
-    }
-    default {
-      var next = index + 1
-      if next < bin.instructions.len then come_from.get_mut(next).push(index)
-    }
+    mapping.&.put(index, new_instructions.len)
+
+    if instruction is cjump(target) then {
+      | push a push b
+      | movei a coverage load a a | coverage.bitset
+      | moveib b 2 add a b | coverage.bitset + 2
+      | moveib b 1
+      | cjump .jump_taken
+      | .jump_not_taken: add a b | coverage.bitset + 3
+      | .jump_taken: storeb a b | store a 1 there
+      | .end: pop b pop a ret
+      | cjump <target>  | <-- the original cjump
+      new_instructions.&.push(Instruction.cjump(target))
+    } else new_instructions.&.push(instruction)
   }
 
   | For each instruction, the minimum amount of cjumps that need to be taken to
