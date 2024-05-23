@@ -237,39 +237,57 @@ fun or[O, E](result: Result[O, E]): ControlFlow[O] {
 
 fun fuzzer_main[Input](): Never {
   var rng = prng()
-  var coverage = get_coverage()
-  var interesting = vec[Input]()
-  for i in 0..100 do {
+  var current_cov = get_coverage()
+  var total_cov = coverage(current_cov.len)
+  var schick = vec[FoundInput[Input]]()
+
+  for i in 0..1000 do {
     var checkpoint = heap_checkpoint()
     var input = generator[Input](rng.&).generate()
-    var call = string_builder()
-    call.&."Running with {comma_separated(input.arg_strings())}"
-    coverage.reset()
+    var in_str = "{comma_separated(input.arg_strings())}"
+
+    current_cov.reset()
     var res = input.run()
-    call.&." = {res}"
-    println("{call.to_str().pad_right(30)} {coverage}")
-    checkpoint.free_everything_allocated_after()
+    var out_str = "{res}"
+
+    var has_new_coverage = current_cov.improves_upon(total_cov)
+
+    println("Running with {"{in_str} = {res}".pad_right(50)} 
+      '{current_cov} total: {total_cov} 
+      '{if has_new_coverage then " schick!" else ""}")
+
+    if has_new_coverage then {
+      current_cov.integrate_into(total_cov)
+      schick.&.push(FoundInput { input, in_str, out_str })
+    } else {
+      checkpoint.free_everything_allocated_after()
+    }
   }
+
+  println("Done fuzzing. Some interesting inputs:")
+  for input in schick do
+    println("- {input.in_str} -> {input.out_str}")
+
   exit(0)
 }
+struct FoundInput[Input] { input: Input, in_str: Str, out_str: Str }
 
 struct Coverage { bitset: Address, len: Int }
 
+fun coverage(len: Int): Coverage {
+  var coverage = Coverage { bitset = malloc(len, 1), len }
+  coverage.reset()
+  coverage
+}
 fun get_coverage(): Coverage asm {
   load a sp | return address
   movei b _coverage_bitset store a b | coverage.bitset
   moveib b 8 add a b movei b _coverage_len load b b store a b | coverage.len
   ret
 }
-fun coverage_len(): Int asm {
-  load a sp | return address
-  movei b _coverage_len load b b
-  store a b ret
-}
 fun reset(coverage: Coverage) asm {
   moveib a 8  add a sp load a a | a = cursor = coverage.bitset
   moveib b 16 add b sp load b b | b = coverage.len
-  moveib c 2 mul b c            | b = coverage.len * 2
   moveib c 0                    | c = counter
   moveib d 0 moveib e 1         | constants
   .loop:
@@ -278,8 +296,23 @@ fun reset(coverage: Coverage) asm {
   add a e add c e jump .loop
   .done: ret
 }
+fun get_ref(coverage: Coverage, index: Int): &Bool {
+  {coverage.bitset + index}.to_reference[Bool]()
+}
+fun is_marked(coverage: Coverage, index: Int): Bool {
+  coverage.get_ref(index).*
+}
+fun mark(coverage: Coverage, index: Int) { coverage.get_ref(index).* = true }
+fun improves_upon(new: Coverage, original: Coverage): Bool {
+  for i in 0..new.len do
+    if new.is_marked(i) and not(original.is_marked(i)) then return true
+  return false
+}
+fun integrate_into(new: Coverage, total: Coverage) {
+  for i in 0..new.len do if new.is_marked(i) then total.mark(i)
+}
 fun write[W](writer: W, coverage: Coverage) {
-  for i in 0..{2 * coverage.len} do {
+  for i in 0..coverage.len do {
     var byte = {coverage.bitset + i}.to_reference[Byte]().*.to_int()
     writer."{if byte == 0 then "." else if byte == 1 then "X" else "?"}"
   }
@@ -300,7 +333,7 @@ fun generate(generator: Generator[Str]): Str { "test" }
 fun generate(generator: Generator[Int]): Int { generator.rng.next_int(0..100) }
 fun generate[T](generator: Generator[Slice[T]]): Slice[T] {
   var len = generator.rng.next_int(0..10)
-  var slice = uninitialized_slice[T]() | todo: allocate enough capacity upfront
+  var slice = uninitialized_slice[T](len)
   for i in 0..len do slice.get_ref(i).* = generator[T](generator.rng).generate()
   slice
 }
@@ -724,6 +757,9 @@ fun dec(a: Byte): Byte   { a - 1.lower_byte() }
 fun ==(a: Byte, b: Byte): Bool   { if a <=> b is equal then true else false }
 fun hash(hasher: &Hasher, int: Byte)  { hasher.hash(int.to_int()) }
 
+fun generate(generator: Generator[Byte]): Byte {
+  generator.rng.next_int().lower_byte()
+}
 fun write[W](writer: W, int: Byte)  { writer.write(radix(int, 10)) }
 fun radix(int: Byte, radix: Int): RadixFormat { radix(int.to_int(), radix) }
 fun digit_to_char(digit: Byte): Char {
@@ -1185,6 +1221,12 @@ fun trim_suffix[T](slice: &Slice[T], suffix: Slice[T]): Bool {
   var matches = slice.ends_with(suffix)
   if matches then slice.* = slice.without_last(suffix.len)
   matches
+}
+
+fun sum(slice: Slice[Int]): Int {
+  var sum = 0
+  for item in slice do sum = sum + item
+  sum
 }
 
 fun sort[T](slice: &Slice[T]) {

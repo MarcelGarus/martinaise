@@ -4933,7 +4933,7 @@ fun instrument(soil: Soil, function: Str): Soil {
   new.soil.initial_mem.&.put("_coverage_bitset",
     filled_slice(2 * num_cjumps, 0.lower_byte()))
   new.soil.initial_mem.&.put("_coverage_len",
-    Slice[Byte] { len = 8, data = num_cjumps.put_on_heap().to_address() })
+    Slice[Byte] { len = 8, data = {2 * num_cjumps}.put_on_heap().to_address() })
 
   var label = ""
   var cjump_index = 0
