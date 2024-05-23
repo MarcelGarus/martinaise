@@ -236,12 +236,9 @@ fun or[O, E](result: Result[O, E]): ControlFlow[O] {
 | - arg_strings($Input): Vec[Str]        | stringifies the arguments
 
 fun fuzzer_main[Input](): Never {
-  println("Fuzzing.")
   var rng = prng()
-  | loop {}
   var coverage = get_coverage()
-  println("Coverage: {coverage.bitset} {coverage.len}")
-  for i in 0..10 do {
+  for i in 0..100 do {
     var input = generator[Input](rng.&).generate()
     var call = string_builder()
     call.&."Running with {comma_separated(input.arg_strings())}"

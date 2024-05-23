@@ -4932,7 +4932,6 @@ fun instrument(soil: Soil, function: Str): Soil {
   | Defines _coverage_bitset and _coverage_len data labels.
   new.soil.initial_mem.&.put("_coverage_bitset",
     filled_slice(2 * num_cjumps, 0.lower_byte()))
-  eprintln("Number of cjumps in fuzzed function: {num_cjumps}\n")
   new.soil.initial_mem.&.put("_coverage_len",
     Slice[Byte] { len = 8, data = num_cjumps.put_on_heap().to_address() })
 
@@ -5499,7 +5498,6 @@ fun main(): Never {
     var num_cjumps = 0
     for instruction in soil.instructions do
       if instruction is cjump then num_cjumps = num_cjumps + 1
-    println("Number of cjumps: {num_cjumps}")
     exec(binary)
   }
 
