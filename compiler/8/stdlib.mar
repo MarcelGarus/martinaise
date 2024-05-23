@@ -236,14 +236,53 @@ fun or[O, E](result: Result[O, E]): ControlFlow[O] {
 | - arg_strings($Input): Vec[Str]        | stringifies the arguments
 
 fun fuzzer_main[Input](): Never {
+  println("Fuzzing.")
   var rng = prng()
-  for i in 0..100 do {
+  | loop {}
+  var coverage = get_coverage()
+  println("Coverage: {coverage.bitset} {coverage.len}")
+  for i in 0..10 do {
     var input = generator[Input](rng.&).generate()
-    print("Fuzzing ({comma_separated(input.arg_strings())}) = ")
+    var call = string_builder()
+    call.&."Running with {comma_separated(input.arg_strings())}"
+    coverage.reset()
     var res = input.run()
-    println("{res}")
+    call.&." = {res}"
+    println("{call.to_str().pad_right(30)} {coverage}")
   }
   exit(0)
+}
+
+struct Coverage { bitset: Address, len: Int }
+
+fun get_coverage(): Coverage asm {
+  load a sp | return address
+  movei b _coverage_bitset store a b | coverage.bitset
+  moveib b 8 add a b movei b _coverage_len load b b store a b | coverage.len
+  ret
+}
+fun coverage_len(): Int asm {
+  load a sp | return address
+  movei b _coverage_len load b b
+  store a b ret
+}
+fun reset(coverage: Coverage) asm {
+  moveib a 8  add a sp load a a | a = cursor = coverage.bitset
+  moveib b 16 add b sp load b b | b = coverage.len
+  moveib c 2 mul b c            | b = coverage.len * 2
+  moveib c 0                    | c = counter
+  moveib d 0 moveib e 1         | constants
+  .loop:
+  cmp c b isequal cjump .done
+  storeb a d
+  add a e add c e jump .loop
+  .done: ret
+}
+fun write[W](writer: W, coverage: Coverage) {
+  for i in 0..{2 * coverage.len} do {
+    var byte = {coverage.bitset + i}.to_reference[Byte]().*.to_int()
+    writer."{if byte == 0 then "." else if byte == 1 then "X" else "?"}"
+  }
 }
 
 struct Generator[T] { rng: &Prng }

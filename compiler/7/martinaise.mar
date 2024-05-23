@@ -4288,6 +4288,7 @@ fun write[W](writer: W, soil: Soil) {
   for entry in soil.initial_mem do {
     writer."{entry.key}:"
     for byte in entry.value do writer." {byte}"
+    writer."\n"
   }
 }
 fun write[W](writer: W, instruction: Instr) {
@@ -4403,38 +4404,38 @@ fun emit(asm: &Asm, instruction: Instr) {
   asm.soil.instructions.&.push(instruction)
   asm.soil.srcs.&.push(asm.current_src)
 }
-fun nop(asm: &Asm)                     { asm.emit(Instr.nop) }
-fun panic(asm: &Asm)                   { asm.emit(Instr.panic) }
-fun move(asm: &Asm, a: Reg, b: Reg)    { asm.emit(Instr.move(a & b)) }
-fun movei(asm: &Asm, a: Reg, b: Int)   { asm.emit(Instr.movei(a & b)) }
-fun moveib(asm: &Asm, a: Reg, b: Byte) { asm.emit(Instr.moveib(a & b)) }
+fun nop(asm: &Asm)                      { asm.emit(Instr.nop) }
+fun panic(asm: &Asm)                    { asm.emit(Instr.panic) }
+fun move(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.move(a & b)) }
+fun movei(asm: &Asm, a: Reg, b: Int)    { asm.emit(Instr.movei(a & b)) }
+fun moveib(asm: &Asm, a: Reg, b: Byte)  { asm.emit(Instr.moveib(a & b)) }
 fun moveimem(asm: &Asm, a: Reg, b: Str) { asm.emit(Instr.moveimem(a & b)) }
-fun load(asm: &Asm, a: Reg, b: Reg)    { asm.emit(Instr.load(a & b)) }
-fun loadb(asm: &Asm, a: Reg, b: Reg)   { asm.emit(Instr.loadb(a & b)) }
-fun store(asm: &Asm, a: Reg, b: Reg)   { asm.emit(Instr.store(a & b)) }
-fun storeb(asm: &Asm, a: Reg, b: Reg)  { asm.emit(Instr.storeb(a & b)) }
-fun push(asm: &Asm, a: Reg)            { asm.emit(Instr.push(a)) }
-fun pop(asm: &Asm, a: Reg)             { asm.emit(Instr.pop(a)) }
-fun jump(asm: &Asm, a: Int)            { asm.emit(Instr.jump(a)) }
-fun cjump(asm: &Asm, a: Int)           { asm.emit(Instr.cjump(a)) }
-fun call(asm: &Asm, a: Int)            { asm.emit(Instr.call(a)) }
-fun ret(asm: &Asm)                     { asm.emit(Instr.ret) }
-fun syscall(asm: &Asm, a: Byte)        { asm.emit(Instr.syscall(a)) }
-fun cmp(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.cmp(a & b)) }
-fun isequal(asm: &Asm)                 { asm.emit(Instr.isequal) }
-fun isless(asm: &Asm)                  { asm.emit(Instr.isless) }
-fun isgreater(asm: &Asm)               { asm.emit(Instr.isgreater) }
-fun islessequal(asm: &Asm)             { asm.emit(Instr.islessequal) }
-fun isgreaterequal(asm: &Asm)          { asm.emit(Instr.isgreaterequal) }
-fun add(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.add(a & b)) }
-fun sub(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.sub(a & b)) }
-fun mul(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.mul(a & b)) }
-fun div(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.div(a & b)) }
-fun rem(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.rem(a & b)) }
-fun and(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.and(a & b)) }
-fun or(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.or(a & b)) }
-fun xor(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.xor(a & b)) }
-fun negate(asm: &Asm, a: Reg)          { asm.emit(Instr.negate(a)) }
+fun load(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.load(a & b)) }
+fun loadb(asm: &Asm, a: Reg, b: Reg)    { asm.emit(Instr.loadb(a & b)) }
+fun store(asm: &Asm, a: Reg, b: Reg)    { asm.emit(Instr.store(a & b)) }
+fun storeb(asm: &Asm, a: Reg, b: Reg)   { asm.emit(Instr.storeb(a & b)) }
+fun push(asm: &Asm, a: Reg)             { asm.emit(Instr.push(a)) }
+fun pop(asm: &Asm, a: Reg)              { asm.emit(Instr.pop(a)) }
+fun jump(asm: &Asm, a: Int)             { asm.emit(Instr.jump(a)) }
+fun cjump(asm: &Asm, a: Int)            { asm.emit(Instr.cjump(a)) }
+fun call(asm: &Asm, a: Int)             { asm.emit(Instr.call(a)) }
+fun ret(asm: &Asm)                      { asm.emit(Instr.ret) }
+fun syscall(asm: &Asm, a: Byte)         { asm.emit(Instr.syscall(a)) }
+fun cmp(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.cmp(a & b)) }
+fun isequal(asm: &Asm)                  { asm.emit(Instr.isequal) }
+fun isless(asm: &Asm)                   { asm.emit(Instr.isless) }
+fun isgreater(asm: &Asm)                { asm.emit(Instr.isgreater) }
+fun islessequal(asm: &Asm)              { asm.emit(Instr.islessequal) }
+fun isgreaterequal(asm: &Asm)           { asm.emit(Instr.isgreaterequal) }
+fun add(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.add(a & b)) }
+fun sub(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.sub(a & b)) }
+fun mul(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.mul(a & b)) }
+fun div(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.div(a & b)) }
+fun rem(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.rem(a & b)) }
+fun and(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.and(a & b)) }
+fun or(asm: &Asm, a: Reg, b: Reg)       { asm.emit(Instr.or(a & b)) }
+fun xor(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.xor(a & b)) }
+fun negate(asm: &Asm, a: Reg)           { asm.emit(Instr.negate(a)) }
 
 fun mangle(name: Str): Str {
   var contains_dot = false
@@ -4465,6 +4466,8 @@ fun assemble(mono: Mono, entry_point: Str, asm: &Asm): Result[Nothing, Error] {
     asm.soil.initial_mem.&.put(global.key,
       filled_slice(mono.layouts.get(global.value.return_type).size,
         0.lower_byte()))
+  asm.soil.initial_mem.&.put("_coverage_bitset", empty_slice[Byte]())
+  asm.soil.initial_mem.&.put("_coverage_len", filled_slice(8, 0.lower_byte()))
 
   asm.set_src(src("_setup", 0..0))
   asm.define_label("_start")
@@ -4897,41 +4900,108 @@ fun soil(mono: Mono, entry_point: Str): Result[Soil, Error] {
 | compiler inserts some instructions before every cjump instruction, updating a
 | global bitset of which cjumps were taken.
 
-fun instrument(bin: Soil) {
-  var new_instructions = vec[Instruction]()
+| Adds a coverage initialization preamble and instruments cjumps in the given
+| function by adding code that updates the coverage.
+fun instrument(soil: Soil, function: Str): Soil {
+  var new = Asm {
+    current_src = src("_not_used", 0..0),
+    last_label = "",
+    patches = vec[Patch](),
+    soil = Soil {
+      initial_mem = soil.initial_mem, | TODO: make a copy; this is mutated
+      instructions = vec[Instr](),
+      srcs = vec[Src](),
+      labels_to_index = map[Str, Int](),
+      labels = soil.labels,
+    }
+  }
   var mapping = map[Int, Int]()
 
-  for instruction in bin.instructions.iter().enumerate() do {
-    var index       = instruction.index
-    var instruction = instruction.value
+  var index_to_label = map[Int, Str]()
+  for entry in soil.labels_to_index do
+    index_to_label.&.put(entry.value, entry.key)
 
-    mapping.&.put(index, new_instructions.len)
-
-    if instruction is cjump(target) then {
-      | push a push b
-      | movei a coverage load a a | coverage.bitset
-      | moveib b 2 add a b | coverage.bitset + 2
-      | moveib b 1
-      | cjump .jump_taken
-      | .jump_not_taken: add a b | coverage.bitset + 3
-      | .jump_taken: storeb a b | store a 1 there
-      | .end: pop b pop a ret
-      | cjump <target>  | <-- the original cjump
-      new_instructions.&.push(Instruction.cjump(target))
-    } else new_instructions.&.push(instruction)
+  var label = ""
+  var num_cjumps = 0
+  for it in soil.instructions.iter().enumerate() do {
+    if index_to_label.get_maybe(it.index) is some(l) then label = l
+    if it.item is cjump then
+      if label.starts_with(function) then num_cjumps = num_cjumps + 1
   }
 
-  | For each instruction, the minimum amount of cjumps that need to be taken to
-  | reach the target.
-  var distances = filled_slice(bin.instructions.len, 999)
-  var queue = priority_queue[Int]() | prio = distance, item = instruction
-  queue.&.push(tuple(target, 0))
-  loop switch queue.take() case none break case some(tuple) {
-    var index    = tuple.x
-    var distance = tuple.y
-    if distances.get(index) <= distance then continue
-    distances
+  | Defines _coverage_bitset and _coverage_len data labels.
+  new.soil.initial_mem.&.put("_coverage_bitset",
+    filled_slice(2 * num_cjumps, 0.lower_byte()))
+  eprintln("Number of cjumps in fuzzed function: {num_cjumps}\n")
+  new.soil.initial_mem.&.put("_coverage_len",
+    Slice[Byte] { len = 8, data = num_cjumps.put_on_heap().to_address() })
+
+  var label = ""
+  var cjump_index = 0
+  var to_patch = vec[Int]()
+  for it in soil.instructions.iter().enumerate() do {
+    var instruction = it.item
+    mapping.&.put(it.index, new.soil.instructions.len)
+
+    if index_to_label.get_maybe(it.index) is some(l) then label = l
+    new.&.set_src(soil.srcs.get(it.index))
+
+    switch instruction
+    case jump(target) {
+      to_patch.&.push(new.soil.instructions.len) new.&.emit(instruction)
+    }
+    case cjump(target) {
+      if label.starts_with(function) then {
+        | Replace with this:
+        | push a push b
+        | movei a _coverage_bitset
+        | movei b <index> add a b   | _coverage_bitset + index
+        | moveib b 1
+        | cjump .jump_taken
+        | .jump_not_taken: add a b  | _coverage_bitset + index + 1
+        | .jump_taken: storeb a b   | store a 1 there
+        | .end: pop b pop a
+        | cjump <target>            | <-- the original cjump
+
+        new.&.push(Reg.a)
+        new.&.push(Reg.b)
+        new.&.moveimem(Reg.a, "_coverage_bitset")
+        new.&.movei(Reg.b, cjump_index)
+        new.&.add(Reg.a, Reg.b)
+        new.&.moveib(Reg.b, 1.lower_byte())
+        new.&.cjump(new.soil.instructions.len + 2) |-------+
+        new.&.add(Reg.a, Reg.b)                            |
+        new.&.storeb(Reg.a, Reg.b) | <---------------------+
+        new.&.pop(Reg.b)
+        new.&.pop(Reg.a)
+        to_patch.&.push(new.soil.instructions.len) new.&.cjump(target)
+
+        cjump_index = cjump_index + 1
+      } else {
+        to_patch.&.push(new.soil.instructions.len) new.&.emit(instruction)
+      }
+    }
+    case call(target) {
+      to_patch.&.push(new.soil.instructions.len) new.&.emit(instruction)
+    }
+    default new.&.emit(instruction)
   }
+
+  for patch in to_patch do {
+    var instr = new.soil.instructions.&.get_ref(patch)
+    switch instr.*
+    case jump(target)  instr.* = Instr.jump(mapping.get(target))
+    case cjump(target) instr.* = Instr.cjump(mapping.get(target))
+    case call(target)  instr.* = Instr.call(mapping.get(target))
+    default unreachable()
+  }
+  for entry in soil.labels_to_index do
+    new.soil.labels_to_index.&.put(entry.key, mapping.get(entry.value))
+
+  | println("New Soil:\n{new.soil}")
+  | println("Fuzzed function is at {soil.labels_to_index.get(function)}")
+
+  new.soil
 }
 
 | Fuzzing Hooks  
@@ -5349,7 +5419,7 @@ fun main(): Never {
     exit(0)
   }
 
-  if command is fuzz(fuzz) then {
+  var fuzzed_fun = if command is fuzz(fuzz) then {
     print_status("Generating fuzzing hooks")
     var signature = fuzz.signature
     var lookup_solution =
@@ -5360,7 +5430,8 @@ fun main(): Never {
     | generate(Generator[$Input]): $Input
     | run($Input): _
     ast.&.generate_fuzzing_hooks(lookup_solution.fun_, lookup_solution.type_env)
-  }
+    some(lookup_solution)
+  } else none[LookupFunSolution]()
 
   print_status("Monoing")
   var src = src("_entry_point", 0..0)
@@ -5396,6 +5467,12 @@ fun main(): Never {
   if command is soil then { println(soil) exit(0) }
 
   if command is analyze then exit(0)
+
+  if command is fuzz then {
+    var fuzzed_fun = fuzzed_fun.unwrap().compile(context().&, ast, mono.&)
+      .unwrap() | The fuzzed fun should already be compiled anyway.
+    soil = soil.instrument(fuzzed_fun)
+  }
 
   print_status("Assembling binary")
   var binary = soil.to_binary()
