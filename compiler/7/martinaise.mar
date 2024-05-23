@@ -4326,153 +4326,6 @@ fun write[W](writer: W, instruction: Instr) {
   case negate(arg)    { writer."negate {arg}" }
 }
 
-| Turns the Soil program into a Soil binary, containing instructions and byte
-| code in a compact form.
-fun to_binary(soil: Soil): Slice[Byte] {
-  var bin = SoilBinary { bytes = vec[Byte]() }.&
-
-  | magic bytes
-  bin.emit("soil".bytes())
-
-  | initial memory section
-  bin.emit_byte(1)
-  bin.emit(0) | len, will be overwritten
-  var mem_start = bin.bytes.len
-  var mem_label_to_offset = map[Str, Int]() | mem label to offset
-  for entry in soil.initial_mem do {
-    mem_label_to_offset.&.put(entry.key, bin.bytes.len - mem_start)
-    for byte in entry.value do bin.bytes.&.push(byte)
-  }
-  mem_label_to_offset.&.put("_end_of_initial_memory", bin.bytes.len - mem_start)
-  var mem_end = bin.bytes.len
-  bin.overwrite(mem_start - 8, mem_end - mem_start)
-
-  | byte code section
-  bin.emit_byte(0)
-  bin.emit(0) | len, will be overwritten
-  var byte_code_start = bin.bytes.len
-  var instruction_index_to_byte_code_offset =
-    uninitialized_slice[Int](soil.instructions.len)
-  var patches = map[Int, Int]() | offset in binary to instruction index
-  for it in soil.instructions.iter().enumerate() do {
-    instruction_index_to_byte_code_offset.get_ref(it.index).* =
-      bin.bytes.len - byte_code_start
-    switch it.item
-    case nop                  { bin.emit_byte(16#00) }
-    case panic                { bin.emit_byte(16#e0) }
-    case move(regs)           { bin.emit_byte(16#d0) bin.emit(regs) }
-    case movei(reg_and_word)  { bin.emit_byte(16#d1) bin.emit(reg_and_word) }
-    case moveib(reg_and_byte) { bin.emit_byte(16#d2) bin.emit(reg_and_byte) }
-    case moveimem(reg_and_str) { bin.emit_byte(16#d1)
-                                bin.emit(reg_and_str.reg &
-                                  mem_label_to_offset.get(reg_and_str.str)) }
-    case load(regs)           { bin.emit_byte(16#d3) bin.emit(regs) }
-    case loadb(regs)          { bin.emit_byte(16#d4) bin.emit(regs) }
-    case store(regs)          { bin.emit_byte(16#d5) bin.emit(regs) }
-    case storeb(regs)         { bin.emit_byte(16#d6) bin.emit(regs) }
-    case push(reg)            { bin.emit_byte(16#d7) bin.emit(reg) }
-    case pop(reg)             { bin.emit_byte(16#d8) bin.emit(reg) }
-    case jump(word)           { bin.emit_byte(16#f0)
-                                patches.&.put(bin.bytes.len, word)
-                                bin.emit(0) }
-    case cjump(word)          { bin.emit_byte(16#f1)
-                                patches.&.put(bin.bytes.len, word)
-                                bin.emit(0) }
-    case call(word)           { bin.emit_byte(16#f2)
-                                patches.&.put(bin.bytes.len, word)
-                                bin.emit(0) }
-    case ret                  { bin.emit_byte(16#f3) }
-    case syscall(byte)        { bin.emit_byte(16#f4) bin.emit(byte) }
-    case cmp(regs)            { bin.emit_byte(16#c0) bin.emit(regs) }
-    case isequal              { bin.emit_byte(16#c1) }
-    case isless               { bin.emit_byte(16#c2) }
-    case isgreater            { bin.emit_byte(16#c3) }
-    case islessequal          { bin.emit_byte(16#c4) }
-    case isgreaterequal       { bin.emit_byte(16#c5) }
-    case add(regs)            { bin.emit_byte(16#a0) bin.emit(regs) }
-    case sub(regs)            { bin.emit_byte(16#a1) bin.emit(regs) }
-    case mul(regs)            { bin.emit_byte(16#a2) bin.emit(regs) }
-    case div(regs)            { bin.emit_byte(16#a3) bin.emit(regs) }
-    case rem(regs)            { bin.emit_byte(16#a4) bin.emit(regs) }
-    case and(regs)            { bin.emit_byte(16#b0) bin.emit(regs) }
-    case or(regs)             { bin.emit_byte(16#b1) bin.emit(regs) }
-    case xor(regs)            { bin.emit_byte(16#b2) bin.emit(regs) }
-    case negate(reg)          { bin.emit_byte(16#b3) bin.emit(reg) }
-  }
-  for patch in patches do {
-    var real_target = instruction_index_to_byte_code_offset.get(patch.value)
-    bin.overwrite(patch.key, real_target)
-  }
-  var byte_code_end = bin.bytes.len
-  bin.overwrite(byte_code_start - 8, byte_code_end - byte_code_start)
-
-  | labels section
-  bin.emit_byte(3)
-  bin.emit(0)
-  var labels_start = bin.bytes.len
-  bin.emit(soil.labels.len)
-  for label in soil.labels do {
-    var index = soil.labels_to_index.get(label)
-    var offset = instruction_index_to_byte_code_offset.get(index)
-    bin.emit(offset)
-    bin.emit(label.len)
-    for char in label do bin.emit(char.byte)
-  }
-  var labels_end = bin.bytes.len
-  bin.overwrite(labels_start - 8, labels_end - labels_start)
-
-  bin.bytes.to_slice()
-}
-struct SoilBinary { bytes: Vec[Byte] }
-fun emit(bin: &SoilBinary, byte: Byte) { bin.bytes.&.push(byte) }
-fun emit_byte(bin: &SoilBinary, byte: Int) {
-  bin.bytes.&.push(byte.lower_byte())
-}
-fun emit(bin: &SoilBinary, bytes: Slice[Byte]) { bin.bytes.&.push_all(bytes) }
-fun emit(bin: &SoilBinary, word: Int) {
-  bin.emit_byte(word & 16#ff)
-  bin.emit_byte(word / 16#100 & 16#ff)
-  bin.emit_byte(word / 16#10000 & 16#ff)
-  bin.emit_byte(word / 16#1000000 & 16#ff)
-  bin.emit_byte(word / 16#100000000 & 16#ff)
-  bin.emit_byte(word / 16#10000000000 & 16#ff)
-  bin.emit_byte(word / 16#1000000000000 & 16#ff)
-  bin.emit_byte(word / 16#100000000000000 & 16#ff)
-}
-fun overwrite(bin: &SoilBinary, pos: Int, n: Int) {
-  bin.bytes.&.get_ref(pos + 0).* = {n & 16#ff}.lower_byte()
-  bin.bytes.&.get_ref(pos + 1).* = {n / 16#100 & 16#ff}.lower_byte()
-  bin.bytes.&.get_ref(pos + 2).* = {n / 16#10000 & 16#ff}.lower_byte()
-  bin.bytes.&.get_ref(pos + 3).* = {n / 16#1000000 & 16#ff}.lower_byte()
-  bin.bytes.&.get_ref(pos + 4).* = {n / 16#100000000 & 16#ff}.lower_byte()
-  bin.bytes.&.get_ref(pos + 5).* = {n / 16#10000000000 & 16#ff}.lower_byte()
-  bin.bytes.&.get_ref(pos + 6).* = {n / 16#1000000000000 & 16#ff}.lower_byte()
-  bin.bytes.&.get_ref(pos + 7).* = {n / 16#100000000000000 & 16#ff}.lower_byte()
-}
-fun emit(bin: &SoilBinary, reg: Reg) { bin.emit(reg.to_bits()) }
-fun emit(bin: &SoilBinary, regs: RegAndReg) {
-  bin.emit(regs.second.to_bits() * 16#10.lower_byte() + regs.first.to_bits())
-}
-fun emit(bin: &SoilBinary, reg_and_byte: RegAndByte) {
-  bin.emit(reg_and_byte.reg)
-  bin.emit(reg_and_byte.byte)
-}
-fun emit(bin: &SoilBinary, reg_and_int: RegAndInt) {
-  bin.emit(reg_and_int.reg)
-  bin.emit(reg_and_int.int)
-}
-fun to_bits(reg: Reg): Byte {
-  switch reg
-  case sp 2#0000.lower_byte()
-  case st 2#0001.lower_byte()
-  case a  2#0010.lower_byte()
-  case b  2#0011.lower_byte()
-  case c  2#0100.lower_byte()
-  case d  2#0101.lower_byte()
-  case e  2#0110.lower_byte()
-  case f  2#0111.lower_byte()
-}
-
 | Assembling  
 | The process of converting the Mono to Soil assembly is called "assembling".
 | The assembler has a function for every assembly instruction, for example:
@@ -5199,6 +5052,156 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
     }
     else ast.funs.&.put("arg_strings", vec(arg_strings))
   }
+}
+
+| Binary-fication  
+| The Soil VM can only run Soil binaries, which contain instructions and byte
+| code in a compact form. Here is the functionality for turning a Soil instance
+| into bytes.
+
+fun to_binary(soil: Soil): Slice[Byte] {
+  var bin = SoilBinary { bytes = vec[Byte]() }.&
+
+  | magic bytes
+  bin.emit("soil".bytes())
+
+  | initial memory section
+  bin.emit_byte(1)
+  bin.emit(0) | len, will be overwritten
+  var mem_start = bin.bytes.len
+  var mem_label_to_offset = map[Str, Int]() | mem label to offset
+  for entry in soil.initial_mem do {
+    mem_label_to_offset.&.put(entry.key, bin.bytes.len - mem_start)
+    for byte in entry.value do bin.bytes.&.push(byte)
+  }
+  mem_label_to_offset.&.put("_end_of_initial_memory", bin.bytes.len - mem_start)
+  var mem_end = bin.bytes.len
+  bin.overwrite(mem_start - 8, mem_end - mem_start)
+
+  | byte code section
+  bin.emit_byte(0)
+  bin.emit(0) | len, will be overwritten
+  var byte_code_start = bin.bytes.len
+  var instruction_index_to_byte_code_offset =
+    uninitialized_slice[Int](soil.instructions.len)
+  var patches = map[Int, Int]() | offset in binary to instruction index
+  for it in soil.instructions.iter().enumerate() do {
+    instruction_index_to_byte_code_offset.get_ref(it.index).* =
+      bin.bytes.len - byte_code_start
+    switch it.item
+    case nop                  { bin.emit_byte(16#00) }
+    case panic                { bin.emit_byte(16#e0) }
+    case move(regs)           { bin.emit_byte(16#d0) bin.emit(regs) }
+    case movei(reg_and_word)  { bin.emit_byte(16#d1) bin.emit(reg_and_word) }
+    case moveib(reg_and_byte) { bin.emit_byte(16#d2) bin.emit(reg_and_byte) }
+    case moveimem(reg_and_str) { bin.emit_byte(16#d1)
+                                bin.emit(reg_and_str.reg &
+                                  mem_label_to_offset.get(reg_and_str.str)) }
+    case load(regs)           { bin.emit_byte(16#d3) bin.emit(regs) }
+    case loadb(regs)          { bin.emit_byte(16#d4) bin.emit(regs) }
+    case store(regs)          { bin.emit_byte(16#d5) bin.emit(regs) }
+    case storeb(regs)         { bin.emit_byte(16#d6) bin.emit(regs) }
+    case push(reg)            { bin.emit_byte(16#d7) bin.emit(reg) }
+    case pop(reg)             { bin.emit_byte(16#d8) bin.emit(reg) }
+    case jump(word)           { bin.emit_byte(16#f0)
+                                patches.&.put(bin.bytes.len, word)
+                                bin.emit(0) }
+    case cjump(word)          { bin.emit_byte(16#f1)
+                                patches.&.put(bin.bytes.len, word)
+                                bin.emit(0) }
+    case call(word)           { bin.emit_byte(16#f2)
+                                patches.&.put(bin.bytes.len, word)
+                                bin.emit(0) }
+    case ret                  { bin.emit_byte(16#f3) }
+    case syscall(byte)        { bin.emit_byte(16#f4) bin.emit(byte) }
+    case cmp(regs)            { bin.emit_byte(16#c0) bin.emit(regs) }
+    case isequal              { bin.emit_byte(16#c1) }
+    case isless               { bin.emit_byte(16#c2) }
+    case isgreater            { bin.emit_byte(16#c3) }
+    case islessequal          { bin.emit_byte(16#c4) }
+    case isgreaterequal       { bin.emit_byte(16#c5) }
+    case add(regs)            { bin.emit_byte(16#a0) bin.emit(regs) }
+    case sub(regs)            { bin.emit_byte(16#a1) bin.emit(regs) }
+    case mul(regs)            { bin.emit_byte(16#a2) bin.emit(regs) }
+    case div(regs)            { bin.emit_byte(16#a3) bin.emit(regs) }
+    case rem(regs)            { bin.emit_byte(16#a4) bin.emit(regs) }
+    case and(regs)            { bin.emit_byte(16#b0) bin.emit(regs) }
+    case or(regs)             { bin.emit_byte(16#b1) bin.emit(regs) }
+    case xor(regs)            { bin.emit_byte(16#b2) bin.emit(regs) }
+    case negate(reg)          { bin.emit_byte(16#b3) bin.emit(reg) }
+  }
+  for patch in patches do {
+    var real_target = instruction_index_to_byte_code_offset.get(patch.value)
+    bin.overwrite(patch.key, real_target)
+  }
+  var byte_code_end = bin.bytes.len
+  bin.overwrite(byte_code_start - 8, byte_code_end - byte_code_start)
+
+  | labels section
+  bin.emit_byte(3)
+  bin.emit(0)
+  var labels_start = bin.bytes.len
+  bin.emit(soil.labels.len)
+  for label in soil.labels do {
+    var index = soil.labels_to_index.get(label)
+    var offset = instruction_index_to_byte_code_offset.get(index)
+    bin.emit(offset)
+    bin.emit(label.len)
+    for char in label do bin.emit(char.byte)
+  }
+  var labels_end = bin.bytes.len
+  bin.overwrite(labels_start - 8, labels_end - labels_start)
+
+  bin.bytes.to_slice()
+}
+struct SoilBinary { bytes: Vec[Byte] }
+fun emit(bin: &SoilBinary, byte: Byte) { bin.bytes.&.push(byte) }
+fun emit_byte(bin: &SoilBinary, byte: Int) {
+  bin.bytes.&.push(byte.lower_byte())
+}
+fun emit(bin: &SoilBinary, bytes: Slice[Byte]) { bin.bytes.&.push_all(bytes) }
+fun emit(bin: &SoilBinary, word: Int) {
+  bin.emit_byte(word & 16#ff)
+  bin.emit_byte(word / 16#100 & 16#ff)
+  bin.emit_byte(word / 16#10000 & 16#ff)
+  bin.emit_byte(word / 16#1000000 & 16#ff)
+  bin.emit_byte(word / 16#100000000 & 16#ff)
+  bin.emit_byte(word / 16#10000000000 & 16#ff)
+  bin.emit_byte(word / 16#1000000000000 & 16#ff)
+  bin.emit_byte(word / 16#100000000000000 & 16#ff)
+}
+fun overwrite(bin: &SoilBinary, pos: Int, n: Int) {
+  bin.bytes.&.get_ref(pos + 0).* = {n & 16#ff}.lower_byte()
+  bin.bytes.&.get_ref(pos + 1).* = {n / 16#100 & 16#ff}.lower_byte()
+  bin.bytes.&.get_ref(pos + 2).* = {n / 16#10000 & 16#ff}.lower_byte()
+  bin.bytes.&.get_ref(pos + 3).* = {n / 16#1000000 & 16#ff}.lower_byte()
+  bin.bytes.&.get_ref(pos + 4).* = {n / 16#100000000 & 16#ff}.lower_byte()
+  bin.bytes.&.get_ref(pos + 5).* = {n / 16#10000000000 & 16#ff}.lower_byte()
+  bin.bytes.&.get_ref(pos + 6).* = {n / 16#1000000000000 & 16#ff}.lower_byte()
+  bin.bytes.&.get_ref(pos + 7).* = {n / 16#100000000000000 & 16#ff}.lower_byte()
+}
+fun emit(bin: &SoilBinary, reg: Reg) { bin.emit(reg.to_bits()) }
+fun emit(bin: &SoilBinary, regs: RegAndReg) {
+  bin.emit(regs.second.to_bits() * 16#10.lower_byte() + regs.first.to_bits())
+}
+fun emit(bin: &SoilBinary, reg_and_byte: RegAndByte) {
+  bin.emit(reg_and_byte.reg)
+  bin.emit(reg_and_byte.byte)
+}
+fun emit(bin: &SoilBinary, reg_and_int: RegAndInt) {
+  bin.emit(reg_and_int.reg)
+  bin.emit(reg_and_int.int)
+}
+fun to_bits(reg: Reg): Byte {
+  switch reg
+  case sp 2#0000.lower_byte()
+  case st 2#0001.lower_byte()
+  case a  2#0010.lower_byte()
+  case b  2#0011.lower_byte()
+  case c  2#0100.lower_byte()
+  case d  2#0101.lower_byte()
+  case e  2#0110.lower_byte()
+  case f  2#0111.lower_byte()
 }
 
 | Command Line Interface  
