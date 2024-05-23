@@ -238,7 +238,9 @@ fun or[O, E](result: Result[O, E]): ControlFlow[O] {
 fun fuzzer_main[Input](): Never {
   var rng = prng()
   var coverage = get_coverage()
+  var interesting = vec[Input]()
   for i in 0..100 do {
+    var checkpoint = heap_checkpoint()
     var input = generator[Input](rng.&).generate()
     var call = string_builder()
     call.&."Running with {comma_separated(input.arg_strings())}"
@@ -246,6 +248,7 @@ fun fuzzer_main[Input](): Never {
     var res = input.run()
     call.&." = {res}"
     println("{call.to_str().pad_right(30)} {coverage}")
+    checkpoint.free_everything_allocated_after()
   }
   exit(0)
 }
@@ -974,21 +977,23 @@ fun malloc_impl(size: Int, alignment: Int): Address asm {
   .oom: movei a "out of memory" moveib b 13 syscall 2 panic
 }
 
-struct Checkpoint { heap_head: Address }
-fun heap_checkpoint(): Checkpoint {
+struct HeapCheckpoint { heap_head: Address }
+fun heap_checkpoint(): HeapCheckpoint {
   heap_head
   heap_checkpoint_impl()
 }
-fun heap_checkpoint_impl(): Checkpoint asm {
+fun heap_checkpoint_impl(): HeapCheckpoint asm {
   movei a heap_head load a a
   move b sp load b b | return value address
   store b a ret
 }
-fun free_everything_after(checkpoint: Checkpoint) asm {
+fun free_everything_allocated_after(checkpoint: HeapCheckpoint) asm {
   | use malloc
   moveib a 8 add a sp load a a | checkpoint.heap_head
   movei b heap_head load b b   | heap_head
-  cmp b a isgreaterequal cjump .done move b a .done: ret
+  cmp a b isgreaterequal cjump .done
+  movei b heap_head store b a
+  .done: ret
 }
 
 fun uninitialized[T](): &T {
