@@ -258,17 +258,29 @@ fun generate[T](generator: Generator[&T]): &T {
   generator[T](generator.rng).generate().put_on_heap()
 }
 fun generate(generator: Generator[Str]): Str { "test" }
-fun generate(generator: Generator[Int]): Int { generator.rng.next_int() % 100 }
+fun generate(generator: Generator[Int]): Int { generator.rng.next_int(0..100) }
+fun generate[T](generator: Generator[Slice[T]]): Slice[T] {
+  var len = generator.rng.next_int(0..10)
+  var slice = uninitialized_slice[T]() | todo: allocate enough capacity upfront
+  for i in 0..len do slice.get_ref(i).* = generator[T](generator.rng).generate()
+  slice
+}
 fun generate[T](generator: Generator[Vec[T]]): Vec[T] {
-  var len = generator.rng.next_int().abs() % 10
+  var len = generator.rng.next_int(0..10)
   var vec = vec[T]() | todo: allocate enough capacity upfront
   for i in 0..len do vec.&.push(generator[T](generator.rng).generate())
   vec
 }
-| fallback fun generate[T](generator: Generator[T]): T { ... }
-| Todo: Implement fallback keyword. If multiple functions match, the fallback
-| function does not apply.
-| fallback fun generate[T](generator: Generator[T]): T { ... }
+fun generate[K, V](generator: Generator[Map[K, V]]): Map[K, V] {
+  var size = generator.rng.next_int(0..10)
+  var map = map[K, V]()
+  for i in 0..size do {
+    var key   = generator[K](generator.rng).generate()
+    var value = generator[V](generator.rng).generate()
+    map.&.put(key, value)
+  }
+  map
+}
 
 | Assembly  
 | In the end, all Martinaise code is lowered to Soil assembly. You can easily
@@ -869,6 +881,10 @@ fun write[W](writer: W, address: Address) {
     divisor = divisor / 16
   }
 }
+fun write_debug[W, T](writer: W, ref: &T) {
+  writer.write("&")
+  writer.write_debug(ref.*)
+}
 
 fun swap[T](a: &T, b: &T) {
   var tmp = a.*
@@ -1361,6 +1377,12 @@ fun is_empty[T](range: Range[T]): Bool { range.start >= range.end }
 fun write[W, T](writer: W, range: Range[T]) {
   writer."{range.start}..{range.end}"
 }
+fun write_debug[W, T](writer: W, range: Range[T]) {
+  writer."{debug(range.start)}..{debug(range.end)}"
+}
+| fun generate[T](generator: Generator[Range[T]]): Range[T] {
+|   var len = generator[Int]()
+| }
 
 fun iter[T](range: Range[T]): Iter[T, _] {
   Iter[T, RangeIter[T]] { state = RangeIter { rest = range } }
@@ -2047,6 +2069,15 @@ fun write[W, K, V](writer: W, entry: MapEntry[K, V]) {
 }
 fun write[W, K, V](writer: W, map: Map[K, V]) {
   writer."{{comma_separated(map.iter())}}"
+}
+fun write_debug[W, K, V](writer: W, map: Map[K, V]) {
+  writer."\{"
+  var first = true
+  for entry in map do {
+    if first then first = false else writer.", "
+    writer."{debug(entry.key)}: {debug(entry.value)}"
+  }
+  writer."}"
 }
 
 fun iter[K, V](map: Map[K, V]): Iter[MapEntry[K, V], _] {
