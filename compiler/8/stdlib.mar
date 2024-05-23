@@ -1368,6 +1368,9 @@ fun ..+[T, D](start: T, len: D): Range[T] { Range { start, end = start + len } }
 fun ..+=[T, D](start: T, len: D): Range[T] {
   Range { start, end = start + len.inc() }
 }
+fun +-[T](mid: T, distance: T): Range[T] { | thanks to @antoniusnaumann
+  Range { start = mid - distance, end = {mid + distance}.inc() }
+}
 
 fun len[T](range: Range[T]): Int { range.end - range.start }
 fun contains[T](range: Range[T], value: T): Bool {
