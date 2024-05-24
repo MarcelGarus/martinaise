@@ -236,14 +236,14 @@ fun or[O, E](result: Result[O, E]): ControlFlow[O] {
 | - arg_strings($Input): Vec[Str]        | stringifies the arguments
 
 fun fuzzer_main[Input](): Never {
-  var rng = prng()
+  var rand = prand()
   var current_cov = get_coverage()
   var total_cov = coverage(current_cov.len)
   var schick = vec[FoundInput[Input]]()
 
   for i in 0..1000 do {
     var checkpoint = heap_checkpoint()
-    var input = generator[Input](rng.&).generate()
+    var input = rand.&.for[Input]().generate()
     var in_str = "{comma_separated(input.arg_strings())}"
 
     current_cov.reset()
@@ -318,40 +318,15 @@ fun write[W](writer: W, coverage: Coverage) {
   }
 }
 
-struct Generator[T] { rng: &Prng }
+struct Generator[T] { rand: &Random }
 
-fun generator[T](rng: &Prng): Generator[T] { Generator[T] { rng } }
+fun for[T](rand: &Random): Generator[T] { Generator[T] { rand } }
 
 | The compiler can auto-implement a generate function for structs and enums.
 fallback fun generate[T](generator: Generator[T]): T { ... }
 
-| Generator implementations for specific types:
 fun generate[T](generator: Generator[&T]): &T {
-  generator[T](generator.rng).generate().put_on_heap()
-}
-fun generate(generator: Generator[Str]): Str { "test" }
-fun generate(generator: Generator[Int]): Int { generator.rng.next_int(0..100) }
-fun generate[T](generator: Generator[Slice[T]]): Slice[T] {
-  var len = generator.rng.next_int(0..10)
-  var slice = uninitialized_slice[T](len)
-  for i in 0..len do slice.get_ref(i).* = generator[T](generator.rng).generate()
-  slice
-}
-fun generate[T](generator: Generator[Vec[T]]): Vec[T] {
-  var len = generator.rng.next_int(0..10)
-  var vec = vec[T]() | todo: allocate enough capacity upfront
-  for i in 0..len do vec.&.push(generator[T](generator.rng).generate())
-  vec
-}
-fun generate[K, V](generator: Generator[Map[K, V]]): Map[K, V] {
-  var size = generator.rng.next_int(0..10)
-  var map = map[K, V]()
-  for i in 0..size do {
-    var key   = generator[K](generator.rng).generate()
-    var value = generator[V](generator.rng).generate()
-    map.&.put(key, value)
-  }
-  map
+  generator.rand.for[T]().generate().put_on_heap()
 }
 
 | Assembly  
@@ -680,6 +655,8 @@ fun write[W](writer: W, format: RadixFormat) {
 }
 fun write_debug[W](writer: W, int: Int) { writer."{int}" }
 
+fun generate(generator: Generator[Int]): Int { generator.rand.next_int(0..100) }
+
 | Byte  
 
 | A byte is one byte big. Who would have known?
@@ -757,9 +734,6 @@ fun dec(a: Byte): Byte   { a - 1.lower_byte() }
 fun ==(a: Byte, b: Byte): Bool   { if a <=> b is equal then true else false }
 fun hash(hasher: &Hasher, int: Byte)  { hasher.hash(int.to_int()) }
 
-fun generate(generator: Generator[Byte]): Byte {
-  generator.rng.next_int().lower_byte()
-}
 fun write[W](writer: W, int: Byte)  { writer.write(radix(int, 10)) }
 fun radix(int: Byte, radix: Int): RadixFormat { radix(int.to_int(), radix) }
 fun digit_to_char(digit: Byte): Char {
@@ -768,6 +742,10 @@ fun digit_to_char(digit: Byte): Char {
   else {digit + #0.byte}.to_char()
 }
 fun write_debug[W](writer: W, byte: Byte) { writer."{byte}" }
+
+fun generate(generator: Generator[Byte]): Byte {
+  generator.rand.next_int().lower_byte()
+}
 
 | Comparisons  
 | You should implement the spaceship operator <=>(T, T): Ordering for types that
@@ -803,30 +781,30 @@ fun clamp[T](a: T, low: T, high: T): T { max(low, min(high, a)) }
 | Pseudo-Random Number Generator  
 | This is an implementation of Xoshiro256++, a pseudo-random number generator
 | that is reasonably fast.
-| Rust RNG comparisons: https://rust-random.github.io/book/guide-rngs.html
+| Rust RNG comparisons: https://rust-random.github.io/book/guide-rands.html
 | Original C implementation: https://xoshiro.di.unimi.it/xoshiro256plusplus.c
 | TODO: The implementation doesn't work correctly. Probably because of overflow.
-struct Prng { a: Int, b: Int, c: Int, d: Int }
-fun prng(): Prng { Prng { a = 1, b = 2, c = 3, d = 4 } }
-fun prng(seed: Int): Prng { Prng { a = seed, b = 2, c = 3, d = 4 } }
+struct Random { a: Int, b: Int, c: Int, d: Int }
+fun prand(): Random { Random { a = 1, b = 2, c = 3, d = 4 } }
+fun prand(seed: Int): Random { Random { a = seed, b = 2, c = 3, d = 4 } }
 fun rotl(x: Int, k: Int): Int { {x << k}.or(x >> {64 - k}) }
-fun next_int(rng: &Prng): Int {
-  var res = {rng.a + rng.d}.rotl(23) + rng.a
-  var t = rng.b << 17
-  rng.c = rng.c ^ rng.a
-  rng.d = rng.d ^ rng.b
-  rng.b = rng.b ^ rng.c
-  rng.a = rng.a ^ rng.d
-  rng.c = rng.b ^ t
-  rng.d = rng.d.rotl(45)
+fun next_int(rand: &Random): Int {
+  var res = {rand.a + rand.d}.rotl(23) + rand.a
+  var t = rand.b << 17
+  rand.c = rand.c ^ rand.a
+  rand.d = rand.d ^ rand.b
+  rand.b = rand.b ^ rand.c
+  rand.a = rand.a ^ rand.d
+  rand.c = rand.b ^ t
+  rand.d = rand.d.rotl(45)
   res
 }
-fun next_int(rng: &Prng, range: Range[Int]): Int {
-  var next = rng.next_int().abs()
+fun next_int(rand: &Random, range: Range[Int]): Int {
+  var next = rand.next_int().abs()
   | println("next: {next}")
   next % range.len() + range.start
 }
-fun child(rng: &Prng): Prng { prng(rng.next_int()) }
+fun child(rand: &Random): Random { prand(rand.next_int()) }
 
 | Type Information  
 | Using some builtin functions that only take type arguments (no value
@@ -1133,6 +1111,13 @@ fun write_debug[W, T](writer: W, slice: Slice[T]) {
   writer."]"
 }
 
+fun generate[T](generator: Generator[Slice[T]]): Slice[T] {
+  var len = generator.rand.next_int(0..10)
+  var slice = uninitialized_slice[T](len)
+  for i in 0..len do slice.get_ref(i).* = generator.rand.for[T]().generate()
+  slice
+}
+
 fun iter[T](slice: Slice[T]): Iter[T, _] {
   Iter[T, SliceIter[T]] { state = SliceIter { slice, index = 0 } }
 }
@@ -1353,6 +1338,8 @@ fun write_debug[W](writer: W, str: Str) {
   writer."\""
 }
 
+fun generate(generator: Generator[Str]): Str { "test" }
+
 fun iter(str: Str): Iter[Char, _] {
   Iter[Char, StrIter] { state = StrIter { str, index = 0 } }
 }
@@ -1466,9 +1453,11 @@ fun write[W, T](writer: W, range: Range[T]) {
 fun write_debug[W, T](writer: W, range: Range[T]) {
   writer."{debug(range.start)}..{debug(range.end)}"
 }
-| fun generate[T](generator: Generator[Range[T]]): Range[T] {
-|   var len = generator[Int]()
-| }
+fun generate[T](generator: Generator[Range[T]]): Range[T] {
+  var a = generator.rand.for[T]().generate()
+  var b = generator.rand.for[T]().generate()
+  min(a, b)..max(a, b)
+}
 
 fun iter[T](range: Range[T]): Iter[T, _] {
   Iter[T, RangeIter[T]] { state = RangeIter { rest = range } }
@@ -1995,6 +1984,13 @@ fun write_debug[W, T](writer: W, vec: Vec[T]) {
   writer.write_debug(vec.to_slice())
 }
 
+fun generate[T](generator: Generator[Vec[T]]): Vec[T] {
+  var len = generator.rand.next_int(0..10)
+  var vec = vec[T]() | todo: allocate enough capacity upfront
+  for i in 0..len do vec.&.push(generator.rand.for[T]().generate())
+  vec
+}
+
 | Stack  
 | Something where you can push and pop items. Essentially just a Vec, but
 | sometimes this type expresses the intent more clearly.
@@ -2165,6 +2161,18 @@ fun write_debug[W, K, V](writer: W, map: Map[K, V]) {
   }
   writer."}"
 }
+
+fun generate[K, V](generator: Generator[Map[K, V]]): Map[K, V] {
+  var size = generator.rand.next_int(0..10)
+  var map = map[K, V]()
+  for i in 0..size do {
+    var key   = generator.rand.for[K]().generate()
+    var value = generator.rand.for[V]().generate()
+    map.&.put(key, value)
+  }
+  map
+}
+
 
 fun iter[K, V](map: Map[K, V]): Iter[MapEntry[K, V], _] {
   Iter[MapEntry[K, V], MapIter[K, V]] {

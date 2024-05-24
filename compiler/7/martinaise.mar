@@ -4045,8 +4045,8 @@ fun compile_builtin(
       src, "You need to implement a generate function for opaque types."))
     case struct_(struct_) {
       | SomeStruct {
-      |   foo = generator[Foo](generator.rng).generate(),
-      |   bar = generator[Bar](generator.rng).generate(),
+      |   foo = generator[Foo](generator.rand).generate(),
+      |   bar = generator[Bar](generator.rand).generate(),
       | }
       for it in struct_.fields.iter().enumerate() do {
         var field_ty = it.item.type
@@ -4054,12 +4054,12 @@ fun compile_builtin(
         var field_generator = slots.&.push(type("Generator", vec(field_ty)),
           MonoSlotValue.uninitialized)
         var generator_fun = ast
-          .lookup_fun("generator" @ src,
-            some(vec(field_ty)), vec(type("&", vec(type("Prng")))))?
+          .lookup_fun("for" @ src,
+            some(vec(field_ty)), vec(type("&", vec(type("Random")))))?
           .compile(context, ast, mono)?
         statements.&.push(mono_call(field_generator, generator_fun, vec(
           generator.expr(generator_ty)
-            .member("rng", type("&", vec(type("Prng"))))
+            .member("rand", type("&", vec(type("Random"))))
         )) @ src)
 
         var field = slots.&.push(field_ty)
@@ -4078,10 +4078,10 @@ fun compile_builtin(
       statements.&.push(mono_return(value.expr(value_ty)) @ src)
     }
     case enum_(enum_) {
-      | var variant = generator.rng.next_int(0..2)
+      | var variant = generator.rand.next_int(0..2)
       | if variant == 0 then return SomeEnum.foo
       | if variant == 1 then
-      |   return SomeEnum.bar(generator[Int](generator.rng).generate())
+      |   return SomeEnum.bar(generator.rand.for[Int]().generate())
       | unreachable()
       var lower = slots.&.push(type("Int"), MonoSlotValue.int(0))
       var upper = slots.&.push(type("Int"),
@@ -4100,11 +4100,11 @@ fun compile_builtin(
       var variant = slots.&.push(type("Int"), MonoSlotValue.uninitialized)
       var next_int_fun = ast
         .lookup_fun("next_int" @ src, none[Vec[Type]](),
-          vec(type("&", vec(type("Prng"))), type("Range", vec(type("Int")))))?
+          vec(type("&", vec(type("Random"))), type("Range", vec(type("Int")))))?
         .compile(context, ast, mono)?
       statements.&.push(mono_call(variant, next_int_fun, vec(
         generator.expr(generator_ty)
-          .member("rng", type("&", vec(type("Prng")))),
+          .member("rand", type("&", vec(type("Random")))),
         range.expr(type("Range", vec(type("Int")))),
       )) @ src)
 
@@ -4131,12 +4131,12 @@ fun compile_builtin(
           type("Generator", vec(variant.type)),
           MonoSlotValue.uninitialized)
         var generator_fun = ast
-          .lookup_fun("generator" @ src,
-            some(vec(variant.type)), vec(type("&", vec(type("Prng")))))?
+          .lookup_fun("for" @ src,
+            some(vec(variant.type)), vec(type("&", vec(type("Random")))))?
           .compile(context, ast, mono)?
         statements.&.push(mono_call(payload_generator, generator_fun, vec(
           generator.expr(generator_ty)
-            .member("rng", type("&", vec(type("Prng"))))
+            .member("rand", type("&", vec(type("Random"))))
         )) @ src)
 
         var payload = slots.&.push(variant.type, MonoSlotValue.uninitialized)
