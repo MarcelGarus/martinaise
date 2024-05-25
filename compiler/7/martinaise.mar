@@ -1386,16 +1386,26 @@ fun parse_expr_suffix_try(
 
 fun parse_asm_name(parser: &Parser): Maybe[AstStr] {
   parser.consume_whitespace()
-  var start = parser.cursor
-  loop {
-    var c = parser.current()
-    if c.is_whitespace() / {c == #:} / {c == #}}
-    then break
-    else parser.advance()
+  var span =
+  if parser.consume_prefix("\"") is some then {
+    var start = parser.cursor
+    loop if parser.current() == #" then break else parser.advance()
+    var end = parser.cursor
+    parser.advance()
+    start..end
+  } else {
+    var start = parser.cursor
+    loop {
+      var c = parser.current()
+      if c.is_whitespace() / {c == #:} / {c == #}}
+      then break
+      else parser.advance()
+    }
+    var end = parser.cursor
+    start..end
   }
-  var end = parser.cursor
-  if start == end then return none[AstStr]()
-  some(parser.code.substr(start..end) @ src(parser.file, start..end))
+  if span.is_empty() then return none[AstStr]()
+  some(parser.code.substr(span) @ src(parser.file, span))
 }
 fun parse_reg(parser: &Parser): Result[Reg, Str] {
   var name = {parser.parse_asm_name()
@@ -1409,6 +1419,11 @@ fun parse_reg(parser: &Parser): Result[Reg, Str] {
   if name == "e" then return ok[Reg, Str](Reg.e)
   if name == "f" then return ok[Reg, Str](Reg.f)
   error[Reg, Str]("Expected a register.")
+}
+fun parse_regs(parser: &Parser): Result[RegAndReg, Str] {
+  var first  = parser.parse_reg()?
+  var second = parser.parse_reg()?
+  ok[RegAndReg, Str](first & second)
 }
 
 fun parse_asm_str(parser: &Parser): Result[Str, Str] {
@@ -1454,20 +1469,15 @@ fun parse_instruction(parser: &Parser): Result[Maybe[AstInstr], Str] {
     var name = name.str
     if name == "nop" then AstInstrKind.nop
     else if name == "panic" then AstInstrKind.panic
-    else if name == "move" then AstInstrKind.move(
-      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "move" then AstInstrKind.move(parser.parse_regs()?)
     else if name == "movei" then AstInstrKind.movei(
       parser.parse_reg()? & parser.parse_asm_word()?)
     else if name == "moveib" then AstInstrKind.moveib(
       parser.parse_reg()? & parser.parse_asm_byte()?)
-    else if name == "load" then AstInstrKind.load(
-      parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "loadb" then AstInstrKind.loadb(
-      parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "store" then AstInstrKind.store(
-      parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "storeb" then AstInstrKind.storeb(
-      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "load" then AstInstrKind.load(parser.parse_regs()?)
+    else if name == "loadb" then AstInstrKind.loadb(parser.parse_regs()?)
+    else if name == "store" then AstInstrKind.store(parser.parse_regs()?)
+    else if name == "storeb" then AstInstrKind.storeb(parser.parse_regs()?)
     else if name == "push" then AstInstrKind.push(parser.parse_reg()?)
     else if name == "pop" then AstInstrKind.pop(parser.parse_reg()?)
     else if name == "jump" then AstInstrKind.jump(
@@ -1482,31 +1492,22 @@ fun parse_instruction(parser: &Parser): Result[Maybe[AstInstr], Str] {
     else if name == "ret" then AstInstrKind.ret
     else if name == "syscall" then AstInstrKind.syscall(
       parser.parse_asm_byte()?)
-    else if name == "cmp" then AstInstrKind.cmp(
-      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "cmp" then AstInstrKind.cmp(parser.parse_regs()?)
     else if name == "isequal" then AstInstrKind.isequal
     else if name == "isless" then AstInstrKind.isless
     else if name == "isgreater" then AstInstrKind.isgreater
     else if name == "islessequal" then AstInstrKind.islessequal
     else if name == "isgreaterequal" then AstInstrKind.isgreaterequal
-    else if name == "add" then AstInstrKind.add(
-      parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "sub" then AstInstrKind.sub(
-      parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "mul" then AstInstrKind.mul(
-      parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "div" then AstInstrKind.div(
-      parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "rem" then AstInstrKind.rem(
-      parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "and" then AstInstrKind.and(
-      parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "or" then AstInstrKind.or(
-      parser.parse_reg()? & parser.parse_reg()?)
-    else if name == "xor" then AstInstrKind.xor(
-      parser.parse_reg()? & parser.parse_reg()?)
+    else if name == "add" then AstInstrKind.add(parser.parse_regs()?)
+    else if name == "sub" then AstInstrKind.sub(parser.parse_regs()?)
+    else if name == "mul" then AstInstrKind.mul(parser.parse_regs()?)
+    else if name == "div" then AstInstrKind.div(parser.parse_regs()?)
+    else if name == "rem" then AstInstrKind.rem(parser.parse_regs()?)
+    else if name == "and" then AstInstrKind.and(parser.parse_regs()?)
+    else if name == "or" then AstInstrKind.or(parser.parse_regs()?)
+    else if name == "xor" then AstInstrKind.xor(parser.parse_regs()?)
     else if name == "negate" then AstInstrKind.negate(parser.parse_reg()?)
-    else return bad_input[AstInstr]("Unknown command {name}.")
+    else return bad_input[AstInstr]("Unknown instruction {name}.")
   }
   parsed(AstInstr { kind, mnemonic = name })
 }
