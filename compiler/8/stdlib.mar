@@ -505,7 +505,7 @@ fun read(stdin: Stdin, buffer: Slice[Byte]): Result[Int, Nothing] asm {
   moveib a 8  add a sp load a a | buffer.data
   moveib b 16 add b sp load b b | buffer.len
   syscall 11
-  move b sp load b b | return value address
+  load b sp | return value address
   move st a isless cjump .ret_error
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
@@ -572,50 +572,50 @@ opaque Int = 8 bytes big, 8 bytes aligned
 fun +(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   add a b store c a ret
 }
 fun -(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   sub a b store c a ret
 }
 fun *(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   mul a b store c a ret
 }
 fun /(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   div a b store c a ret
 }
 fun %(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   rem a b store c a ret
 }
 fun modulo(a: Int, b: Int): Int { a % b } | TODO: not correct!!
 fun &(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   and a b store c a ret
 }
 fun or(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   or a b store c a ret
 }
 fun ^(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   xor a b store c a ret
 }
 fun <<(left: Int, by: Int): Int {
@@ -631,10 +631,9 @@ fun round_up_to_multiple_of(number: Int, factor: Int): Int {
   {number + factor.dec()} / factor * factor
 }
 fun <=>(left: Int, right: Int): Ordering asm {
-  | TODO: handle very big numbers correctly
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   cmp a b isless cjump .less
   cmp a b isgreater cjump .greater
   .equal:   moveib b 1 storeb c b ret
@@ -643,7 +642,7 @@ fun <=>(left: Int, right: Int): Ordering asm {
 }
 fun lower_byte(n: Int): Byte asm {
   moveib a 8 add a sp load a a | n
-  move b sp load b b | return value address
+  load b sp | return value address
   storeb b a ret
 }
 
@@ -703,56 +702,56 @@ opaque Byte = 1 byte big, 1 byte aligned
 fun +(left: Byte, right: Byte): Byte asm {
   moveib a 8 add a sp loadb a a | left
   moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   add a b storeb c a ret
 }
 fun -(left: Byte, right: Byte): Byte asm {
   moveib a 8 add a sp loadb a a | left
   moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   sub a b storeb c a ret
 }
 fun *(left: Byte, right: Byte): Byte asm {
   moveib a 8 add a sp loadb a a | left
   moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   mul a b storeb c a ret
 }
 fun /(left: Byte, right: Byte): Byte asm {
   moveib a 8 add a sp loadb a a | left
   moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   div a b storeb c a ret
 }
 fun %(left: Byte, right: Byte): Byte asm {
   moveib a 8 add a sp loadb a a | left
   moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   rem a b storeb c a ret
 }
 fun modulo(a: Byte, b: Byte): Byte { a % b }
 fun &(left: Byte, right: Byte): Byte asm {
   moveib a 8 add a sp loadb a a | left
   moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   and a b storeb c a ret
 }
 fun or(left: Byte, right: Byte): Byte asm {
   moveib a 8 add a sp loadb a a | left
   moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   or a b storeb c a ret
 }
 fun ^(left: Byte, right: Byte): Byte asm {
   moveib a 8 add a sp loadb a a | left
   moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   xor a b storeb c a ret
 }
 fun <=>(left: Byte, right: Byte): Ordering asm {
   moveib a 8 add a sp loadb a a | left
   moveib b 9 add b sp loadb b b | right
-  move c sp load c c | return value address
+  load c sp | return value address
   sub a b
   move st a isless cjump .less
   move st a isgreater cjump .greater
@@ -762,7 +761,7 @@ fun <=>(left: Byte, right: Byte): Ordering asm {
 }
 fun to_int(n: Byte): Int asm {
   moveib a 8 add a sp loadb a a | n
-  move b sp load b b | return value address
+  load b sp | return value address
   store b a ret
 }
 
@@ -921,23 +920,23 @@ opaque Address = 8 bytes big, 8 bytes aligned
 
 fun to_address[T](ref: &T): Address asm {
   moveib a 8 add a sp load a a | ref
-  move b sp load b b | return value address
+  load b sp | return value address
   store b a ret
 }
 fun to_reference[T](address: Address): &T asm {
   moveib a 8 add a sp load a a | address
-  move b sp load b b | return value address
+  load b sp | return value address
   store b a ret
 }
 
 fun to_int(address: Address): Int asm {
   moveib a 8 add a sp load a a | address
-  move b sp load b b | return value address
+  load b sp | return value address
   store b a ret
 }
 fun to_address(number: Int): Address asm {
   moveib a 8 add a sp load a a | number
-  move b sp load b b | return value address
+  load b sp | return value address
   store b a ret
 }
 
@@ -1023,7 +1022,7 @@ fun malloc_impl(size: Int, alignment: Int): Address asm {
   .align: moveib d 1 sub b d add c b negate b and c b
   .bump_head: move b c add b a move a c movei c heap_head store c b
   .check_oom: cmp b sp isgreaterequal cjump .oom
-  move b sp load b b | return value address
+  load b sp | return value address
   store b a ret
   .bad_alignment: movei a "bad alignment" moveib b 13 syscall 2 panic
   .oom: movei a "out of memory" moveib b 13 syscall 2 panic
@@ -1036,7 +1035,7 @@ fun heap_checkpoint(): HeapCheckpoint {
 }
 fun heap_checkpoint_impl(): HeapCheckpoint asm {
   movei a heap_head load a a
-  move b sp load b b | return value address
+  load b sp | return value address
   store b a ret
 }
 fun free_everything_allocated_after(checkpoint: HeapCheckpoint) asm {
@@ -1729,7 +1728,7 @@ fun get_process_args(): Slice[Str] {
   args
 }
 fun get_argc(): Int asm {
-  move b sp load b b | return value address
+  load b sp | return value address
   syscall 9
   store b a ret
 }
@@ -1747,7 +1746,7 @@ fun read_argv(index: Int, buffer: Slice[Byte]): Int asm {
   moveib b 16 add b sp load b b | buffer.data
   moveib c 24 add c sp load c c | buffer.len
   syscall 10
-  move d sp load d d | return value address
+  load d sp | return value address
   store d a ret
 }
 
@@ -1760,7 +1759,7 @@ fun create_file(filename: Str, mode: Int): Result[File, Nothing] asm {
   moveib b 16 add b sp load b b | filename.len
   moveib c 24 add c sp load c c | mode
   syscall 3
-  move b sp load b b | return value address
+  load b sp | return value address
   move st a isequal cjump .ret_error
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
@@ -1769,7 +1768,7 @@ fun open_file_for_reading(filename: Str): Result[File, Nothing] asm {
   moveib a 8  add a sp load a a | filename.data
   moveib b 16 add b sp load b b | filename.len
   syscall 4
-  move b sp load b b | return value address
+  load b sp | return value address
   move st a isequal cjump .ret_error
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
@@ -1778,7 +1777,7 @@ fun open_file_for_writing(filename: Str): Result[File, Nothing] asm {
   moveib a 8  add a sp load a a | filename.data
   moveib b 16 add b sp load b b | filename.len
   syscall 5
-  move b sp load b b | return value address
+  load b sp | return value address
   move st a isequal cjump .ret_error
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
@@ -1789,7 +1788,7 @@ fun read(file: File, buffer: Slice[Byte]): Result[Int, Nothing] asm {
   moveib b 16 add b sp load b b | buffer.data
   moveib c 24 add c sp load c c | buffer.len
   syscall 6
-  move b sp load b b | return value address
+  load b sp | return value address
   move st a isless cjump .ret_error
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
@@ -1822,7 +1821,7 @@ fun write_bytes_safely(
   moveib b 16 add b sp load b b | buffer.data
   moveib c 24 add c sp load c c | buffer.len
   syscall 7
-  move b sp load b b | return value address
+  load b sp | return value address
   move st a cjump .ret_ok
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
