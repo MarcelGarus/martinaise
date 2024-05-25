@@ -648,14 +648,13 @@ fun lower_byte(n: Int): Byte asm {
 
 fun inc(a: Int): Int { a + 1 }
 fun dec(a: Int): Int { a - 1 }
-fun ==(a: Int, b: Int): Bool { if a <=> b is equal then true else false }
-| fun ==(a: Int, b: Int): Bool asm {
-|   moveib a 8  add a sp load a a | left
-|   moveib b 16 add b sp load b b | right
-|   load c sp | return value address
-|   cmp a b isequal
-|   store c st ret
-| }
+fun ==(a: Int, b: Int): Bool asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  cmp a b isequal
+  storeb c st ret
+}
 
 fun parse_int(str: Str): Int {
   var num = 0
