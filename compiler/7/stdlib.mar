@@ -1018,6 +1018,12 @@ fun filled_slice[T](len: Int, fill: T): Slice[T] {
 }
 
 fun is_empty[T](slice: Slice[T]): Bool { slice.len == 0 }
+fun get_ref_unchecked[T](slice: Slice[T], index: Int): &T {
+  {slice.data + {index * stride_size_of[T]()}}.to_reference[T]()
+}
+fun get_unchecked[T](slice: Slice[T], index: Int): T {
+  slice.get_ref_unchecked(index).*
+}
 fun get[T](slice: Slice[T], index: Int): T { slice.get_ref(index).* }
 fun get_maybe[T](slice: Slice[T], index: Int): Maybe[T] {
   switch slice.get_maybe_ref(index)
@@ -1029,7 +1035,7 @@ fun get_ref[T](slice: Slice[T], index: Int): &T {
 }
 fun get_maybe_ref[T](slice: Slice[T], index: Int): Maybe[&T] {
   if {0..slice.len}.contains(index)
-  then some(slice.data.to_reference[T]().add_stride_offset(index))
+  then some(slice.get_ref_unchecked(index))
   else none[&T]()
 }
 
@@ -1860,7 +1866,7 @@ fun push[T](vec: &Vec[T], item: T) {
     vec.data.copy_to(new_data.subslice(0..vec.data.len))
     vec.data = new_data
   }
-  vec.data.get_ref(vec.len).* = item
+  vec.data.get_ref_unchecked(vec.len).* = item
   vec.len = vec.len + 1
 }
 fun push_all[T](vec: &Vec[T], items: Slice[T]) {
@@ -2028,7 +2034,7 @@ fun put[K, V](map: &Map[K, V], key: K, value: V) {
 fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
   var i = key.hash() % map.buckets.len
   loop {
-    var bucket = map.buckets.get_ref(i)
+    var bucket = map.buckets.get_ref_unchecked(i)
     switch bucket.*
     case empty {
       bucket.* = MapBucket.filled(MapEntry { key, value })
@@ -2048,7 +2054,7 @@ fun contains[K, V](map: Map[K, V], key: K): Bool {
 fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
   var i = key.hash() % map.buckets.len
   loop {
-    var bucket = map.buckets.get(i)
+    var bucket = map.buckets.get_unchecked(i)
     switch bucket
     case empty return none[V]()
     case filled(entry)
