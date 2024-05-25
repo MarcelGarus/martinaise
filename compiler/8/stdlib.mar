@@ -23,13 +23,13 @@
 | TODO:   disallow _ in type args, structs, enums, and recursive functions
 | TODO:   improve int parsing: be strict about whitespace
 | TODO:   catch circular global definitions
+| TODO:   catch circular types
 | TODO: stdlib
 | TODO:   more efficient reading of files (append to end of heap)
 | TODO:   segment tree
 | TODO:   treap
 | TODO: tooling
 | TODO:   breakpoint
-| TODO:   fuzzing
 
 | Nothing (aka Unit or Void)  
 | Nothing is a type with only one instance. From an information theoretical
@@ -243,7 +243,7 @@ fun fuzzer_main[Input](): Never {
 
   for i in 0..10 do {
     var checkpoint = heap_checkpoint()
-    var input = rand.&.for[Input]().generate(Complexity { value = 100 })
+    var input = static[Input]().generate(rand.&, 100)
     var in_str = "{comma_separated(input.arg_strings())}"
 
     current_cov.reset()
@@ -271,6 +271,45 @@ fun fuzzer_main[Input](): Never {
   exit(0)
 }
 struct FoundInput[Input] { input: Input, in_str: Str, out_str: Str }
+
+| Generating random values  
+| To fuzz functions, we need to be able to generate random inputs of any type.
+
+| This type allows dispatching based on type. For example, if you implement a
+| foo(s: Static[Int]), foo(s: Static[Str]), etc. then you can do
+| static[T]().foo() in generic functions even if you don't have a T at hand.
+struct Static[T] {}
+
+fun static[T](): Static[T] { Static[T] {} }
+
+| The compiler can auto-implement this function for structs and enums.
+fallback fun generate[T](
+  s: Static[T], random: &Random, complexity: Int
+): T { ... }
+
+fun generate[T](s: Static[&T], random: &Random, complexity: Int): &T {
+  static[T]().generate(random, complexity).put_on_heap()
+}
+
+| Splits a complexity into n smaller complexities with a sum <= the original
+| one.
+fun split(random: &Random, complexity: Int, n: Int): Slice[Int] {
+  | TODO: add some random variation
+  if n == 0 then return empty_slice[Int]()
+  filled_slice(n, complexity / n)
+}
+fun split(random: &Random, complexity: Int): Slice[Int] {
+  var len = random.next_int(0..={complexity / 10})
+  random.split(complexity, len)
+}
+
+| Coverage  
+| The compiler can be configured to instrument the fuzzed function with coverage
+| tracking. In that case, the _coverage_bitset and _coverage_len assembly labels
+| will point to a section of bytes that are 1 or 0, depending on if a cjump in
+| the fuzzed function was executed. To track coverage, we just have to reset the
+| global coverage bitmap and call the function to fuzz – this automatically
+| updates the global coverage field.
 
 struct Coverage { bitset: Address, len: Int }
 
@@ -316,31 +355,6 @@ fun write[W](writer: W, coverage: Coverage) {
     var byte = {coverage.bitset + i}.to_reference[Byte]().*.to_int()
     writer."{if byte == 0 then "." else if byte == 1 then "X" else "?"}"
   }
-}
-
-struct Generator[T] { rand: &Random }
-
-fun for[T](rand: &Random): Generator[T] { Generator[T] { rand } }
-
-struct Complexity { value: Int }
-
-fun split(complexity: Complexity, n: Int, random: &Random): Slice[Complexity] {
-  | TODO: add some random variation
-  if n == 0 then return empty_slice[Complexity]()
-  filled_slice(n, Complexity { value = complexity.value / n })
-}
-fun split(complexity: Complexity, random: &Random): Slice[Complexity] {
-  var len = random.next_int(0..={complexity.value / 10})
-  complexity.split(len, random)
-}
-
-| The compiler can auto-implement a generate function for structs and enums.
-fallback fun generate[T](
-  generator: Generator[T], complexity: Complexity
-): T { ... }
-
-fun generate[T](generator: Generator[&T], complexity: Complexity): &T {
-  generator.rand.for[T]().generate(complexity).put_on_heap()
 }
 
 | Assembly  
@@ -676,9 +690,9 @@ fun write[W](writer: W, format: RadixFormat) {
 }
 fun write_debug[W](writer: W, int: Int) { writer."{int}" }
 
-fun generate(generator: Generator[Int], complexity: Complexity): Int {
-  var limit = complexity.value * complexity.value
-  generator.rand.next_int({0 - limit}..=limit)
+fun generate(s: Static[Int], random: &Random, complexity: Int): Int {
+  var limit = complexity * complexity
+  random.next_int({0 - limit}..=limit)
 }
 
 | Byte  
@@ -767,8 +781,8 @@ fun digit_to_char(digit: Byte): Char {
 }
 fun write_debug[W](writer: W, byte: Byte) { writer."{byte}" }
 
-fun generate(generator: Generator[Byte], complexity: Complexity): Byte {
-  generator.rand.next_int().lower_byte()
+fun generate(s: Static[Byte], random: &Random, complexity: Int): Byte {
+  random.next_int().lower_byte()
 }
 
 | Comparisons  
@@ -1139,12 +1153,12 @@ fun write_debug[W, T](writer: W, slice: Slice[T]) {
 }
 
 fun generate[T](
-  generator: Generator[Slice[T]], complexity: Complexity
+  s: Static[Slice[T]], random: &Random, complexity: Int
 ): Slice[T] {
-  var item_complexities = complexity.split(generator.rand)
-  var slice = uninitialized_slice[T](item_complexities.len)
-  for it in item_complexities.iter().enumerate() do
-    slice.get_ref(it.index).* = generator.rand.for[T]().generate(it.item)
+  var complexities = random.split(complexity)
+  var slice = uninitialized_slice[T](complexities.len)
+  for it in complexities.iter().enumerate() do
+    slice.get_ref(it.index).* = static[T]().generate(random, it.item)
   slice
 }
 
@@ -1372,15 +1386,14 @@ fun write_debug[W](writer: W, str: Str) {
   writer."\""
 }
 
-fun generate(generator: Generator[Char], complexity: Complexity): Char {
+fun generate(s: Static[Char], random: &Random, complexity: Int): Char {
   var visible_ascii = 32..127
-  generator.rand.next_int(visible_ascii).lower_byte().to_char()
+  random.next_int(visible_ascii).lower_byte().to_char()
 }
-fun generate(generator: Generator[Str], complexity: Complexity): Str {
-  var len = generator.rand.next_int(0..=complexity.value)
+fun generate(s: Static[Str], random: &Random, complexity: Int): Str {
+  var len = random.next_int(0..=complexity)
   var slice = uninitialized_slice[Char](len)
-  for i in 0..len do slice.get_ref(i).* =
-    generator.rand.for[Char]().generate(Complexity { value = 1 })
+  for i in 0..len do slice.get_ref(i).* = static[Char]().generate(random, 1)
   Str { data = slice.data, len }
 }
 
@@ -1498,12 +1511,11 @@ fun write_debug[W, T](writer: W, range: Range[T]) {
   writer."{debug(range.start)}..{debug(range.end)}"
 }
 fun generate[T](
-  generator: Generator[Range[T]], complexity: Complexity
+  s: Static[Range[T]], random: &Random, complexity: Int
 ): Range[T] {
-  var complexities = complexity.split_2(generator.rand)
-  var a = type[T]().generate(random, complexities.a)
-  var a = generator.rand.for[T]().generate(complexities.a)
-  var b = generator.rand.for[T]().generate(complexities.b)
+  var complexities = random.split_2(complexity)
+  var a = static[T]().generate(random, complexities.a)
+  var b = static[T]().generate(random, complexities.b)
   min(a, b)..max(a, b)
 }
 
@@ -2032,11 +2044,13 @@ fun write_debug[W, T](writer: W, vec: Vec[T]) {
   writer.write_debug(vec.to_slice())
 }
 
-fun generate[T](generator: Generator[Vec[T]], complexity: Complexity): Vec[T] {
-  var complexities = complexity.split()
+fun generate[T](
+  static: Static[Vec[T]], random: &Random, complexity: Int
+): Vec[T] {
+  var complexities = random.split(complexity)
   var vec = vec[T]()
   for complexity in complexities do
-    vec.&.push(generator.rand.for[T]().generate(complexity))
+    vec.&.push(static[T]().generate(random, complexity))
   vec
 }
 
@@ -2214,19 +2228,18 @@ fun write_debug[W, K, V](writer: W, map: Map[K, V]) {
 }
 
 fun generate[K, V](
-  generator: Generator[Map[K, V]], complexity: Complexity
+  s: Static[Map[K, V]], random: &Random, complexity: Int
 ): Map[K, V] {
-  var complexities = complexity.split(2 * size)
+  var complexities = random.split(complexity, 2 * size)
   var map = map[K, V]()
   for complexity in complexities do {
     var complexities = complexity.split_2()
-    var key   = generator.rand.for[K]().generate(complexities.a)
-    var value = generator.rand.for[V]().generate(complexities.b)
+    var key   = static[K]().generate(random, complexities.a)
+    var value = static[V]().generate(random, complexities.b)
     map.&.put(key, value)
   }
   map
 }
-
 
 fun iter[K, V](map: Map[K, V]): Iter[MapEntry[K, V], _] {
   Iter[MapEntry[K, V], MapIter[K, V]] {
