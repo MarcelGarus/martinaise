@@ -512,7 +512,6 @@ fun %(left: Int, right: Int): Int asm {
   move c sp load c c | return value address
   rem a b store c a ret
 }
-fun modulo(a: Int, b: Int): Int { a % b } | TODO: not correct!!
 fun &(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
@@ -596,7 +595,7 @@ fun write[W](writer: W, format: RadixFormat) {
   }
   loop {
     writer.write(
-      {format.int / divisor}.modulo(format.radix).lower_byte().digit_to_char())
+      {format.int / divisor % format.radix}.lower_byte().digit_to_char())
     if divisor == 1 then break
     divisor = divisor / format.radix
   }
@@ -638,7 +637,6 @@ fun %(left: Byte, right: Byte): Byte asm {
   move c sp load c c | return value address
   rem a b storeb c a ret
 }
-fun modulo(a: Byte, b: Byte): Byte { a % b }
 fun &(left: Byte, right: Byte): Byte asm {
   moveib a 8 add a sp loadb a a | left
   moveib b 9 add b sp loadb b b | right
@@ -871,7 +869,7 @@ fun write[W](writer: W, address: Address) {
   var address = address.to_int()
   writer."0x"
   loop {
-    writer.write({address / divisor}.modulo(16).lower_byte().digit_to_char())
+    writer.write({address / divisor % 16}.lower_byte().digit_to_char())
     if divisor == 1 then break
     divisor = divisor / 16
   }
@@ -1967,14 +1965,14 @@ fun push_front[T](deque: &Deque[T], item: T) {
 fun pop_front[T](deque: &Deque[T]): T {
   if deque.is_empty() then panic("pop_front on empty deque")
   var item = deque.data.get(deque.start)
-  deque.start = deque.start.inc().modulo(deque.data.len)
+  deque.start = deque.start + 1 % deque.data.len
   item
 }
 fun push_back[T](deque: &Deque[T], item: T) {
   if deque.data.len == deque.len().dec()
   then deque.reserve(deque.data.len * 2)
   deque.data.get_ref(deque.end).* = item
-  deque.end = deque.end.inc().modulo(deque.data.len)
+  deque.end = deque.end + 1 % deque.data.len
 }
 fun pop_back[T](deque: &Deque[T]): T {
   if deque.is_empty() then panic("pop_back on empty deque")
@@ -1985,7 +1983,7 @@ fun pop_back[T](deque: &Deque[T]): T {
 }
 fun get[T](deque: Deque[T], index: Int): T { deque.get_ref(index).* }
 fun get_ref[T](deque: Deque[T], index: Int): &T {
-  deque.data.get_ref({index + deque.start}.modulo(deque.data.len))
+  deque.data.get_ref(index + deque.start % deque.data.len)
 }
 fun to_slices[T](deque: Deque[T]): Tuple2[Slice[T], Slice[T]] {
   if deque.end >= deque.start
@@ -2028,7 +2026,7 @@ fun put[K, V](map: &Map[K, V], key: K, value: V) {
   map.raw_insert(key, value)
 }
 fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
-  var i = key.hash().modulo(map.buckets.len)
+  var i = key.hash() % map.buckets.len
   loop {
     var bucket = map.buckets.get_ref(i)
     switch bucket.*
@@ -2041,14 +2039,14 @@ fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
       if entry.key == key then {
         bucket.* = MapBucket.filled(MapEntry { key, value })
         break
-      } else i = i.inc().modulo(map.buckets.len)
+      } else i = i + 1 % map.buckets.len
   }
 }
 fun contains[K, V](map: Map[K, V], key: K): Bool {
   map.get_maybe(key).is_some()
 }
 fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
-  var i = key.hash().modulo(map.buckets.len)
+  var i = key.hash() % map.buckets.len
   loop {
     var bucket = map.buckets.get(i)
     switch bucket
@@ -2056,7 +2054,7 @@ fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
     case filled(entry)
       if entry.key == key
       then return some(entry.value)
-      else i = i.inc().modulo(map.buckets.len)
+      else i = i + 1 % map.buckets.len
   }
 }
 fun get[K, V](map: Map[K, V], key: K): V {

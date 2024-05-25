@@ -78,7 +78,7 @@ fun !=[T](a: T, b: T): Bool { not(a == b) }
 fun hash[T](value: T): Int {
   var hasher = Hasher { state = 5381 }
   hasher.&.hash(value)
-  hasher.state
+  hasher.state * 33
 }
 
 struct Hasher { state: Int }
@@ -593,13 +593,14 @@ fun /(left: Int, right: Int): Int asm {
   load c sp | return value address
   div a b store c a ret
 }
+| TODO: Think about remainder vs modulo. Do I want to change the instruction? Do
+| I want to provide both? For now, please only use this with positive left.
 fun %(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
   load c sp | return value address
   rem a b store c a ret
 }
-fun modulo(a: Int, b: Int): Int { a % b } | TODO: not correct!!
 fun &(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
@@ -681,7 +682,7 @@ fun write[W](writer: W, format: RadixFormat) {
   }
   loop {
     writer.write(
-      {format.int / divisor}.modulo(format.radix).lower_byte().digit_to_char())
+      {format.int / divisor % format.radix}.lower_byte().digit_to_char())
     if divisor == 1 then break
     divisor = divisor / format.radix
   }
@@ -728,7 +729,6 @@ fun %(left: Byte, right: Byte): Byte asm {
   load c sp | return value address
   rem a b storeb c a ret
 }
-fun modulo(a: Byte, b: Byte): Byte { a % b }
 fun &(left: Byte, right: Byte): Byte asm {
   moveib a 8 add a sp loadb a a | left
   moveib b 9 add b sp loadb b b | right
@@ -965,7 +965,7 @@ fun write[W](writer: W, address: Address) {
   var address = address.to_int()
   writer."0x"
   loop {
-    writer.write({address / divisor}.modulo(16).lower_byte().digit_to_char())
+    writer.write({address / divisor % 16}.lower_byte().digit_to_char())
     if divisor == 1 then break
     divisor = divisor / 16
   }
@@ -1091,6 +1091,21 @@ fun memcompare(left: Address, right: Address, amount: Int): Ordering asm {
   .less:    load a sp moveib b 0 storeb a b ret
   .greater: load a sp moveib b 2 storeb a b ret
 }
+fun memhash(address: Address, amount: Int): Int asm {
+  moveib a 8  add a sp load a a | address
+  moveib b 16 add b sp load b b | amount
+  movei c 5381                  | hasher state
+  moveib e 33 moveib f 1        | constants
+  .loop:
+  move st b isequal cjump .done
+  loadb a d
+  mul c e
+  add c d
+  sub b f
+  .done:
+  mul c e
+  load a sp store a c ret
+}
 
 | Slice  
 | A slice refers to a memory region where values of the same type are right next
@@ -1121,6 +1136,9 @@ fun filled_slice[T](len: Int, fill: T): Slice[T] {
 fun is_empty[T](slice: Slice[T]): Bool { slice.len == 0 }
 fun get_ref_unchecked[T](slice: Slice[T], index: Int): &T {
   {slice.data + {index * stride_size_of[T]()}}.to_reference[T]()
+}
+fun get_unchecked[T](slice: Slice[T], index: Int): T {
+  slice.get_ref_unchecked(index).*
 }
 fun get_maybe_ref[T](slice: Slice[T], index: Int): Maybe[&T] {
   if {0..slice.len}.contains(index)
@@ -1384,39 +1402,7 @@ fun ==(a: Str, b: Str): Bool {
   if memcompare(a.data, b.data, a.len) is equal then true else false
 }
 | fun hash(hasher: &Hasher, str: Str) { hasher.hash(str.chars()) }
-fun hash(hasher: &Hasher, str: Str) {
-  if false then hasher.hash(0) | require hash(&Hasher, Int) to be compiled
-  hash_impl(hasher, str)
-}
-fun hash_impl(hasher: &Hasher, str: Str) asm {
-  | Set up the stack so we can call hash(&Hasher, Int) repeatedly with the
-  | individual chars casted to bytes:
-  | what:   zero | hasher | char | cursor | return value | hasher  | str  | ...
-  | size:   8    | 8      | 8    | 8      | 8            | 8       | 16   | ...
-  | offset: 0    | 8      | 16   | 24     | 32           | 40      | 48   | ...
-  | where:  args for call        |        | args to us                    | ...
-  moveib a 32 sub sp a | make space for zero, hasher, char, and cursor
-  .init_zero: | can be anything as hash(&Hasher, Int) returns Nothing of size 0
-  .init_hasher: moveib a 8  add a sp moveib b 40 add b sp load b b store a b
-  .init_char:   moveib a 16 add a sp moveib b 0 store a b
-  .init_cursor: moveib a 24 add a sp moveib b 0 store a b
-  .loop:
-  moveib a 24 add a sp load a a  | cursor
-  moveib b 56 add b sp load b b  | str.len
-  cmp a b isequal cjump .done    | are we done?
-  moveib a 48 add a sp load a a  | str.data
-  moveib b 24 add b sp load b b  | cursor
-  add a b loadb a a              | load char
-  moveib b 16 add b sp store b a | store char
-  call "hash(&Hasher, Int)"
-  moveib a 24 add a sp load a a  | load cursor
-  moveib b 1 add a b             | cursor + 1
-  moveib b 24 add b sp store b a | store cursor
-  jump .loop
-  .done:
-  moveib a 32 add sp a
-  ret
-}
+fun hash(hasher: &Hasher, str: Str) { hasher.hash(memhash(str.data, str.len)) }
 fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }
 fun write_debug[W](writer: W, str: Str) {
   writer."\""
@@ -2157,14 +2143,14 @@ fun push_front[T](deque: &Deque[T], item: T) {
 fun pop_front[T](deque: &Deque[T]): T {
   if deque.is_empty() then panic("pop_front on empty deque")
   var item = deque.data.get(deque.start)
-  deque.start = deque.start.inc().modulo(deque.data.len)
+  deque.start = deque.start + 1 % deque.data.len
   item
 }
 fun push_back[T](deque: &Deque[T], item: T) {
   if deque.data.len == deque.len().dec()
   then deque.reserve(deque.data.len * 2)
   deque.data.get_ref(deque.end).* = item
-  deque.end = deque.end.inc().modulo(deque.data.len)
+  deque.end = deque.end + 1 % deque.data.len
 }
 fun pop_back[T](deque: &Deque[T]): T {
   if deque.is_empty() then panic("pop_back on empty deque")
@@ -2175,7 +2161,7 @@ fun pop_back[T](deque: &Deque[T]): T {
 }
 fun get[T](deque: Deque[T], index: Int): T { deque.get_ref(index).* }
 fun get_ref[T](deque: Deque[T], index: Int): &T {
-  deque.data.get_ref({index + deque.start}.modulo(deque.data.len))
+  deque.data.get_ref(index + deque.start % deque.data.len)
 }
 fun to_slices[T](deque: Deque[T]): Tuple2[Slice[T], Slice[T]] {
   if deque.end >= deque.start
@@ -2218,9 +2204,9 @@ fun put[K, V](map: &Map[K, V], key: K, value: V) {
   map.raw_insert(key, value)
 }
 fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
-  var i = key.hash().modulo(map.buckets.len)
+  var i = key.hash() % map.buckets.len
   loop {
-    var bucket = map.buckets.get_ref(i)
+    var bucket = map.buckets.get_ref_unchecked(i)
     switch bucket.*
     case empty {
       bucket.* = MapBucket.filled(MapEntry { key, value })
@@ -2231,22 +2217,22 @@ fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
       if entry.key == key then {
         bucket.* = MapBucket.filled(MapEntry { key, value })
         break
-      } else i = i.inc().modulo(map.buckets.len)
+      } else i = i + 1 % map.buckets.len
   }
 }
 fun contains[K, V](map: Map[K, V], key: K): Bool {
   map.get_maybe(key).is_some()
 }
 fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
-  var i = key.hash().modulo(map.buckets.len)
+  var i = key.hash() % map.buckets.len
   loop {
-    var bucket = map.buckets.get(i)
+    var bucket = map.buckets.get_unchecked(i)
     switch bucket
     case empty return none[V]()
     case filled(entry)
       if entry.key == key
       then return some(entry.value)
-      else i = i.inc().modulo(map.buckets.len)
+      else i = i + 1 % map.buckets.len
   }
 }
 fun get[K, V](map: Map[K, V], key: K): V {

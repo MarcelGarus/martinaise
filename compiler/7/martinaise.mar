@@ -3609,7 +3609,7 @@ fun calculate_mem_layout(
     var fields_sized_multiple_of_alignment = vec[MemLayoutField]()
     var remaining_fields = vec[MemLayoutField]()
     for field in fields do
-      if field.layout.size.modulo(alignment) == 0
+      if field.layout.size % alignment == 0
       then fields_sized_multiple_of_alignment.&.push(field)
       else remaining_fields.&.push(field)
 
