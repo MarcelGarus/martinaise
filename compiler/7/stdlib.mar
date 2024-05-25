@@ -975,6 +975,23 @@ fun memcopy(from: Address, to: Address, amount: Int) asm {
   jump ..loop
   .done: ret
 }
+fun memcompare(left: Address, right: Address, amount: Int): Ordering asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  moveib c 24 add c sp load c c | amount
+  moveib d 1
+  .loop:
+  move st c isequal cjump .equal
+  loadb e a loadb f b
+  cmp e f isless cjump .less
+  cmp e f isgreater cjump .greater
+  add a d add b d sub c d
+  jump .loop
+  .equal:   load a sp moveib b 1 storeb a b ret
+  .less:    load a sp moveib b 0 storeb a b ret
+  .greater: load a sp moveib b 2 storeb a b ret
+}
+
 
 | Slice  
 | A slice refers to a memory region where values of the same type are right next
@@ -1239,19 +1256,14 @@ fun get_ref(str: Str, index: Int): &Char {
 }
 
 fun <=>(a: Str, b: Str): Ordering {
-  var i = 0
-  loop {
-    if {i == a.len} & {i == b.len} then return Ordering.equal
-    if i == a.len then return Ordering.less
-    if i == b.len then return Ordering.greater
-    var ord = a.get(i) <=> b.get(i)
-    if ord is equal then {} else return ord
-    i = i.inc()
-  }
+  switch memcompare(a.data, b.data, min(a.len, b.len))
+  case less Ordering.less
+  case greater Ordering.greater
+  case equal if a.len < b.len then Ordering.less else Ordering.greater
 }
 fun ==(a: Str, b: Str): Bool {
   a.len == b.len or return false
-  if a <=> b is equal then true else false
+  if memcompare(a.data, b.data, a.len) is equal then true else false
 }
 fun hash(hasher: &Hasher, str: Str) { hasher.hash(str.chars()) }
 fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }
