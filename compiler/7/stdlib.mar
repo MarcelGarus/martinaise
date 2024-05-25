@@ -2040,7 +2040,9 @@ fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
       else i = i.inc().modulo(map.buckets.len)
   }
 }
-fun get[K, V](map: Map[K, V], key: K): V { map.get_maybe(key).unwrap() }
+fun get[K, V](map: Map[K, V], key: K): V {
+  map.get_maybe(key) or panic("Key {debug(key)} is not in the map.")
+}
 
 fun write[W, K, V](writer: W, entry: MapEntry[K, V]) {
   writer."{entry.key}: {entry.value}"

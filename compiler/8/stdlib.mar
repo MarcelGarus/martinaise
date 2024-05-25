@@ -241,9 +241,9 @@ fun fuzzer_main[Input](): Never {
   var total_cov = coverage(current_cov.len)
   var schick = vec[FoundInput[Input]]()
 
-  for i in 0..1000 do {
+  for i in 0..10 do {
     var checkpoint = heap_checkpoint()
-    var input = rand.&.for[Input]().generate()
+    var input = rand.&.for[Input]().generate(Complexity { value = 100 })
     var in_str = "{comma_separated(input.arg_strings())}"
 
     current_cov.reset()
@@ -322,11 +322,25 @@ struct Generator[T] { rand: &Random }
 
 fun for[T](rand: &Random): Generator[T] { Generator[T] { rand } }
 
-| The compiler can auto-implement a generate function for structs and enums.
-fallback fun generate[T](generator: Generator[T]): T { ... }
+struct Complexity { value: Int }
 
-fun generate[T](generator: Generator[&T]): &T {
-  generator.rand.for[T]().generate().put_on_heap()
+fun split(complexity: Complexity, n: Int, random: &Random): Slice[Complexity] {
+  | TODO: add some random variation
+  if n == 0 then return empty_slice[Complexity]()
+  filled_slice(n, Complexity { value = complexity.value / n })
+}
+fun split(complexity: Complexity, random: &Random): Slice[Complexity] {
+  var len = random.next_int(0..={complexity.value / 10})
+  complexity.split(len, random)
+}
+
+| The compiler can auto-implement a generate function for structs and enums.
+fallback fun generate[T](
+  generator: Generator[T], complexity: Complexity
+): T { ... }
+
+fun generate[T](generator: Generator[&T], complexity: Complexity): &T {
+  generator.rand.for[T]().generate(complexity).put_on_heap()
 }
 
 | Assembly  
@@ -622,6 +636,13 @@ fun lower_byte(n: Int): Byte asm {
 fun inc(a: Int): Int { a + 1 }
 fun dec(a: Int): Int { a - 1 }
 fun ==(a: Int, b: Int): Bool { if a <=> b is equal then true else false }
+| fun ==(a: Int, b: Int): Bool asm {
+|   moveib a 8  add a sp load a a | left
+|   moveib b 16 add b sp load b b | right
+|   load c sp | return value address
+|   cmp a b isequal
+|   store c st ret
+| }
 
 fun parse_int(str: Str): Int {
   var num = 0
@@ -655,7 +676,10 @@ fun write[W](writer: W, format: RadixFormat) {
 }
 fun write_debug[W](writer: W, int: Int) { writer."{int}" }
 
-fun generate(generator: Generator[Int]): Int { generator.rand.next_int(0..100) }
+fun generate(generator: Generator[Int], complexity: Complexity): Int {
+  var limit = complexity.value * complexity.value
+  generator.rand.next_int({0 - limit}..=limit)
+}
 
 | Byte  
 
@@ -743,7 +767,7 @@ fun digit_to_char(digit: Byte): Char {
 }
 fun write_debug[W](writer: W, byte: Byte) { writer."{byte}" }
 
-fun generate(generator: Generator[Byte]): Byte {
+fun generate(generator: Generator[Byte], complexity: Complexity): Byte {
   generator.rand.next_int().lower_byte()
 }
 
@@ -1067,7 +1091,14 @@ fun filled_slice[T](len: Int, fill: T): Slice[T] {
 }
 
 fun is_empty[T](slice: Slice[T]): Bool { slice.len == 0 }
-fun get[T](slice: Slice[T], index: Int): T { slice.get_ref(index).* }
+fun get_ref_unchecked[T](slice: Slice[T], index: Int): &T {
+  {slice.data + {index * stride_size_of[T]()}}.to_reference[T]()
+}
+fun get_maybe_ref[T](slice: Slice[T], index: Int): Maybe[&T] {
+  if {0..slice.len}.contains(index)
+  then some(slice.get_ref_unchecked(index))
+  else none[&T]()
+}
 fun get_maybe[T](slice: Slice[T], index: Int): Maybe[T] {
   switch slice.get_maybe_ref(index)
   case some(item) some(item.*)
@@ -1076,11 +1107,7 @@ fun get_maybe[T](slice: Slice[T], index: Int): Maybe[T] {
 fun get_ref[T](slice: Slice[T], index: Int): &T {
   slice.get_maybe_ref(index).unwrap("index out of bounds")
 }
-fun get_maybe_ref[T](slice: Slice[T], index: Int): Maybe[&T] {
-  if {0..slice.len}.contains(index)
-  then some(slice.data.to_reference[T]().add_stride_offset(index))
-  else none[&T]()
-}
+fun get[T](slice: Slice[T], index: Int): T { slice.get_ref(index).* }
 
 fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
   var i = 0
@@ -1111,10 +1138,13 @@ fun write_debug[W, T](writer: W, slice: Slice[T]) {
   writer."]"
 }
 
-fun generate[T](generator: Generator[Slice[T]]): Slice[T] {
-  var len = generator.rand.next_int(0..10)
-  var slice = uninitialized_slice[T](len)
-  for i in 0..len do slice.get_ref(i).* = generator.rand.for[T]().generate()
+fun generate[T](
+  generator: Generator[Slice[T]], complexity: Complexity
+): Slice[T] {
+  var item_complexities = complexity.split(generator.rand)
+  var slice = uninitialized_slice[T](item_complexities.len)
+  for it in item_complexities.iter().enumerate() do
+    slice.get_ref(it.index).* = generator.rand.for[T]().generate(it.item)
   slice
 }
 
@@ -1334,11 +1364,25 @@ fun hash(hasher: &Hasher, str: Str) { hasher.hash(str.chars()) }
 fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }
 fun write_debug[W](writer: W, str: Str) {
   writer."\""
-  for char in str do if char == #" then writer."\\\"" else writer."{char}"
+  for char in str do
+    if char == #" then writer."\\\""
+    else if char == #\ then writer."\\\\"
+    else if char == newline then writer."\\n"
+    else writer."{char}"
   writer."\""
 }
 
-fun generate(generator: Generator[Str]): Str { "test" }
+fun generate(generator: Generator[Char], complexity: Complexity): Char {
+  var visible_ascii = 32..127
+  generator.rand.next_int(visible_ascii).lower_byte().to_char()
+}
+fun generate(generator: Generator[Str], complexity: Complexity): Str {
+  var len = generator.rand.next_int(0..=complexity.value)
+  var slice = uninitialized_slice[Char](len)
+  for i in 0..len do slice.get_ref(i).* =
+    generator.rand.for[Char]().generate(Complexity { value = 1 })
+  Str { data = slice.data, len }
+}
 
 fun iter(str: Str): Iter[Char, _] {
   Iter[Char, StrIter] { state = StrIter { str, index = 0 } }
@@ -1453,9 +1497,13 @@ fun write[W, T](writer: W, range: Range[T]) {
 fun write_debug[W, T](writer: W, range: Range[T]) {
   writer."{debug(range.start)}..{debug(range.end)}"
 }
-fun generate[T](generator: Generator[Range[T]]): Range[T] {
-  var a = generator.rand.for[T]().generate()
-  var b = generator.rand.for[T]().generate()
+fun generate[T](
+  generator: Generator[Range[T]], complexity: Complexity
+): Range[T] {
+  var complexities = complexity.split_2(generator.rand)
+  var a = type[T]().generate(random, complexities.a)
+  var a = generator.rand.for[T]().generate(complexities.a)
+  var b = generator.rand.for[T]().generate(complexities.b)
   min(a, b)..max(a, b)
 }
 
@@ -1603,7 +1651,7 @@ fun write[W, T](writer: W, enumerated: Enumerated[T]) {
 
 | Gets the element at the given index.
 fun get[T, I](iter: &Iter[T, I], index: Int): T {
-  iter.get_maybe(index).unwrap()
+  iter.get_maybe(index) or panic("index {index} is out of bounds")
 }
 fun get_maybe[T, I](iter: &Iter[T, I], index: Int): Maybe[T] {
   iter.skip(index).get()
@@ -1940,7 +1988,7 @@ fun push[T](vec: &Vec[T], item: T) {
     vec.data.copy_to(new_data.subslice(0..vec.data.len))
     vec.data = new_data
   }
-  vec.data.get_ref(vec.len).* = item
+  vec.data.get_ref_unchecked(vec.len).* = item
   vec.len = vec.len + 1
 }
 fun push_all[T](vec: &Vec[T], items: Slice[T]) {
@@ -1984,10 +2032,11 @@ fun write_debug[W, T](writer: W, vec: Vec[T]) {
   writer.write_debug(vec.to_slice())
 }
 
-fun generate[T](generator: Generator[Vec[T]]): Vec[T] {
-  var len = generator.rand.next_int(0..10)
-  var vec = vec[T]() | todo: allocate enough capacity upfront
-  for i in 0..len do vec.&.push(generator.rand.for[T]().generate())
+fun generate[T](generator: Generator[Vec[T]], complexity: Complexity): Vec[T] {
+  var complexities = complexity.split()
+  var vec = vec[T]()
+  for complexity in complexities do
+    vec.&.push(generator.rand.for[T]().generate(complexity))
   vec
 }
 
@@ -2144,7 +2193,9 @@ fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
       else i = i.inc().modulo(map.buckets.len)
   }
 }
-fun get[K, V](map: Map[K, V], key: K): V { map.get_maybe(key).unwrap() }
+fun get[K, V](map: Map[K, V], key: K): V {
+  map.get_maybe(key) or panic("Key {debug(key)} isn't in the map.")
+}
 
 fun write[W, K, V](writer: W, entry: MapEntry[K, V]) {
   writer."{entry.key}: {entry.value}"
@@ -2162,12 +2213,15 @@ fun write_debug[W, K, V](writer: W, map: Map[K, V]) {
   writer."}"
 }
 
-fun generate[K, V](generator: Generator[Map[K, V]]): Map[K, V] {
-  var size = generator.rand.next_int(0..10)
+fun generate[K, V](
+  generator: Generator[Map[K, V]], complexity: Complexity
+): Map[K, V] {
+  var complexities = complexity.split(2 * size)
   var map = map[K, V]()
-  for i in 0..size do {
-    var key   = generator.rand.for[K]().generate()
-    var value = generator.rand.for[V]().generate()
+  for complexity in complexities do {
+    var complexities = complexity.split_2()
+    var key   = generator.rand.for[K]().generate(complexities.a)
+    var value = generator.rand.for[V]().generate(complexities.b)
     map.&.put(key, value)
   }
   map
