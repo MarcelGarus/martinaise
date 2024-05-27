@@ -240,8 +240,9 @@ fun fuzzer_main[Input](): Never {
   var current_cov = get_coverage()
   var total_cov = coverage(current_cov.len)
   var schick = vec[FoundInput[Input]]()
+  var queue = queue[Input]()
 
-  for i in 0..10 do {
+  for i in 0..100 do {
     var checkpoint = heap_checkpoint()
     var input = static[Input]().generate(rand.&, 100)
     var in_str = "{comma_separated(input.arg_strings())}"
@@ -251,6 +252,8 @@ fun fuzzer_main[Input](): Never {
     var out_str = "{res}"
 
     var has_new_coverage = current_cov.improves_upon(total_cov)
+
+    if has_new_coverage then queue.&.push_back(input)
 
     println("Running with {"{in_str} = {res}".pad_right(50)} 
       '{current_cov} total: {total_cov} 
@@ -262,6 +265,13 @@ fun fuzzer_main[Input](): Never {
     } else {
       checkpoint.free_everything_allocated_after()
     }
+  }
+
+  println("Queue has {queue.len()} elements")
+  loop {
+    var input = queue.&.pop_front_maybe() or break
+    | TODO: mutate input and run it again. if the coverage is further increased,
+    | append it to the queue
   }
 
   println("Done fuzzing. Some interesting inputs:")
@@ -630,6 +640,10 @@ fun >>(left: Int, by: Int): Int {
 fun abs(value: Int): Int { if value >= 0 then value else 0 - value }
 fun round_up_to_multiple_of(number: Int, factor: Int): Int {
   {number + factor.dec()} / factor * factor
+}
+fun round_up_to_power_of(number: Int, factor: Int): Int {
+  var power = 1
+  loop if power >= number then break(power) else power = power * factor
 }
 fun <=>(left: Int, right: Int): Ordering asm {
   moveib a 8  add a sp load a a | left
@@ -2103,7 +2117,7 @@ fun top_ref[T](stack: Stack[T], n: Int): &T {
 fun ==[T](a: Stack[T], b: Stack[T]): Bool { a.vec == b.vec }
 fun write[W, T](writer: W, stack: Stack[T]) { writer.write(stack.vec) }
 
-| Deque  
+| Queue  
 | A growable array-like structure where you can push and pop from both ends.
 | It maintains an inclusive start and an exclusive end index. Basically, there
 | are two possibilities how this can be layed out:
@@ -2112,66 +2126,76 @@ fun write[W, T](writer: W, stack: Stack[T]) { writer.write(stack.vec) }
 | [-][0][1][2][3][4][-][-]    [3][4][-][-][-][0][1][2]
 |     s              e               e        s
 
-struct Deque[T] { data: Slice[T], start: Int, end: Int }
-fun deque[T](): Deque[T] {
-  Deque { data = uninitialized_slice[T](8), start = 0, end = 0 }
+struct Queue[T] { data: Slice[T], start: Int, end: Int }
+fun queue[T](): Queue[T] {
+  Queue { data = uninitialized_slice[T](8), start = 0, end = 0 }
 }
-fun len[T](deque: Deque[T]): Int {
-  if deque.end >= deque.start
-  then deque.end - deque.start
-  else deque.start + deque.data.len - deque.end
+fun len[T](queue: Queue[T]): Int {
+  if queue.end >= queue.start
+  then queue.end - queue.start
+  else queue.data.len - queue.start + queue.end
 }
-fun is_empty[T](deque: Deque[T]): Bool { deque.len() == 0 }
-fun reserve[T](deque: &Deque[T], size: Int) {
-  if deque.data.len >= size then return {}
-  var slices = deque.to_slices()
-  var total_len = deque.len()
-  deque.data = uninitialized_slice[T](size)
-  slices.a.copy_to(deque.data.subslice(0..slices.a.len))
-  slices.b.copy_to(deque.data.subslice(slices.a.len .. total_len))
-  deque.start = 0
-  deque.end = total_len
-}
-fun push_front[T](deque: &Deque[T], item: T) {
-  if deque.data.len == deque.len().dec()
-  then deque.reserve(deque.data.len * 2)
-  deque.start = if deque.start == 0
-    then deque.data.len
-    else deque.start.dec()
-  deque.data.get_ref(deque.start).* = item
-}
-fun pop_front[T](deque: &Deque[T]): T {
-  if deque.is_empty() then panic("pop_front on empty deque")
-  var item = deque.data.get(deque.start)
-  deque.start = deque.start + 1 % deque.data.len
-  item
-}
-fun push_back[T](deque: &Deque[T], item: T) {
-  if deque.data.len == deque.len().dec()
-  then deque.reserve(deque.data.len * 2)
-  deque.data.get_ref(deque.end).* = item
-  deque.end = deque.end + 1 % deque.data.len
-}
-fun pop_back[T](deque: &Deque[T]): T {
-  if deque.is_empty() then panic("pop_back on empty deque")
-  deque.end = if deque.end == 0
-    then deque.data.len
-    else deque.end.dec()
-  deque.data.get(deque.end)
-}
-fun get[T](deque: Deque[T], index: Int): T { deque.get_ref(index).* }
-fun get_ref[T](deque: Deque[T], index: Int): &T {
-  deque.data.get_ref(index + deque.start % deque.data.len)
-}
-fun to_slices[T](deque: Deque[T]): Tuple2[Slice[T], Slice[T]] {
-  if deque.end >= deque.start
-  then tuple(deque.data.subslice(deque.start .. deque.end), empty_slice[T]())
+fun is_empty[T](queue: Queue[T]): Bool { queue.len() == 0 }
+fun to_slices[T](queue: Queue[T]): Tuple2[Slice[T], Slice[T]] {
+  if queue.end >= queue.start
+  then tuple(queue.data.subslice(queue.start .. queue.end), empty_slice[T]())
   else tuple(
-    deque.data.subslice(deque.start .. deque.data.len),
-    deque.data.subslice(0 .. deque.start)
+    queue.data.subslice(queue.start .. queue.data.len),
+    queue.data.subslice(0 .. queue.start)
   )
 }
-fun ==[T](a: Deque[T], b: Deque[T]): Bool {
+fun reserve[T](queue: &Queue[T], size: Int) {
+  | Except for empty queues, we need size + 1 slots to store size items.
+  if size == 0 then return {}
+  if queue.data.len > size then return {}
+  var slices = queue.to_slices()
+  var len = queue.len()
+  queue.data = uninitialized_slice[T]({size + 1}.round_up_to_power_of(2))
+  slices.a.copy_to(queue.data.subslice(0..slices.a.len))
+  slices.b.copy_to(queue.data.subslice(slices.a.len .. len))
+  queue.start = 0
+  queue.end = len
+}
+fun push_front[T](queue: &Queue[T], item: T) {
+  queue.reserve(queue.len() + 1)
+  queue.start = if queue.start == 0
+    then queue.data.len - 1
+    else queue.start - 1
+  queue.data.get_ref(queue.start).* = item
+}
+fun pop_front_maybe[T](queue: &Queue[T]): Maybe[T] {
+  if queue.is_empty() then return none[T]()
+  var item = queue.data.get(queue.start)
+  queue.start = queue.start + 1 % queue.data.len
+  some(item)
+}
+fun pop_front[T](queue: &Queue[T]): T {
+  queue.pop_front_maybe() or panic("called pop_front on empty queue")
+}
+fun push_back[T](queue: &Queue[T], item: T) {
+  queue.reserve(queue.len() + 1)
+  queue.data.get_ref(queue.end).* = item
+  queue.end = queue.end + 1 % queue.data.len
+}
+fun pop_back_maybe[T](queue: &Queue[T]): Maybe[T] {
+  if queue.is_empty() then return none[T]()
+  queue.end = if queue.end == 0
+    then queue.data.len
+    else queue.end.dec()
+  some(queue.data.get(queue.end))
+}
+fun pop_back[T](queue: &Queue[T]): T {
+  queue.pop_back_maybe() or panic("called pop_back on empty queue")
+}
+fun get_maybe_ref[T](queue: Queue[T], index: Int): Maybe[&T] {
+  {0..queue.len()}.contains(index) or return none[&T]()
+  queue.data.get_ref(queue.start + index % queue.data.len)
+}
+fun get_maybe_ref[T](queue: Queue[T], index: Int): &T {
+  queue.get_maybe_ref(index) or panic("index out of bounds")
+}
+fun get[T](queue: Queue[T], index: Int): T { queue.get_ref(index).* }
+fun ==[T](a: Queue[T], b: Queue[T]): Bool {
   a.len() == b.len() or return false
   for i in 0..a.len() do a.get(i) == b.get(i) or return false
   true
