@@ -2017,7 +2017,34 @@ fun map[K, V](): Map[K, V] {
   Map { buckets = filled_slice(8, MapBucket[K, V].empty), size = 0 }
 }
 
+fun ->[K, V](key: K, value: V): MapEntry[K, V] { MapEntry { key, value } }
+fun map[K, V](a: MapEntry[K, V]): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.*
+}
+fun map[K, V](a: MapEntry[K, V], b: MapEntry[K, V]): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.put(b) m.*
+}
+fun map[K, V](
+  a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V]
+): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.put(b) m.put(c) m.*
+}
+fun map[K, V](
+  a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V], d: MapEntry[K, V]
+): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.put(b) m.put(c) m.put(d) m.*
+}
+fun map[K, V](
+  a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V], d: MapEntry[K, V],
+  e: MapEntry[K, V],
+): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.put(b) m.put(c) m.put(d) m.put(e) m.*
+}
+
 fun is_empty[K, V](map: Map[K, V]): Bool { map.size == 0 }
+fun put[K, V](map: &Map[K, V], entry: MapEntry[K, V]) {
+  map.put(entry.key, entry.value)
+}
 fun put[K, V](map: &Map[K, V], key: K, value: V) {
   var fill_percentage = 100 * map.size / map.buckets.len
   if fill_percentage >= 60 then {
