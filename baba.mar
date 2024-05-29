@@ -1,0 +1,120 @@
+import stdlib.mar
+
+struct Pos { x: Int, y: Int }
+fun @(x: Int, y: Int): Pos { Pos { x, y } }
+
+struct Level {
+  width: Int,
+  height: Int,
+  objs: Vec[ObjAndPos],
+}
+struct ObjAndPos { obj: Obj, pos: Pos }
+enum Obj { word: Word, baba, flag }
+enum Word { baba, is, you, flag, win }
+
+fun @(obj: Obj, pos: Pos): ObjAndPos { ObjAndPos { obj, pos } }
+
+fun write[W](writer: W, level: Level) {
+  var map = uninitialized_slice[Slice[Vec[Obj]]](level.height)
+  for y in 0..level.height do {
+    var row = uninitialized_slice[Vec[Obj]](level.width)
+    for x in 0..level.width do
+      row.get_ref(x).* = vec[Obj]()
+    map.get_ref(y).* = row
+  }
+  for obj in level.objs do
+    map.get_ref(obj.pos.y).get_ref(obj.pos.x).push(obj.obj)
+
+  for y in 0..level.height do {
+    for x in 0..level.width do {
+      var objs = map.get(y).get(x)
+      var tile = string_builder()
+      for obj in objs do {
+        tile.&."{obj}"
+      }
+      loop if tile.chars.len < 4 then tile.&."_" else break
+      tile.&." "
+      writer."{tile}"
+    }
+    writer."\n"
+  }
+}
+fun write[W](writer: W, obj: Obj) {
+  switch obj
+  case word(w) writer."{debug(w)}"
+  case baba writer."BABA"
+  case flag writer."FLAG"
+}
+
+struct Rule {
+  what: What,
+  how: How,
+}
+enum What { word, baba, flag }
+enum How { you, win }
+
+fun ->(what: What, how: How): Rule { Rule { what, how } }
+fun write[W](writer: W, rule: Rule) {
+  writer."{rule.what.debug()} is {rule.how.debug()}"
+}
+
+fun find_rules(level: Level): Vec[Rule] {
+  vec(
+    What.baba -> How.you,
+    What.flag -> How.win,
+  )
+}
+fun find_rules(run: Slice[Word]): Vec[Rule] {
+}
+
+fun write_ansi_escape_sequence[W](writer: W, sequence: Str) {
+  writer.write(27.lower_byte().to_char())
+  writer.write(sequence)
+}
+fun switch_to_alternate_screen() {
+  stderr.write_ansi_escape_sequence("[?1049h")
+}
+fun switch_from_alternate_screen() {
+  stderr.write_ansi_escape_sequence("[?1049l")
+}
+
+fun main(): Never {
+  var level = Level {
+    width  = 10,
+    height = 10,
+    objs = vec(
+      Obj.word(Word.baba) @ {0 @ 1},
+      Obj.word(Word.is)   @ {1 @ 1},
+      Obj.word(Word.you)  @ {2 @ 1},
+      Obj.word(Word.flag) @ {1 @ 0},
+      Obj.word(Word.win)  @ {1 @ 2},
+      Obj.baba @ {0 @ 0},
+      Obj.flag @ {5 @ 0},
+    )
+  }
+  switch_to_alternate_screen()
+  loop {
+    println(level)
+    var rules = level.find_rules()
+    for rule in rules do println(rule)
+    print("> ")
+    var line = stdin.read_line().unwrap() or break
+    if line == "a" then {
+      for i in 0..level.objs.len do {
+        var obj = level.objs.get_ref(i)
+        if obj.obj is baba then
+          if obj.pos.x > 0 then obj.pos.x = obj.pos.x - 1
+      }
+    }
+    if line == "d" then {
+      for i in 0..level.objs.len do {
+        var obj = level.objs.get_ref(i)
+        if obj.obj is baba then
+          if obj.pos.x < {level.width - 1} then obj.pos.x = obj.pos.x + 1
+      }
+    }
+  }
+  switch_from_alternate_screen()
+  println("Thanks for playing!")
+  exit(0)
+}
