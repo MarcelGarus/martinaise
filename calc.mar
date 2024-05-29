@@ -1,0 +1,42 @@
+import stdlib.mar
+
+struct Operands[T] { left: &T, right: &T }
+
+enum Term {
+  num: Int,
+  add: Operands[Term],
+  mul: Operands[Term],
+}
+
+fun eval(term: Term): Int {
+  switch term
+  case num(num) num
+  case add(op) op.left.eval() + op.right.eval()
+  case mul(op) op.left.eval() * op.right.eval()
+}
+
+fun write[W](writer: W, term: Term) {
+  switch term
+  case num(num) writer."{num}"
+  case add(op) writer."{
+      switch op.left.* case num "{op.left}" default "({op.left})"
+    } + {
+      switch op.right.* case num "{op.right}" default "({op.right})"
+    }"
+  case mul(op) writer."{
+    switch op.left.* case num "{op.left}" default "({op.left})"
+  } * {
+    switch op.right.* case num "{op.right}" default "({op.right})"
+  }"
+}
+fun write_debug[W](writer: W, term: Term) { writer."{term}" }
+
+fun ops[T](left: T, right: T): Operands[T] {
+  Operands { left = left.put_on_heap(), right = right.put_on_heap() }
+}
+
+fun main(): Never {
+  var term = Term.add(ops(Term.num(2), Term.num(3)))
+  println("{term} = {term.eval()}")
+  exit(0)
+}
