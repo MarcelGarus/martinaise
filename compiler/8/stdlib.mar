@@ -236,7 +236,7 @@ fun or[O, E](result: Result[O, E]): ControlFlow[O] {
 | - arg_strings($Input): Vec[Str]        | stringifies the arguments
 
 fun fuzzer_main[Input](): Never {
-  var rand = prand()
+  var random = prand()
   var current_cov = get_coverage()
   var total_cov = coverage(current_cov.len)
   var schick = vec[FoundInput[Input]]()
@@ -244,7 +244,7 @@ fun fuzzer_main[Input](): Never {
 
   for i in 0..100 do {
     var checkpoint = heap_checkpoint()
-    var input = static[Input]().generate(rand.&, 100)
+    var input = static[Input]().generate(random.&, 100)
     var in_str = "{comma_separated(input.arg_strings())}"
 
     current_cov.reset()
@@ -270,7 +270,13 @@ fun fuzzer_main[Input](): Never {
   println("Queue has {queue.len()} elements")
   loop {
     var input = queue.&.pop_front_maybe() or break
-    | TODO: mutate input and run it again. if the coverage is further increased,
+    for i in 0..5 do {
+      println("Mutating {debug(input)}")
+      var mutated = input.mutate(random.&, 100)
+      println("Mutated: {debug(mutated)}")
+    }
+
+    | TODO: run mutated input. if the coverage is further increased,
     | append it to the queue
   }
 
@@ -282,7 +288,7 @@ fun fuzzer_main[Input](): Never {
 }
 struct FoundInput[Input] { input: Input, in_str: Str, out_str: Str }
 
-| Generating random values  
+| Generating and mutating values  
 | To fuzz functions, we need to be able to generate random inputs of any type.
 
 | This type allows dispatching based on type. For example, if you implement a
@@ -292,7 +298,9 @@ struct Static[T] {}
 
 fun static[T](): Static[T] { Static[T] {} }
 
-| The compiler can auto-implement this function for structs and enums.
+| The compiler can auto-implement this function for structs and enums. The
+| random instance should be used as the only source for randomness. The
+| size of the generated input should be in O(complexity).
 fallback fun generate[T](
   s: Static[T], random: &Random, complexity: Int
 ): T { ... }
@@ -311,6 +319,14 @@ fun split(random: &Random, complexity: Int, n: Int): Slice[Int] {
 fun split(random: &Random, complexity: Int): Slice[Int] {
   var len = random.next_int(0..={complexity / 10})
   random.split(complexity, len)
+}
+
+| Returns a mutated version of the value. The temperature should be an indicator
+| for how big the changes are.
+fallback fun mutate[T](value: T, random: &Random, temperature: Int): T { ... }
+
+fun mutate[T](value: &T, random: &Random, temperature: Int): &T {
+  value.*.mutate(random, temperature).put_on_heap()
 }
 
 | Coverage  
@@ -707,6 +723,9 @@ fun generate(s: Static[Int], random: &Random, complexity: Int): Int {
   var limit = complexity * complexity
   random.next_int({0 - limit}..=limit)
 }
+fun mutate(int: Int, random: &Random, temperature: Int): Int {
+  int + random.next_int({0 - temperature}..=temperature)
+}
 
 | Byte  
 
@@ -795,6 +814,9 @@ fun write_debug[W](writer: W, byte: Byte) { writer."{byte}" }
 
 fun generate(s: Static[Byte], random: &Random, complexity: Int): Byte {
   random.next_int().lower_byte()
+}
+fun mutate(byte: Byte, random: &Random, temperature: Int): Byte {
+  byte + random.next_int({0 - temperature}..=temperature).lower_byte()
 }
 
 | Comparisons  
@@ -1207,6 +1229,28 @@ fun generate[T](
     slice.get_ref(it.index).* = static[T]().generate(random, it.item)
   slice
 }
+fun mutate[T](slice: Slice[T], random: &Random, temperature: Int): Slice[T] {
+  if temperature == 0 then return slice
+  var copy = uninitialized_slice[T](slice.len)
+  slice.copy_to(copy)
+  var rand = random.next_int(0..temperature)
+  if slice.is_not_empty() and rand < 50 then {
+    | Mutate an inner element.
+    var temperature = temperature * 12 / 10
+    var index = random.next_int(0..slice.len)
+    copy.get_ref(index).* = copy.get(index).mutate(random, temperature)
+  } else {
+    | Change the structure of the slice itself by adding/removing an item.
+    if slice.is_not_empty() and random.next_bool() then
+      copy.remove(random.next_int(0..slice.len))
+    else
+      copy.insert(
+        random.next_int(0..=slice.len),
+        static[T]().generate(random, 100)
+      )
+  }
+  copy
+}
 
 fun iter[T](slice: Slice[T]): Iter[T, _] {
   Iter[T, SliceIter[T]] { state = SliceIter { slice, index = 0 } }
@@ -1432,11 +1476,21 @@ fun generate(s: Static[Char], random: &Random, complexity: Int): Char {
   var visible_ascii = 32..127
   random.next_int(visible_ascii).lower_byte().to_char()
 }
+fun mutate(char: Char, random: &Random, temperature: Int): Char {
+  var visible_ascii = 32..127
+  {char.byte + random.next_int({0 - temperature}..=temperature)}
+    .clamp(visible_ascii)
+    .to_char()
+}
 fun generate(s: Static[Str], random: &Random, complexity: Int): Str {
   var len = random.next_int(0..=complexity)
   var slice = uninitialized_slice[Char](len)
   for i in 0..len do slice.get_ref(i).* = static[Char]().generate(random, 1)
   Str { data = slice.data, len }
+}
+fun mutate(str: Str, random: &Random, temperature: Int): Str {
+  if temperature == 0 then return slice
+  str.chars().mutate(random, temperature).to_str()
 }
 
 fun iter(str: Str): Iter[Char, _] {
@@ -1559,6 +1613,13 @@ fun generate[T](
   var a = static[T]().generate(random, complexities.a)
   var b = static[T]().generate(random, complexities.b)
   min(a, b)..max(a, b)
+}
+fun mutate[T](range: Range[T], random: &Random, temperature: Int): Range[T] {
+  var bounds =
+    if random.next_bool()
+    then tuple(range.start, range.end.mutate(random, temperature))
+    else tuple(range.start.mutate(random, temperature), range.end)
+  bounds.min()..bounds.max()
 }
 
 fun iter[T](range: Range[T]): Iter[T, _] {
@@ -2102,6 +2163,9 @@ fun generate[T](
     vec.&.push(static[T]().generate(random, complexity))
   vec
 }
+fun mutate[T](vec: Vec[T], random: &Random, temperature: Int): Vec[T] {
+  vec.to_slice().mutate(random, temperature).to_vec()
+}
 
 | Stack  
 | Something where you can push and pop items. Essentially just a Vec, but
@@ -2286,11 +2350,9 @@ fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
   loop {
     var bucket = map.buckets.get_unchecked(i)
     switch bucket
-    case empty return none[V]()
-    case filled(entry)
-      if entry.key == key
-      then return some(entry.value)
-      else i = i + 1 % map.buckets.len
+      case empty return none[V]()
+      case filled(entry) if entry.key == key then return some(entry.value)
+    i = i + 1 % map.buckets.len
   }
 }
 fun get[K, V](map: Map[K, V], key: K): V {
@@ -2325,6 +2387,38 @@ fun generate[K, V](
     map.&.put(key, value)
   }
   map
+}
+fun mutate[K, V](map: Map[K, V], random: &Random, temperature: Int): Map[K, V] {
+  if temperature == 0 then return map
+  var copy = map[K, V]()
+  if map.is_not_empty() and random.next_int(0..temperature) < 50 then {
+    | Mutate a random entry.
+    var mutated_entry = random.next_int(0..map.size)
+    var entry_index = 0
+    for entry in map do {
+      if entry_index == mutated_entry
+      then {
+        if random.next_bool()
+        then copy.&.put(entry.key.mutate(random, temperature).value)
+        else copy.&.put(entry.key, entry.value.mutate(random, temperature))
+      }
+      else copy.&.put(entry)
+      entry_index = entry_index + 1
+    }
+  } else {
+    | Randomly remove/add an entry.
+    if map.is_not_empty() and random.next_bool() then {
+      var removed_entry = random.next_int(0..map.size)
+      var entry_index = 0
+      for entry in map do {
+        if entry_index != removed_entry then copy.&.put(entry)
+        entry_index = entry_index + 1
+      }
+    } else {
+      for entry in map do copy.&.put(entry)
+      copy.&.put(static[MapEntry[K, V]]().generate(random, 100))
+    }
+  }
 }
 
 fun iter[K, V](map: Map[K, V]): Iter[MapEntry[K, V], _] {
