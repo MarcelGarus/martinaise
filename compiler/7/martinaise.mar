@@ -2458,16 +2458,16 @@ enum MonoStatement {
 }
 struct MonoLabel { id: Int }
 struct MonoAssign { to: MonoExpr, value: MonoExpr }
-struct MonoSetEnum { slot: MonoSlotRef, variant: Str, value: MonoExpr }
-struct MonoCall { to: MonoSlotRef, fun_: Str, args: Vec[MonoExpr] }
+struct MonoSetEnum { to: MonoExpr, variant: Str, value: MonoExpr }
+struct MonoCall { to: MonoExpr, fun_: Str, args: Vec[MonoExpr] }
 struct MonoJump { target: MonoLabel }
 struct MonoJumpIfVariant {
   condition: MonoExpr,
   variant: Str,
   target: MonoLabel,
 }
-struct MonoGetEnumValue { to: MonoSlotRef, of: MonoExpr, variant: Str }
-struct MonoRef { to: MonoSlotRef, of: MonoExpr }
+struct MonoGetEnumValue { to: MonoExpr, of: MonoExpr, variant: Str }
+struct MonoRef { to: MonoExpr, of: MonoExpr }
 
 struct MonoExpr { type: Type, kind: MonoExprKind }
 enum MonoExprKind {
@@ -2525,7 +2525,7 @@ fun write[W](writer: W, statement: MonoStatement) {
   switch statement
   case label(label) writer."{label}:"
   case assign(assign) writer."{assign.to} = {assign.value}"
-  case set_enum(set) writer."{set.slot} = {set.variant}({set.value})"
+  case set_enum(set) writer."{set.to} = {set.variant}({set.value})"
   case call(call)
     writer."{call.to} = {call.fun_} called with ({comma_separated(call.args)})"
   case jump(jump) writer."jump to {jump.target}"
@@ -2564,12 +2564,10 @@ fun mono_label(id: Int): MonoStatement { MonoStatement.label(MonoLabel { id }) }
 fun mono_assign(to: MonoExpr, value: MonoExpr): MonoStatement {
   MonoStatement.assign(MonoAssign { to, value })
 }
-fun mono_set_enum(
-  slot: MonoSlotRef, variant: Str, value: MonoExpr
-): MonoStatement {
-  MonoStatement.set_enum(MonoSetEnum { slot, variant, value })
+fun mono_set_enum(to: MonoExpr, variant: Str, value: MonoExpr): MonoStatement {
+  MonoStatement.set_enum(MonoSetEnum { to, variant, value })
 }
-fun mono_call(to: MonoSlotRef, fun_: Str, args: Vec[MonoExpr]): MonoStatement {
+fun mono_call(to: MonoExpr, fun_: Str, args: Vec[MonoExpr]): MonoStatement {
   MonoStatement.call(MonoCall { to, fun_, args })
 }
 fun mono_jump(target: MonoLabel): MonoStatement {
@@ -2583,12 +2581,12 @@ fun mono_jump_if_variant(
   })
 }
 fun mono_get_enum_value(
-  to: MonoSlotRef, of: MonoExpr, variant: Str
+  to: MonoExpr, of: MonoExpr, variant: Str
 ): MonoStatement {
   MonoStatement.get_enum_value(MonoGetEnumValue { to, of, variant })
 }
 fun mono_return(value: MonoExpr): MonoStatement { MonoStatement.return_(value) }
-fun mono_ref(to: MonoSlotRef, of: MonoExpr): MonoStatement {
+fun mono_ref(to: MonoExpr, of: MonoExpr): MonoStatement {
   MonoStatement.ref(MonoRef { to, of })
 }
 
@@ -3164,7 +3162,7 @@ fun compile_in_current_scope(
       var type = unspecialized_type.compile(self.type_env, ast, mono)?
 
       var slot = self.slots.&.push(type)
-      self.push(mono_set_enum(slot, make_enum.variant.str, arg)
+      self.push(mono_set_enum(slot.expr(type), make_enum.variant.str, arg)
         @ make_enum.variant.src)
       slot.expr(self)
     }
@@ -3175,7 +3173,7 @@ fun compile_in_current_scope(
         var ref_type = type("&", vec(of.type))
           .compile(self.type_env, ast, mono)?
         var slot = self.slots.&.push(ref_type)
-        self.push(mono_ref(slot, of) @ member.name.src)
+        self.push(mono_ref(slot.expr(ref_type), of) @ member.name.src)
         return ok[MonoExpr, Error](slot.expr(self))
       }
       | When accessing a member on a reference, we automatically dereference the
@@ -3331,7 +3329,7 @@ fun compile_in_current_scope(
           variant_type.unwrap("expected variant type")
         }
         var unpacked = self.slots.&.push(variant_type)
-        self.push(mono_get_enum_value(unpacked, value, case_.variant.str) @ src)
+        self.push(mono_get_enum_value(unpacked.expr(variant_type), value, case_.variant.str) @ src)
         var scope = self.vars.snapshot()
         if case_.binding is some(binding) then
           self.vars.&.define(binding.str, unpacked)
@@ -3499,10 +3497,10 @@ fun compile_in_current_scope(
 
       var jump_if_ok = self.push_placeholder(src)
       var error_payload = self.slots.&.push(error_type)
-      self.push(mono_get_enum_value(error_payload, value, "error") @ src)
+      self.push(mono_get_enum_value(error_payload.expr(error_type), value, "error") @ src)
       var error_to_return = self.slots.&.push(return_type)
       self.push(
-        mono_set_enum(error_to_return, "error", error_payload.expr(self)) @ src)
+        mono_set_enum(error_to_return.expr(return_type), "error", error_payload.expr(self)) @ src)
       self.push(mono_return(error_to_return.expr(self)) @ src)
 
       var after_error_handling = self.push_label(src)
@@ -3510,7 +3508,7 @@ fun compile_in_current_scope(
         mono_jump_if_variant(value, "ok", after_error_handling))
 
       var ok_payload = self.slots.&.push(ok_type)
-      self.push(mono_get_enum_value(ok_payload, value, "ok") @ src)
+      self.push(mono_get_enum_value(ok_payload.expr(ok_type), value, "ok") @ src)
       ok_payload.expr(self)
     }
     case block(block) block.compile(self)?
@@ -3558,7 +3556,7 @@ fun compile_call(
     case ok(solution) {
       var fun_ = solution.compile(context, ast, mono)?
       var result = self.slots.&.push(mono.funs.get(fun_).return_type)
-      self.push(mono_call(result, fun_, args) @ name.src)
+      self.push(mono_call(result.expr(mono.funs.get(fun_).return_type), fun_, args) @ name.src)
       return ok[MonoExpr, Error](result.expr(self))
     }
   }
@@ -3976,18 +3974,22 @@ fun compile(out: &CompileTypeFun, type: Type): MonoExpr {
 
   var vec_slot = out.slots.&.push(type("Vec", vec(type("Type"))))
   var make_vec = "vec[Type]()"
-  out.statements.&.push(mono_call(vec_slot, make_vec, vec[MonoExpr]()) @ src)
+  out.statements.&.push(mono_call(
+    vec_slot.expr(type("Vec", vec(type("Type")))), make_vec, vec[MonoExpr]()
+  ) @ src)
 
   var ref_vec_slot = out.slots.&.push(
     type("&", vec(type("Vec", vec(type("Type"))))))
-  out.statements.&.push(mono_ref(ref_vec_slot,
-    vec_slot.expr(type("&", vec(type("Vec", vec(type("Type"))))))) @ src)
+  out.statements.&.push(mono_ref(
+    ref_vec_slot.expr(type("&", vec(type("Vec", vec(type("Type")))))),
+    vec_slot.expr(type("Vec", vec(type("Type"))))
+  ) @ src)
 
   for arg in type.args do {
     var arg_slot = out.slots.&.push(type("Nothing"))
     var arg = out.compile(arg)
     var push = "push[Type](&Vec[Type], Type)"
-    out.statements.&.push(mono_call(arg_slot, push, vec(
+    out.statements.&.push(mono_call(arg_slot.expr(type("Nothing")), push, vec(
       ref_vec_slot.expr(type("&", vec(type("Vec", vec(type("Type")))))), arg
     )) @ src)
   }
@@ -4030,10 +4032,10 @@ fun compile_write_debug_fun(
     var dots = slots.&.push(type("Str"), MonoSlotValue.str("..."))
       .expr(type("Str"))
     statements.&.push(mono_call(
-      nothing, write_fun, vec(writer.expr(writer_ty), dots)) @ src)
+      nothing.expr(type("Nothing")), write_fun, vec(writer.expr(writer_ty), dots)) @ src)
   }
   case struct_(struct_) {
-    statements.&.push(mono_call(nothing, write_fun, vec(
+    statements.&.push(mono_call(nothing.expr(type("Nothing")), write_fun, vec(
       writer.expr(writer_ty),
       slots.&.push(type("Str"), MonoSlotValue.str("{value_ty} \{"))
         .expr(type("Str"))
@@ -4047,20 +4049,25 @@ fun compile_write_debug_fun(
       var str = slots.&.push(type("Str"), MonoSlotValue.str(str))
         .expr(type("Str"))
       statements.&.push(mono_call(
-        nothing, write_fun, vec(writer.expr(writer_ty), str)) @ src)
+        nothing.expr(type("Nothing")),
+        write_fun, vec(writer.expr(writer_ty), str)
+      ) @ src)
       var write_debug_field_fun = ast
         .lookup_fun("write_debug" @ src,
           none[Vec[Type]](), vec(writer_ty, field.type))?
         .compile(context, ast, mono)?
-      statements.&.push(mono_call(nothing, write_debug_field_fun, vec(
-        writer.expr(writer_ty),
-        value.expr(value_ty).member(field.name, field.type)
-      )) @ src)
+      statements.&.push(mono_call(
+        nothing.expr(type("Nothing")), write_debug_field_fun,
+        vec(
+          writer.expr(writer_ty),
+          value.expr(value_ty).member(field.name, field.type)
+        )
+      ) @ src)
     }
-    var str = slots.&.push(type("Str"), MonoSlotValue.str(" }"))
-      .expr(type("Str"))
+    var str = slots.&.push(type("Str"), MonoSlotValue.str(" }")).expr(type("Str"))
     statements.&.push(mono_call(
-      nothing, write_fun, vec(writer.expr(writer_ty), str)) @ src)
+      nothing.expr(type("Nothing")),
+      write_fun, vec(writer.expr(writer_ty), str)) @ src)
   }
   case enum_(enum_) {
     var payloads = vec[MonoSlotRef]()
@@ -4088,19 +4095,19 @@ fun compile_write_debug_fun(
         .compile(context, ast, mono)?
       | TODO: reformat
       statements.&.push(mono_label(it.index) @ src)
-      statements.&.push(mono_call(nothing, write_fun, vec(
+      statements.&.push(mono_call(nothing.expr(type("Nothing")), write_fun, vec(
         writer.expr(writer_ty), variant_strs.get(it.index).expr(type("Str"))))
         @ src)
       if payload_ty != type("Nothing") then {
         statements.&.push(mono_get_enum_value(
-          payload, value.expr(value_ty), variant.name) @ src)
-        statements.&.push(mono_call(nothing, write_fun, vec(
+          payload.expr(payload_ty), value.expr(value_ty), variant.name) @ src)
+        statements.&.push(mono_call(nothing.expr(type("Nothing")), write_fun, vec(
           writer.expr(writer_ty), opening_str.expr(type("Str"))
         )) @ src)
-        statements.&.push(mono_call(nothing, write_debug_fun, vec(
+        statements.&.push(mono_call(nothing.expr(type("Nothing")), write_debug_fun, vec(
           writer.expr(writer_ty), payload.expr(payload_ty)
         )) @ src)
-        statements.&.push(mono_call(nothing, write_fun, vec(
+        statements.&.push(mono_call(nothing.expr(type("Nothing")), write_fun, vec(
           writer.expr(writer_ty), closing_str.expr(type("Str"))
         )) @ src)
       }
@@ -4159,7 +4166,7 @@ fun compile_generate_fun(
       .lookup_fun("split" @ src, none[Vec[Type]](),
         vec(type("&", vec(type("Random"))), type("Int"), type("Int")))?
       .compile(context, ast, mono)?
-    statements.&.push(mono_call(complexities, split_fun, vec(
+    statements.&.push(mono_call(complexities.expr(type("Slice", vec(type("Int")))), split_fun, vec(
       random.expr(type("&", vec(type("Random")))),
       complexity.expr(type("Int")),
       num_fields.expr(type("Int")),
@@ -4179,7 +4186,7 @@ fun compile_generate_fun(
         .lookup_fun("get" @ src, none[Vec[Type]](),
           vec(type("Slice", vec(type("Int"))), type("Int")))?
         .compile(context, ast, mono)?
-      statements.&.push(mono_call(field_complexity, get_fun, vec(
+      statements.&.push(mono_call(field_complexity.expr(type("Int")), get_fun, vec(
         complexities.expr(type("Slice", vec(type("Int")))),
         index.expr(type("Int")),
       )) @ src)
@@ -4192,7 +4199,7 @@ fun compile_generate_fun(
           type("Int"),
         ))?
         .compile(context, ast, mono)?
-      statements.&.push(mono_call(field, generate_fun, vec(
+      statements.&.push(mono_call(field.expr(field_ty), generate_fun, vec(
         static_field.expr(type("Static", vec(field_ty))),
         random.expr(type("&", vec(type("Random")))),
         field_complexity.expr(type("Int")),
@@ -4223,7 +4230,7 @@ fun compile_generate_fun(
     var range_fun = ast
       .lookup_fun(".." @ src, none[Vec[Type]](), vec(type("Int"), type("Int")))?
       .compile(context, ast, mono)?
-    statements.&.push(mono_call(range, range_fun, vec(
+    statements.&.push(mono_call(range.expr(type("Range", vec(type("Int")))), range_fun, vec(
       lower.expr(type("Int")),
       upper.expr(type("Int")),
     )) @ src)
@@ -4233,7 +4240,7 @@ fun compile_generate_fun(
       .lookup_fun("next_int" @ src, none[Vec[Type]](),
         vec(type("&", vec(type("Random"))), type("Range", vec(type("Int")))))?
       .compile(context, ast, mono)?
-    statements.&.push(mono_call(variant, next_int_fun, vec(
+    statements.&.push(mono_call(variant.expr(type("Int")), next_int_fun, vec(
       random.expr(type("&", vec(type("Random")))),
       range.expr(type("Range", vec(type("Int")))),
     )) @ src)
@@ -4244,7 +4251,7 @@ fun compile_generate_fun(
     var check = slots.&.push(type("Bool"), MonoSlotValue.uninitialized)
     for it in enum_.variants.iter().enumerate() do {
       var constant = slots.&.push(type("Int"), MonoSlotValue.int(it.index))
-      statements.&.push(mono_call(check, equals_fun, vec(
+      statements.&.push(mono_call(check.expr(type("Bool")), equals_fun, vec(
         variant.expr(type("Int")), constant.expr(type("Int"))
       )) @ src)
       statements.&.push(mono_jump_if_variant(
@@ -4268,13 +4275,13 @@ fun compile_generate_fun(
           type("Int"),
         ))?
         .compile(context, ast, mono)?
-      statements.&.push(mono_call(payload, generate_fun, vec(
+      statements.&.push(mono_call(payload.expr(variant.type), generate_fun, vec(
         static_payload.expr(type("Static", vec(variant.type))),
         random.expr(type("&", vec(type("Random")))),
         complexity.expr(type("Int")),
       )) @ src)
       statements.&.push(mono_set_enum(
-        value, variant.name, payload.expr(variant.type)
+        value.expr(value_ty), variant.name, payload.expr(variant.type)
       ) @ src)
       statements.&.push(mono_jump(MonoLabel { id = enum_.variants.len }) @ src)
     }
@@ -4335,7 +4342,7 @@ fun compile_mutate_fun(
         .compile(context, ast, mono)?
       var range = slots.&.push(type("Range", vec(type("Int"))),
         MonoSlotValue.uninitialized)
-      statements.&.push(mono_call(range, range_fun, vec(
+      statements.&.push(mono_call(range.expr(type("Range", vec(type("Int")))), range_fun, vec(
         zero.expr(type("Int")),
         num_fields.expr(type("Int")),
       )) @ src)
@@ -4344,7 +4351,7 @@ fun compile_mutate_fun(
         .lookup_fun("next_int" @ src, none[Vec[Type]](),
           vec(type("&", vec(type("Random"))), type("Range", vec(type("Int")))))?
         .compile(context, ast, mono)?
-      statements.&.push(mono_call(field_to_change, next_int_fun, vec(
+      statements.&.push(mono_call(field_to_change.expr(type("Int")), next_int_fun, vec(
         random.expr(type("&", vec(type("Random")))),
         range.expr(type("Range", vec(type("Int")))),
       )) @ src)
@@ -4359,7 +4366,7 @@ fun compile_mutate_fun(
 
         statements.&.push(mono_label(it.index) @ src)
         var index = slots.&.push(type("Int"), MonoSlotValue.int(it.index))
-        statements.&.push(mono_call(check, equals_fun, vec(
+        statements.&.push(mono_call(check.expr(type("Bool")), equals_fun, vec(
           field_to_change.expr(type("Int")),
           index.expr(type("Int")),
         )) @ src)
@@ -4376,7 +4383,7 @@ fun compile_mutate_fun(
           .lookup_fun("mutate" @ src, none[Vec[Type]](), vec(
             field_ty, type("&", vec(type("Random"))), type("Int")))?
           .compile(context, ast, mono)?
-        statements.&.push(mono_call(field, mutate_fun, vec(
+        statements.&.push(mono_call(field.expr(field_ty), mutate_fun, vec(
           value.expr(value_ty),
           random.expr(type("&", vec(type("Random")))),
           temperature.expr(type("Int")),
@@ -4411,7 +4418,7 @@ fun compile_mutate_fun(
     var range_fun = ast
       .lookup_fun(".." @ src, none[Vec[Type]](), vec(type("Int"), type("Int")))?
       .compile(context, ast, mono)?
-    statements.&.push(mono_call(range, range_fun, vec(
+    statements.&.push(mono_call(range.expr(type("Range", vec(type("Int")))), range_fun, vec(
       lower.expr(type("Int")),
       upper.expr(type("Int")),
     )) @ src)
@@ -4421,7 +4428,7 @@ fun compile_mutate_fun(
       .lookup_fun("next_int" @ src, none[Vec[Type]](),
         vec(type("&", vec(type("Random"))), type("Range", vec(type("Int")))))?
       .compile(context, ast, mono)?
-    statements.&.push(mono_call(choice, next_int_fun, vec(
+    statements.&.push(mono_call(choice.expr(type("Int")), next_int_fun, vec(
       random.expr(type("&", vec(type("Random")))),
       range.expr(type("Range", vec(type("Int")))),
     )) @ src)
@@ -4431,7 +4438,7 @@ fun compile_mutate_fun(
       .lookup_fun(">" @ src, none[Vec[Type]](), vec(type("Int"), type("Int")))?
       .compile(context, ast, mono)?
     var is_greater = slots.&.push(type("Bool"), MonoSlotValue.uninitialized)
-    statements.&.push(mono_call(is_greater, greater_fun, vec(
+    statements.&.push(mono_call(is_greater.expr(type("Bool")), greater_fun, vec(
       choice.expr(type("Int")), fifty.expr(type("Int"))
     )) @ src)
     statements.&.push(mono_jump_if_variant(
@@ -4449,7 +4456,7 @@ fun compile_mutate_fun(
       statements.&.push(mono_label(it.index) @ src)
       var payload = slots.&.push(variant.type, MonoSlotValue.uninitialized)
       statements.&.push(mono_get_enum_value(
-        payload, value.expr(value_ty), variant.name
+        payload.expr(variant.type), value.expr(value_ty), variant.name
       ) @ src)
 
       var new_payload = slots.&.push(variant.type, MonoSlotValue.uninitialized)
@@ -4460,13 +4467,13 @@ fun compile_mutate_fun(
           type("Int"),
         ))?
         .compile(context, ast, mono)?
-      statements.&.push(mono_call(new_payload, mutate_fun, vec(
+      statements.&.push(mono_call(new_payload.expr(variant.type), mutate_fun, vec(
         payload.expr(variant.type),
         random.expr(type("&", vec(type("Random")))),
         temperature.expr(type("Int")),
       )) @ src)
       statements.&.push(mono_set_enum(
-        value, variant.name, new_payload.expr(variant.type)
+        value.expr(value_ty), variant.name, new_payload.expr(variant.type)
       ) @ src)
       statements.&.push(mono_jump(
         MonoLabel { id = enum_.variants.len + 1 }
@@ -4486,7 +4493,7 @@ fun compile_mutate_fun(
         type("Int"),
       ))?
       .compile(context, ast, mono)?
-    statements.&.push(mono_call(value, mutate_fun, vec(
+    statements.&.push(mono_call(value.expr(value_ty), mutate_fun, vec(
       static_payload.expr(type("Static", vec(value_ty))),
       random.expr(type("&", vec(type("Random")))),
       temperature.expr(type("Int")),
@@ -4944,24 +4951,26 @@ fun assemble_body(
         asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
       }
       case set_enum(set) {
-        var type = body.slots.get(set.slot.index).type
+        var type = set.to.type
         var variant = 0
         if mono.type_defs.get(type) is enum_(enum_) then {
           for v in enum_.variants.iter().enumerate() do
             if v.item.name == set.variant then variant = v.index
         } else panic("is not an enum")
 
-        var to_offset = slot_offsets.get(set.slot)
+        | Save the target into a.
+        asm.save_address(Reg.a, set.to, 0, slot_offsets, layouts, Reg.c)
+
+        | Store the variant tag.
+        var tag_offset = layouts.get(type).size - 1
+        asm.smart_move_and_add_offset(Reg.b, Reg.a, tag_offset)
+        asm.moveib(Reg.c, variant.lower_byte())
+        asm.storeb(Reg.b, Reg.c)
+
+        | Store the value.
         var payload_size = layouts.get(set.value.type).size
-        var variant_tag_offset = to_offset + layouts.get(type).size - 1
-
-        asm.moveib(Reg.a, variant.lower_byte())
-        asm.smart_move_and_add_offset(Reg.b, Reg.sp, variant_tag_offset)
-        asm.storeb(Reg.b, Reg.a)
-
-        asm.save_address(Reg.a, set.value, 0, slot_offsets, layouts, Reg.b)
-        asm.smart_move_and_add_offset(Reg.b, Reg.sp, to_offset)
-        asm.copy_memory(Reg.a, Reg.b, payload_size, Reg.c)
+        asm.save_address(Reg.b, set.value, 0, slot_offsets, layouts, Reg.c)
+        asm.copy_memory(Reg.b, Reg.a, payload_size, Reg.c)
       }
       case call(call) {
         var args_layout = arg_layouts.get_maybe(call.fun_)
@@ -4973,6 +4982,7 @@ fun assemble_body(
         }.name_to_offset_map()
         var args_size = args_layout.size.round_up_to_multiple_of(8)
 
+        | Prepare args
         asm.smart_movei(Reg.a, args_size)
         asm.sub(Reg.sp, Reg.a)
         for arg in call.args.iter().enumerate() do {
@@ -4984,12 +4994,17 @@ fun assemble_body(
           asm.smart_move_and_add_offset(Reg.b, Reg.sp, offset_in_args)
           asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
         }
-        asm.smart_move_and_add_offset(Reg.a, Reg.sp,
-          args_size + slot_offsets.get(call.to))
+
+        | Prepare return address
+        asm.save_address(Reg.a, call.to, args_size, slot_offsets, layouts, Reg.b)
         asm.moveib(Reg.b, 8.lower_byte())
         asm.sub(Reg.sp, Reg.b)
         asm.store(Reg.sp, Reg.a)
+
+        | Make the call
         asm.call(asm.label(call.fun_.mangle()))
+
+        | Restore stack
         asm.smart_addi(Reg.sp, args_size + 8, Reg.a)
       }
       case jump(jump) asm.jump(asm.label("{jump.target}"))
@@ -5011,12 +5026,11 @@ fun assemble_body(
         asm.cjump(asm.label("{jump.target}"))
       }
       case get_enum_value(get) {
-        var variant_type = body.slots.get(get.to.index).type
+        var variant_type = get.to.type
         var size = layouts.get(variant_type).size
-        var to_offset = slot_offsets.get(get.to)
 
         asm.save_address(Reg.a, get.of, 0, slot_offsets, layouts, Reg.b)
-        asm.smart_move_and_add_offset(Reg.b, Reg.sp, to_offset)
+        asm.save_address(Reg.b, get.to, 0, slot_offsets, layouts, Reg.c)
         asm.copy_memory(Reg.a, Reg.b, size, Reg.c)
       }
       case return_(expr) {
@@ -5031,7 +5045,7 @@ fun assemble_body(
       }
       case ref(ref) {
         asm.save_address(Reg.a, ref.of, 0, slot_offsets, layouts, Reg.b)
-        asm.smart_move_and_add_offset(Reg.b, Reg.sp, slot_offsets.get(ref.to))
+        asm.save_address(Reg.b, ref.to, 0, slot_offsets, layouts, Reg.c)
         asm.store(Reg.b, Reg.a)
       }
     }
