@@ -68,8 +68,8 @@ async function update() {
           console.info("Error: " + JSON.stringify(error));
           if (error.src.file != uri) continue;
           const range = new vs.Range(
-            editor.document.positionAt(error.src.start),
-            editor.document.positionAt(error.src.end),
+            new vs.Position(error.src.start.line, error.src.start.column),
+            new vs.Position(error.src.end.line, error.src.end.column),
           );
           const diagnostics = diagnosticMap.get(error.src.file) ?? [];
           diagnostics.push(
@@ -162,8 +162,14 @@ interface MartinaiseError {
   type: "error";
   src: {
     file: string;
-    start: number;
-    end: number;
+    start: {
+      line: number;
+      column: number;
+    };
+    end: {
+      line: number;
+      column: number;
+    };
   };
   title: string;
   description: string;

@@ -65,10 +65,11 @@ fun read_code(path: Str): Result[Str, Str] {
   if read_cached_code(path) is some(content) then return ok[Str, Str](content)
   var content =
     if tooling_mode then {
-      var obj = map[Str, Json]()
-      obj.&.put("type", Json.string("read_file"))
-      obj.&.put("path", Json.string(path))
-      println(Json.map(obj))
+      var obj = Json.map(map[Str, Json](
+        "type" -> Json.string("read_file"),
+        "path" -> Json.string(path),
+      ))
+      println(obj)
       var response = stdin.read_line()
         or return error[Str, Str]("Couldn't read from stdin.")
       var response = response
@@ -232,19 +233,35 @@ fun write_line_number[W](writer: W, n: Int) {
 }
 
 fun to_json(error: Error): Json {
-  var src_obj = map[Str, Json]()
-  src_obj.&.put("file", Json.string(error.src.file))
-  src_obj.&.put("start", Json.int(error.src.span.start))
-  src_obj.&.put("end", Json.int(error.src.span.end))
+  var src_obj = if error.src.to_code_range() is some(range) then
+    map(
+      "file" -> Json.string(error.src.file),
+      "start" -> Json.map(map(
+        "line"   -> Json.int(range.start.line),
+        "column" -> Json.int(range.start.column),
+      )),
+      "end" -> Json.map(map(
+        "line"   -> Json.int(range.start.line),
+        "column" -> Json.int(range.start.column),
+      ))
+    )
+  else
+    map(
+      "file"  -> Json.string(error.src.file),
+      "start" -> Json.map(map("line" -> Json.int(0), "column" -> Json.int(0))),
+      "end"   -> Json.map(map("line" -> Json.int(0), "column" -> Json.int(0))),
+    )
+
   var context_array = vec[Json]()
   for entry in error.context do context_array.&.push(Json.string(entry))
-  var obj = map[Str, Json]()
-  obj.&.put("type", Json.string("error"))
-  obj.&.put("src", Json.map(src_obj))
-  obj.&.put("title", Json.string(error.title))
-  obj.&.put("description", Json.string(error.description))
-  obj.&.put("context", Json.array(context_array))
-  Json.map(obj)
+
+  Json.map(map(
+    "type" -> Json.string("error"),
+    "src" -> Json.map(src_obj),
+    "title" -> Json.string(error.title),
+    "description" -> Json.string(error.description),
+    "context" -> Json.array(context_array),
+  ))
 }
 
 | The Abstract Syntax Tree  
