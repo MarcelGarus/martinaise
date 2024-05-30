@@ -4205,13 +4205,14 @@ fun compile_generate_fun(
     type("Bool").compile(ast, mono)?
     type("Range", vec(type("Int"))).compile(ast, mono)?
 
-    var lower = slots.&.push_int(0)
-    var upper = slots.&.push_int(enum_.variants.len)
     var range = slots.&.push(type("Range", vec(type("Int"))))
     var range_fun = ast
       .lookup_fun(".." @ src, none[Vec[Type]](), vec(type("Int"), type("Int")))?
       .compile(context, ast, mono)?
-    statements.&.push(mono_call(range, range_fun, vec(lower, upper)) @ src)
+    statements.&.push(mono_call(range, range_fun, vec(
+      slots.&.push_int(0),
+      slots.&.push_int(enum_.variants.len),
+    )) @ src)
 
     var variant = slots.&.push(type("Int"))
     var next_int_fun = ast
@@ -4227,9 +4228,8 @@ fun compile_generate_fun(
       .compile(context, ast, mono)?
     var check = slots.&.push(type("Bool"))
     for it in enum_.variants.iter().enumerate() do {
-      var constant = slots.&.push_int(it.index)
       statements.&.push(mono_call(check, equals_fun, vec(
-        variant, constant
+        variant, slots.&.push_int(it.index)
       )) @ src)
       statements.&.push(mono_jump_if_variant(
         check, "true", MonoLabel { id = it.index }
@@ -4240,16 +4240,14 @@ fun compile_generate_fun(
       var variant = it.item
       statements.&.push(mono_label(it.index) @ src)
 
-      type("Static", vec(variant.type)).compile(ast, mono)?
+      var static_ty = type("Static", vec(variant.type)).compile(ast, mono)?
       | doesn't need to be initialized (size 0)
-      var static_payload = slots.&.push(type("Static", vec(variant.type)))
+      var static_payload = slots.&.push(static_ty)
 
       var payload = slots.&.push(variant.type)
       var generate_fun = ast
         .lookup_fun("generate" @ src, none[Vec[Type]](), vec(
-          type("Static", vec(variant.type)),
-          type("&", vec(type("Random"))),
-          type("Int"),
+          static_ty, type("&", vec(type("Random"))), type("Int")
         ))?
         .compile(context, ast, mono)?
       statements.&.push(mono_call(payload, generate_fun, vec(
@@ -4306,14 +4304,13 @@ fun compile_mutate_fun(
     |   bar = if field_to_change == 1 then value.bar.mutate(random, temperature) else value.bar,
     | }
     if struct_.fields.len > 0 then {
-      var zero = slots.&.push_int(0)
-      var num_fields = slots.&.push_int(struct_.fields.len)
       var range_fun = ast
         .lookup_fun(".." @ src, none[Vec[Type]](), vec(type("Int"), type("Int")))?
         .compile(context, ast, mono)?
       var range = slots.&.push(type("Range", vec(type("Int"))))
       statements.&.push(mono_call(range, range_fun, vec(
-        zero, num_fields
+        slots.&.push_int(0),
+        slots.&.push_int(struct_.fields.len),
       )) @ src)
       var field_to_change = slots.&.push(type("Int"))
       var next_int_fun = ast
@@ -4373,14 +4370,13 @@ fun compile_mutate_fun(
     type("Bool").compile(ast, mono)?
     type("Range", vec(type("Int"))).compile(ast, mono)?
 
-    var lower = slots.&.push_int(0)
-    var upper = slots.&.push_int(enum_.variants.len)
     var range = slots.&.push(type("Range", vec(type("Int"))))
     var range_fun = ast
       .lookup_fun(".." @ src, none[Vec[Type]](), vec(type("Int"), type("Int")))?
       .compile(context, ast, mono)?
     statements.&.push(mono_call(range, range_fun, vec(
-      lower, upper
+      slots.&.push_int(0),
+      slots.&.push_int(enum_.variants.len),
     )) @ src)
 
     var choice = slots.&.push(type("Int"))
@@ -4433,13 +4429,13 @@ fun compile_mutate_fun(
 
     statements.&.push(mono_label(enum_.variants.len) @ src)
 
-    type("Static", vec(value_ty)).compile(ast, mono)?
-    var static_payload = slots.&.push(type("Static", vec(value_ty)),
+    var static_ty = type("Static", vec(value_ty)).compile(ast, mono)?
+    var static_payload = slots.&.push(static_ty,
       MonoSlotValue.uninitialized) | doesn't need to be initialized (size 0)
 
     var mutate_fun = ast
       .lookup_fun("mutate" @ src, none[Vec[Type]](), vec(
-        type("Static", vec(value_ty)),
+        static_ty,
         type("&", vec(type("Random"))),
         type("Int"),
       ))?
@@ -4447,7 +4443,9 @@ fun compile_mutate_fun(
     statements.&.push(mono_call(value, mutate_fun, vec(
       static_payload, random, temperature
     )) @ src)
-    statements.&.push(mono_jump(MonoLabel { id = enum_.variants.len + 1 }) @ src)
+    statements.&.push(mono_jump(
+      MonoLabel { id = enum_.variants.len + 1 }
+    ) @ src)
 
     var label = statements.&.push(mono_label(enum_.variants.len + 1) @ src)
   }
