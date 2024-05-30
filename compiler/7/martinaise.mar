@@ -2832,6 +2832,20 @@ fun compile(
   ok[Nothing, Error]({})
 }
 
+| Looks up a matching fun, compiles it and returns a call statement.
+fun mono_call_matching_fun(
+  target: MonoExpr,
+  name: AstStr, type_args: Maybe[Vec[Type]], args: Vec[MonoExpr],
+  context: &Context, ast: Ast, mono: &Mono
+): MonoStatement {
+  var arg_types = vec[Type]()
+  for arg in args do arg_types.&.push(arg.type)
+  var fun_ = ast
+    .lookup_fun(name, type_args, arg_types)?
+    .compile(context, ast, mono)?
+  mono_call(target, fun_, args)
+}
+
 | Monos a function with a type env, outputting it into the Mono. Returns the
 | function signature. For example, monomorphizing foo[T](a: T) with {T: Int}
 | results in the function signature foo(Int) and creates all required types and
