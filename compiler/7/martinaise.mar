@@ -162,6 +162,12 @@ fun to_code_range(src: Src): Maybe[Range[CodePosition]] {
   some(start..end)
 }
 
+fun <=>(a: CodePosition, b: CodePosition): Ordering {
+  var line_cmp = a.line <=> b.line
+  if line_cmp is equal then {} else return line_cmp
+  a.column <=> b.column
+}
+
 | Errors  
 | When an error occurs, we need to highlight the faulty piece of code. Depending
 | on the medium, this might either result in a message in the terminal showing
@@ -5153,6 +5159,13 @@ fun instrument(soil: Soil, function: Str): Soil {
 
 struct Signature { name: AstStr, args: Vec[Type] }
 
+fun parse_position(parser: &Parser): Maybe[CodePosition] {
+  var line = parser.parse_digits(10).unwrap() or return none[CodePosition]()
+  parser.consume_prefix(":")
+  var column = parser.parse_digits(10).unwrap() or return none[CodePosition]()
+  some(CodePosition { line, column })
+}
+
 fun parse_signature(parser: &Parser): Result[Signature, Str] {
   var name = parser.parse_lower_name()
     or return error[Signature, Str]("Expected a function name.")
@@ -5166,6 +5179,23 @@ fun parse_signature(parser: &Parser): Result[Signature, Str] {
   parser.consume_prefix(")")
     or return error[Signature, Str]("Expected a closing parenthesis.")
   ok[Signature, Str](Signature { name, args })
+}
+
+fun find_fun(ast: Ast, pos: CodePosition): Maybe[AstFun] {
+  | TODO: make sure position is actually inside fun (save closing brace AstStr)
+  var best = none[AstFun]()
+  for funs in ast.funs do
+    for fun_ in funs.value do {
+      var fun_pos = {fun_.name.src.to_code_range() or continue}.start
+      if fun_pos < pos then {
+        var is_new_best =
+          switch best
+          case none true
+          case some(f) fun_pos > f.name.src.to_code_range().unwrap().start
+        if is_new_best then best = some(fun_)
+      }
+    }
+  best
 }
 
 fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
@@ -5443,7 +5473,8 @@ enum Command {
   fuzz: FuzzCommand,
   analyze: Str,
 }
-struct FuzzCommand { path: Str, signature: Signature }
+struct FuzzCommand { path: Str, what: FuzzWhat }
+enum FuzzWhat { position: CodePosition, fun_: Signature }
 
 fun parse_args(): Result[Command, Str] {
   var args = get_process_args()
@@ -5487,19 +5518,23 @@ fun parse_args(): Result[Command, Str] {
     args.len == 4 or
       return error[Command, Str]("Usage: martinaise fuzz <file> <fun>")
     var parser = Parser { file = "_cli", code = args.get(3), cursor = 0 }
-    var signature =
-      switch parser.&.parse_signature()
-      case ok(sig) sig
-      case error(error) return error[Command, Str]({
-        var sb = string_builder().&
-        sb."Usage: martinaise fuzz <file> <fun>\n\n"
-        sb."{args.get(3)}\n"
-        for i in 0..parser.cursor do sb." "
-        sb."^\n{error}"
-        sb.to_str()
-      })
+    var what =
+      switch parser.&.parse_position()
+      case some(pos) FuzzWhat.position(pos)
+      case none {
+        switch parser.&.parse_signature()
+        case ok(sig) FuzzWhat.fun_(sig)
+        case error(error) return error[Command, Str]({
+          var sb = string_builder().&
+          sb."Usage: martinaise fuzz <file> <fun>\n\n"
+          sb."{args.get(3)}\n"
+          for i in 0..parser.cursor do sb." "
+          sb."^\n{error}"
+          sb.to_str()
+        })
+      }
     return ok[Command, Str](Command.fuzz(FuzzCommand {
-      path = args.get(2), signature
+      path = args.get(2), what
     }))
   }
   if command == "analyze" then {
@@ -5560,11 +5595,24 @@ fun main(): Never {
 
   var fuzzed_fun = if command is fuzz(fuzz) then {
     print_status("Generating fuzzing hooks")
-    var signature = fuzz.signature
     var lookup_solution =
-      switch ast.lookup_fun(signature.name, none[Vec[Type]](), signature.args)
-      case ok(solution) solution
-      case error(error) error_occurred(error)
+      switch fuzz.what
+      case position(pos) {
+        switch ast.find_fun(pos)
+        case none wrong_usage(
+          "There is no function at that position."
+        )
+        case some(fun_) {
+          if fun_.type_args.is_empty()
+          then LookupFunSolution { fun_, type_env = map[Str, Type]() }
+          else wrong_usage("Can't fuzz generic function (for now).")
+        }
+      }
+      case fun_(signature) {
+        switch ast.lookup_fun(signature.name, none[Vec[Type]](), signature.args)
+        case ok(solution) solution
+        case error(error) error_occurred(error)
+      }
     | Generates an $Input struct for the fuzzed function as well as functions:
     | generate(Generator[$Input]): $Input
     | run($Input): _
