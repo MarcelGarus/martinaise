@@ -162,10 +162,20 @@ fun to_code_range(src: Src): Maybe[Range[CodePosition]] {
   some(start..end)
 }
 
+fun to_offset(position: CodePosition, file: Str): Maybe[Int] {
+  var lines = get_lines_of_file(file) or return none[Int]()
+  var offset = lines.get_maybe(position.line) or return none[Int]()
+  some(offset + position.column)
+}
+
 fun <=>(a: CodePosition, b: CodePosition): Ordering {
   var line_cmp = a.line <=> b.line
   if line_cmp is equal then {} else return line_cmp
   a.column <=> b.column
+}
+
+fun write[W](writer: W, position: CodePosition) {
+  writer."{position.line}:{position.column}"
 }
 
 | Errors  
@@ -4415,7 +4425,7 @@ fun write[W](writer: W, soil: Soil) {
 
     writer."{"{index}".pad_left(6)} | {"{instruction}".pad_right(20)} | {
         switch src.to_code_range()
-        case some(range) "{src.file} {range.start.line + 1}:{range.start.column + 1}"
+        case some(range) "{src.file} {range.start}"
         case none src.file
       }{
         switch read_cached_code(src.file)
@@ -5219,20 +5229,21 @@ fun parse_signature(parser: &Parser): Result[Signature, Str] {
   ok[Signature, Str](Signature { name, args })
 }
 
-fun find_fun(ast: Ast, pos: CodePosition): Maybe[AstFun] {
+fun find_fun(ast: Ast, file: Str, pos: CodePosition): Maybe[AstFun] {
   | TODO: make sure position is actually inside fun (save closing brace AstStr)
+  var offset = pos.to_offset(file) or return none[AstFun]()
   var best = none[AstFun]()
-  for funs in ast.funs do
-    for fun_ in funs.value do {
-      var fun_pos = {fun_.name.src.to_code_range() or continue}.start
-      if fun_pos < pos then {
-        var is_new_best =
-          switch best
-          case none true
-          case some(f) fun_pos > f.name.src.to_code_range().unwrap().start
-        if is_new_best then best = some(fun_)
-      }
+  for funs in ast.funs do for fun_ in funs.value do {
+    if fun_.name.src.file != file then continue
+    var fun_offset = fun_.name.src.span.start
+    if fun_offset < offset then {
+      var is_new_best =
+        switch best
+        case none true
+        case some(f) fun_offset > f.name.src.span.start
+      if is_new_best then best = some(fun_)
     }
+  }
   best
 }
 
@@ -5596,10 +5607,8 @@ fun main(): Never {
     var lookup_solution =
       switch fuzz.what
       case position(pos) {
-        switch ast.find_fun(pos)
-        case none wrong_usage(
-          "There is no function at that position."
-        )
+        switch ast.find_fun(path, pos)
+        case none wrong_usage("There is no function at that position.")
         case some(fun_) {
           if fun_.type_args.is_empty()
           then LookupFunSolution { fun_, type_env = map[Str, Type]() }
