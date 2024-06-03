@@ -5609,7 +5609,7 @@ fun main(): Never {
 
   if command is fuzz then {
     var fuzzed_fun = fuzzed_fun.unwrap().compile(context().&, ast, mono.&)
-      .unwrap() | The fuzzed fun should already be compiled anyway.
+      .unwrap() | The fuzzed fun should already be compiled.
     soil = soil.instrument(fuzzed_fun)
   }
 
@@ -5633,7 +5633,6 @@ fun main(): Never {
 
   if command is fuzz then {
     print_status("Generated fuzzer ({binary.len} bytes). Fuzzing!")
-    | exec(binary)
 
     var num_cjumps = 0
     for instruction in soil.instructions do
