@@ -15,12 +15,6 @@ export function activate(context: vs.ExtensionContext) {
   vs.workspace.onDidChangeTextDocument(() => onlyRunOneAtATime(update));
 
   context.subscriptions.push(
-    vs.languages.registerCodeLensProvider(
-      "martinaise",
-      new MartinaiseCodeLensProvider(),
-    ),
-  );
-  context.subscriptions.push(
     vs.languages.registerCodeActionsProvider(
       "martinaise",
       new MartinaiseCodeActionsProvider(),
@@ -174,27 +168,6 @@ interface MartinaiseError {
   title: string;
   description: string;
   context: string[];
-}
-
-class MartinaiseCodeLensProvider implements vs.CodeLensProvider {
-  public provideCodeLenses(): vs.CodeLens[] {
-    const command: vs.Command = {
-      title: "Fuzz",
-      command: "fuzz",
-      tooltip: "tooltip",
-      arguments: [],
-    };
-    return [
-      new vs.CodeLens(
-        new vs.Range(new vs.Position(1, 1), new vs.Position(1, 3)),
-        command,
-      ),
-    ];
-  }
-
-  public resolveCodeLens?(codeLens: vs.CodeLens): vs.CodeLens {
-    return codeLens;
-  }
 }
 
 class MartinaiseCodeActionsProvider implements vs.CodeActionProvider {
