@@ -5168,8 +5168,6 @@ fun parse_signature(parser: &Parser): Result[Signature, Str] {
   ok[Signature, Str](Signature { name, args })
 }
 
-fun is_fuzzable(fun_: AstFun): Bool { fun_.type_args.is_empty() }
-
 fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
   var arg_types = vec[Type]()
   for arg in fun_.args do
@@ -5555,10 +5553,8 @@ fun main(): Never {
     var all_names = vec[Str]()
     for entry in ast.funs do all_names.&.push(entry.key)
     all_names.to_slice().&.sort()
-    for name in all_names do for f in ast.funs.get(name) do {
-      println("[{if f.is_fuzzable() then "fuzz" else "    "}] 
-        '{f.stripped_signature()}")
-    }
+    for name in all_names do for f in ast.funs.get(name) do
+      println("{f.stripped_signature()}")
     exit(0)
   }
 
