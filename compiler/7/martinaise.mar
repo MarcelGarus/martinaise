@@ -2465,6 +2465,7 @@ struct MonoSlotRef { index: Int }
 
 struct MonoStatementAndSrc { statement: MonoStatement, src: Src }
 enum MonoStatement {
+  nop,
   label: MonoLabel,
   assign: MonoAssign,
   set_enum: MonoSetEnum,
@@ -2542,6 +2543,7 @@ fun write[W](writer: W, name: Str, fun_: MonoFun) {
 }
 fun write[W](writer: W, statement: MonoStatement) {
   switch statement
+  case nop writer."nop"
   case label(label) writer."{label}:"
   case assign(assign) writer."{assign.to} = {assign.value}"
   case set_enum(set) writer."{set.to} = {set.variant}({set.payload})"
@@ -2614,6 +2616,7 @@ fun typed(body: &MonoBodyBuilder, untyped: MonoSlotRef, type: Type): MonoExpr {
 fun add(body: &MonoBodyBuilder, statement: MonoStatementAndSrc) {
   body.statements.&.push(statement)
 }
+fun nop(body: &MonoBodyBuilder, src: Src) { body.add(MonoStatement.nop @ src) }
 fun label(body: &MonoBodyBuilder, id: Int, src: Src) {
   body.add(MonoStatement.label(MonoLabel { id }) @ src)
 }
@@ -3081,7 +3084,10 @@ fun compile_in_current_scope(
     }
     case name(name) {
       switch self.vars.lookup(name.str)
-      case some(expr) expr
+      case some(expr) {
+        body.nop(name.src)
+        expr
+      }
       case none {
         switch ast.lookup_global(name.str)
         case some(global) {
@@ -4789,6 +4795,7 @@ fun assemble_body(
       asm.set_src(src)
 
       switch statement
+      case nop asm.nop()
       case label(label) asm.define_label("{label}")
       case assign(assign) {
         var size = layouts.get(assign.value.type).size
@@ -5247,7 +5254,10 @@ fun find_fun(ast: Ast, file: Str, pos: CodePosition): Maybe[AstFun] {
   best
 }
 
-fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
+fun generate_fuzzing_hooks(
+  ast: &Ast, fun_: AstFun, type_env: Map[Str, Type],
+  has_fuzzing_target_position: Bool
+) {
   var arg_types = vec[Type]()
   for arg in fun_.args do
     arg_types.&.push(arg.type.specialize(type_env).unwrap())
@@ -5270,7 +5280,7 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
     var args = vec[AstExpr]()
     for index in 0..arg_types.len do
       args.&.push(AstExpr.name("input" @ src).member("arg_{index}" @ src))
-    var run = AstFun {
+    ast.funs.&.get_ref_or_put_default("run", vec[AstFun]()).push(AstFun {
       name = "run" @ src,
       is_fallback = false,
       type_args = vec[AstStr](),
@@ -5281,15 +5291,7 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
       kind = AstFunKind.body(vec(
         AstExpr.name(fun_.name).call(args, opening_paren)
       )),
-    }
-    if ast.funs.contains("run")
-    then {
-      | TODO: update once there exists Map.get_ref
-      var overloads = ast.funs.get("run")
-      overloads.&.push(run)
-      ast.funs.&.put("run", overloads)
-    }
-    else ast.funs.&.put("run", vec(run))
+    })
   }
 
   | fun arg_strings(input: $Input): Vec[Str] {
@@ -5303,45 +5305,54 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
   |   v
   | }
   {
-    var outer_body = vec[AstExpr]()
-    outer_body.&.push(var_("v" @ src,
+    var body = vec[AstExpr]()
+    body.&.push(var_("v" @ src,
       AstExpr.name("vec" @ src).call(
         some(vec(type("Str"))), vec[AstExpr](), opening_paren
       )))
     for index in 0..arg_types.len do {
-      var body = vec[AstExpr]()
-      body.&.push(var_("sb" @ src,
-        AstExpr.name("string_builder" @ src).call(opening_paren)))
-      body.&.push(AstExpr.name("sb" @ src).member("&" @ src)
-        .member("write_debug" @ src).call(vec(
-          AstExpr.name("input" @ src).member("arg_{index}" @ src)
-        ), opening_paren))
-      body.&.push(AstExpr.name("v" @ src).member("&" @ src)
-        .member("push" @ src).call(vec(
-          AstExpr.name("sb" @ src).member("to_str" @ src).call(opening_paren)
-        ), opening_paren))
-      outer_body.&.push(AstExpr.block(body))
+      body.&.push(AstExpr.block(vec(
+        var_("sb" @ src,
+          AstExpr.name("string_builder" @ src).call(opening_paren)),
+        AstExpr.name("sb" @ src).member("&" @ src)
+          .member("write_debug" @ src).call(vec(
+            AstExpr.name("input" @ src).member("arg_{index}" @ src)
+          ), opening_paren),
+        AstExpr.name("v" @ src).member("&" @ src)
+          .member("push" @ src).call(vec(
+            AstExpr.name("sb" @ src).member("to_str" @ src).call(opening_paren)
+          ), opening_paren),
+      )))
     }
-    outer_body.&.push(AstExpr.name("v" @ src))
-    var arg_strings = AstFun {
-      name = "arg_strings" @ src,
-      is_fallback = true,
-      type_args = vec[AstStr](),
-      args = vec[AstFunArg](AstFunArg {
-        name = "input" @ src, type = type("$Input")
-      }),
-      returns = type("_"),
-      kind = AstFunKind.body(outer_body),
-    }
-    if ast.funs.contains("arg_strings")
-    then {
-      | TODO: update once there exists Map.get_ref
-      var overloads = ast.funs.get("arg_strings")
-      overloads.&.push(arg_strings)
-      ast.funs.&.put("arg_strings", overloads)
-    }
-    else ast.funs.&.put("arg_strings", vec(arg_strings))
+    body.&.push(AstExpr.name("v" @ src))
+    ast.funs.&.get_ref_or_put_default("arg_strings", vec[AstFun]())
+      .push(AstFun {
+        name = "arg_strings" @ src,
+        is_fallback = true,
+        type_args = vec[AstStr](),
+        args = vec[AstFunArg](AstFunArg {
+          name = "input" @ src, type = type("$Input")
+        }),
+        returns = type("_"),
+        kind = AstFunKind.body(body),
+      })
   }
+
+  | fun has_fuzzing_target_position(): Bool { ... }
+  ast.funs.&
+    .get_ref_or_put_default("has_fuzzing_target_position", vec[AstFun]())
+    .push(AstFun {
+      name = "has_fuzzing_target_position" @ src,
+      is_fallback = false,
+      type_args = vec[AstStr](),
+      args = vec[AstFunArg](),
+      returns = type("Bool"),
+      kind = AstFunKind.body(vec(
+        AstExpr.name({
+          if has_fuzzing_target_position then "true" else "false"
+        } @ src)
+      )),
+    })
 }
 
 | For fuzzing, we want to exercise many different code paths. If we find an
@@ -5353,7 +5364,9 @@ fun generate_fuzzing_hooks(ast: &Ast, fun_: AstFun, type_env: Map[Str, Type]) {
 | global bitset of which cjumps were taken.
 | Adds a coverage initialization preamble and instruments cjumps in the given
 | function by adding code that updates the coverage.
-fun instrument(soil: Soil, function: Str): Soil {
+fun instrument(
+  soil: Soil, function: Str, position: Maybe[Tuple2[Str, CodePosition]]
+): Soil {
   var new = Asm {
     current_src = src("_not_used", 0..0),
     last_label = "",
@@ -5367,6 +5380,25 @@ fun instrument(soil: Soil, function: Str): Soil {
     }
   }
   var mapping = map[Int, Int]()
+
+  var target_instr = none[Int]()
+  if position is some(it) then {
+    var file = it.a
+    if it.b.to_offset(file) is some(offset) then {
+      for it in soil.srcs.iter().enumerate() do {
+        var src = it.item
+        if src.file != file then continue
+        var instr_offset = src.span.start
+        if instr_offset > offset then continue
+        var is_new_target =
+          switch target_instr
+          case none true
+          case some(index)
+            soil.srcs.get(index).span.start < instr_offset
+        if is_new_target then target_instr = some(it.index)
+      }
+    }
+  }
 
   var index_to_label = map[Int, Str]()
   for entry in soil.labels_to_index do
@@ -5382,9 +5414,10 @@ fun instrument(soil: Soil, function: Str): Soil {
 
   | Defines _coverage_bitset and _coverage_len data labels.
   new.soil.initial_mem.&.put("_coverage_bitset",
-    filled_slice(2 * num_cjumps, 0.lower_byte()))
-  new.soil.initial_mem.&.put("_coverage_len",
-    Slice[Byte] { len = 8, data = {2 * num_cjumps}.put_on_heap().to_address() })
+    filled_slice(2 * num_cjumps + 1, 0.lower_byte()))
+  new.soil.initial_mem.&.put("_coverage_len", Slice[Byte] {
+    len = 8, data = {2 * num_cjumps + 1}.put_on_heap().to_address()
+  })
 
   var label = ""
   var cjump_index = 0
@@ -5395,6 +5428,25 @@ fun instrument(soil: Soil, function: Str): Soil {
 
     if index_to_label.get_maybe(it.index) is some(l) then label = l
     new.&.set_src(soil.srcs.get(it.index))
+
+    if target_instr is some(target_instr) then
+      if it.index == target_instr then {
+        | Prefix with this:
+        | push a push b
+        | movei a _coverage_bitset movei b <coverage bitset len> add a b
+        | moveib b 1
+        | storeb a b   | store a 1 at (_coverage_bitset + <len>)
+        | pop b pop a
+        new.&.push(Reg.a)
+        new.&.push(Reg.b)
+        new.&.moveimem(Reg.a, "_coverage_bitset")
+        new.&.movei(Reg.b, 2 * num_cjumps)
+        new.&.add(Reg.a, Reg.b)
+        new.&.moveib(Reg.b, 1.lower_byte())
+        new.&.storeb(Reg.a, Reg.b)
+        new.&.pop(Reg.b)
+        new.&.pop(Reg.a)
+      }
 
     switch instruction
     case jump(target) {
@@ -5448,8 +5500,14 @@ fun instrument(soil: Soil, function: Str): Soil {
   for entry in soil.labels_to_index do
     new.soil.labels_to_index.&.put(entry.key, mapping.get(entry.value))
 
-  | println("New Soil:\n{new.soil}")
+  | println("New Soil:\n{"{new.soil}".substr(0..700000)}\n...")
   | println("Fuzzed function is at {soil.labels_to_index.get(function)}")
+  | if target_instr is some(index) then {
+  |   var pos = position.unwrap()
+  |   println("Target instruction is at {soil.srcs.get(index).span.start} (actual target was {pos.b.to_offset(pos.a).unwrap()}). 
+  |     'Human-readable: {soil.srcs.get(index).to_code_range().unwrap().start} and {pos.b}")
+  | }
+  | println()
 
   new.soil
 }
@@ -5623,7 +5681,10 @@ fun main(): Never {
     | Generates an $Input struct for the fuzzed function as well as functions:
     | generate(Generator[$Input]): $Input
     | run($Input): _
-    ast.&.generate_fuzzing_hooks(lookup_solution.fun_, lookup_solution.type_env)
+    ast.&.generate_fuzzing_hooks(
+      lookup_solution.fun_, lookup_solution.type_env,
+      if fuzz.what is position then true else false
+    )
     some(lookup_solution)
   } else none[LookupFunSolution]()
 
@@ -5662,10 +5723,14 @@ fun main(): Never {
 
   if command is analyze then exit(0)
 
-  if command is fuzz then {
+  if command is fuzz(fuzz) then {
     var fuzzed_fun = fuzzed_fun.unwrap().compile(context().&, ast, mono.&)
       .unwrap() | The fuzzed fun should already be compiled.
-    soil = soil.instrument(fuzzed_fun)
+    var pos =
+      switch fuzz.what
+      case position(pos) some(tuple(path, pos))
+      case fun_ none[Tuple2[Str, CodePosition]]()
+    soil = soil.instrument(fuzzed_fun, pos)
   }
 
   print_status("Assembling binary")

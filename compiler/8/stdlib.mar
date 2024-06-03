@@ -253,18 +253,23 @@ fun fuzzer_main[Input](): Never {
 
     var has_new_coverage = current_cov.improves_upon(total_cov)
 
-    if has_new_coverage then queue.&.push_back(input)
+    if has_new_coverage then {
+      current_cov.integrate_into(total_cov)
+      queue.&.push_back(input)
+    }
+
+    var is_schick =
+      if has_fuzzing_target_position()
+      then current_cov.reached_target()
+      else has_new_coverage
+    if is_schick then schick.&.push(FoundInput { input, in_str, out_str })
 
     println("Running with {"{in_str} = {res}".pad_right(50)} 
       '{current_cov} total: {total_cov} 
-      '{if has_new_coverage then " schick!" else ""}")
+      '{if is_schick then " schick!" else ""}")
 
-    if has_new_coverage then {
-      current_cov.integrate_into(total_cov)
-      schick.&.push(FoundInput { input, in_str, out_str })
-    } else {
+    if not(has_new_coverage or is_schick) then
       checkpoint.free_everything_allocated_after()
-    }
   }
 
   println("Queue has {queue.len()} elements")
