@@ -691,7 +691,10 @@ fun write[W](writer: W, signature: StrippedFunSignature) {
 
 struct Parser { file: Str, code: Str, cursor: Int }
 
-fun current(parser: Parser): Char { parser.code.get(parser.cursor) }
+var null_char = 0.lower_byte().to_char()
+fun current(parser: Parser): Char {
+  parser.code.get_maybe(parser.cursor) or null_char
+}
 fun rest(parser: Parser): Str { parser.code.without_first(parser.cursor) }
 fun advance(parser: &Parser) { parser.advance_by(1) }
 fun advance_by(parser: &Parser, n: Int) { parser.cursor = parser.cursor + n }
