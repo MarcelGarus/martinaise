@@ -1,6 +1,6 @@
-martinaise.soil: compiler/7/martinaise.soil compiler/8/stdlib.mar
-	@cp compiler/7/martinaise.soil martinaise.soil
-	@cp compiler/8/stdlib.mar stdlib.mar
+martinaise.soil: compiler/8/martinaise.soil compiler/8/stdlib.mar
+	@cp compiler/8/martinaise.soil martinaise.soil
+	@cp compiler/9/stdlib.mar stdlib.mar
 	@echo "# Ready for dev work"
 
 # Adjust this based on your system.
@@ -56,6 +56,10 @@ compiler/6/martinaise.soil: compiler/5/martinaise compiler/6/stdlib.mar compiler
 compiler/7/martinaise.soil: compiler/7/stdlib.mar compiler/7/martinaise.mar
 	@echo "# Martinaise 7"
 	cd compiler/7; $(soil) ../6/martinaise.soil compile martinaise.mar
+
+compiler/8/martinaise.soil: compiler/8/stdlib.mar compiler/8/martinaise.mar
+	@echo "# Martinaise 8"
+	cd compiler/8; $(soil) ../7/martinaise.soil compile martinaise.mar
 
 skip-zig:
 	cd compiler/1; \
