@@ -2436,6 +2436,7 @@ struct Mono {
 
   | Monomorphized functions. Keys are signatures such as "foo[Byte](Byte)".
   funs: Map[Str, MonoFun],
+  entry_point: Str,
 }
 
 enum MonoTypeDef {
@@ -2746,7 +2747,9 @@ fun member(of: MonoExpr, field: MonoStructField): MonoExpr {
 
 fun compile_entry_point(
   ast: Ast, fun_: LookupFunSolution
-): Result[Tuple2[Mono, Str], Error] {
+): Result[Mono, Error] {
+  print_status("Monoing")
+
   var context = context()
   var mono = Mono {
     type_defs = map[Type, MonoTypeDef](),
@@ -2754,16 +2757,36 @@ fun compile_entry_point(
     globals = map[Str, MonoFun](),
     globals_init_order = vec[Str](),
     funs = map[Str, MonoFun](),
+    entry_point = "<placeholder>",
   }
 
   type("Never").compile(ast, mono.&)?
   type("Nothing").compile(ast, mono.&)?
 
   var signature = fun_.compile(context.&, ast, mono.&)
-    or(error) return error[Tuple2[Mono, Str], Error](make_error(
+    or(error) return error[Mono, Error](make_error(
       error.src, error.title, error.description, context.signatures))
+  mono.entry_point = signature
 
-  ok[Tuple2[Mono, Str], Error](tuple(mono, signature))
+  ok[Mono, Error](mono)
+}
+fun compile_main(ast: Ast): Result[Mono, Error] {
+  var src = src("_entry_point", 0..0)
+  var main = ast.lookup_fun("main" @ src, none[Vec[Type]](), vec[Type]())
+    or return error[Mono, Error](make_error(
+      src, "There is no main().", "Your project must have a main() function.",
+      vec[Str]()
+    ))
+  var mono = ast.compile_entry_point(main)?
+  var return_type = mono.funs.get(mono.entry_point).return_type
+  if not(return_type.is_never()) then
+    return error[Mono, Error](make_error(
+      src, "main() returns {return_type}.",
+      "The main() function should return Never. You can call exit(0) if you 
+      'want the program to stop.",
+      vec[Str]()
+    ))
+  ok[Mono, Error](mono)
 }
 
 | Monomorphizes a type, outputting all the required type defs into the Mono. For
@@ -5034,7 +5057,9 @@ fun fix_patches(asm: &Asm): Result[Nothing, Error] {
   ok[Nothing, Error]({})
 }
 
-fun soil(mono: Mono, entry_point: Str): Result[Soil, Error] {
+fun soil(mono: Mono): Result[Soil, Error] {
+  print_status("Assembling")
+
   var asm = Asm {
     current_src = src("_nowhere", 0..0),
     last_label = "",
@@ -5047,7 +5072,7 @@ fun soil(mono: Mono, entry_point: Str): Result[Soil, Error] {
       labels = vec[Str](),
     },
   }
-  mono.assemble(entry_point, asm.&)?
+  mono.assemble(mono.entry_point, asm.&)?
   asm.&.fix_patches()?
 
   ok[Soil, Error](asm.soil)
@@ -5059,6 +5084,8 @@ fun soil(mono: Mono, entry_point: Str): Result[Soil, Error] {
 | that.
 
 fun to_binary(soil: Soil): Slice[Byte] {
+  print_status("Assembling binary")
+
   var bin = SoilBinary { bytes = vec[Byte]() }.&
 
   | magic bytes
@@ -5253,6 +5280,8 @@ fun generate_fuzzing_hooks(
   ast: &Ast, fun_: AstFun, type_env: Map[Str, Type],
   has_fuzzing_target_position: Bool
 ) {
+  print_status("Generating fuzzing hooks")
+
   var arg_types = vec[Type]()
   for arg in fun_.args do
     arg_types.&.push(arg.type.specialize(type_env).unwrap())
@@ -5584,6 +5613,11 @@ enum ToolingCommand { analyze: Str, fuzz: ToolingFuzzCommand }
 struct ToolingFuzzCommand { path: Str, target: CodePosition }
 
 fun wrong_usage(message: Str): Never { stderr."{message}\n" exit(1) }
+fun ensure_mar_extension(path: Str): Str {
+  if not(path.ends_with(".mar")) then
+    wrong_usage("Expected a .mar file, got: {path}")
+  path
+}
 
 | Parses the command line arguments. If they are ill-formed, prints a message
 | describing the proper usage and exits.
@@ -5613,32 +5647,33 @@ fun parse_args(): Command {
   })
   else if command == "ast" then Command.ast({
     args.len == 3 or wrong_usage(help_for_ast)
-    args.get(2)
+    args.get(2).ensure_mar_extension()
   })
   else if command == "mono" then Command.mono({
     args.len == 3 or wrong_usage(help_for_mono)
-    args.get(2)
+    args.get(2).ensure_mar_extension()
   })
   else if command == "soil" then Command.soil({
     args.len == 3 or wrong_usage(help_for_soil)
-    args.get(2)
+    args.get(2).ensure_mar_extension()
   })
   else if command == "compile" then Command.compile({
     | TODO: support specifying output file
     args.len == 3 or wrong_usage(help_for_compile)
-    args.get(2)
+    args.get(2).ensure_mar_extension()
   })
   else if command == "run" then Command.run({
     | TODO: support passing args
     args.len == 3 or wrong_usage(help_for_run)
-    args.get(2)
+    args.get(2).ensure_mar_extension()
   })
   else if command == "funs" then Command.funs({
     args.len == 3 or wrong_usage(help_for_funs)
-    args.get(2)
+    args.get(2).ensure_mar_extension()
   })
   else if command == "fuzz" then Command.fuzz({
     args.len == 4 or wrong_usage(help_for_fuzz)
+    var path = args.get(2).ensure_mar_extension()
     var parser = Parser { file = "_cli", code = args.get(3), cursor = 0 }
     var what =
       switch parser.&.parse_position()
@@ -5652,18 +5687,18 @@ fun parse_args(): Command {
           sb.to_str()
         })
       )
-    FuzzCommand { path = args.get(2), what }
+    FuzzCommand { path, what }
   })
   else if command == "tooling" then Command.tooling({
     if args.len < 3 then wrong_usage(help_for_tooling)
     var command = args.get(2)
     if command == "analyze" then {
       args.len == 4 or wrong_usage(help_for_tooling)
-      ToolingCommand.analyze(args.get(3))
+      ToolingCommand.analyze(args.get(3).ensure_mar_extension())
     }
     else if command == "fuzz" then {
       args.len == 5 or wrong_usage(help_for_tooling)
-      var path = args.get(3)
+      var path = args.get(3).ensure_mar_extension()
       var parser = Parser { file = "_cli", code = args.get(4), cursor = 0 }
       var target = parser.&.parse_position()
         or wrong_usage(help_for_tooling)
@@ -5674,17 +5709,22 @@ fun parse_args(): Command {
   else wrong_usage(help_for_martinaise)
 }
 
-fun error_occurred(error: Error): Never {
-  if tooling_mode
-  then println(error.to_json())
-  else { eprintln() stderr.write(error) eprintln() }
-  exit(1)
+fun unwrap_or_report_and_exit[T](result: Result[T, Error]): T {
+  result or(error) {
+    if tooling_mode
+    then println(error.to_json())
+    else { eprintln() stderr.write(error) eprintln() }
+    exit(1)
+  }
 }
 
 fun main(): Never {
   var command = parse_args()
 
-  if command is help(command) then {
+  if command is tooling then {} else eprintln("Welcome to Martinaise 8.")
+
+  switch command
+  case help(command) {
     var help = if command is some(command) then {
       switch command
       case help help_for_help
@@ -5698,45 +5738,59 @@ fun main(): Never {
       case tooling help_for_tooling
     } else help_for_martinaise
     print(help)
-    exit(0)
   }
-  if command is tooling then tooling_mode = true
+  case ast(path) {
+    var ast = parse_project(path).unwrap_or_report_and_exit()
+    print_status("{ast}")
+  }
+  case mono(path) {
+    var ast = parse_project(path).unwrap_or_report_and_exit()
+    var mono = ast.compile_main().unwrap_or_report_and_exit()
+    print_status("{mono}")
+  }
+  case soil(path) {
+    var ast = parse_project(path).unwrap_or_report_and_exit()
+    var mono = ast.compile_main().unwrap_or_report_and_exit()
+    var soil = mono.soil().unwrap_or_report_and_exit()
+    print_status("{soil}")
+  }
+  case compile(path) {
+    var ast = parse_project(path).unwrap_or_report_and_exit()
+    var mono = ast.compile_main().unwrap_or_report_and_exit()
+    var soil = mono.soil().unwrap_or_report_and_exit()
+    var binary = soil.to_binary()
 
-  if not(tooling_mode) then eprintln("Welcome to Martinaise 8.")
-  var path =
-    switch command
-    case help unreachable()
-    case ast(path) path
-    case mono(path) path
-    case soil(path) path
-    case compile(path) path
-    case run(path) path
-    case funs(path) path
-    case fuzz(fuzz) fuzz.path
-    case tooling(command) {
-      switch command
-      case analyze(path) path
-      case fuzz(fuzz) fuzz.path
-    }
-  if not(path.ends_with(".mar")) then
-    wrong_usage("Expected a .mar file, got: {path}")
+    print_status("Writing binary")
+    var out_file = path
+    out_file.&.trim_suffix(".mar")
+    out_file = "{out_file}.soil"
+    write_file(out_file, binary)
+    print_status("Compiled to {out_file} ({binary.len} bytes). Enjoy!")
+  }
+  case run(path) {
+    var ast = parse_project(path).unwrap_or_report_and_exit()
+    var mono = ast.compile_main().unwrap_or_report_and_exit()
+    var soil = mono.soil().unwrap_or_report_and_exit()
+    var binary = soil.to_binary()
 
-  var ast = parse_project(path) or(error) error_occurred(error)
-  if command is ast then { println(ast) exit(0) }
+    print_status("Compiled ({binary.len} bytes). Running!")
+    exec(binary)
+  }
+  case funs(path) {
+    var ast = parse_project(path).unwrap_or_report_and_exit()
 
-  if command is funs then {
     print_status("Functions:")
     var all_names = vec[Str]()
     for entry in ast.funs do all_names.&.push(entry.key)
     all_names.to_slice().&.sort()
     for name in all_names do for f in ast.funs.get(name) do
       println("{f.stripped_signature()}")
-    exit(0)
   }
+  case fuzz(fuzz) {
+    var path = fuzz.path
+    var ast = parse_project(path).unwrap_or_report_and_exit()
 
-  var fuzzed_fun = if command is fuzz(fuzz) then {
-    print_status("Generating fuzzing hooks")
-    var lookup_solution =
+    var fuzzed_fun =
       switch fuzz.what
       case position(pos) {
         switch ast.find_fun(path, pos)
@@ -5749,84 +5803,55 @@ fun main(): Never {
       }
       case fun_(signature)
         ast.lookup_fun(signature.name, none[Vec[Type]](), signature.args)
-          or(error) error_occurred(error)
+          .unwrap_or_report_and_exit()
 
     | Generates an $Input struct for the fuzzed function as well as functions:
     | generate(Generator[$Input]): $Input
     | run($Input): _
     ast.&.generate_fuzzing_hooks(
-      lookup_solution.fun_, lookup_solution.type_env,
+      fuzzed_fun.fun_, fuzzed_fun.type_env,
       if fuzz.what is position then true else false
     )
-    some(lookup_solution)
-  } else none[LookupFunSolution]()
 
-  print_status("Monoing")
-  var src = src("_entry_point", 0..0)
-  var mono_and_entry_point = if command is fuzz then {
+    var src = src("_entry_point", 0..0)
     var fuzzer_main = ast.lookup_fun(
       "fuzzer_main" @ src, some(vec(type("$Input"))), vec[Type]()
-      ) or wrong_usage(
-        "Your project must have a fuzzer_main[Input]() function."
+      ) or(error) wrong_usage(
+        "Your project must have a fuzzer_main[Input]() function.\n\n{error}"
       )
-    ast.compile_entry_point(fuzzer_main) or(error) error_occurred(error)
-  } else {
-    var main = ast.lookup_fun("main" @ src, none[Vec[Type]](), vec[Type]())
-      or wrong_usage("Your project must have a main() function.")
-    ast.compile_entry_point(main) or(error) error_occurred(error)
-  }
-  var mono = mono_and_entry_point.a
-  var entry_point = mono_and_entry_point.b
-  var return_type = mono.funs.get(entry_point).return_type
-  if not(return_type.is_never()) then wrong_usage(
-    "The {entry_point} function should return Never, but it returns 
-    '{return_type}. You can call exit(0) if you want the program to stop.")
-  if command is mono then { println(mono) exit(0) }
+    var mono = ast.compile_entry_point(fuzzer_main).unwrap_or_report_and_exit()
+    var return_type = mono.funs.get(mono.entry_point).return_type
+    if not(return_type.is_never()) then wrong_usage(
+      "The fuzzer_main() function should return Never, but it returns 
+      '{return_type}.")
 
-  print_status("Assembling")
-  var soil = mono.soil(entry_point) or(error) error_occurred(error)
-  if command is soil then { println(soil) exit(0) }
+    var soil = mono.soil().unwrap_or_report_and_exit()
 
-  if command is tooling then exit(0)
-
-  if command is fuzz(fuzz) then {
-    var fuzzed_fun = fuzzed_fun.unwrap().compile(context().&, ast, mono.&)
+    var fuzzed_fun = fuzzed_fun.compile(context().&, ast, mono.&)
       .unwrap() | The fuzzed fun should already be compiled.
     var pos =
       switch fuzz.what
       case position(pos) some(tuple(path, pos))
       case fun_ none[Tuple2[Str, CodePosition]]()
     soil = soil.instrument(fuzzed_fun, pos)
-  }
 
-  print_status("Assembling binary")
-  var binary = soil.to_binary()
+    var binary = soil.to_binary()
 
-  if command is compile then {
-    print_status("Writing binary")
-    var out_file = path
-    out_file.&.trim_suffix(".mar")
-    out_file = "{out_file}.soil"
-    write_file(out_file, binary)
-    print_status("Compiled to {out_file} ({binary.len} bytes). Enjoy!")
-    exit(0)
-  }
-
-  if command is run then {
-    print_status("Compiled ({binary.len} bytes). Running!")
-    exec(binary)
-  }
-
-  if command is fuzz then {
     print_status("Generated fuzzer ({binary.len} bytes). Fuzzing!")
-
-    var num_cjumps = 0
-    for instruction in soil.instructions do
-      if instruction is cjump then num_cjumps = num_cjumps + 1
     exec(binary)
   }
+  case tooling(command) {
+    tooling_mode = true
 
-  unreachable()
+    switch command
+    case analyze(path) {
+      var ast = parse_project(path).unwrap_or_report_and_exit()
+      var mono = ast.compile_main().unwrap_or_report_and_exit()
+      var soil = mono.soil().unwrap_or_report_and_exit()
+    }
+    case fuzz(fuzz) todo()
+  }
+  exit(0)
 }
 
 fun exec(binary: Slice[Byte]): Never asm {
