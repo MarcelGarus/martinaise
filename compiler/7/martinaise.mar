@@ -5516,21 +5516,60 @@ fun instrument(
 | The command line interface which you use to interact with the Martinaise
 | compiler.
 
-var usage_info = "
+var help_for_martinaise = "
   'Usage: martinaise <command>\n
   'Commands:\n
-  '  help               prints this help\n
-  '  ast <file>         prints the abstract syntax tree\n
-  '  mono <file>        prints the monomorphized code\n
-  '  soil <file>        prints the soil instructions\n
-  '  compile <file>     compiles the file to a Soil binary\n
-  '  run <file>         compiles and runs the file\n
-  '  funs <file>        prints all functions\n
-  '  fuzz <file> <fun>  fuzzes the given function\n
-  '  analyze <file>     for tooling: analyzes a file"
+  '  help [<command>]      prints help for a command\n
+  '  ast <file>            prints the abstract syntax tree\n
+  '  mono <file>           prints the monomorphized code\n
+  '  soil <file>           prints the Soil instructions\n
+  '  compile <file>        compiles the file to a Soil binary\n
+  '  run <file>            compiles and runs the file\n
+  '  funs <file>           prints all functions\n
+  '  fuzz <file> <target>  fuzzes the given target\n
+  '  tooling <...>         interaction with tooling"
+var help_for_help = "
+  'Usage: martinaise help [<command>]\n
+  'If a command is provided, prints command-specific help."
+var help_for_ast = "
+  'Usage: martinaise ast <file>\n
+  'Prints a humand-readable form of the abstract syntax tree.\n
+  'Useful for debugging the language itself."
+var help_for_mono = "
+  'Usage: martinaise mono <file>\n
+  'Prints a humand-readable form of the monomorphized code.\n
+  'Only contains functions reachable from main.\n
+  'Useful for debugging the language itself."
+var help_for_soil = "
+  'Usage: martinaise soil <file>\n
+  'Prints the Soil instructions and initial memory.\n
+  'Useful for debugging the language itself."
+var help_for_compile = "
+  'Usage: martinaise compile <file>\n
+  'Compiles the given .mar file into a .soil file that runs the main function."
+var help_for_run = "
+  'Usage: martinaise run <file>\n
+  'Runs the main function."
+var help_for_funs = "
+  'Usage: martinaise funs <file>\n
+  'Prints all functions that are defined in the file or in imported files."
+var help_for_fuzz = "
+  'Usage: martinaise fuzz <file> <target>\n
+  'Fuzzes a piece of code.\n
+  'Targets:\n
+  '<signature>      Fuzzes the function matching the signature.\n
+  '<line>:<column>  Tries to find inputs that reach the given position.\n\n
+  'Examples:\n
+  'martinaise fuzz test.mar \"push(&Vec[Int], Int)\"\n
+  'martinaise fuzz test.mar 2:3"
+var help_for_tooling = "
+  'Usage: martinaise tooling <command>\n
+  'Commands:\n
+  'analyze <file>        Analyzes the given file, outputting errors as JSON.\n
+  'fuzz <line>:<column>  Tries to find inputs that reach the given position."
 
 enum Command {
-  help,
+  help: Maybe[HelpTarget],
   ast: Str,
   mono: Str,
   soil: Str,
@@ -5538,52 +5577,73 @@ enum Command {
   run: Str,
   funs: Str,
   fuzz: FuzzCommand,
-  analyze: Str,
+  tooling: ToolingCommand,
 }
+
+enum HelpTarget { help, ast, mono, soil, compile, run, funs, fuzz, tooling }
+
 struct FuzzCommand { path: Str, what: FuzzWhat }
 enum FuzzWhat { position: CodePosition, fun_: Signature }
 
-fun parse_args(): Result[Command, Str] {
+enum ToolingCommand { analyze: Str, fuzz: ToolingFuzzCommand }
+struct ToolingFuzzCommand { path: Str, target: CodePosition }
+
+fun wrong_usage(message: Str): Never { stderr."{message}\n" exit(1) }
+
+| Parses the command line arguments. If they are ill-formed, prints a message
+| describing the proper usage and exits.
+fun parse_args(): Command {
   var args = get_process_args()
 
   | Note the program name itself is also an additional argument at the front.
-  if args.len < 2 then return error[Command, Str](usage_info)
+  if args.len < 2 then wrong_usage(help_for_martinaise)
 
   var command = args.get(1)
-  if command == "help" then {
-    args.len == 2 or return error[Command, Str]("Usage: martinaise help")
-    return ok[Command, Str](Command.help)
-  }
-  if command == "ast" then {
-    args.len == 3 or return error[Command, Str]("Usage: martinaise ast <file>")
-    return ok[Command, Str](Command.ast(args.get(2)))
-  }
-  if command == "mono" then {
-    args.len == 3 or return error[Command, Str]("Usage: martinaise mono <file>")
-    return ok[Command, Str](Command.mono(args.get(2)))
-  }
-  if command == "soil" then {
-    args.len == 3 or return error[Command, Str]("Usage: martinaise soil <file>")
-    return ok[Command, Str](Command.soil(args.get(2)))
-  }
-  if command == "compile" then {
+  if command == "help" then Command.help({
+    if args.len == 2 then none[HelpTarget]()
+    else if args.len == 3 then some({
+      var command = args.get(2)
+      if command == "help" then HelpTarget.help
+      else if command == "ast" then HelpTarget.ast
+      else if command == "mono" then HelpTarget.mono
+      else if command == "soil" then HelpTarget.soil
+      else if command == "compile" then HelpTarget.compile
+      else if command == "run" then HelpTarget.run
+      else if command == "funs" then HelpTarget.funs
+      else if command == "fuzz" then HelpTarget.fuzz
+      else if command == "tooling" then HelpTarget.tooling
+      else wrong_usage(help_for_help)
+    })
+    else wrong_usage(help_for_help)
+  })
+  else if command == "ast" then Command.ast({
+    args.len == 3 or wrong_usage(help_for_ast)
+    args.get(2)
+  })
+  else if command == "mono" then Command.mono({
+    args.len == 3 or wrong_usage(help_for_mono)
+    args.get(2)
+  })
+  else if command == "soil" then Command.soil({
+    args.len == 3 or wrong_usage(help_for_soil)
+    args.get(2)
+  })
+  else if command == "compile" then Command.compile({
     | TODO: support specifying output file
-    args.len == 3 or
-      return error[Command, Str]("Usage: martinaise compile <file>")
-    return ok[Command, Str](Command.compile(args.get(2)))
-  }
-  if command == "run" then {
+    args.len == 3 or wrong_usage(help_for_compile)
+    args.get(2)
+  })
+  else if command == "run" then Command.run({
     | TODO: support passing args
-    args.len == 3 or return error[Command, Str]("Usage: martinaise run <file>")
-    return ok[Command, Str](Command.run(args.get(2)))
-  }
-  if command == "funs" then {
-    args.len == 3 or return error[Command, Str]("Usage: martinaise funs <file>")
-    return ok[Command, Str](Command.funs(args.get(2)))
-  }
-  if command == "fuzz" then {
-    args.len == 4 or
-      return error[Command, Str]("Usage: martinaise fuzz <file> <fun>")
+    args.len == 3 or wrong_usage(help_for_run)
+    args.get(2)
+  })
+  else if command == "funs" then Command.funs({
+    args.len == 3 or wrong_usage(help_for_funs)
+    args.get(2)
+  })
+  else if command == "fuzz" then Command.fuzz({
+    args.len == 4 or wrong_usage(help_for_fuzz)
     var parser = Parser { file = "_cli", code = args.get(3), cursor = 0 }
     var what =
       switch parser.&.parse_position()
@@ -5591,28 +5651,36 @@ fun parse_args(): Result[Command, Str] {
       case none {
         switch parser.&.parse_signature()
         case ok(sig) FuzzWhat.fun_(sig)
-        case error(error) return error[Command, Str]({
+        case error(error) wrong_usage({
           var sb = string_builder().&
-          sb."Usage: martinaise fuzz <file> <fun>\n\n"
           sb."{args.get(3)}\n"
           for i in 0..parser.cursor do sb." "
           sb."^\n{error}"
           sb.to_str()
         })
       }
-    return ok[Command, Str](Command.fuzz(FuzzCommand {
-      path = args.get(2), what
-    }))
-  }
-  if command == "analyze" then {
-    args.len == 3 or
-      return error[Command, Str]("Usage: martinaise analyze <file>")
-    return ok[Command, Str](Command.analyze(args.get(2)))
-  }
-  error[Command, Str](usage_info)
+    FuzzCommand { path = args.get(2), what }
+  })
+  else if command == "tooling" then Command.tooling({
+    if args.len < 3 then wrong_usage(help_for_tooling)
+    var command = args.get(2)
+    if command == "analyze" then {
+      args.len == 4 or wrong_usage(help_for_tooling)
+      ToolingCommand.analyze(args.get(3))
+    }
+    else if command == "fuzz" then {
+      args.len == 5 or wrong_usage(help_for_tooling)
+      var path = args.get(3)
+      var parser = Parser { file = "_cli", code = args.get(4), cursor = 0 }
+      var target = parser.&.parse_position()
+        or wrong_usage(help_for_tooling)
+      ToolingCommand.fuzz(ToolingFuzzCommand { path, target })
+    }
+    else wrong_usage(help_for_tooling)
+  })
+  else wrong_usage(help_for_martinaise)
 }
 
-fun wrong_usage(message: Str): Never { stderr."{message}\n" exit(1) }
 fun error_occurred(error: Error): Never {
   if tooling_mode
   then println(error.to_json())
@@ -5621,13 +5689,25 @@ fun error_occurred(error: Error): Never {
 }
 
 fun main(): Never {
-  var command =
-    switch parse_args()
-    case ok(command) command
-    case error(error) wrong_usage(error)
+  var command = parse_args()
 
-  if command is help then { print(usage_info) exit(0) }
-  if command is analyze then tooling_mode = true
+  if command is help(command) then {
+    var help = if command is some(command) then {
+      switch command
+      case help help_for_help
+      case ast help_for_ast
+      case mono help_for_mono
+      case soil help_for_soil
+      case compile help_for_compile
+      case run help_for_run
+      case funs help_for_funs
+      case fuzz help_for_fuzz
+      case tooling help_for_tooling
+    } else help_for_martinaise
+    print(help)
+    exit(0)
+  }
+  if command is tooling then tooling_mode = true
 
   if not(tooling_mode) then eprintln("Welcome to Martinaise 6.")
   var path =
@@ -5640,7 +5720,11 @@ fun main(): Never {
     case run(path) path
     case funs(path) path
     case fuzz(fuzz) fuzz.path
-    case analyze(path) path
+    case tooling(command) {
+      switch command
+      case analyze(path) path
+      case fuzz(fuzz) fuzz.path
+    }
   if not(path.ends_with(".mar")) then
     wrong_usage("Expected a .mar file, got: {path}")
 
@@ -5721,7 +5805,7 @@ fun main(): Never {
     case error(error) error_occurred(error)
   if command is soil then { println(soil) exit(0) }
 
-  if command is analyze then exit(0)
+  if command is tooling then exit(0)
 
   if command is fuzz(fuzz) then {
     var fuzzed_fun = fuzzed_fun.unwrap().compile(context().&, ast, mono.&)

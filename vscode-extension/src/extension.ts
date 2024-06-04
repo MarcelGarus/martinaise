@@ -20,9 +20,34 @@ export function activate(context: vs.ExtensionContext) {
       new MartinaiseCodeActionsProvider(),
     ),
   );
+  context.subscriptions.push(
+    vs.commands.registerCommand(
+      "martinaise.fuzz",
+      (document: vs.TextDocument, position: vs.Position) => {
+        console.log(`Fuzzing ${document.uri} ${JSON.stringify(position)}`);
+      }
+    ),
+  );
 }
-export function deactivate(): Thenable<void> | undefined {
-  return undefined;
+export function deactivate() {
+  // TODO: What to do here?
+}
+
+class MartinaiseCodeActionsProvider implements vs.CodeActionProvider {
+  provideCodeActions(
+    document: vs.TextDocument, selection: vs.Range | vs.Selection
+  ): vs.Command[] {
+    if (!(selection instanceof vs.Selection)) return [];
+    // TODO: check vs.CodeActionTriggerKind;
+    return [
+      {
+        title:
+          `What input reaches this code? ${JSON.stringify(selection.anchor)}`,
+        command: "martinaise.fuzz",
+        arguments: [document, selection.start],
+      },
+    ];
+  }
 }
 
 // Updates can be triggered very frequently (on every keystroke), but they can
@@ -168,21 +193,4 @@ interface MartinaiseError {
   title: string;
   description: string;
   context: string[];
-}
-
-class MartinaiseCodeActionsProvider implements vs.CodeActionProvider {
-  provideCodeActions(): vs.ProviderResult<(vs.Command | vs.CodeAction)[]> {
-    const command: vs.Command = {
-      title: "Fuzz",
-      command: "fuzz",
-      tooltip: "tooltip",
-      arguments: [],
-    };
-    return [command];
-  }
-  resolveCodeAction?(
-    codeAction: vs.CodeAction,
-  ): vs.ProviderResult<vs.CodeAction> {
-    return codeAction;
-  }
 }
