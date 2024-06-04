@@ -1722,18 +1722,12 @@ fun parse_imports(parser: &Parser): Result[Vec[AstStr], Str] {
 
 fun parse_single_file(input: Str, file: Str): Result[FileAst, Error] {
   var parser = Parser { file, code = input, cursor = 0 }
-  var imports =
-    switch parser.&.parse_imports()
-    case ok(imports) imports
-    case error(message) return error[FileAst, Error](make_error(
-      src(file, parser.cursor..{parser.cursor + 1}), message
-    ))
-  var defs =
-    switch parser.&.parse_defs()
-    case ok(defs) defs
-    case error(message) return error[FileAst, Error](make_error(
-      src(file, parser.cursor..{parser.cursor + 1}), message
-    ))
+  var imports = parser.&.parse_imports()
+    or(error) return error[FileAst, Error](make_error(
+      src(file, parser.cursor..{parser.cursor + 1}), error))
+  var defs = parser.&.parse_defs()
+    or(error) return error[FileAst, Error](make_error(
+      src(file, parser.cursor..{parser.cursor + 1}), error))
   ok[FileAst, Error](FileAst { imports, defs })
 }
 
@@ -1780,10 +1774,8 @@ fun parse_file_and_dependencies(
   if out.contains(file) then return ok[Nothing, Error]({})
 
   print_status("Reading {file}")
-  var content =
-    switch read_code(file)
-    case ok(content) content
-    case error(error) return error[Nothing, Error](make_error(
+  var content = read_code(file)
+    or(error) return error[Nothing, Error](make_error(
       switch parent_import
       case some(import_) import_.src
       case none src(file, 0..0),
@@ -1924,7 +1916,10 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
         if arg.str.exists(types, vec[AstStr]()) then return error[Ast, Error](
           concrete_type_used_as_arg_error(fun_.name, arg))
       for arg in fun_.args do
-        if arg.type.exists(types, fun_.type_args) is error(type) then
+        if arg.type.exists(types, fun_.type_args) is error(type) then {
+          eprintln("These types exist:")
+          for type in types do eprintln("{type.key}")
+          eprintln("That's it.")
           return error[Ast, Error](type_doesnt_exist_error(fun_.name, type))
         }
     }
@@ -2233,7 +2228,14 @@ fun lookup_type(ast: Ast, name: Str): Result[AstType, Error] {
   switch ast.types.get_maybe(name)
   case some(match) ok[AstType, Error](match)
   case none return error[AstType, Error](
-    make_error(src("todo", 0..0), "There is no type named \"{name}\"."))
+    make_error(src("todo", 0..0), {
+      var sb = string_builder().&
+      sb."There is no type named \"{name}\".\n"
+      sb."Types:"
+      for type in ast.types do
+        sb."\n- {type.key}"
+      sb.to_str()
+    }))
 }
 
 | Looks up the global variable with the given name. Names of global variables
@@ -2272,10 +2274,8 @@ fun lookup_fun(
       case error(message) return error[LookupFunSolution, Error](
         make_error(name.src, message))
     if not(matches) then continue
-    var type_env =
-      switch solver.finish()
-      case ok(env) env
-      case error(error) return error[LookupFunSolution, Error](make_error(
+    var type_env = solver.finish()
+      or(error) return error[LookupFunSolution, Error](make_error(
         name.src,
         "Found a function matching a call:\n
         '  call: {signature(name.str, type_args, arg_types)}\n
@@ -2759,12 +2759,9 @@ fun compile_entry_point(
   type("Never").compile(ast, mono.&)?
   type("Nothing").compile(ast, mono.&)?
 
-  var signature =
-    switch fun_.compile(context.&, ast, mono.&)
-    case ok(signature) signature
-    case error(error) return error[Tuple2[Mono, Str], Error](make_error(
-      error.src, error.title, error.description, context.signatures
-    ))
+  var signature = fun_.compile(context.&, ast, mono.&)
+    or(error) return error[Tuple2[Mono, Str], Error](make_error(
+      error.src, error.title, error.description, context.signatures))
 
   ok[Tuple2[Mono, Str], Error](tuple(mono, signature))
 }
@@ -3179,21 +3176,17 @@ fun compile_in_current_scope(
             "Tried to initialize field {name}, but {struct_.name} doesn't have 
               'that."
           ))
-        switch solver.&.unify(type_in_struct, value.type)
-        case error(message) return error[MonoExpr, Error](make_error(
-          make_struct.type_src, message
+        var works = solver.&.unify(type_in_struct, value.type)
+          or(message) return error[MonoExpr, Error](make_error(
+            make_struct.type_src, message))
+        if not(works) then return error[MonoExpr, Error](make_error(
+          make_struct.type_src,
+          "Tried to assign {value.type} to field \"{name}\" of type 
+            '{type_in_struct}."
         ))
-        case ok(works) if not(works) then
-          return error[MonoExpr, Error](make_error(
-            make_struct.type_src,
-            "Tried to assign {value.type} to field \"{name}\" of type 
-              '{type_in_struct}."
-          ))
       }
-      var type_env =
-        switch solver.finish()
-        case ok(env) env
-        case error(error) return error[MonoExpr, Error](
+      var type_env = solver.finish()
+        or(error) return error[MonoExpr, Error](
           make_error(make_struct.type_src, error))
 
       var unspecialized_type = make_struct.type
@@ -3253,10 +3246,8 @@ fun compile_in_current_scope(
           "Tried to create {make_enum.type.name}.{make_enum.variant} with 
             '{arg.type}, but it needs a {variant_type}."
         ))
-      var type_env =
-        switch solver.finish()
-        case ok(env) env
-        case error(error) return error[MonoExpr, Error](
+      var type_env = solver.finish()
+        or(error) return error[MonoExpr, Error](
           make_error(make_enum.variant.src, error))
 
       var unspecialized_type = make_enum.type
@@ -3645,8 +3636,7 @@ fun compile_call(
       arg_types.&.push(arg.type)
     }
 
-    switch ast.lookup_fun(name, type_args, arg_types)
-    case error(error) {
+    var solution = ast.lookup_fun(name, type_args, arg_types) or(error) {
       if first_error is none then first_error = some(error)
       if callee is some(c) then if c.type.name == "&" then {
         | Dereference the callee
@@ -3655,12 +3645,10 @@ fun compile_call(
       }
       return error[MonoExpr, Error](first_error.unwrap("error: no error"))
     }
-    case ok(solution) {
-      var fun_ = solution.compile(context, ast, mono)?
-      var result = self.body.&.uninitialized(mono.funs.get(fun_).return_type)
-      self.body.&.call(result, fun_, args, name.src)
-      return ok[MonoExpr, Error](result)
-    }
+    var fun_ = solution.compile(context, ast, mono)?
+    var result = self.body.&.uninitialized(mono.funs.get(fun_).return_type)
+    self.body.&.call(result, fun_, args, name.src)
+    return ok[MonoExpr, Error](result)
   }
 }
 
@@ -5655,17 +5643,15 @@ fun parse_args(): Command {
     var what =
       switch parser.&.parse_position()
       case some(pos) FuzzWhat.position(pos)
-      case none {
-        switch parser.&.parse_signature()
-        case ok(sig) FuzzWhat.fun_(sig)
-        case error(error) wrong_usage({
+      case none FuzzWhat.fun_(
+        parser.&.parse_signature() or(error) wrong_usage({
           var sb = string_builder().&
           sb."{args.get(3)}\n"
           for i in 0..parser.cursor do sb." "
           sb."^\n{error}"
           sb.to_str()
         })
-      }
+      )
     FuzzCommand { path = args.get(2), what }
   })
   else if command == "tooling" then Command.tooling({
@@ -5735,10 +5721,7 @@ fun main(): Never {
   if not(path.ends_with(".mar")) then
     wrong_usage("Expected a .mar file, got: {path}")
 
-  var ast =
-    switch parse_project(path)
-    case ok(ast) ast
-    case error(error) error_occurred(error)
+  var ast = parse_project(path) or(error) error_occurred(error)
   if command is ast then { println(ast) exit(0) }
 
   if command is funs then {
@@ -5764,11 +5747,10 @@ fun main(): Never {
           else wrong_usage("Can't fuzz generic function (for now).")
         }
       }
-      case fun_(signature) {
-        switch ast.lookup_fun(signature.name, none[Vec[Type]](), signature.args)
-        case ok(solution) solution
-        case error(error) error_occurred(error)
-      }
+      case fun_(signature)
+        ast.lookup_fun(signature.name, none[Vec[Type]](), signature.args)
+          or(error) error_occurred(error)
+
     | Generates an $Input struct for the fuzzed function as well as functions:
     | generate(Generator[$Input]): $Input
     | run($Input): _
@@ -5787,15 +5769,11 @@ fun main(): Never {
       ) or wrong_usage(
         "Your project must have a fuzzer_main[Input]() function."
       )
-    switch ast.compile_entry_point(fuzzer_main)
-    case ok(entry) entry
-    case error(error) error_occurred(error)
+    ast.compile_entry_point(fuzzer_main) or(error) error_occurred(error)
   } else {
     var main = ast.lookup_fun("main" @ src, none[Vec[Type]](), vec[Type]())
       or wrong_usage("Your project must have a main() function.")
-    switch ast.compile_entry_point(main)
-    case ok(entry) entry
-    case error(error) error_occurred(error)
+    ast.compile_entry_point(main) or(error) error_occurred(error)
   }
   var mono = mono_and_entry_point.a
   var entry_point = mono_and_entry_point.b
@@ -5806,10 +5784,7 @@ fun main(): Never {
   if command is mono then { println(mono) exit(0) }
 
   print_status("Assembling")
-  var soil =
-    switch mono.soil(entry_point)
-    case ok(soil) soil
-    case error(error) error_occurred(error)
+  var soil = mono.soil(entry_point) or(error) error_occurred(error)
   if command is soil then { println(soil) exit(0) }
 
   if command is tooling then exit(0)
