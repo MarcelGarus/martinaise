@@ -132,10 +132,10 @@ fun generics() {
 | You can make your own types compatible with the "and" and "or" keywords. Just
 | implement "and" and "or" functions.
 
-fun or[T](package: Package[T]): ControlFlow[T] {
+fun or[T](package: Package[T]): ControlFlow[T, Nothing] {
   switch package
-  case filled(content) ControlFlow[T].short_circuit(content)
-  case empty           ControlFlow[T].evaluate_alternative
+  case filled(content) ControlFlow[T, Nothing].short_circuit(content)
+  case empty           ControlFlow[T, Nothing].evaluate_alternative
 }
 
 fun custom_logic() {
