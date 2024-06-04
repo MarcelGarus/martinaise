@@ -1147,11 +1147,9 @@ fun memhash(address: Address, amount: Int): Int asm {
   movei c 5381                  | hasher state
   moveib e 33 moveib f 1        | constants
   .loop:
-  move st b isequal cjump .done
-  loadb a d
-  mul c e
-  add c d
-  sub b f
+  move st b isequal cjump .done | if amount == 0, we're done
+  loadb d a mul c e add c d     | state = 33 * state + address[i]
+  sub b f add a f jump .loop
   .done:
   mul c e
   load a sp store a c ret
