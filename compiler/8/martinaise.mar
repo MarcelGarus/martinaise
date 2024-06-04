@@ -1926,6 +1926,7 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
       for arg in fun_.args do
         if arg.type.exists(types, fun_.type_args) is error(type) then
           return error[Ast, Error](type_doesnt_exist_error(fun_.name, type))
+        }
     }
 
   ok[Ast, Error](Ast { types, globals, funs })
@@ -5715,7 +5716,7 @@ fun main(): Never {
   }
   if command is tooling then tooling_mode = true
 
-  if not(tooling_mode) then eprintln("Welcome to Martinaise 6.")
+  if not(tooling_mode) then eprintln("Welcome to Martinaise 8.")
   var path =
     switch command
     case help unreachable()

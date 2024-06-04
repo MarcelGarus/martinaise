@@ -5715,7 +5715,7 @@ fun main(): Never {
   }
   if command is tooling then tooling_mode = true
 
-  if not(tooling_mode) then eprintln("Welcome to Martinaise 6.")
+  if not(tooling_mode) then eprintln("Welcome to Martinaise 7.")
   var path =
     switch command
     case help unreachable()
