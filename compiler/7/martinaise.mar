@@ -1391,6 +1391,12 @@ fun parse_expr_suffix_or(
   parser: &Parser, current: AstExpr,
 ): Result[Maybe[AstExpr], Str] {
   var keyword = parser.consume_keyword("or") or return no_match[AstExpr]()
+  var binding = if parser.consume_prefix("(") is some then {
+    var name = parser.parse_lower_name()
+    parser.consume_prefix(")") or return bad_input[AstExpr](
+      "Expected closing parenthesis after or binding.")
+    some(name)
+  } else none[AstStr]()
   var alternative = parser.parse_expr(Precedence.or)?
     or return bad_input[AstExpr]("Expected alternative after or.")
   parsed(AstExpr.switch_(AstSwitch {
@@ -1404,7 +1410,7 @@ fun parse_expr_suffix_or(
       },
       AstCase {
         variant = "evaluate_alternative" @ keyword.src,
-        binding = none[AstStr](),
+        binding,
         body = alternative,
       },
     ),

@@ -204,28 +204,28 @@ fun hash[O, E](hasher: &Hasher, result: Result[O, E]) {
 | returns a ControlFlow. This logic flow determines whether the expression
 | short-circuits or not.
 
-enum ControlFlow[T] { short_circuit: T, evaluate_alternative }
+enum ControlFlow[T, A] { short_circuit: T, evaluate_alternative: A }
 
-fun and(bool: Bool): ControlFlow[Bool] {
+fun and(bool: Bool): ControlFlow[Bool, Nothing] {
   if bool
-  then ControlFlow[Bool].evaluate_alternative
-  else ControlFlow[Bool].short_circuit(false)
+  then ControlFlow[Bool, Nothing].evaluate_alternative
+  else ControlFlow[Bool, Nothing].short_circuit(false)
 }
 
-fun or(bool: Bool): ControlFlow[Bool] {
+fun or(bool: Bool): ControlFlow[Bool, Nothing] {
   if bool
-  then ControlFlow[Bool].short_circuit(true)
-  else ControlFlow[Bool].evaluate_alternative
+  then ControlFlow[Bool, Nothing].short_circuit(true)
+  else ControlFlow[Bool, Nothing].evaluate_alternative
 }
-fun or[T](maybe: Maybe[T]): ControlFlow[T] {
+fun or[T](maybe: Maybe[T]): ControlFlow[T, Nothing] {
   if maybe is some(t)
-  then ControlFlow[T].short_circuit(t)
-  else ControlFlow[T].evaluate_alternative
+  then ControlFlow[T, Nothing].short_circuit(t)
+  else ControlFlow[T, Nothing].evaluate_alternative
 }
-fun or[O, E](result: Result[O, E]): ControlFlow[O] {
+fun or[O, E](result: Result[O, E]): ControlFlow[O, E] {
   switch result
-  case ok(o) ControlFlow[O].short_circuit(o)
-  case error ControlFlow[O].evaluate_alternative
+  case ok(o)    ControlFlow[O, E].short_circuit(o)
+  case error(e) ControlFlow[O, E].evaluate_alternative(e)
 }
 
 | Fuzzing  
