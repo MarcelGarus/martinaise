@@ -22,7 +22,26 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
-    "colors": [],
+    "colors": [
+      {
+        "id": "martinaise.example.background",
+        "description": "The color of examples.",
+        "defaults": {
+          "dark": "#c9ffc9d2",
+          "light": "#c9ffc9d2",
+          "highContrast": "#ffffff"
+        }
+      },
+      {
+        "id": "martinaise.example.foreground",
+        "description": "The color of examples.",
+        "defaults": {
+          "dark": "#376f42",
+          "light": "#376f42",
+          "highContrast": "#000000"
+        }
+      }
+    ],
     "commands": [
       {
         "category": "Martinaise Fuzzing",

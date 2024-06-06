@@ -235,59 +235,73 @@ fun or[O, E](result: Result[O, E]): ControlFlow[O, E] {
 | - run($Input): _                       | runs the fuzzed function
 | - arg_strings($Input): Vec[Str]        | stringifies the arguments
 
+struct FuzzingInfo {
+  has_target_position: Bool,
+  fun_line: Int,
+  fun_name: Str,
+}
+
 fun fuzzer_main[Input](): Never {
+  var info = static[Input]().fuzzing_info()
   var random = random_number_generator()
   var current_cov = get_coverage()
   var total_cov = coverage(current_cov.len)
-  var schick = vec[FoundInput[Input]]()
   var queue = queue[Input]()
 
   for i in 0..100 do {
     var checkpoint = heap_checkpoint()
     var input = static[Input]().generate(random.&, 100)
-    var in_str = "{comma_separated(input.arg_strings())}"
+    var input_strs = input.arg_strings()
+    var in_str = "{comma_separated(input_strs)}"
 
     current_cov.reset()
     var res = input.run()
     var out_str = "{res}"
 
     var has_new_coverage = current_cov.improves_upon(total_cov)
-
     if has_new_coverage then {
       current_cov.integrate_into(total_cov)
       queue.&.push_back(input)
     }
 
     var is_schick =
-      if has_fuzzing_target_position()
-      then current_cov.reached_target()
+      if info.has_target_position
+      then has_new_coverage and current_cov.reached_target()
       else has_new_coverage
-    if is_schick then schick.&.push(FoundInput { input, in_str, out_str })
+    if is_schick then {
+      var json_inputs = vec[Json]()
+      for input in input_strs do json_inputs.&.push(Json.string(input))
+      println(Json.map(map(
+        "type" -> Json.string("example"),
+        "inputs" -> Json.array(json_inputs),
+        "result" -> Json.map(map(
+          "status" -> Json.string("returned"),
+          "value" -> Json.string(out_str),
+        )),
+        "fun_start_line" -> Json.int(info.fun_line),
+        "fun_name" -> Json.string(info.fun_name),
+      )))
+    }
 
-    println("Running with {"{in_str} = {res}".pad_right(50)} 
-      '{current_cov} total: {total_cov} 
-      '{if is_schick then " schick!" else ""}")
+    | println("Running with {"{in_str} = {res}".pad_right(50)} 
+    |   '{current_cov} total: {total_cov} 
+    |   '{if is_schick then " schick!" else ""}")
 
     if not(has_new_coverage or is_schick) then
       checkpoint.free_everything_allocated_after()
   }
 
-  println("Queue has {queue.len()} elements")
-  loop {
-    var input = queue.&.pop_front_maybe() or break
-    for i in 0..5 do {
-      println("Mutating {debug(input)}")
-      var mutated = input.mutate(random.&, 100)
-      println("Mutated: {debug(mutated)}")
-    }
-
-    | TODO: run mutated input. if the coverage is further increased,
-    | append it to the queue
-  }
-
-  println("Done fuzzing. Some interesting inputs:")
-  for input in schick do
-    println("- {input.in_str} -> {input.out_str}")
+  | println("Queue has {queue.len()} elements")
+  | loop {
+  |   var input = queue.&.pop_front_maybe() or break
+  |   for i in 0..5 do {
+  |     println("Mutating {debug(input)}")
+  |     var mutated = input.mutate(random.&, 100)
+  |     println("Mutated: {debug(mutated)}")
+  |   }
+  |   | TODO: run mutated input. if the coverage is further increased,
+  |   | append it to the queue
+  | }
 
   exit(0)
 }
@@ -320,6 +334,10 @@ fun split(random: &Random, complexity: Int, n: Int): Slice[Int] {
   | TODO: add some random variation
   if n == 0 then return empty_slice[Int]()
   filled_slice(n, complexity / n)
+}
+fun split_2(random: &Random, complexity: Int): Tuple2[Int, Int] {
+  var complexities = random.split(complexity, 2)
+  tuple(complexities.get(0), complexities.get(1))
 }
 fun split(random: &Random, complexity: Int): Slice[Int] {
   var len = random.next_int(0..={complexity / 10})
@@ -1431,6 +1449,7 @@ fun <=>(a: Char, b: Char): Ordering { a.byte <=> b.byte }
 fun ==(a: Char, b: Char): Bool { a.byte == b.byte }
 fun hash(hasher: &Hasher, char: Char) { hasher.hash(char.byte) }
 fun write[W](writer: W, char: Char) { writer.write_byte(char.byte) }
+fun write_debug[W](writer: W, char: Char) { writer."#{char}" }
 fun inc(char: Char): Char { Char { byte = char.byte.inc() } }
 fun dec(char: Char): Char { Char { byte = char.byte.dec() } }
 fun +(char: Char, delta: Byte): Char { Char { byte = char.byte + delta } }
@@ -1580,7 +1599,7 @@ fun split(str: Str, separator: Str): Slice[Str] {
   for part in str.iter().split(separator.chars()) do parts.&.push(part.to_str())
   parts.to_slice()
 }
-fun lines(slice: Str): Slice[Str] { slice.split("{newline}") }
+fun lines(str: Str): Slice[Str] { str.split("{newline}") }
 fun pad_right(str: Str, len: Int, char: Char): Str {
   var string = string_builder().&
   string.write(str)
@@ -1790,20 +1809,22 @@ fun get_maybe[T, I](iter: &Iter[T, I], index: Int): Maybe[T] {
 
 | Finds the needle in the iter, returning its position.
 fun find[T, I](iter: &Iter[T, I], needle: T): Maybe[Int] {
-  for en in iter.enumerated() do if en.item == needle then return some(en.index)
+  for en in iter.enumerate() do if en.item == needle then return some(en.index)
   none[Int]()
 }
 
 | Splits an Iter at the given items forming a separator.
 fun split[T, I](iter: Iter[T, I], separator: Slice[T]): Iter[Slice[T], _] {
-  Iter[T, SplitIter[I]] { state = SplitIter { inner = iter.inner, separator } }
+  Iter[Slice[T], SplitIter[T, I]] {
+    state = SplitIter { inner = iter.state, separator }
+  }
 }
 struct SplitIter[T, I] { inner: I, separator: Slice[T] }
-fun next[T, I](iter: &Iter[T, SplitIter[T, I]]): Maybe[Slice[T]] {
+fun next[T, I](iter: &Iter[Slice[T], SplitIter[T, I]]): Maybe[Slice[T]] {
   var state = iter.state.&
   var current = vec[T]()
   loop
-    switch state.inner.&.next()
+    switch state.inner.&.next_from_iter_state[T, I]()
     case none
       if current.len > 0
       then return some(current.to_slice())
@@ -2417,10 +2438,10 @@ fun write_debug[W, K, V](writer: W, map: Map[K, V]) {
 fun generate[K, V](
   s: Static[Map[K, V]], random: &Random, complexity: Int
 ): Map[K, V] {
-  var complexities = random.split(complexity, 2 * size)
+  var complexities = random.split(complexity)
   var map = map[K, V]()
   for complexity in complexities do {
-    var complexities = complexity.split_2()
+    var complexities = random.split_2(complexity)
     var key   = static[K]().generate(random, complexities.a)
     var value = static[V]().generate(random, complexities.b)
     map.&.put(key, value)

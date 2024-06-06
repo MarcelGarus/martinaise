@@ -2788,6 +2788,25 @@ fun compile_main(ast: Ast): Result[Mono, Error] {
     ))
   ok[Mono, Error](mono)
 }
+fun compile_fuzzer_main(ast: Ast, input: Type): Result[Mono, Error] {
+  var src = src("_entry_point", 0..0)
+  var fuzzer_main = ast.lookup_fun(
+    "fuzzer_main" @ src, some(vec(input)), vec[Type]()
+  ) or(error) return error[Mono, Error](make_error(
+    src, "There is no fuzzer_main().",
+    "Your project must have a fuzzer_main() function.",
+    vec[Str]()
+  ))
+  var mono = ast.compile_entry_point(fuzzer_main).unwrap_or_report_and_exit()
+  var return_type = mono.funs.get(mono.entry_point).return_type
+  if not(return_type.is_never()) then
+    return error[Mono, Error](make_error(
+      src, "fuzzer_main() returns {return_type}.",
+      "The fuzzer_main() function should return Never, but it returns 
+        '{return_type}."
+    ))
+  ok[Mono, Error](mono)
+}
 
 | Monomorphizes a type, outputting all the required type defs into the Mono. For
 | example, monomorphizing Map[T, Bool] with {T: Int} results in Map[Int, Bool]
@@ -5362,21 +5381,52 @@ fun generate_fuzzing_hooks(
       })
   }
 
-  | fun has_fuzzing_target_position(): Bool { ... }
-  ast.funs.&
-    .get_ref_or_put_default("has_fuzzing_target_position", vec[AstFun]())
-    .push(AstFun {
-      name = "has_fuzzing_target_position" @ src,
-      is_fallback = false,
-      type_args = vec[AstStr](),
-      args = vec[AstFunArg](),
-      returns = type("Bool"),
-      kind = AstFunKind.body(vec(
-        AstExpr.name({
-          if has_fuzzing_target_position then "true" else "false"
-        } @ src)
-      )),
-    })
+  | fun fuzzing_info(static: Static[$Input]): FuzzingInfo {
+  |   FuzzingInfo {
+  |     has_target_position = ...,
+  |     fun_line = ...,
+  |     fun_name = ...,
+  |   }
+  | }
+  {
+    var args = vec(AstExpr.name("static" @ src))
+    for index in 0..arg_types.len do
+      args.&.push(AstExpr.name("input" @ src).member("arg_{index}" @ src))
+    ast.funs.&.get_ref_or_put_default("fuzzing_info", vec[AstFun]())
+      .push(AstFun {
+        name = "fuzzing_info" @ src,
+        is_fallback = false,
+        type_args = vec[AstStr](),
+        args = vec[AstFunArg](AstFunArg {
+          name = "static" @ src, type = type("Static", vec(type("$Input")))
+        }),
+        returns = type("FuzzingInfo"),
+        kind = AstFunKind.body(vec(
+          AstExpr.make_struct(AstMakeStruct {
+            type = type("FuzzingInfo"),
+            type_src = src,
+            fields = vec(
+              AstMakeStructField {
+                name = "has_target_position" @ src,
+                value = AstExpr.name({
+                  if has_fuzzing_target_position then "true" else "false"
+                } @ src)
+              },
+              AstMakeStructField {
+                name = "fun_line" @ src,
+                value = AstExpr.int(
+                  fun_.name.src.to_code_range().unwrap().start.line)
+              },
+              AstMakeStructField {
+                name = "fun_name" @ src,
+                value = AstExpr.str(fun_.name.str)
+              },
+
+            )
+          }),
+        )),
+      })
+  }
 }
 
 | For fuzzing, we want to exercise many different code paths. If we find an
@@ -5813,18 +5863,8 @@ fun main(): Never {
       if fuzz.what is position then true else false
     )
 
-    var src = src("_entry_point", 0..0)
-    var fuzzer_main = ast.lookup_fun(
-      "fuzzer_main" @ src, some(vec(type("$Input"))), vec[Type]()
-      ) or(error) wrong_usage(
-        "Your project must have a fuzzer_main[Input]() function.\n\n{error}"
-      )
-    var mono = ast.compile_entry_point(fuzzer_main).unwrap_or_report_and_exit()
-    var return_type = mono.funs.get(mono.entry_point).return_type
-    if not(return_type.is_never()) then wrong_usage(
-      "The fuzzer_main() function should return Never, but it returns 
-      '{return_type}.")
-
+    var mono = ast.compile_fuzzer_main(type("$Input"))
+      .unwrap_or_report_and_exit()
     var soil = mono.soil().unwrap_or_report_and_exit()
 
     var fuzzed_fun = fuzzed_fun.compile(context().&, ast, mono.&)
@@ -5849,7 +5889,32 @@ fun main(): Never {
       var mono = ast.compile_main().unwrap_or_report_and_exit()
       var soil = mono.soil().unwrap_or_report_and_exit()
     }
-    case fuzz(fuzz) todo()
+    case fuzz(fuzz) {
+      var path = fuzz.path
+      var ast = parse_project(path).unwrap_or_report_and_exit()
+
+      var fuzzed_fun =
+        switch ast.find_fun(path, fuzz.target)
+        case none wrong_usage("There is no function at that position.")
+        case some(fun_) {
+          if fun_.type_args.is_empty()
+          then LookupFunSolution { fun_, type_env = map[Str, Type]() }
+          else wrong_usage("Can't fuzz generic function (for now).")
+        }
+      ast.&.generate_fuzzing_hooks(fuzzed_fun.fun_, fuzzed_fun.type_env, true)
+
+      var mono = ast.compile_fuzzer_main(type("$Input"))
+        .unwrap_or_report_and_exit()
+      var soil = mono.soil().unwrap_or_report_and_exit()
+
+      var fuzzed_fun = fuzzed_fun.compile(context().&, ast, mono.&)
+        .unwrap() | The fuzzed fun should already be compiled.
+      var soil = soil.instrument(fuzzed_fun, some(tuple(path, fuzz.target)))
+
+      var binary = soil.to_binary()
+      print_status("Generated fuzzer ({binary.len} bytes). Fuzzing!")
+      exec(binary)
+    }
   }
   exit(0)
 }
