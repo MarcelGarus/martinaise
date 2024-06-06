@@ -1,30 +1,30 @@
-struct Node {
-  left: Slice[U8],
-  right: Slice[U8],
-}
-fun main(): Never {
-  var lines = read_file("advent/day8.big").lines()
-  var directions = lines.get_ref(0)
-  var nodes = map[Slice[U8], Node]()
+import ../stdlib.mar
 
-  for line in lines.subslice(2) do {
-    var name = line.subslice(0, 3)
-    var left = line.subslice(7, 10)
-    var right = line.subslice(12, 15)
-    nodes.&.insert(name, Node { left, right })
+struct Node { left: Str, right: Str }
+
+fun main(): Never {
+  var lines = read_file("advent/day8.big").unwrap().to_str().lines()
+  var directions = lines.get_ref(0)
+  var nodes = map[Str, Node]()
+
+  for line in lines.subslice(2..lines.len) do {
+    var name = line.substr(0..3)
+    var left = line.substr(7..10)
+    var right = line.substr(12..15)
+    nodes.&.put(name, Node { left, right })
   }
 
   var step = 0
   var current = "AAA"
   loop {
-    if current.equals("ZZZ") then break
-    var direction = directions.get(step.modulo(directions.len))
-    if direction.equals('L) then current = nodes.get(current).unwrap().left
-    if direction.equals('R) then current = nodes.get(current).unwrap().right
+    if current == "ZZZ" then break
+    var direction = directions.get(step % directions.len)
+    if direction == #L then current = nodes.get(current).left
+    if direction == #R then current = nodes.get(current).right
     step = step.inc()
-    printsln(current)
+    println(current)
   }
   println(step)
 
-  exit(0:U8)
+  exit(0)
 }

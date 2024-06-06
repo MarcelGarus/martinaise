@@ -1,56 +1,56 @@
-fun width(grid: Slice[Slice[U8]]): U64 { grid.get(0).len }
-fun height(grid: Slice[Slice[U8]]): U64 { grid.len }
-fun get(grid: Slice[Slice[U8]], x: I64, y: I64): U8 {
-  if x.is_less_than(0_I64).or(x.is_at_least(grid.width().to_I64()))
-    .or(y.is_less_than(0_I64)).or(y.is_at_least(grid.height().to_I64()))
-  then return '.
-  grid.get(y.to_U64()).get(x.to_U64())
+import ../stdlib.mar
+
+fun width(grid: Slice[Slice[Char]]): Int { grid.get(0).len }
+fun height(grid: Slice[Slice[Char]]): Int { grid.len }
+fun get(grid: Slice[Slice[Char]], x: Int, y: Int): Char {
+  if x < 0 or x >= grid.width() or y < 0 or y >= grid.height()
+  then return #.
+  grid.get(y).get(x)
 }
-fun is_digit(char: U8): Bool { '0.until('9).contains(char) }
-fun is_symbol(char: U8): Bool { not(char.is_digit()).and(not(char.equals('.))) }
+fun is_digit(char: Char): Bool { {#0..=#9}.contains(char) }
+fun is_symbol(char: Char): Bool { not(char.is_digit()) and char != #. }
 
 fun main(): Never {
-  var grid = read_file("advent/day3.big").lines()
-  printsln("hi")
+  var lines = read_file("advent/day3.big").unwrap().to_str().lines()
+  var grid = uninitialized_slice[Slice[Char]](lines.len)
+  for it in lines.iter().enumerate() do grid.get_ref(it.index).* = it.item.chars()
   println(grid.width())
   println(grid.height())
 
   var sum = 0
-  for y in 0_I64.to(grid.height().to_I64()) do
-    for x in 0_I64.to(grid.width().to_I64()) do {
+  for y in 0..grid.height() do
+    for x in 0..grid.width() do {
       var char = grid.get(x, y)
-      if char.is_digit().and(not(grid.get(x.dec(), y).is_digit()))
+      if char.is_digit() and not(grid.get(x - 1, y).is_digit())
       then {
         var end = x
-        loop
-          if grid.get(end, y).is_digit() then end = end.inc() else break
-        var num = grid.get(y.to_U64()).subslice(x.to_U64(), end.to_U64())
-          .parse_U64()
+        loop if grid.get(end, y).is_digit() then end = end + 1 else break
+        var num = grid.get(y).subslice(x..end).parse_int()
 
-        var adjacent = vec[Point[I64]]()
-        for xx in x.dec().until(end) do {
-          adjacent.&.push(Point { x = xx, y = y.dec() })
-          adjacent.&.push(Point { x = xx, y = y.inc() })
+        var adjacent = vec[Point[Int]]()
+        for xx in {x - 1}..=end do {
+          adjacent.&.push(Point { x = xx, y = y - 1 })
+          adjacent.&.push(Point { x = xx, y = y + 1 })
         }
-        adjacent.&.push(Point { x = x.dec(), y })
+        adjacent.&.push(Point { x = x - 1, y })
         adjacent.&.push(Point { x = end, y })
 
-        var next_to_symbol = false()
+        var next_to_symbol = false
         for pos in adjacent do
           if grid.get(pos.x, pos.y).is_symbol() then next_to_symbol = true()
 
         if next_to_symbol then {
           print(num)
-          printsln(" is a part")
+          println(" is a part")
           sum = sum.add(num)
         } else {
           print(num)
-          printsln(" is NOT a part")
+          println(" is NOT a part")
         }
       }
     }
 
   println(sum)
 
-  exit(0:U8)
+  exit(0)
 }

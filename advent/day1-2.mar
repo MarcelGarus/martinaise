@@ -1,35 +1,37 @@
-fun windows(s: Slice[U8]): Windows { Windows { slice = s, index = 0 } }
-struct Windows { slice: Slice[U8], index: U64 }
-fun next(iter: &Windows): Maybe[Slice[U8]] {
+import ../stdlib.mar
+
+fun windows(s: Slice[Char]): Windows { Windows { slice = s, index = 0 } }
+struct Windows { slice: Slice[Char], index: Int }
+fun next(iter: &Windows): Maybe[Slice[Char]] {
   var item =
-    if iter.index.is_less_than(iter.slice.len)
+    if iter.index < iter.slice.len
     then some(iter.slice.subslice(iter.index))
-    else none[Slice[U8]]()
+    else none[Slice[Char]]()
   iter.index = iter.index.add(1)
   item
 }
 
-fun rev_windows(s: Slice[U8]): RevWindows {
+fun rev_windows(s: Slice[Char]): RevWindows {
   RevWindows { slice = s, index = s.len }
 }
-struct RevWindows { slice: Slice[U8], index: U64 }
-fun next(iter: &RevWindows): Maybe[Slice[U8]] {
-  iter.index = iter.index.subtract(1)
-  if iter.index.is_less_than(iter.slice.len)
+struct RevWindows { slice: Slice[Char], index: Int }
+fun next(iter: &RevWindows): Maybe[Slice[Char]] {
+  iter.index = iter.index - 1
+  if iter.index < iter.slice.len
   then some(iter.slice.subslice(iter.index))
-  else none[Slice[U8]]()
+  else none[Slice[Char]]()
 }
 
-fun find_first_digit[I](iter: I, digit_names: Vec[Slice[U8]]): U8 {
+fun find_first_digit[I](iter: I, digit_names: Vec[Slice[Char]]): Int {
   loop {
     var part = iter.next() orelse empty_slice[U8]()
-    if '0.to('9).contains(part.get(0)) then break(part.get(0).subtract('0))
-    var j = 0:U8
+    if {#0..=#9}.contains(part.get(0)) then break(part.get(0) - #0)
+    var j = 0
     for name in digit_names do {
       if part.starts_with(name) then break
-      j = j.add(1:U8)
+      j = j + 1
     }
-    if j.is_less_than(digit_names.len.to_U8()) then break(j.add(1:U8))
+    if j < digit_names.len then break(j + 1)
   }
 }
 
@@ -46,11 +48,11 @@ fun main(): Never {
   digit_names.&.push("nine")
 
   var sum = 0
-  for line in read_file("advent/day1-2.smol").lines() do {
-    var first_digit = line.windows().&.find_first_digit(digit_names)
-    var last_digit = line.rev_windows().&.find_first_digit(digit_names)
+  for line in read_file("advent/day1-2.smol").unwrap().to_str().lines() do {
+    var first_digit = line.chars().windows().&.find_first_digit(digit_names)
+    var last_digit = line.chars().rev_windows().&.find_first_digit(digit_names)
     sum = sum.add(first_digit.to_U64().multiply(10).add(last_digit.to_U64()))
   }
   println(sum)
-  exit(0:U8)
+  exit(0)
 }

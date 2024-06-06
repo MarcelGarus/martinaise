@@ -1,36 +1,38 @@
+import ../stdlib.mar
+
 fun main(): Never {
-  var lines = read_file("advent/day6-2.big").lines()
+  var lines = read_file("advent/day6-2.big").unwrap().to_str().lines()
   println(lines)
   lines.get_ref(0).trim_prefix("Time:")
   lines.get_ref(1).trim_prefix("Distance:")
 
   println(lines)
 
-  var times = vec[U64]()
-  var distances = vec[U64]()
+  var times = vec[Int]()
+  var distances = vec[Int]()
   for time in lines.get(0).split(" ") do
-    if not(time.is_empty()) then times.&.push(time.parse_U64())
+    if not(time.is_empty()) then times.&.push(time.parse_int())
   for dist in lines.get(1).split(" ") do
-    if not(dist.is_empty()) then distances.&.push(dist.parse_U64())
+    if not(dist.is_empty()) then distances.&.push(dist.parse_int())
 
   println(times)
   println(distances)
 
-  var wins = vec[U64]()
+  var wins = vec[Int]()
   var i = 0
   loop {
-    if i.equals(times.len) then break
+    if i == times.len then break
     var time = times.get(i)
     var goal = distances.get(i)
 
     var ways_to_win = 0
-    for hold in 1.to(time) do {
+    for hold in 1..time do {
       var speed = hold
-      var release = time.subtract(hold)
-      var dist = release.multiply(speed)
-      if dist.is_greater_than(goal) then ways_to_win = ways_to_win.inc()
+      var release = time - hold
+      var dist = release * speed
+      if dist > goal then ways_to_win = ways_to_win + 1
     }
-    i = i.inc()
+    i = i + 1
 
     println(ways_to_win)
     wins.&.push(ways_to_win)
@@ -38,8 +40,8 @@ fun main(): Never {
 
   println(wins)
   var product = 1
-  for win in wins do product = product.multiply(win)
+  for win in wins do product = product * win
   println(product)
 
-  exit(0:U8)
+  exit(0)
 }

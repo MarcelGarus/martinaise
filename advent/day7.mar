@@ -1,59 +1,58 @@
-struct Hand {
-  score: U8,
-  hand: Slice[U8],
-  bid: U64,
-}
-fun compare_to(a: Hand, b: Hand): Ordering {
-  switch a.score.compare_to(b.score)
+import ../stdlib.mar
+
+struct Hand { score: Int, hand: Str, bid: Int }
+
+fun <=>(a: Hand, b: Hand): Ordering {
+  switch a.score <=> b.score
   case less return Ordering.less
   case greater return Ordering.greater
-  case equal for i in 0.to(5) do {
+  case equal for i in 0..5 do {
     var values = "23456789TJQKA"
-    var a_index = values.find(a.hand.get(i)).unwrap()
-    var b_index = values.find(b.hand.get(i)).unwrap()
-    var ord = a_index.compare_to(b_index)
-    if not(ord.is_equal()) then return ord
+    var a_index = values.iter().&.find(a.hand.get(i)).unwrap()
+    var b_index = values.iter().&.find(b.hand.get(i)).unwrap()
+    var ord = a_index <=> b_index
+    switch ord case equal {} default return ord
   }
   Ordering.equal
 }
-fun hand_score(hand: Slice[U8]): U8 {
-  var card_to_amount = map[U8, U8]()
+fun hand_score(hand: Str): Int {
+  var card_to_amount = map[Char, Int]()
   for card in hand do
     if card_to_amount.contains(card)
-    then card_to_amount.&.insert(card, card_to_amount.get(card).unwrap().inc())
-    else card_to_amount.&.insert(card, 1:U8)
+    then card_to_amount.&.put(card, card_to_amount.get(card) + 1)
+    else card_to_amount.&.put(card, 1)
 
-  var amounts = vec[U8]()
+  var amounts = vec[Int]()
   for card_and_amount in card_to_amount do
     amounts.&.push(card_and_amount.value)
   amounts.to_slice().&.sort()
 
-  if amounts.equals(vec[U8](5:U8)) then return 6:U8 | five of a kind
-  if amounts.equals(vec[U8](1:U8, 4:U8)) then return 5:U8 | four of a kind
-  if amounts.equals(vec[U8](2:U8, 3:U8)) then return 4:U8 | full house
-  if amounts.equals(vec[U8](1:U8, 1:U8, 3:U8)) then return 3:U8 | three of a kind
-  if amounts.equals(vec[U8](1:U8, 2:U8, 2:U8)) then return 2:U8 | two pair
-  if amounts.equals(vec[U8](1:U8, 1:U8, 1:U8, 2:U8)) then return 1:U8 | one pair
-  0:U8
+  if amounts == vec(5) then return 6 | five of a kind
+  if amounts == vec(1, 4) then return 5 | four of a kind
+  if amounts == vec(2, 3) then return 4 | full house
+  if amounts == vec(1, 1, 3) then return 3 | three of a kind
+  if amounts == vec(1, 2, 2) then return 2 | two pair
+  if amounts == vec(1, 1, 1, 2) then return 1 | one pair
+  0
 }
 
 fun main(): Never {
   var hands = vec[Hand]()
-  for line in read_file("advent/day7.big").lines() do {
+  for line in read_file("advent/day7.big").unwrap().to_str().lines() do {
     var parts = line.split(" ")
     var hand = parts.get(0)
-    var bid = parts.get(1).parse_U64()
+    var bid = parts.get(1).parse_int()
     hands.&.push(Hand { score = hand_score(hand), hand, bid })
   }
   hands.to_slice().&.sort()
 
   var total = 0
-  for i in 0.to(hands.len) do {
+  for i in 0..hands.len do {
     var hand = hands.get(i)
     println(hand.bid)
-    total = total.add(i.inc().multiply(hand.bid))
+    total = total + {{i + 1} * hand.bid}
   }
   println(total)
 
-  exit(0:U8)
+  exit(0)
 }

@@ -1,17 +1,31 @@
-fun find_first_digit[I](iter: &Iter[Char, I]): U64 {
+import ../stdlib.mar
+
+fun find_first_digit[I](iter: &Iter[Char, I]): Int {
   for char in iter do
-    if #0.to(#9).contains(char)
-    then return char.byte.subtract(#0.byte).to_U64()
+    if {#0..=#9}.contains(char)
+    then return {char.byte - #0.byte}.to_int()
   panic("iter doesn't contain a digit")
 }
 
-fun main(): Never {
-  var sum = 0
-  for line in read_file("advent/day1.smol").to_str().lines() do {
-    var first_digit = line.chars.iter().&.find_first_digit()
-    var last_digit = line.chars.rev_iter().&.find_first_digit()
-    sum = sum.add(first_digit.multiply(10).add(last_digit))
+fun line_score(line: Str): Int {
+  var first_digit = line.chars().iter().&.find_first_digit()
+  var last_digit = line.chars().rev_iter().&.find_first_digit()
+  var score = 10 * first_digit + last_digit
+  if score < 30 then {
+    true
   }
+  score
+}
+
+fun solve(input: Str): Int {
+  var sum = 0
+  for line in input.lines() do
+    sum = sum + line.line_score()
+  sum
+}
+
+fun main(): Never {
+  var sum = read_file("advent/day1.smol").unwrap().to_str().solve()
   println(sum)
-  exit(0:U8)
+  exit(0)
 }

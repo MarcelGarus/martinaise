@@ -1,10 +1,10 @@
-fun width(grid: Slice[Slice[U8]]): U64 { grid.get(0).len }
-fun height(grid: Slice[Slice[U8]]): U64 { grid.len }
+import ../stdlib.mar
+
+fun width(grid: Slice[Slice[U8]]): Int { grid.get(0).len }
+fun height(grid: Slice[Slice[U8]]): Int { grid.len }
 fun get(grid: Slice[Slice[U8]], x: I64, y: I64): U8 {
-  if x.is_less_than(0_I64).or(x.is_at_least(grid.width().to_I64()))
-    .or(y.is_less_than(0_I64)).or(y.is_at_least(grid.height().to_I64()))
-  then return '.
-  grid.get(y.to_U64()).get(x.to_U64())
+  if x < 0 or x >= grid.width() or y < 0 or y >= grid.height() then return #.
+  grid.get(y).get(x)
 }
 fun is_digit(char: U8): Bool { '0.until('9).contains(char) }
 fun is_gear(char: U8): Bool { char.equals('*) }
@@ -15,10 +15,10 @@ fun main(): Never {
   println(grid.width())
   println(grid.height())
 
-  var maybe_gears = vec[Vec[Vec[U64]]]()
+  var maybe_gears = vec[Vec[Vec[Int]]]()
   for y in 0.to(grid.height()) do {
-    var row = vec[Vec[U64]]()
-    for x in 0.to(grid.width()) do row.&.push(vec[U64]())
+    var row = vec[Vec[Int]]()
+    for x in 0.to(grid.width()) do row.&.push(vec[Int]())
     maybe_gears.&.push(row)
   }
 
@@ -29,8 +29,8 @@ fun main(): Never {
       then {
         var end = x
         loop if grid.get(end, y).is_digit() then end = end.inc() else break
-        var num = grid.get(y.to_U64()).subslice(x.to_U64(), end.to_U64())
-          .parse_U64()
+        var num = grid.get(y.to_Int()).subslice(x.to_Int(), end.to_Int())
+          .parse_Int()
 
         var adjacent = vec[Point[I64]]()
         for xx in x.dec().until(end) do {
@@ -43,10 +43,10 @@ fun main(): Never {
         for pos in adjacent do
           if grid.get(pos.x, pos.y).is_gear() then {
             prints("There might be a gear at ")
-            print(pos.x.to_U64())
+            print(pos.x.to_Int())
             prints(" ")
-            println(pos.y.to_U64())
-            maybe_gears.get(pos.y.to_U64()).get_ref(pos.x.to_U64()).push(num)
+            println(pos.y.to_Int())
+            maybe_gears.get(pos.y.to_Int()).get_ref(pos.x.to_Int()).push(num)
           }
       }
     }

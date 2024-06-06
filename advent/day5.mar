@@ -1,39 +1,41 @@
-fun main(): Never {
-  var lines = &read_file("advent/day5.big").lines().iter()
+import ../stdlib.mar
 
-  var ids = set[U64]()
+fun main(): Never {
+  var lines = read_file("advent/day5.big").unwrap().to_str().lines().iter().&
+
+  var ids = set[Int]()
   {
     var first_line = lines.next().unwrap()
     first_line.&.trim_prefix("seeds: ")
-    for n in first_line.split(" ") do ids.&.insert(n.parse_U64())
-    var _ = lines.next().unwrap()
+    for n in first_line.split(" ") do ids.&.put(n.parse_int())
+    lines.next().unwrap().ignore()
   }
 
   loop {
-    var category = {lines.next() orelse break}
+    var category = {lines.next() or break}
       .split(" ").get(0).split("-to-").get(1)
-    var next_ids = set[U64]()
-    var mapped_ids = set[U64]()
+    var next_ids = set[Int]()
+    var mapped_ids = set[Int]()
     loop {
-      var line = lines.next() orelse break
+      var line = lines.next() or break
       if line.is_empty() then break
-      var dest = line.split(" ").get(0).parse_U64()
-      var source = line.split(" ").get(1).parse_U64()
-      var len = line.split(" ").get(2).parse_U64()
+      var dest = line.split(" ").get(0).parse_int()
+      var source = line.split(" ").get(1).parse_int()
+      var len = line.split(" ").get(2).parse_int()
 
       for id in ids do
-        if source.to(source.add(len)).contains(id) then {
-          mapped_ids.&.insert(id)
-          next_ids.&.insert(id.add(dest).subtract(source))
+        if {source..{source + len}}.contains(id) then {
+          mapped_ids.&.put(id)
+          next_ids.&.put(id + dest - source)
         }
     }
     for id in ids do
-      if not(mapped_ids.&.contains(id)) then next_ids.&.insert(id)
+      if not(mapped_ids.&.contains(id)) then next_ids.&.put(id)
     ids = next_ids
-    if category.equals("location") then break
+    if category == "location" then break
   }
   println(ids)
   println(ids.min())
 
-  exit(0:U8)
+  exit(0)
 }

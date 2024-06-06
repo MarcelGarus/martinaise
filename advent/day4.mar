@@ -1,23 +1,23 @@
-fun card_score(card: Slice[U8]): U64 {
+import ../stdlib.mar
+
+fun card_score(card: Str): Int {
   var prefix_and_turns = card.split(": ")
   var all_numbers = prefix_and_turns.get(1).split(" | ")
 
   | TODO: use hash set when implemented
-  var winning_numbers = vec[U64]()
+  var winning_numbers = vec[Int]()
   for num in all_numbers.get(0).split(" ") do
-    if not(num.is_empty()) then winning_numbers.&.push(num.parse_U64())
-  var my_numbers = vec[U64]()
+    if not(num.is_empty()) then winning_numbers.&.push(num.parse_int())
+  var my_numbers = vec[Int]()
   for num in all_numbers.get(1).split(" ") do
-    if not(num.is_empty()) then my_numbers.&.push(num.parse_U64())
+    if not(num.is_empty()) then my_numbers.&.push(num.parse_int())
   println(winning_numbers)
 
   var score = 0
   for num in my_numbers do {
-    var wins = false()
-    for winning in winning_numbers do
-      if num.equals(winning) then wins = true()
-    if wins
-    then score = if score.equals(0) then 1 else score.multiply(2)
+    var wins = false
+    for winning in winning_numbers do if num == winning then wins = true
+    if wins then score = if score == 0 then 1 else score * 2
   }
 
   score
@@ -25,8 +25,8 @@ fun card_score(card: Slice[U8]): U64 {
 
 fun main(): Never {
   var sum = 0
-  for line in read_file("advent/day4.big").lines() do
-    sum = sum.add(line.card_score())
+  for line in read_file("advent/day4.big").unwrap().to_str().lines() do
+    sum = sum + line.card_score()
   println(sum)
-  exit(0:U8)
+  exit(0)
 }

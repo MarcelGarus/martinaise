@@ -1,11 +1,13 @@
+import ../stdlib.mar
+
 | returns the game id if it's possible, 0 otherwise
-fun game_score(game: Slice[U8]): U64 {
+fun game_score(game: Str): Int {
   var prefix_and_turns = game.split(": ")
   var prefix = prefix_and_turns.get(0)
   var turns = prefix_and_turns.get(1)
 
   prefix.&.trim_prefix("Game ")
-  var id = prefix.parse_U64()
+  var id = prefix.parse_int()
 
   var red = 0
   var green = 0
@@ -13,21 +15,21 @@ fun game_score(game: Slice[U8]): U64 {
   for turn in turns.split("; ") do
     for cubes in turn.split(", ") do {
       var parts = cubes.split(" ")
-      var num = parts.get(0).parse_U64()
+      var num = parts.get(0).parse_int()
       var color = parts.get(1)
 
-      if color.equals("red") then red = max(red, num)
-      if color.equals("green") then green = max(green, num)
-      if color.equals("blue") then blue = max(blue, num)
+      if color == "red"   then red   = max(red, num)
+      if color == "green" then green = max(green, num)
+      if color == "blue"  then blue  = max(blue, num)
     }
 
-  red.multiply(green).multiply(blue) | Game is possible
+  red * green * blue | Game is possible
 }
 
 fun main(): Never {
   var sum = 0
-  for line in read_file("advent/day2.big").lines() do
-    sum = sum.add(line.game_score())
+  for line in read_file("advent/day2.big").unwrap().to_str().lines() do
+    sum = sum + line.game_score()
   println(sum)
-  exit(0:U8)
+  exit(0)
 }
