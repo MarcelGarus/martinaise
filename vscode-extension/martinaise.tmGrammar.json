@@ -123,7 +123,7 @@
         },
         {
           "name": "keyword.control",
-          "match": "\\b(nop|panic|move|movei|moveib|load|loadb|store|storeb|push|pop|jump|cjump|call|ret|syscall|cmp|isequal|isless|isgreater|islessequal|isgreaterequal|add|sub|mul|div|rem|and|or|xor|negate)\\b"
+          "match": "\\b(nop|panic|move|movei|moveib|load|loadb|store|storeb|push|pop|jump|cjump|call|ret|syscall|cmp|isequal|isless|isgreater|islessequal|isgreaterequal|isnotequal|fcmp|fisequal|fisless|fisgreater|fislessequal|fisgreaterequal|fisnotequal|inttofloat|floattoint|add|sub|mul|div|rem|fadd|fsub|fmul|fdiv|and|or|xor|negate)\\b"
         },
         {
           "name": "variable",
