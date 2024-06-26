@@ -825,13 +825,13 @@ fun to_int(n: Byte): Int asm {
   store b a ret
 }
 
-fun inc(a: Byte): Byte   { a + 1.lower_byte() }
-fun dec(a: Byte): Byte   { a - 1.lower_byte() }
+fun inc(a: Byte): Byte { a + 1.lower_byte() }
+fun dec(a: Byte): Byte { a - 1.lower_byte() }
 
-fun ==(a: Byte, b: Byte): Bool   { if a <=> b is equal then true else false }
+fun ==(a: Byte, b: Byte): Bool { if a <=> b is equal then true else false }
 fun hash(hasher: &Hasher, int: Byte)  { hasher.hash(int.to_int()) }
 
-fun write[W](writer: W, int: Byte)  { writer.write(radix(int, 10)) }
+fun write[W](writer: W, int: Byte) { writer.write(radix(int, 10)) }
 fun radix(int: Byte, radix: Int): RadixFormat { radix(int.to_int(), radix) }
 fun digit_to_char(digit: Byte): Char {
   if digit.to_int() > 9
