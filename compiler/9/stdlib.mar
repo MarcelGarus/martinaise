@@ -2132,13 +2132,6 @@ fun writer[W, A, B, C](writer: W, tuple: Tuple3[A, B, C]) {
 fun min[A](tuple: Tuple2[A, A]): A { min(tuple.a, tuple.b) }
 fun max[A](tuple: Tuple2[A, A]): A { max(tuple.a, tuple.b) }
 
-| Point  
-
-struct Point[T] { x: T, y: T }
-fun write[W, T](writer: W, point: Point[T]) {
-  writer.write(tuple(point.x, point.y))
-}
-
 | Vec  
 | A growable array where you can efficiently push and pop data to/from the back.
 | This is implemented using a fixed-size slice. Once it fills up, a new slice is

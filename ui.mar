@@ -1,0 +1,267 @@
+import stdlib.mar
+
+| Color  
+| Represents a color, including opacity.
+
+struct Color { r: Byte, g: Byte, b: Byte, a: Byte }
+
+fun color(r: Byte, g: Byte, b: Byte, a: Byte): Color { Color { r, g, b, a } }
+fun color(r: Byte, g: Byte, b: Byte): Color {
+  Color { r, g, b, a = 255.lower_byte() }
+}
+fun color(r: Int, g: Int, b: Int): Color {
+  color(r.lower_byte(), g.lower_byte(), b.lower_byte())
+}
+
+var black   = color(  0,   0,   0)
+var white   = color(255, 255, 255)
+
+| Point  
+
+struct Point { x: Int, y: Int }
+
+fun @(x: Int, y: Int): Point { Point { x, y } }
+fun +(a: Point, b: Point): Point { Point { x = a.x + b.x, y = a.y + b.y } }
+fun -(a: Point, b: Point): Point { Point { x = a.x - b.x, y = a.y - b.y } }
+fun *(a: Point, f: Int): Point { Point { x = a.x * f, y = a.y * f } }
+fun /(a: Point, f: Int): Point { Point { x = a.x / f, y = a.y / f } }
+
+fun write[W](writer: W, point: Point) {
+  writer.write(tuple(point.x, point.y))
+}
+
+fun get_screen_size(): Point asm {
+  syscall 13
+  load c sp store c a
+  moveib d 8 add c d
+  store c b
+  ret
+}
+
+| Rectangle  
+
+struct Rectangle { left: Int, top: Int, right: Int, bottom: Int }
+
+fun @(a: Point, b: Point): Rectangle {
+  Rectangle {
+    left   = min(a.x, b.x),
+    top    = min(a.y, b.y),
+    right  = max(a.x, b.x),
+    bottom = max(a.y, b.y),
+  }
+}
+fun by(a: Point, size: Point): Rectangle {
+  Rectangle {
+    left = a.x, top = a.y, right = a.x + size.x, bottom = a.y + size.y
+  }
+}
+
+fun center_x(rect: Rectangle): Int { rect.left + rect.right / 2 }
+fun center_y(rect: Rectangle): Int { rect.top + rect.bottom / 2 }
+fun top_left(rect: Rectangle): Point      { rect.left       @ rect.top }
+fun top_right(rect: Rectangle): Point     { rect.right      @ rect.top }
+fun bottom_left(rect: Rectangle): Point   { rect.left       @ rect.bottom }
+fun bottom_right(rect: Rectangle): Point  { rect.right      @ rect.bottom }
+fun center(rect: Rectangle): Point        { rect.center_x() @ rect.center_y() }
+fun center_left(rect: Rectangle): Point   { rect.left       @ rect.center_y() }
+fun center_top(rect: Rectangle): Point    { rect.center_x() @ rect.top }
+fun center_right(rect: Rectangle): Point  { rect.right      @ rect.center_y() }
+fun center_bottom(rect: Rectangle): Point { rect.center_x() @ rect.bottom }
+
+| Texture  
+
+struct Texture {
+  buffer: Slice[Color],
+  width: Int,
+  height: Int,
+}
+
+fun texture(size: Point): Texture {
+  Texture {
+    buffer = filled_slice(size.x * size.y, white),
+    width = size.x, height = size.y,
+  }
+}
+fun screen_texture(): Texture { texture(get_screen_size()) }
+fun dimensions(texture: Texture): Point { texture.width @ texture.height }
+
+fun get_ref(texture: &Texture, point: Point): &Color {
+  texture.buffer.&.get_ref(point.y * texture.width + point.x)
+}
+fun get(texture: Texture, point: Point): Color {
+  texture.&.get_ref(point).*
+}
+
+fun fill(texture: &Texture, color: Color) {
+  for x in 0..texture.width do
+    for y in 0..texture.height do
+      texture.get_ref(x @ y).* = color
+}
+fun draw_pixel(texture: &Texture, point: Point, color: Color) {
+  texture.get_ref(point).* = color
+}
+fun draw_rect(texture: &Texture, rect: Rectangle, color: Color) {
+  for x in rect.left..rect.right do
+    for y in rect.top..rect.bottom do
+      texture.get_ref(x @ y).* = color
+}
+
+fun show(texture: Texture) asm {
+  moveib a 8  add a sp load a a | texture.buffer.data
+  moveib b 24 add b sp load b b | texture.width
+  moveib c 32 add c sp load c c | texture.height
+  | The texture contains colors in RGBA format, the ui_render syscall expects
+  | colors without alpha. So, here, we first transform the colors.
+  movei d heap_head load d d    | raw texture stripped of alpha channel
+  move e b mul e c | e = number of pixels left to copy: width * height
+                   | a = cursor through original pixels
+  move b d         | b = cursor through new pixels
+  moveib f 1
+  .copy_color:
+  move st e isequal cjump .done
+  loadb c a store b c add a f add b f | copy r
+  loadb c a store b c add a f add b f | copy g
+  loadb c a store b c add a f add b f | copy b
+  add a f | skip alpha in the original
+  sub e f jump .copy_color
+  .done:
+  move a d
+  moveib b 24 add b sp load b b | texture.width
+  moveib c 32 add c sp load c c | texture.height
+  syscall 14 ret
+}
+
+| Font  
+
+| All letters are sized 5x8 pixels.
+struct Glyph { a: Byte, b: Byte, c: Byte, d: Byte, e: Byte }
+fun glyph(a: Int, b: Int, c: Int, d: Int, e: Int): Glyph {
+  Glyph {
+    a = a.lower_byte(),
+    b = b.lower_byte(),
+    c = c.lower_byte(),
+    d = d.lower_byte(),
+    e = e.lower_byte(),
+  }
+}
+var font = {
+  var map = map[Char, Glyph]().&
+  map.put(newline,
+              glyph(2#00100000, 2#01110000, 2#00100000, 2#00111000, 2#00000000))
+  map.put(# , glyph(2#00000000, 2#00000000, 2#00000000, 2#00000000, 2#00000000))
+  map.put(#!, glyph(2#00000000, 2#00000000, 2#01011111, 2#00000000, 2#00000000))
+  map.put(#", glyph(2#00000000, 2#00000111, 2#00000000, 2#00000111, 2#00000000))
+  map.put(##, glyph(2#00010100, 2#01111111, 2#00010100, 2#01111111, 2#00010100))
+  map.put(#$, glyph(2#00100100, 2#00101010, 2#01101011, 2#00101010, 2#00010010))
+  map.put(#%, glyph(2#01000011, 2#00110000, 2#00001000, 2#00000110, 2#01100001))
+  map.put(#&, glyph(2#00110000, 2#01001010, 2#01011101, 2#00110010, 2#01001000))
+  map.put(#', glyph(2#00000000, 2#00000000, 2#00000111, 2#00000000, 2#00000000))
+  map.put(#(, glyph(2#00000000, 2#00111110, 2#01000001, 2#01000001, 2#00000000))
+  map.put(#), glyph(2#00000000, 2#01000001, 2#01000001, 2#00111110, 2#00000000))
+  map.put(#*, glyph(2#00000000, 2#00010100, 2#00001000, 2#00010100, 2#00000000))
+  map.put(#+, glyph(2#00001000, 2#00001000, 2#00111110, 2#00001000, 2#00001000))
+  map.put(#,, glyph(2#00000000, 2#10000000, 2#01100000, 2#00000000, 2#00000000))
+  map.put(#-, glyph(2#00001000, 2#00001000, 2#00001000, 2#00001000, 2#00001000))
+  map.put(#., glyph(2#00000000, 2#00000000, 2#01100000, 2#00000000, 2#00000000))
+  map.put(#/, glyph(2#00100000, 2#00010000, 2#00001000, 2#00000100, 2#00000010))
+  map.put(#0, glyph(2#00111110, 2#01010001, 2#01001001, 2#01000101, 2#00111110))
+  map.put(#1, glyph(2#01000000, 2#01000010, 2#01111111, 2#01000000, 2#01000000))
+  map.put(#2, glyph(2#01100010, 2#01010001, 2#01001001, 2#01001001, 2#01000110))
+  map.put(#3, glyph(2#00100010, 2#01000001, 2#01001001, 2#01001001, 2#00110110))
+  map.put(#4, glyph(2#00011000, 2#00010100, 2#00010010, 2#00010001, 2#01111111))
+  map.put(#5, glyph(2#00100111, 2#01000101, 2#01000101, 2#01000101, 2#00111001))
+  map.put(#6, glyph(2#00111100, 2#01001010, 2#01001001, 2#01001001, 2#00110000))
+  map.put(#7, glyph(2#00000011, 2#00000001, 2#01110001, 2#00001001, 2#00000111))
+  map.put(#8, glyph(2#00110110, 2#01001001, 2#01001001, 2#01001001, 2#00110110))
+  map.put(#9, glyph(2#00000110, 2#01001001, 2#01001001, 2#00101001, 2#00011110))
+  map.put(#:, glyph(2#00000000, 2#00000000, 2#01100110, 2#00000000, 2#00000000))
+  map.put(#;, glyph(2#00000000, 2#10000000, 2#01100110, 2#00000000, 2#00000000))
+  map.put(#<, glyph(2#00001000, 2#00010100, 2#00100010, 2#01000001, 2#00000000))
+  map.put(#=, glyph(2#00100100, 2#00100100, 2#00100100, 2#00100100, 2#00100100))
+  map.put(#>, glyph(2#00000000, 2#01000001, 2#00100010, 2#00010100, 2#00001000))
+  map.put(#?, glyph(2#00000010, 2#00000001, 2#01010001, 2#00001001, 2#00000110))
+  map.put(#@, glyph(2#00111110, 2#01000001, 2#01011101, 2#01010001, 2#00011110))
+  map.put(#A, glyph(2#01111110, 2#00000101, 2#00000101, 2#00000101, 2#01111110))
+  map.put(#B, glyph(2#01111111, 2#01000101, 2#01000101, 2#01000101, 2#00111010))
+  map.put(#C, glyph(2#00111110, 2#01000001, 2#01000001, 2#01000001, 2#00100010))
+  map.put(#D, glyph(2#01111111, 2#01000001, 2#01000001, 2#01000001, 2#00111110))
+  map.put(#E, glyph(2#01111111, 2#01000101, 2#01000101, 2#01000001, 2#01000001))
+  map.put(#F, glyph(2#01111111, 2#00000101, 2#00000101, 2#00000001, 2#00000001))
+  map.put(#G, glyph(2#00111110, 2#01000001, 2#01000001, 2#01000101, 2#00111101))
+  map.put(#H, glyph(2#01111111, 2#00000100, 2#00000100, 2#00000100, 2#01111111))
+  map.put(#I, glyph(2#00000000, 2#01000001, 2#01111111, 2#01000001, 2#00000000))
+  map.put(#J, glyph(2#00100000, 2#01000000, 2#01000000, 2#01000000, 2#00111111))
+  map.put(#K, glyph(2#01111111, 2#00000100, 2#00000100, 2#00001010, 2#01110001))
+  map.put(#L, glyph(2#01111111, 2#01000000, 2#01000000, 2#01000000, 2#01000000))
+  map.put(#M, glyph(2#01111111, 2#00000010, 2#00000100, 2#00000010, 2#01111111))
+  map.put(#N, glyph(2#01111111, 2#00000010, 2#00000100, 2#00001000, 2#01111111))
+  map.put(#O, glyph(2#00111110, 2#01000001, 2#01000001, 2#01000001, 2#00111110))
+  map.put(#P, glyph(2#01111111, 2#00000101, 2#00000101, 2#00000101, 2#00000010))
+  map.put(#Q, glyph(2#00111110, 2#01000001, 2#01000001, 2#00100001, 2#01011110))
+  map.put(#R, glyph(2#01111111, 2#00000101, 2#00000101, 2#00000101, 2#01111010))
+  map.put(#S, glyph(2#00100010, 2#01000101, 2#01000101, 2#01000101, 2#00111001))
+  map.put(#T, glyph(2#00000001, 2#00000001, 2#01111111, 2#00000001, 2#00000001))
+  map.put(#U, glyph(2#00111111, 2#01000000, 2#01000000, 2#01000000, 2#00111111))
+  map.put(#V, glyph(2#00001111, 2#00110000, 2#01000000, 2#00110000, 2#00001111))
+  map.put(#W, glyph(2#01111111, 2#00100000, 2#00010000, 2#00100000, 2#01111111))
+  map.put(#X, glyph(2#01110001, 2#00001010, 2#00000100, 2#00001010, 2#01110001))
+  map.put(#Y, glyph(2#00000001, 2#00000010, 2#01111100, 2#00000010, 2#00000001))
+  map.put(#Z, glyph(2#01100001, 2#01010001, 2#01001001, 2#01000101, 2#01000011))
+  map.put(#[, glyph(2#00000000, 2#01111111, 2#01000001, 2#01000001, 2#00000000))
+  map.put(#\, glyph(2#00000001, 2#00000110, 2#00001000, 2#00110000, 2#01000000))
+  map.put(#], glyph(2#00000000, 2#01000001, 2#01000001, 2#01111111, 2#00000000))
+  map.put(#^, glyph(2#00000100, 2#00000010, 2#00000001, 2#00000010, 2#00000100))
+  map.put(#_, glyph(2#10000000, 2#10000000, 2#10000000, 2#10000000, 2#10000000))
+  map.put(#`, glyph(2#00000000, 2#00000000, 2#00000001, 2#00000010, 2#00000000))
+  map.put(#a, glyph(2#00100000, 2#01010100, 2#01010100, 2#01010100, 2#01111000))
+  map.put(#b, glyph(2#01111111, 2#01001000, 2#01000100, 2#01000100, 2#00111000))
+  map.put(#c, glyph(2#00111000, 2#01000100, 2#01000100, 2#01000100, 2#00101000))
+  map.put(#d, glyph(2#00111000, 2#01000100, 2#01000100, 2#01001000, 2#01111111))
+  map.put(#e, glyph(2#00111000, 2#01010100, 2#01010100, 2#01010100, 2#01011000))
+  map.put(#f, glyph(2#00000100, 2#00000100, 2#01111110, 2#00000101, 2#00000101))
+  map.put(#g, glyph(2#10011000, 2#10100100, 2#10100100, 2#10100100, 2#01111100))
+  map.put(#h, glyph(2#01111111, 2#00001000, 2#00000100, 2#00000100, 2#01111000))
+  map.put(#i, glyph(2#01000100, 2#01000100, 2#01111101, 2#01000000, 2#01000000))
+  map.put(#j, glyph(2#01000000, 2#10000000, 2#10000100, 2#10000100, 2#01111101))
+  map.put(#k, glyph(2#01111111, 2#00010000, 2#00010000, 2#00101000, 2#01000100))
+  map.put(#l, glyph(2#01000001, 2#01000001, 2#01111111, 2#01000000, 2#01000000))
+  map.put(#m, glyph(2#01111100, 2#00000100, 2#00011000, 2#00000100, 2#01111000))
+  map.put(#n, glyph(2#01111100, 2#00000100, 2#00000100, 2#00000100, 2#01111000))
+  map.put(#o, glyph(2#00111000, 2#01000100, 2#01000100, 2#01000100, 2#00111000))
+  map.put(#p, glyph(2#11111100, 2#00101000, 2#00100100, 2#00100100, 2#00011000))
+  map.put(#q, glyph(2#00011000, 2#00100100, 2#00100100, 2#00101000, 2#11111100))
+  map.put(#r, glyph(2#01111100, 2#00001000, 2#00000100, 2#00000100, 2#00001000))
+  map.put(#s, glyph(2#01001000, 2#01010100, 2#01010100, 2#01010100, 2#00100100))
+  map.put(#t, glyph(2#00000100, 2#00000100, 2#00111111, 2#01000100, 2#01000100))
+  map.put(#u, glyph(2#00111100, 2#01000000, 2#01000000, 2#01000000, 2#01111100))
+  map.put(#v, glyph(2#00001100, 2#00110000, 2#01000000, 2#00110000, 2#00001100))
+  map.put(#w, glyph(2#00111100, 2#01000000, 2#01110000, 2#01000000, 2#01111100))
+  map.put(#x, glyph(2#01000100, 2#00101000, 2#00010000, 2#00101000, 2#01000100))
+  map.put(#y, glyph(2#10011100, 2#10100000, 2#10100000, 2#10100000, 2#01111100))
+  map.put(#z, glyph(2#01000100, 2#01100100, 2#01010100, 2#01001100, 2#01000100))
+  map.put(#{, glyph(2#00001000, 2#00001000, 2#00110110, 2#01000001, 2#00000000))
+  map.put(#|, glyph(2#00000000, 2#00000000, 2#01111111, 2#00000000, 2#00000000))
+  map.put(#}, glyph(2#00000000, 2#01000001, 2#00110110, 2#00001000, 2#00001000))
+  map.put(#~, glyph(2#00001000, 2#00000100, 2#00000100, 2#00001000, 2#00000100))
+  map.*
+}
+
+fun draw_char(texture: &Texture, char: Char, where: Point, color: Color) {
+  switch font.get_maybe(char)
+  case none texture.draw_rect({where.x @ where.y}.by(5 @ 8), color)
+  case some(glyph)
+    for x in 0..5 do for y in 0..8 do {
+      var glyph_col =
+        if x == 0 then glyph.a else if x == 1 then glyph.b
+        else if x == 2 then glyph.c else if x == 3 then glyph.d else glyph.e
+      var bit = glyph_col.to_int()
+      for i in 0..y do bit = bit / 2
+      var is_set = bit % 2 == 1
+      if is_set then texture.draw_pixel({where.x + x} @ {where.y + y}, color)
+    }
+}
+
+fun draw_str(texture: &Texture, str: Str, where: Point, color: Color) {
+  for it in str.iter().enumerate() do
+    texture.draw_char(it.item, where + {6 * it.index @ 0}, color)
+}
