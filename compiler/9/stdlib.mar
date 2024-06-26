@@ -681,6 +681,11 @@ fun >>(left: Int, by: Int): Int {
   for i in 0..by do left = left / 2
   left
 }
+fun **(a: Int, b: Int): Int {
+  var res = 1
+  for i in 0..b do res = res * a
+  res
+}
 fun abs(value: Int): Int { if value >= 0 then value else 0 - value }
 fun round_up_to_multiple_of(number: Int, factor: Int): Int {
   {number + factor.dec()} / factor * factor
