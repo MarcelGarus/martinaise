@@ -847,6 +847,67 @@ fun mutate(byte: Byte, random: &Random, temperature: Int): Byte {
   byte + random.next_int({0 - temperature}..=temperature).lower_byte()
 }
 
+| Float  
+| A 64-bit IEE-754 floating point number.
+
+opaque Float = 8 bytes big, 8 bytes aligned
+
+fun to_float(int: Int): Float asm {
+  moveib a 8 add a sp load a a | int
+  load b sp | return value address
+  inttofloat a store b a ret
+}
+| This is truncating.
+fun to_int(float: Float): Int asm {
+  moveib a 8 add a sp load a a | float
+  load b sp | return value address
+  floattoint a store b a ret
+}
+
+fun +(left: Float, right: Float): Float asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  fadd a b store c a ret
+}
+fun -(left: Float, right: Float): Float asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  fsub a b store c a ret
+}
+fun *(left: Float, right: Float): Float asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  fmul a b store c a ret
+}
+fun /(left: Float, right: Float): Float asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  fdiv a b store c a ret
+}
+fun <=>(left: Float, right: Float): Ordering asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  fsub a b
+  move st a fisless cjump .less
+  move st a fisgreater cjump .greater
+  .equal:   moveib b 1 storeb c b ret
+  .less:    moveib b 0 storeb c b ret
+  .greater: moveib b 2 storeb c b ret
+}
+
+fun ==(a: Float, b: Float): Bool { if a <=> b is equal then true else false }
+fun hash(hasher: &Hasher, int: Float)  {
+  hasher.hash(memhash(int.&.to_address(), 8))
+}
+
+| TODO: implement generate
+| TODO: implement write
+
 | Comparisons  
 | You should implement the spaceship operator <=>(T, T): Ordering for types that
 | can be compared. This allows you to use operators such as <= or functions such
