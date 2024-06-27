@@ -631,7 +631,7 @@ fun %=[A, B](left: &A, right: B) { left.* = left.* % right }
 
 opaque Int = 8 bytes big, 8 bytes aligned
 
-var min_int = 0 - 9223372036854775807
+var min_int = 0 - 9223372036854775806
 var max_int = 9223372036854775807
 
 fun +(left: Int, right: Int): Int asm {
@@ -939,7 +939,7 @@ fun <=>(left: Float, right: Float): Ordering asm { | TODO: remove?
 }
 
 fun ==(a: Float, b: Float): Bool { if a <=> b is equal then true else false }
-fun hash(hasher: &Hasher, int: Float)  {
+fun hash(hasher: &Hasher, int: Float) {
   hasher.hash(memhash(int.&.to_address(), 8))
 }
 
