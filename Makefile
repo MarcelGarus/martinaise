@@ -5,7 +5,7 @@ martinaise.soil: compiler/8/martinaise.soil compiler/9/stdlib.mar
 
 # Adjust this based on your system.
 # TODO: Is there a better way to do this?
-soil = /home/marcel/projects/soil/soil-asm
+soil = /home/marcel/projects/soil/soil
 
 compiler/0/martinaise: $(wildcard compiler/0/src/*) compiler/0/build.zig
 	@echo "# Martinaise 0"
@@ -53,11 +53,11 @@ compiler/6/martinaise.soil: compiler/5/martinaise compiler/6/stdlib.mar compiler
 	@echo "# Martinaise 6"
 	cd compiler/6; ../5/martinaise soil compiler.mar > martinaise.soil
 
-compiler/7/martinaise.soil: compiler/7/stdlib.mar compiler/7/martinaise.mar
+compiler/7/martinaise.soil: compiler/6/martinaise.soil compiler/7/stdlib.mar compiler/7/martinaise.mar
 	@echo "# Martinaise 7"
 	cd compiler/7; $(soil) ../6/martinaise.soil compile martinaise.mar
 
-compiler/8/martinaise.soil: compiler/8/stdlib.mar compiler/8/martinaise.mar
+compiler/8/martinaise.soil: compiler/7/martinaise.soil compiler/8/stdlib.mar compiler/8/martinaise.mar
 	@echo "# Martinaise 8"
 	cd compiler/8; $(soil) ../7/martinaise.soil compile martinaise.mar
 
