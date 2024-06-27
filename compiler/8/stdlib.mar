@@ -829,6 +829,216 @@ fun mutate(byte: Byte, random: &Random, temperature: Int): Byte {
   byte + random.next_int({0 - temperature}..=temperature).lower_byte()
 }
 
+| Float  
+| A 64-bit IEE-754 floating point number.
+
+opaque Float = 8 bytes big, 8 bytes aligned
+
+var nan = 2#0111111111111000000000000000000000000000000000000000000000000000.cast[Int, Float]()
+var inf = 2#0111111111110000000000000000000000000000000000000000000000000000.cast[Int, Float]()
+
+fun is_nan(float: Float): Bool {
+  var nan_mask = 2#0111111111111000000000000000000000000000000000000000000000000000
+  var nan_value = nan_mask
+  float.cast[Float, Int]() & nan_mask == nan_value
+ }
+fun is_inf(float: Float): Bool {
+  var inf_mask  = 2#0111111111111111111111111111111111111111111111111111111111111111
+  var inf_value = 2#0111111111110000000000000000000000000000000000000000000000000000
+  float.cast[Float, Int]() & inf_mask == inf_value
+}
+
+fun to_float(int: Int): Float asm {
+  moveib a 8 add a sp load a a | int
+  load b sp | return value address
+  inttofloat a store b a ret
+}
+| This is truncating.
+fun to_int(float: Float): Int asm {
+  moveib a 8 add a sp load a a | float
+  load b sp | return value address
+  floattoint a store b a ret
+}
+fun to_maybe_int(float: Float): Maybe[Int] {
+  if float.is_nan() or float.is_inf()
+    or not({min_int.to_float()..max_int.to_float()}.contains(float))
+  then none[Int]()
+  else some(float.to_int())
+}
+
+fun +(left: Float, right: Float): Float asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  fadd a b store c a ret
+}
+fun -(left: Float, right: Float): Float asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  fsub a b store c a ret
+}
+fun *(left: Float, right: Float): Float asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  fmul a b store c a ret
+}
+fun /(left: Float, right: Float): Float asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  fdiv a b store c a ret
+}
+fun <=>(left: Float, right: Float): Ordering asm { | TODO: remove?
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  fsub a b
+  move st a fisless cjump .less
+  move st a fisgreater cjump .greater
+  move st a fisequal cjump .equal
+  panic
+  .equal:   moveib b 1 storeb c b ret
+  .less:    moveib b 0 storeb c b ret
+  .greater: moveib b 2 storeb c b ret
+}
+
+fun ==(a: Float, b: Float): Bool { if a <=> b is equal then true else false }
+fun hash(hasher: &Hasher, int: Float) {
+  hasher.hash(memhash(int.&.to_address(), 8))
+}
+
+| Well, turns out, writing floats is pretty commplicated. This is a relatively
+| easy algorithm from https://blog.benoitblanchon.fr/lightweight-float-to-string
+fun write[W](writer: W, float: Float) {
+  if float.is_nan() then {
+    writer."nan"
+    return {}
+  }
+  if float < 0.to_float() then {
+    writer."-"
+    float = 0.to_float() - float
+  }
+  if float.is_inf() then {
+    writer."inf"
+    return {}
+  }
+
+  var split = float.split_into_integer_decimal_and_exponent()
+  var integral_part = split.a
+  var decimal_part = split.b
+  var exponent = split.c
+
+  writer."{integral_part}"
+  if decimal_part != 0 then writer.write_decimals(decimal_part)
+
+  if exponent < 0 then writer."e-{0 - exponent}"
+  if exponent > 0 then writer."e{exponent}"
+}
+fun split_into_integer_decimal_and_exponent(value: Float): Tuple3[Int, Int, Int] {
+  var normalized = value.normalize()
+  var exponent = normalized.a
+  value = normalized.b
+
+  var integral_part = value.to_int()
+  var remainder = value - integral_part.to_float()
+
+  remainder = remainder * 1000000000.to_float()
+  var decimal_part = remainder.to_int()
+
+  | rounding
+  remainder = remainder - decimal_part.to_float()
+  if remainder >= {1.to_float() / 2.to_float()} then {
+    decimal_part = decimal_part + 1
+    if decimal_part > 1000000000 then {
+      decimal_part = 0
+      integral_part = integral_part + 1
+      if exponent != 0 and integral_part >= 10 then {
+        exponent = exponent + 1
+        integral_part = 1
+      }
+    }
+  }
+
+  tuple(integral_part, decimal_part, exponent)
+}
+| Normalizes a float into the exponent and the 1.XXX value.
+fun normalize(value: Float): Tuple2[Int, Float] {
+  var positive_exp_threshold = 10000000.to_float()
+  var negative_exp_threshold = 1.to_float() / 100000.to_float()
+  var exponent = 0
+
+  | TODO: use literals everywhere for better precision
+  var float1e0 = 1.to_float()
+  var float1e1 = 10.to_float()
+  var float1e2 = 100.to_float()
+  var float1e4 = 10000.to_float()
+  var float1e8 = 100000000.to_float()
+  var float1e16 = float1e8 * float1e8
+  var float1e32 = float1e16 * float1e16
+  var float1e64 = float1e32 * float1e32
+  var float1e128 = float1e64 * float1e64
+  var float1e256 = float1e128 * float1e128
+  var float1eminus1 = 1.to_float() / 1.to_float()
+  var float1eminus3 = 1.to_float() / 1000.to_float()
+  var float1eminus7 = 1.to_float() / 10000000.to_float()
+  var float1eminus15 = 1.to_float() / 1000000000000000.to_float()
+  var float1eminus31 = 10.to_float() / float1e32
+  var float1eminus63 = 10.to_float() / float1e64
+  var float1eminus127 = 10.to_float() / float1e128
+  var float1eminus255 = 10.to_float() / float1e256
+
+  if value >= positive_exp_threshold then {
+    if value >= float1e256 then { value.& /= float1e256  exponent.& += 256 }
+    if value >= float1e128 then { value.& /= float1e128  exponent.& += 128 }
+    if value >= float1e64 then { value.& /= float1e64  exponent.& += 64 }
+    if value >= float1e32 then { value.& /= float1e32  exponent.& += 32 }
+    if value >= float1e16 then { value.& /= float1e16  exponent.& += 16 }
+    if value >= float1e8 then { value.& /= float1e8  exponent.& += 8 }
+    if value >= float1e4 then { value.& /= float1e4  exponent.& += 4 }
+    if value >= float1e2 then { value.& /= float1e2  exponent.& += 2 }
+    if value >= float1e1 then { value.& /= float1e1  exponent.& += 1 }
+  }
+  if value > 0.to_float() and value <= negative_exp_threshold then {
+    if value < float1eminus255 then { value.& *= float1e256  exponent.& -= 256 }
+    if value < float1eminus127 then { value.& *= float1e128  exponent.& -= 128 }
+    if value < float1eminus63 then { value.& *= float1e64  exponent.& -= 64 }
+    if value < float1eminus31 then { value.& *= float1e32  exponent.& -= 32 }
+    if value < float1eminus15 then { value.& *= float1e16  exponent.& -= 16 }
+    if value < float1eminus7 then { value.& *= float1e8  exponent.& -= 8 }
+    if value < float1eminus3 then { value.& *= float1e4  exponent.& -= 4 }
+    if value < float1eminus1 then { value.& *= float1e2  exponent.& -= 2 }
+    if value < float1e0 then { value.& *= float1e1  exponent.& -= 1 }
+  }
+
+  tuple(exponent, value)
+}
+fun write_decimals[W](writer: W, value: Int) {
+  var width = 9
+
+  | remove trailing zeros
+  loop {
+    if width == 0 then break
+    if value % 10 != 0 then break
+    value.& /= 10
+    width.& -= 1
+  }
+
+  var buffer = vec[Char]()
+  loop {
+    if width == 0 then break
+    buffer.&.push(#0 + {value % 10}.lower_byte())
+    width.& -= 1
+    value.& /= 10
+  }
+  buffer.&.push(#.)
+
+  for char in buffer.to_slice().rev_iter() do writer.write(char)
+}
+
+| TODO: implement generate
+
 | Comparisons  
 | You should implement the spaceship operator <=>(T, T): Ordering for types that
 | can be compared. This allows you to use operators such as <= or functions such

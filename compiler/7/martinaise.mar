@@ -395,11 +395,25 @@ enum AstInstrKind {
   isgreater,
   islessequal,
   isgreaterequal,
+  isnotequal,
+  fcmp: RegAndReg,
+  fisequal,
+  fisless,
+  fisgreater,
+  fislessequal,
+  fisgreaterequal,
+  fisnotequal,
+  inttofloat: Reg,
+  floattoint: Reg,
   add: RegAndReg,
   sub: RegAndReg,
   mul: RegAndReg,
   div: RegAndReg,
   rem: RegAndReg,
+  fadd: RegAndReg,
+  fsub: RegAndReg,
+  fmul: RegAndReg,
+  fdiv: RegAndReg,
   and: RegAndReg,
   or: RegAndReg,
   xor: RegAndReg,
@@ -600,11 +614,25 @@ fun write[W](writer: W, instruction: AstInstr) {
   case isgreater writer."isgreater"
   case islessequal writer."islessequal"
   case isgreaterequal writer."isgreaterequal"
+  case isnotequal writer."isnotequal"
+  case fcmp(regs) writer."fcmp {regs.first} {regs.second}"
+  case fisequal writer."fisequal"
+  case fisless writer."fisless"
+  case fisgreater writer."fisgreater"
+  case fislessequal writer."fislessequal"
+  case fisgreaterequal writer."fisgreaterequal"
+  case fisnotequal writer."fisnotequal"
+  case inttofloat(reg) writer."inttofloat {reg}"
+  case floattoint(reg) writer."floattoint {reg}"
   case add(regs) writer."add {regs.first} {regs.second}"
   case sub(regs) writer."sub {regs.first} {regs.second}"
   case mul(regs) writer."mul {regs.first} {regs.second}"
   case div(regs) writer."div {regs.first} {regs.second}"
   case rem(regs) writer."rem {regs.first} {regs.second}"
+  case fadd(regs) writer."fadd {regs.first} {regs.second}"
+  case fsub(regs) writer."fsub {regs.first} {regs.second}"
+  case fmul(regs) writer."fmul {regs.first} {regs.second}"
+  case fdiv(regs) writer."fdiv {regs.first} {regs.second}"
   case and(regs) writer."and {regs.first} {regs.second}"
   case or(regs) writer."or {regs.first} {regs.second}"
   case xor(regs) writer."xor {regs.first} {regs.second}"
@@ -1540,11 +1568,27 @@ fun parse_instruction(parser: &Parser): Result[Maybe[AstInstr], Str] {
     else if name == "isgreater" then AstInstrKind.isgreater
     else if name == "islessequal" then AstInstrKind.islessequal
     else if name == "isgreaterequal" then AstInstrKind.isgreaterequal
+    else if name == "isnotequal" then AstInstrKind.isnotequal
+    else if name == "fcmp" then AstInstrKind.fcmp(parser.parse_regs()?)
+    else if name == "fisequal" then AstInstrKind.fisequal
+    else if name == "fisless" then AstInstrKind.fisless
+    else if name == "fisgreater" then AstInstrKind.fisgreater
+    else if name == "fislessequal" then AstInstrKind.fislessequal
+    else if name == "fisgreaterequal" then AstInstrKind.fisgreaterequal
+    else if name == "fisnotequal" then AstInstrKind.fisnotequal
+    else if name == "inttofloat" then AstInstrKind.inttofloat(
+        parser.parse_reg()?)
+    else if name == "floattoint" then AstInstrKind.floattoint(
+        parser.parse_reg()?)
     else if name == "add" then AstInstrKind.add(parser.parse_regs()?)
     else if name == "sub" then AstInstrKind.sub(parser.parse_regs()?)
     else if name == "mul" then AstInstrKind.mul(parser.parse_regs()?)
     else if name == "div" then AstInstrKind.div(parser.parse_regs()?)
     else if name == "rem" then AstInstrKind.rem(parser.parse_regs()?)
+    else if name == "fadd" then AstInstrKind.fadd(parser.parse_regs()?)
+    else if name == "fsub" then AstInstrKind.fsub(parser.parse_regs()?)
+    else if name == "fmul" then AstInstrKind.fmul(parser.parse_regs()?)
+    else if name == "fdiv" then AstInstrKind.fdiv(parser.parse_regs()?)
     else if name == "and" then AstInstrKind.and(parser.parse_regs()?)
     else if name == "or" then AstInstrKind.or(parser.parse_regs()?)
     else if name == "xor" then AstInstrKind.xor(parser.parse_regs()?)
@@ -4411,11 +4455,25 @@ enum Instr {
   isgreater,
   islessequal,
   isgreaterequal,
+  isnotequal,
+  fcmp: RegAndReg,
+  fisequal,
+  fisless,
+  fisgreater,
+  fislessequal,
+  fisgreaterequal,
+  fisnotequal,
+  inttofloat: Reg,
+  floattoint: Reg,
   add: RegAndReg,
   sub: RegAndReg,
   mul: RegAndReg,
   div: RegAndReg,
   rem: RegAndReg,
+  fadd: RegAndReg,
+  fsub: RegAndReg,
+  fmul: RegAndReg,
+  fdiv: RegAndReg,
   and: RegAndReg,
   or: RegAndReg,
   xor: RegAndReg,
@@ -4458,38 +4516,52 @@ fun write[W](writer: W, soil: Soil) {
 }
 fun write[W](writer: W, instruction: Instr) {
   switch instruction
-  case nop            { writer."nop" }
-  case panic          { writer."panic" }
-  case move(args)     { writer."move {args.first} {args.second}" }
-  case movei(args)    { writer."movei {args.reg} {args.int}" }
-  case moveib(args)   { writer."moveib {args.reg} {args.byte}" }
-  case moveimem(args) { writer."movei {args.reg} {args.str}" }
-  case load(args)     { writer."load {args.first} {args.second}" }
-  case loadb(args)    { writer."loadb {args.first} {args.second}" }
-  case store(args)    { writer."store {args.first} {args.second}" }
-  case storeb(args)   { writer."storeb {args.first} {args.second}" }
-  case push(arg)      { writer."push {arg}" }
-  case pop(arg)       { writer."pop {arg}" }
-  case jump(arg)      { writer."jump {arg}" }
-  case cjump(arg)     { writer."cjump {arg}" }
-  case call(arg)      { writer."call {arg}" }
-  case ret            { writer."ret" }
-  case syscall(arg)   { writer."syscall {arg}" }
-  case cmp(args)      { writer."cmp {args.first} {args.second}" }
-  case isequal        { writer."isequal" }
-  case isless         { writer."isless" }
-  case isgreater      { writer."isgreater" }
-  case islessequal    { writer."islessequal" }
-  case isgreaterequal { writer."isgreaterequal" }
-  case add(args)      { writer."add {args.first} {args.second}" }
-  case sub(args)      { writer."sub {args.first} {args.second}" }
-  case mul(args)      { writer."mul {args.first} {args.second}" }
-  case div(args)      { writer."div {args.first} {args.second}" }
-  case rem(args)      { writer."rem {args.first} {args.second}" }
-  case and(args)      { writer."and {args.first} {args.second}" }
-  case or(args)       { writer."or {args.first} {args.second}" }
-  case xor(args)      { writer."xor {args.first} {args.second}" }
-  case negate(arg)    { writer."negate {arg}" }
+  case nop             { writer."nop" }
+  case panic           { writer."panic" }
+  case move(args)      { writer."move {args.first} {args.second}" }
+  case movei(args)     { writer."movei {args.reg} {args.int}" }
+  case moveib(args)    { writer."moveib {args.reg} {args.byte}" }
+  case moveimem(args)  { writer."movei {args.reg} {args.str}" }
+  case load(args)      { writer."load {args.first} {args.second}" }
+  case loadb(args)     { writer."loadb {args.first} {args.second}" }
+  case store(args)     { writer."store {args.first} {args.second}" }
+  case storeb(args)    { writer."storeb {args.first} {args.second}" }
+  case push(arg)       { writer."push {arg}" }
+  case pop(arg)        { writer."pop {arg}" }
+  case jump(arg)       { writer."jump {arg}" }
+  case cjump(arg)      { writer."cjump {arg}" }
+  case call(arg)       { writer."call {arg}" }
+  case ret             { writer."ret" }
+  case syscall(arg)    { writer."syscall {arg}" }
+  case cmp(args)       { writer."cmp {args.first} {args.second}" }
+  case isequal         { writer."isequal" }
+  case isless          { writer."isless" }
+  case isgreater       { writer."isgreater" }
+  case islessequal     { writer."islessequal" }
+  case isgreaterequal  { writer."isgreaterequal" }
+  case isnotequal      { writer."isnotequal" }
+  case fcmp(args)      { writer."fcmp {args.first} {args.second}" }
+  case fisequal        { writer."fisequal" }
+  case fisless         { writer."fisless" }
+  case fisgreater      { writer."fisgreater" }
+  case fislessequal    { writer."fislessequal" }
+  case fisgreaterequal { writer."fisgreaterequal" }
+  case fisnotequal     { writer."fisnotequal" }
+  case inttofloat(arg) { writer."inttofloat {arg}" }
+  case floattoint(arg) { writer."floattoint {arg}" }
+  case add(args)       { writer."add {args.first} {args.second}" }
+  case sub(args)       { writer."sub {args.first} {args.second}" }
+  case mul(args)       { writer."mul {args.first} {args.second}" }
+  case div(args)       { writer."div {args.first} {args.second}" }
+  case rem(args)       { writer."rem {args.first} {args.second}" }
+  case fadd(args)      { writer."fadd {args.first} {args.second}" }
+  case fsub(args)      { writer."fsub {args.first} {args.second}" }
+  case fmul(args)      { writer."fmul {args.first} {args.second}" }
+  case fdiv(args)      { writer."fdiv {args.first} {args.second}" }
+  case and(args)       { writer."and {args.first} {args.second}" }
+  case or(args)        { writer."or {args.first} {args.second}" }
+  case xor(args)       { writer."xor {args.first} {args.second}" }
+  case negate(arg)     { writer."negate {arg}" }
 }
 
 | Assembling  
@@ -4592,11 +4664,25 @@ fun isless(asm: &Asm)                   { asm.emit(Instr.isless) }
 fun isgreater(asm: &Asm)                { asm.emit(Instr.isgreater) }
 fun islessequal(asm: &Asm)              { asm.emit(Instr.islessequal) }
 fun isgreaterequal(asm: &Asm)           { asm.emit(Instr.isgreaterequal) }
+fun isnotequal(asm: &Asm)               { asm.emit(Instr.isnotequal) }
+fun fcmp(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.fcmp(a & b)) }
+fun fisequal(asm: &Asm)                 { asm.emit(Instr.fisequal) }
+fun fisless(asm: &Asm)                  { asm.emit(Instr.fisless) }
+fun fisgreater(asm: &Asm)               { asm.emit(Instr.fisgreater) }
+fun fislessequal(asm: &Asm)             { asm.emit(Instr.fislessequal) }
+fun fisgreaterequal(asm: &Asm)          { asm.emit(Instr.fisgreaterequal) }
+fun fisnotequal(asm: &Asm)              { asm.emit(Instr.fisnotequal) }
+fun inttofloat(asm: &Asm, a: Reg)       { asm.emit(Instr.inttofloat(a)) }
+fun floattoint(asm: &Asm, a: Reg)       { asm.emit(Instr.floattoint(a)) }
 fun add(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.add(a & b)) }
 fun sub(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.sub(a & b)) }
 fun mul(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.mul(a & b)) }
 fun div(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.div(a & b)) }
 fun rem(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.rem(a & b)) }
+fun fadd(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.fadd(a & b)) }
+fun fsub(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.fsub(a & b)) }
+fun fmul(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.fmul(a & b)) }
+fun fdiv(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.fdiv(a & b)) }
 fun and(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.and(a & b)) }
 fun or(asm: &Asm, a: Reg, b: Reg)       { asm.emit(Instr.or(a & b)) }
 fun xor(asm: &Asm, a: Reg, b: Reg)      { asm.emit(Instr.xor(a & b)) }
@@ -4948,11 +5034,25 @@ fun assemble_body(
     case isgreater        asm.isgreater()
     case islessequal      asm.islessequal()
     case isgreaterequal   asm.isgreaterequal()
+    case isnotequal       asm.isnotequal()
+    case fcmp(regs)       asm.fcmp(regs.first, regs.second)
+    case fisequal         asm.fisequal()
+    case fisless          asm.fisless()
+    case fisgreater       asm.fisgreater()
+    case fislessequal     asm.fislessequal()
+    case fisgreaterequal  asm.fisgreaterequal()
+    case fisnotequal      asm.fisnotequal()
+    case inttofloat(reg)  asm.inttofloat(reg)
+    case floattoint(reg)  asm.floattoint(reg)
     case add(regs)        asm.add(regs.first, regs.second)
     case sub(regs)        asm.sub(regs.first, regs.second)
     case mul(regs)        asm.mul(regs.first, regs.second)
     case div(regs)        asm.div(regs.first, regs.second)
     case rem(regs)        asm.rem(regs.first, regs.second)
+    case fadd(regs)       asm.fadd(regs.first, regs.second)
+    case fsub(regs)       asm.fsub(regs.first, regs.second)
+    case fmul(regs)       asm.fmul(regs.first, regs.second)
+    case fdiv(regs)       asm.fdiv(regs.first, regs.second)
     case and(regs)        asm.and(regs.first, regs.second)
     case or(regs)         asm.or(regs.first, regs.second)
     case xor(regs)        asm.xor(regs.first, regs.second)
@@ -5130,11 +5230,25 @@ fun to_binary(soil: Soil): Slice[Byte] {
     case isgreater            { bin.emit_byte(16#c3) }
     case islessequal          { bin.emit_byte(16#c4) }
     case isgreaterequal       { bin.emit_byte(16#c5) }
+    case isnotequal           { bin.emit_byte(16#c6) }
+    case fcmp(regs)           { bin.emit_byte(16#c7) bin.emit(regs) }
+    case fisequal             { bin.emit_byte(16#c8) }
+    case fisless              { bin.emit_byte(16#c9) }
+    case fisgreater           { bin.emit_byte(16#ca) }
+    case fislessequal         { bin.emit_byte(16#cb) }
+    case fisgreaterequal      { bin.emit_byte(16#cc) }
+    case fisnotequal          { bin.emit_byte(16#cd) }
+    case inttofloat(reg)      { bin.emit_byte(16#ce) bin.emit(reg) }
+    case floattoint(reg)      { bin.emit_byte(16#cf) bin.emit(reg) }
     case add(regs)            { bin.emit_byte(16#a0) bin.emit(regs) }
     case sub(regs)            { bin.emit_byte(16#a1) bin.emit(regs) }
     case mul(regs)            { bin.emit_byte(16#a2) bin.emit(regs) }
     case div(regs)            { bin.emit_byte(16#a3) bin.emit(regs) }
     case rem(regs)            { bin.emit_byte(16#a4) bin.emit(regs) }
+    case fadd(regs)           { bin.emit_byte(16#a5) bin.emit(regs) }
+    case fsub(regs)           { bin.emit_byte(16#a6) bin.emit(regs) }
+    case fmul(regs)           { bin.emit_byte(16#a7) bin.emit(regs) }
+    case fdiv(regs)           { bin.emit_byte(16#a8) bin.emit(regs) }
     case and(regs)            { bin.emit_byte(16#b0) bin.emit(regs) }
     case or(regs)             { bin.emit_byte(16#b1) bin.emit(regs) }
     case xor(regs)            { bin.emit_byte(16#b2) bin.emit(regs) }
