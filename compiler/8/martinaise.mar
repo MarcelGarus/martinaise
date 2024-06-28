@@ -328,6 +328,7 @@ enum AstFunKind {
 struct AstBuiltinDots { dots: AstStr }
 enum AstExpr {
   int: Int,                   | 42
+  float: Float,               | 1.2
   str: Str,                   | "foo"
   name: AstStr,               | foo
   call: AstCall,              | ...(arg)
@@ -537,6 +538,7 @@ fun write_block[W](writer: W, indent: Indent, body: Vec[AstExpr]) {
 fun write[W](writer: W, indent: Indent, expr: AstExpr) {
   switch expr
   case int(int) writer.write(int)
+  case float(float) writer.write(float)
   case str(str) writer."\"{str}\"" | TODO: escape special characters
   case name(name) writer.write(name)
   case call(call) {
@@ -919,7 +921,7 @@ fun parse_expr(
   parsed(expr)
 }
 fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Str] {
-  if parser.parse_int()? is some(int) then return parsed(int)
+  if parser.parse_number()? is some(int) then return parsed(int)
   if parser.parse_char()? is some(char) then return parsed(char)
   if parser.parse_str()? is some(str) then return parsed(str)
   if parser.parse_make()? is some(make) then return parsed(make)
@@ -977,17 +979,32 @@ fun parse_digits(parser: &Parser, radix: Int): Result[Maybe[Int], Str] {
   parsed(num)
 }
 
-fun parse_int(parser: &Parser): Result[Maybe[AstExpr], Str] {
+fun parse_number(parser: &Parser): Result[Maybe[AstExpr], Str] {
   parser.consume_whitespace()
-  var value = parser.parse_digits(10)? or return no_match[AstExpr]()
-  if parser.current() == ## then {
-    parser.advance()
-    var radix = value
+  var radix = 10
+  var value = parser.parse_digits(radix)? or return no_match[AstExpr]()
+  if parser.consume_prefix("#") is some then {
+    radix = value
     value = parser.parse_digits(radix)? or return bad_input[AstExpr](
       "Expected the value of the number after the radix pound.")
   }
+  var expr = AstExpr.int(value)
+  var cursor_before_dot = parser.cursor
+  if parser.consume_prefix(".") is some then {
+    var start_of_decimals = parser.cursor
+    var decimals = parser.parse_digits(radix)? or {
+      parser.cursor = cursor_before_dot
+      return parsed(expr)
+    }
+    var num_decimals = parser.cursor - start_of_decimals
+    if num_decimals > 18 then return bad_input[AstExpr]("Too many decimals.")
+
+    var integer_part = value.to_float()
+    var decimal_part = decimals.to_float() / {10 ** num_decimals}.to_float()
+    expr = AstExpr.float(integer_part + decimal_part)
+  }
   var end = parser.cursor
-  parsed(AstExpr.int(value))
+  parsed(expr)
 }
 
 | #a becomes Char { byte = 97.lower_byte() }
@@ -2512,7 +2529,7 @@ struct MonoFunBody {
 }
 
 struct MonoSlot { type: Type, initial_value: MonoSlotValue }
-enum MonoSlotValue { uninitialized, arg: Int, int: Int, str: Str }
+enum MonoSlotValue { uninitialized, arg: Int, int: Int, float: Float, str: Str }
 struct MonoSlotRef { index: Int }
 
 struct MonoStatementAndSrc { statement: MonoStatement, src: Src }
@@ -2586,6 +2603,7 @@ fun write[W](writer: W, name: Str, fun_: MonoFun) {
       case uninitialized writer."uninitialized"
       case arg(i) writer."arg_{i}"
       case int(int) writer.write(int)
+      case float(float) writer.write(float)
       case str(str) writer."\"{str}\""
     }
     for statement in body.statements do
@@ -2647,6 +2665,9 @@ fun arg(body: &MonoBodyBuilder, type: Type, index: Int): MonoExpr {
 }
 fun int(body: &MonoBodyBuilder, value: Int): MonoExpr {
   body.add_slot(type("Int"), MonoSlotValue.int(value))
+}
+fun float(body: &MonoBodyBuilder, value: Float): MonoExpr {
+  body.add_slot(type("Float"), MonoSlotValue.float(value))
 }
 fun str(body: &MonoBodyBuilder, value: Str): MonoExpr {
   body.add_slot(type("Str"), MonoSlotValue.str(value))
@@ -3167,6 +3188,10 @@ fun compile_in_current_scope(
     case int(int) {
       type("Int").compile(ast, mono)?
       body.int(int)
+    }
+    case float(float) {
+      type("Float").compile(ast, mono)?
+      body.float(float)
     }
     case str(str) {
       type("Str").compile(ast, mono)?
@@ -4888,16 +4913,13 @@ fun assemble_body(
       case arg {}
       case int(int) {
         asm.smart_move_and_add_offset(Reg.a, Reg.sp, offset)
-        var size = layouts.get(body.slots.get(slot.index).type).size
-        if size == 1 then {
-          asm.smart_movei(Reg.b, int)
-          asm.storeb(Reg.a, Reg.b)
-        }
-        else if size == 8 then {
-          asm.smart_movei(Reg.b, int)
-          asm.store(Reg.a, Reg.b)
-        }
-        else panic("unknown int size {size}")
+        asm.smart_movei(Reg.b, int)
+        asm.store(Reg.a, Reg.b)
+      }
+      case float(float) {
+        asm.smart_move_and_add_offset(Reg.a, Reg.sp, offset)
+        asm.smart_movei(Reg.b, float.cast[Float, Int]())
+        asm.store(Reg.a, Reg.b)
       }
       case str(str) {
         var str_label = "$str_{asm.soil.initial_mem.size}"
