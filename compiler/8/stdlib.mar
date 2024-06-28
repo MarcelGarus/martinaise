@@ -600,6 +600,14 @@ fun assert(condition: Bool, message: Str) {
   if not(condition) then panic(message)
 }
 
+| Modifying operators  
+
+fun +=[A, B](left: &A, right: B) { left.* = left.* + right }
+fun -=[A, B](left: &A, right: B) { left.* = left.* - right }
+fun *=[A, B](left: &A, right: B) { left.* = left.* * right }
+fun /=[A, B](left: &A, right: B) { left.* = left.* / right }
+fun %=[A, B](left: &A, right: B) { left.* = left.* % right }
+
 | Int  
 | If you write a number such as 3 in the code, it's an Int.
 
@@ -662,6 +670,11 @@ fun <<(left: Int, by: Int): Int {
 fun >>(left: Int, by: Int): Int {
   for i in 0..by do left = left / 2
   left
+}
+fun **(a: Int, b: Int): Int {
+  var res = 1
+  for i in 0..b do res = res * a
+  res
 }
 fun abs(value: Int): Int { if value >= 0 then value else 0 - value }
 fun round_up_to_multiple_of(number: Int, factor: Int): Int {
