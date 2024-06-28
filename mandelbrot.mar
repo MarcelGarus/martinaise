@@ -1,18 +1,10 @@
 import ui.mar
 
 fun main(): Never {
-  var zero  = 0.to_float()
-  var one   = 1.to_float()
-  var two   = 2.to_float()
-  var three = 3.to_float()
-  var four  = 4.to_float()
-  var half = one / two
-  var one_and_half = three / two
-
   var texture = screen_texture()
-  var zoom = one
-  var move_x = zero - one / two
-  var move_y = zero
+  var zoom = 1.0
+  var move_x = 0.0 - 0.5
+  var move_y = 0.0
   var max_iterations = 256
 
   var width = texture.width.to_float()
@@ -21,14 +13,14 @@ fun main(): Never {
   loop {
     for x in 0..texture.width do
       for y in 0..texture.height do {
-        var pixel_real = one_and_half * {x.to_float() - {width / two}}
-          / {half * zoom * width} + move_x
-        var pixel_imag = {y.to_float() - {height / two}}
-          / {half * zoom * height} + move_y
-        var new_real = zero
-        var new_imag = zero
-        var old_real = zero
-        var old_imag = zero
+        var pixel_real = 1.5 * {x.to_float() - {width / 2.0}}
+          / {0.5 * zoom * width} + move_x
+        var pixel_imag = {y.to_float() - {height / 2.0}}
+          / {0.5 * zoom * height} + move_y
+        var new_real = 0.0
+        var new_imag = 0.0
+        var old_real = 0.0
+        var old_imag = 0.0
         var i = 0
         loop {
           if i == max_iterations then break
@@ -36,8 +28,8 @@ fun main(): Never {
           old_real = new_real
           old_imag = new_imag
           new_real = {old_real * old_real} - {old_imag * old_imag} + pixel_real
-          new_imag = two * old_real * old_imag + pixel_imag
-          if {new_real * new_real} + {new_imag * new_imag} > four then break
+          new_imag = 2.0 * old_real * old_imag + pixel_imag
+          if {new_real * new_real} + {new_imag * new_imag} > 4.0 then break
         }
         | println("Pixel at {x}, {y} looped {i} times")
         var color = if i == max_iterations
