@@ -1,0 +1,42 @@
+import ui.mar
+
+fun main(): Never {
+  var texture = screen_texture()
+
+  var patterns = vec(
+    16#001122,
+    16#110022,
+    16#112200,
+    16#220011,
+    16#221100,
+    16#ff1122,
+    16#11ff22,
+    16#1122ff,
+    16#22ff11,
+    16#2211ff,
+  )
+  var enters = 0
+  println("Before loop")
+
+  loop {
+    var pattern = patterns.get(enters % patterns.len)
+    var rpattern = pattern & 16#ff0000 >> 16
+    var gpattern = pattern & 16#00ff00 >> 8
+    var bpattern = pattern & 16#0000ff
+    for x in 0..texture.width do
+      for y in 0..texture.height do {
+        var xcomponent = x * 255 / texture.width
+        var ycomponent = y * 255 / texture.height
+        var color = color(
+          if rpattern == 16#11 then xcomponent else if rpattern == 16#22 then ycomponent else rpattern.lower_byte(),
+          if gpattern == 16#11 then xcomponent else if gpattern == 16#22 then ycomponent else gpattern.lower_byte(),
+          if bpattern == 16#11 then xcomponent else if bpattern == 16#22 then ycomponent else bpattern.lower_byte(),
+        )
+        texture.&.draw_pixel(x @ y, color)
+        if get_pressed_key() is some(key) then if key is enter then enters.& += 1
+      }
+    texture.show()
+  }
+
+  exit(0)
+}

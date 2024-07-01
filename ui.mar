@@ -265,3 +265,149 @@ fun draw_str(texture: &Texture, str: Str, where: Point, color: Color) {
   for it in str.iter().enumerate() do
     texture.draw_char(it.item, where + {6 * it.index @ 0}, color)
 }
+
+| Input  
+
+enum KeyboardKey {
+  apostrophe, comma, minus, period, slash,
+  zero, one, two, three, four, five, six, seven, eight, nine,
+  semicolon, equal,
+  a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z,
+  space, escape, enter, tab, backspace, insert, delete,
+  right, left, down, up,
+  page_up, page_down, home, end,
+  caps_lock, scroll_lock, num_lock,
+  print_screen, pause,
+  f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12,
+  left_shift, left_control, left_alt, left_super,
+  right_shift, right_control, right_alt, right_super,
+  kb_menu, left_bracket,
+  backslash, right_bracket,
+  grave,
+  kp_0, kp_1, kp_2, kp_3, kp_4, kp_5, kp_6, kp_7, kp_8, kp_9,
+  kp_decimal, kp_divide, kp_multiply, kp_subtract, kp_add, kp_enter, kp_equal,
+  back,
+  volume_up, volume_down,
+}
+
+fun get_pressed_key(): Maybe[KeyboardKey] {
+  var id = raw_get_key_pressed()
+  if id == 0 then none[KeyboardKey]()
+  else some[KeyboardKey](
+    if id == 4 then KeyboardKey.back
+    else if id == 24 then KeyboardKey.volume_up
+    else if id == 25 then KeyboardKey.volume_down
+    else if id == 32 then KeyboardKey.space
+    else if id == 39 then KeyboardKey.apostrophe
+    else if id == 44 then KeyboardKey.comma
+    else if id == 45 then KeyboardKey.minus
+    else if id == 46 then KeyboardKey.period
+    else if id == 47 then KeyboardKey.slash
+    else if id == 48 then KeyboardKey.zero
+    else if id == 49 then KeyboardKey.one
+    else if id == 50 then KeyboardKey.two
+    else if id == 51 then KeyboardKey.three
+    else if id == 52 then KeyboardKey.four
+    else if id == 53 then KeyboardKey.five
+    else if id == 54 then KeyboardKey.six
+    else if id == 55 then KeyboardKey.seven
+    else if id == 56 then KeyboardKey.eight
+    else if id == 57 then KeyboardKey.nine
+    else if id == 59 then KeyboardKey.semicolon
+    else if id == 61 then KeyboardKey.equal
+    else if id == 65 then KeyboardKey.a
+    else if id == 66 then KeyboardKey.b
+    else if id == 67 then KeyboardKey.c
+    else if id == 68 then KeyboardKey.d
+    else if id == 69 then KeyboardKey.e
+    else if id == 70 then KeyboardKey.f
+    else if id == 71 then KeyboardKey.g
+    else if id == 72 then KeyboardKey.h
+    else if id == 73 then KeyboardKey.i
+    else if id == 74 then KeyboardKey.j
+    else if id == 75 then KeyboardKey.k
+    else if id == 76 then KeyboardKey.l
+    else if id == 77 then KeyboardKey.m
+    else if id == 78 then KeyboardKey.n
+    else if id == 79 then KeyboardKey.o
+    else if id == 80 then KeyboardKey.p
+    else if id == 81 then KeyboardKey.q
+    else if id == 82 then KeyboardKey.r
+    else if id == 83 then KeyboardKey.s
+    else if id == 84 then KeyboardKey.t
+    else if id == 85 then KeyboardKey.u
+    else if id == 86 then KeyboardKey.v
+    else if id == 87 then KeyboardKey.w
+    else if id == 88 then KeyboardKey.x
+    else if id == 89 then KeyboardKey.y
+    else if id == 90 then KeyboardKey.z
+    else if id == 91 then KeyboardKey.left_bracket
+    else if id == 92 then KeyboardKey.backslash
+    else if id == 93 then KeyboardKey.right_bracket
+    else if id == 96 then KeyboardKey.grave
+    else if id == 256 then KeyboardKey.escape
+    else if id == 257 then KeyboardKey.enter
+    else if id == 258 then KeyboardKey.tab
+    else if id == 259 then KeyboardKey.backspace
+    else if id == 260 then KeyboardKey.insert
+    else if id == 261 then KeyboardKey.delete
+    else if id == 262 then KeyboardKey.right
+    else if id == 263 then KeyboardKey.left
+    else if id == 264 then KeyboardKey.down
+    else if id == 265 then KeyboardKey.up
+    else if id == 266 then KeyboardKey.page_up
+    else if id == 267 then KeyboardKey.page_down
+    else if id == 268 then KeyboardKey.home
+    else if id == 269 then KeyboardKey.end
+    else if id == 280 then KeyboardKey.caps_lock
+    else if id == 281 then KeyboardKey.scroll_lock
+    else if id == 282 then KeyboardKey.num_lock
+    else if id == 283 then KeyboardKey.print_screen
+    else if id == 284 then KeyboardKey.pause
+    else if id == 290 then KeyboardKey.f1
+    else if id == 291 then KeyboardKey.f2
+    else if id == 292 then KeyboardKey.f3
+    else if id == 293 then KeyboardKey.f4
+    else if id == 294 then KeyboardKey.f5
+    else if id == 295 then KeyboardKey.f6
+    else if id == 296 then KeyboardKey.f7
+    else if id == 297 then KeyboardKey.f8
+    else if id == 298 then KeyboardKey.f9
+    else if id == 299 then KeyboardKey.f10
+    else if id == 300 then KeyboardKey.f11
+    else if id == 301 then KeyboardKey.f12
+    else if id == 320 then KeyboardKey.kp_0
+    else if id == 321 then KeyboardKey.kp_1
+    else if id == 322 then KeyboardKey.kp_2
+    else if id == 323 then KeyboardKey.kp_3
+    else if id == 324 then KeyboardKey.kp_4
+    else if id == 325 then KeyboardKey.kp_5
+    else if id == 326 then KeyboardKey.kp_6
+    else if id == 327 then KeyboardKey.kp_7
+    else if id == 328 then KeyboardKey.kp_8
+    else if id == 329 then KeyboardKey.kp_9
+    else if id == 330 then KeyboardKey.kp_decimal
+    else if id == 331 then KeyboardKey.kp_divide
+    else if id == 332 then KeyboardKey.kp_multiply
+    else if id == 333 then KeyboardKey.kp_subtract
+    else if id == 334 then KeyboardKey.kp_add
+    else if id == 335 then KeyboardKey.kp_enter
+    else if id == 336 then KeyboardKey.kp_equal
+    else if id == 340 then KeyboardKey.left_shift
+    else if id == 341 then KeyboardKey.left_control
+    else if id == 342 then KeyboardKey.left_alt
+    else if id == 343 then KeyboardKey.left_super
+    else if id == 344 then KeyboardKey.right_shift
+    else if id == 345 then KeyboardKey.right_control
+    else if id == 346 then KeyboardKey.right_alt
+    else if id == 347 then KeyboardKey.right_super
+    else if id == 348 then KeyboardKey.kb_menu
+    else panic("unknown key id {id}")
+  )
+
+}
+fun raw_get_key_pressed(): Int asm {
+  syscall 15
+  load b sp store b a
+  ret
+}
