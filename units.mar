@@ -1,0 +1,139 @@
+import stdlib.mar
+
+fun nano(a: Float): Float  { a / 1000000000.0 }
+fun micro(a: Float): Float { a / 1000000.0 }
+fun milli(a: Float): Float { a / 1000.0 }
+fun centi(a: Float): Float { a / 100.0 }
+fun deci(a: Float): Float  { a / 10.0 }
+fun kilo(a: Float): Float { a * 1000.0 }
+fun mega(a: Float): Float { a * 1000000.0 }
+fun giga(a: Float): Float { a * 1000000000.0 }
+fun tera(a: Float): Float { a * 1000000000000.0 }
+
+struct Duration { seconds: Float }
+struct Length { meters: Float }
+struct Area { square_meters: Float }
+struct Volume { cubic_meters: Float }
+struct Speed { meters_per_second: Float }
+struct Acceleration { meters_per_square_second: Float }
+
+fun seconds(seconds: Float): Duration { Duration { seconds } }
+fun milliseconds(val: Float): Duration { Duration { seconds = val / 1000.0 } }
+fun microseconds(val: Float): Duration { Duration { seconds = val / 1000000.0 } }
+fun nanoseconds(val: Float): Duration { Duration { seconds = val / 1000000000.0 } }
+fun minutes(minutes: Float): Duration { Duration { seconds = minutes * 60.0 } }
+fun hours(hours: Float): Duration { Duration { seconds = hours * 60.0 * 60.0 } }
+fun days(days: Float): Duration { Duration { seconds = days * 60.0 * 60.0 * 24.0 } }
+fun in_seconds(duration: Duration): Float { duration.seconds }
+fun in_milliseconds(duration: Duration): Float { 1000.0 * duration.seconds }
+fun in_microseconds(duration: Duration): Float { 1000000.0 * duration.seconds }
+fun in_nanoseconds(duration: Duration): Float { 1000000000.0 * duration.seconds }
+fun in_minutes(duration: Duration): Float { duration.seconds / 60.0 }
+fun in_hours(duration: Duration): Float { duration.seconds / 60.0 / 60.0 }
+fun in_days(duration: Duration): Float { duration.seconds / 60.0 / 60.0 / 24.0 }
+
+fun meters(meters: Float): Length { Length { meters } }
+fun decimeters(val: Float): Length { Length { meters = val / 10.0 } }
+fun centimeters(val: Float): Length { Length { meters = val / 100.0 } }
+fun millimeters(val: Float): Length { Length { meters = val / 1000.0 } }
+fun kilometers(val: Float): Length { Length { meters = val * 1000.0 } }
+fun in_meters(length: Length): Float { length.meters }
+fun in_decimeters(length: Length): Float { length.meters * 10.0 }
+fun in_centimeters(length: Length): Float { length.meters * 100.0 }
+fun in_millimeters(length: Length): Float { length.meters * 1000.0 }
+fun in_kilometers(length: Length): Float { length.meters / 1000.0 }
+
+fun square_meters(square_meters: Float): Area { Area { square_meters } }
+fun square_millimeters(val: Float): Area { Area { square_meters = val / 1000000.0 } }
+fun square_kilometers(val: Float): Area { Area { square_meters = val * 1000000.0 } }
+fun in_square_meters(area: Area): Float { area.square_meters }
+fun in_square_millimeters(area: Area): Float { area.square_meters * 1000000.0 }
+fun in_square_kilometers(area: Area): Float { area.square_meters / 1000000.0 }
+
+fun cubic_meters(cubic_meters: Float): Volume { Volume { cubic_meters } }
+fun liters(val: Float): Volume { Volume { cubic_meters = val / 1000.0 } }
+fun in_cubic_meters(volume: Volume): Float { volume.cubic_meters }
+fun in_liters(volume: Volume): Float { volume.cubic_meters * 1000.0 }
+
+fun meters_per_second(meters_per_second: Float): Speed { Speed { meters_per_second } }
+fun kilometers_per_hour(val: Float): Speed { Speed { meters_per_second = val * 1000.0 / 360.0 } }
+fun in_meters_per_second(speed: Speed): Float { speed.meters_per_second }
+fun in_kilometers_per_hour(speed: Speed): Float { speed.meters_per_second / 1000.0 * 360.0 }
+
+fun meters_per_square_second(meters_per_square_second: Float): Acceleration { Acceleration { meters_per_square_second } }
+fun in_meters_per_square_second(acceleration: Acceleration): Float { acceleration.meters_per_square_second }
+
+fun with_fitting_si_suffix(a: Float): WithFittingSiSuffix { WithFittingSiSuffix { a } }
+struct WithFittingSiSuffix { a: Float }
+fun write[W](writer: W, suffixed: WithFittingSiSuffix) {
+  if suffixed.a > 1000000000000.0 then { writer."{suffixed.a / 1000000000000.0} T"  return {} }
+  if suffixed.a > 1000000000.0 then { writer."{suffixed.a / 1000000000.0} G"  return {} }
+  if suffixed.a > 1000000.0 then { writer."{suffixed.a / 1000000.0} M"  return {} }
+  if suffixed.a > 1000.0 then { writer."{suffixed.a / 1000.0} K"  return {} }
+  if suffixed.a < 0.000000001 then { writer."{suffixed.a * 1000000000.0} n"  return {} }
+  if suffixed.a < 0.000001 then { writer."{suffixed.a * 1000000.0} u"  return {} }
+  if suffixed.a < 0.001 then { writer."{suffixed.a * 1000.0} m"  return {} }
+  writer."{suffixed.a} "
+}
+
+fun write[W](writer: W, duration: Duration) { writer."{duration.seconds.with_fitting_si_suffix()}s" }
+fun write[W](writer: W, length: Length) { writer."{length.seconds.with_fitting_si_suffix()}m" }
+fun write[W](writer: W, area: Area) { writer."{area.square_meters} m²" }
+fun write[W](writer: W, volume: Volume) { writer."{volume.cubic_meters} m³" }
+fun write[W](writer: W, speed: Speed) { writer."{speed.meters_per_second.with_fitting_si_suffix()}m/s" }
+fun write[W](writer: W, acceleration: Acceleration) { writer."{acceleration.meters_per_square_second} m/s²" }
+
+fun +(a: Duration, b: Duration): Duration { Duration { seconds = a.seconds + b.seconds } }
+fun -(a: Duration, b: Duration): Duration { Duration { seconds = a.seconds + b.seconds } }
+
+fun +(a: Length, b: Length): Length { Length { meters = a.meters + b.meters } }
+fun -(a: Length, b: Length): Length { Length { meters = a.meters + b.meters } }
+
+fun +(a: Area, b: Area): Area { Area { square_meters = a.square_meters + b.square_meters } }
+fun -(a: Area, b: Area): Area { Area { square_meters = a.square_meters + b.square_meters } }
+
+fun +(a: Volume, b: Volume): Volume { Volume { cubic_meters = a.cubic_meters + b.cubic_meters } }
+fun -(a: Volume, b: Volume): Volume { Volume { cubic_meters = a.cubic_meters + b.cubic_meters } }
+
+fun +(a: Speed, b: Speed): Speed { Speed { meters_per_second = a.meters_per_second + b.meters_per_second } }
+fun -(a: Speed, b: Speed): Speed { Speed { meters_per_second = a.meters_per_second + b.meters_per_second } }
+
+fun +(a: Acceleration, b: Acceleration): Acceleration { Acceleration { meters_per_square_second = a.meters_per_square_second + b.meters_per_square_second } }
+fun -(a: Acceleration, b: Acceleration): Acceleration { Acceleration { meters_per_square_second = a.meters_per_square_second + b.meters_per_square_second } }
+
+fun *(a: Float, b: Duration): Duration { Duration { seconds = a * b.seconds } }
+fun *(a: Float, b: Length): Length { Length { meters = a * b.meters } }
+fun *(a: Float, b: Area): Area { Area { square_meters = a * b.square_meters } }
+fun *(a: Float, b: Volume): Volume { Volume { cubic_meters = a * b.cubic_meters } }
+fun *(a: Float, b: Speed): Speed { Speed { meters_per_second = a * b.meters_per_second } }
+fun *(a: Float, b: Acceleration): Acceleration { Acceleration { meters_per_square_second = a * b.meters_per_square_second } }
+
+fun *(a: Duration, b: Float): Duration { Duration { seconds = a.seconds * b } }
+
+fun *(a: Length, b: Float): Length { Length { meters = a.meters * b } }
+fun *(a: Length, b: Length): Area { Area { square_meters = a.meters * b.meters } }
+fun *(a: Length, b: Area): Volume { Volume { cubic_meters = a.meters * b.square_meters } }
+
+fun *(a: Area, b: Float): Area { Area { square_meters = a.square_meters * b } }
+fun *(a: Area, b: Length): Volume { Volume { cubic_meters = a.square_meters * b.meters } }
+
+fun *(a: Volume, b: Float): Volume { Volume { cubic_meters = a.cubic_meters * b } }
+
+fun *(a: Speed, b: Float): Speed { Speed { meters_per_second = a.meters_per_second * b } }
+fun *(a: Speed, b: Duration): Length { Length { meters = a.meters_per_second * b.seconds } }
+
+fun *(a: Acceleration, b: Float): Acceleration { Acceleration { meters_per_square_second = a.meters_per_square_second * b } }
+fun *(a: Acceleration, b: Duration): Speed { Speed { meters_per_second = a.meters_per_square_second * b.seconds } }
+
+fun /(a: Length, b: Duration): Speed { Speed { meters_per_second = a.meters / b.seconds } }
+
+fun /(a: Speed, b: Duration): Acceleration { Acceleration { meters_per_square_second = a.meters_per_second / b.seconds } }
+
+fun main(): Never {
+  var track = 10.0.kilometers()
+  var speed = track / 40.0.minutes()
+  var width = 2.0.meters()
+  println(track * width)
+  println(speed)
+  exit(0)
+}
