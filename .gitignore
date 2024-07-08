@@ -1,5 +1,6 @@
 zig-out
-zig-cache
+compiler/0/zig-cache/
+compiler/0/.zig-cache/
 
 martinaise
 /stdlib.mar

@@ -2,7 +2,7 @@ const std = @import("std");
 const Str = @import("string.zig").Str;
 
 pub fn clear_terminal(alloc: std.mem.Allocator) !void {
-    var clear = std.ChildProcess.init(&[_]Str{"clear"}, alloc);
+    var clear = std.process.Child.init(&[_]Str{"clear"}, alloc);
     clear.stdout = std.io.getStdOut();
     clear.stderr = std.io.getStdErr();
     _ = try clear.spawnAndWait();

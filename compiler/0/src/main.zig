@@ -151,7 +151,7 @@ fn run_pipeline(original_alloc: Allocator, command: Command, file_path: Str) !bo
 
     { // Compile C
         print_on_same_line("Compiling C using GCC\n", .{});
-        var gcc = std.ChildProcess.init(&[_]Str{ "gcc", "output.c" }, alloc);
+        var gcc = std.process.Child.init(&[_]Str{ "gcc", "output.c" }, alloc);
         gcc.stdout = std.io.getStdOut();
         gcc.stderr = std.io.getStdErr();
         const worked = switch (try gcc.spawnAndWait()) {
@@ -166,7 +166,7 @@ fn run_pipeline(original_alloc: Allocator, command: Command, file_path: Str) !bo
 
     { // Run it
         print_on_same_line("Running {s}\n", .{file_path});
-        var program = std.ChildProcess.init(&[_]Str{"./a.out"}, alloc);
+        var program = std.process.Child.init(&[_]Str{"./a.out"}, alloc);
         program.stdout = std.io.getStdOut();
         program.stderr = std.io.getStdErr();
         const start = std.time.nanoTimestamp();
