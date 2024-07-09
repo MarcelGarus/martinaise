@@ -3256,9 +3256,44 @@ fun compile_in_current_scope(
             mono_type_args.&.push(arg.compile(self.type_env, ast, mono)?)
           some(mono_type_args)
         }
-      var args = vec[MonoExpr]()
-      for arg in call.args do args.&.push(arg.compile(self)?)
-      self.compile_call(name, callee, type_args, args)?
+      var mono_args = vec[MonoExpr]()
+      for arg in call.args do mono_args.&.push(arg.compile(self)?)
+
+      | Martinaise supports auto-dereferencing: If you call value.foo() on a value
+      | of type &T, we first look for functions matching foo(&T). If none match, we
+      | try dereferencing the value and look for functions matching foo(T). If we
+      | find one, your code acts as if it was value.*.foo().
+      var first_error = none[Error]()
+      var fun_and_args = loop {
+        var args = vec[MonoExpr]()
+        var arg_types = vec[Type]()
+        if callee is some(c) then {
+          args.&.push(c)
+          arg_types.&.push(c.type)
+        }
+        for arg in mono_args do {
+          args.&.push(arg)
+          arg_types.&.push(arg.type)
+        }
+
+        var solution = ast.lookup_fun(name, type_args, arg_types) or(error) {
+          if first_error is none then first_error = some(error)
+          if callee is some(c) then if c.type.name == "&" then {
+            | Dereference the callee
+            callee = some(c.member("*", c.type.args.get(0)))
+            continue
+          }
+          return error[MonoExpr, Error](first_error.unwrap())
+        }
+        var fun_ = solution.compile(context, ast, mono)?
+        break(tuple(fun_, args))
+      }
+      var fun_ = fun_and_args.a
+      var args = fun_and_args.b
+
+      var result = self.body.&.uninitialized(mono.funs.get(fun_).return_type)
+      body.call(result, fun_, args, name.src)
+      result
     }
     case try_scope(try_) {
       var src = try_.keyword.src
@@ -3756,50 +3791,6 @@ fun compile_in_current_scope(
     }
     case block(block) block.compile(self)?
   )
-}
-
-fun compile_call(
-  self: &CompileFun,
-  name: AstStr,
-  callee: Maybe[MonoExpr],
-  type_args: Maybe[Vec[Type]],
-  value_args: Vec[MonoExpr],
-): Result[MonoExpr, Error] {
-  var context = self.context
-  var ast = self.ast
-  var mono = self.mono
-  
-  | Martinaise supports auto-dereferencing: If you call value.foo() on a value
-  | of type &T, we first look for functions matching foo(&T). If none match, we
-  | try dereferencing the value and look for functions matching foo(T). If we
-  | find one, your code acts as if it was value.*.foo().
-  var first_error = none[Error]()
-  loop {
-    var args = vec[MonoExpr]()
-    var arg_types = vec[Type]()
-    if callee is some(c) then {
-      args.&.push(c)
-      arg_types.&.push(c.type)
-    }
-    for arg in value_args do {
-      args.&.push(arg)
-      arg_types.&.push(arg.type)
-    }
-
-    var solution = ast.lookup_fun(name, type_args, arg_types) or(error) {
-      if first_error is none then first_error = some(error)
-      if callee is some(c) then if c.type.name == "&" then {
-        | Dereference the callee
-        callee = some(c.member("*", c.type.args.get(0)))
-        continue
-      }
-      return error[MonoExpr, Error](first_error.unwrap("error: no error"))
-    }
-    var fun_ = solution.compile(context, ast, mono)?
-    var result = self.body.&.uninitialized(mono.funs.get(fun_).return_type)
-    self.body.&.call(result, fun_, args, name.src)
-    return ok[MonoExpr, Error](result)
-  }
 }
 
 | Memory Layout  
