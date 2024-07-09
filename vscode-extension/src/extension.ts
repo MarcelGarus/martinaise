@@ -75,7 +75,7 @@ async function onlyRunOneAtATime(callback: () => Promise<void>) {
   });
 }
 
-const soilBinary = "/home/marcel/projects/soil/soil-asm";
+const soilBinary = "/home/marcel/projects/soil/soil-zig";
 const martinaiseCompiler = "/home/marcel/projects/martinaise/martinaise.soil";
 
 async function update() {
