@@ -5050,8 +5050,8 @@ fun assemble_body(
         | Restore stack
         asm.smart_addi(Reg.sp, args_size + 8, Reg.a)
       }
-      case try_start(catch) asm.try_start(asm.label("{catch}"))
-      case try_end asm.try_end()
+      case try_start(catch) asm.trystart(asm.label("{catch}"))
+      case try_end asm.tryend()
       case jump(jump) asm.jump(asm.label("{jump.target}"))
       case jump_if_variant(jump) {
         var type = jump.condition.type
