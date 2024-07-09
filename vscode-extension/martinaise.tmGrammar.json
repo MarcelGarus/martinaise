@@ -39,7 +39,7 @@
         },
         {
           "name": "keyword.control",
-          "match": "\\b(if|then|else|switch|default|and|or|orelse|loop|for|in|do|break|continue|return)\\b"
+          "match": "\\b(if|then|else|switch|default|and|or|orelse|loop|for|in|do|break|continue|return|try)\\b"
         },
         {
           "name": "keyword.control",

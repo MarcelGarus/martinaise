@@ -343,6 +343,7 @@ enum AstExpr {
   continue_: AstContinue,     | continue
   return_: AstReturn,         | return ...
   try: AstTry,                | ...?
+  try_scope: AstTryScope,     | try ...
   block: Vec[AstExpr],        | { ... }
 }
 struct AstCall {
@@ -370,6 +371,7 @@ struct AstBreak { keyword: AstStr, value: &AstExpr }
 struct AstContinue { keyword: AstStr }
 struct AstReturn { keyword: AstStr, value: &AstExpr }
 struct AstTry { value: &AstExpr, question_mark: AstStr }
+struct AstTryScope { keyword: AstStr, body: &AstExpr }
 
 struct AstInstr { kind: AstInstrKind, mnemonic: AstStr }
 enum AstInstrKind {
@@ -587,6 +589,7 @@ fun write[W](writer: W, indent: Indent, expr: AstExpr) {
   case continue_ writer."continue"
   case return_(return_) writer."return {return_.value.*.indented(indent)}"
   case try(try_) writer."{try_.value.*.indented(indent)}?"
+  case try_scope(scope) writer."try {scope.body.*.indented(indent)}"
   case block(block) writer.write_block(indent, block)
 }
 fun write[W](writer: W, arg: AstFunArg) { writer."{arg.name}: {arg.type}" }
@@ -934,6 +937,7 @@ fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Str] {
   if parser.parse_break()? is some(break_) then return parsed(break_)
   if parser.parse_continue()? is some(continue_) then return parsed(continue_)
   if parser.parse_return()? is some(return_) then return parsed(return_)
+  if parser.parse_try_scope()? is some(try_) then return parsed(try_)
   if parser.parse_lower_name() is some(n) then return parsed(AstExpr.name(n))
   if parser.current() == #; then return bad_input[AstExpr]("Nice try, Mik!")
   no_match[AstExpr]()
@@ -1341,6 +1345,13 @@ fun parse_return(parser: &Parser): Result[Maybe[AstExpr], Str] {
   var expr = parser.parse_expr()?
     or return bad_input[AstExpr]("Expected returned expression.")
   parsed(AstExpr.return_(AstReturn { keyword, value = expr.put_on_heap() }))
+}
+
+fun parse_try_scope(parser: &Parser): Result[Maybe[AstExpr], Str] {
+  var keyword = parser.consume_keyword("try") or return no_match[AstExpr]()
+  var body = parser.parse_expr()?
+    or return bad_input[AstExpr]("Expected an expression to try")
+  parsed(AstExpr.try_scope(AstTryScope { keyword, body = body.put_on_heap() }))
 }
 
 fun parse_expr_suffix_member(
@@ -2539,6 +2550,8 @@ enum MonoStatement {
   assign: MonoAssign,
   set_enum: MonoSetEnum,
   call: MonoCall,
+  try_start: MonoLabel,
+  try_end,
   jump: MonoJump,
   jump_if_variant: MonoJumpIfVariant,
   get_enum_value: MonoGetEnumValue,
@@ -2619,6 +2632,8 @@ fun write[W](writer: W, statement: MonoStatement) {
   case set_enum(set) writer."{set.to} = {set.variant}({set.payload})"
   case call(call)
     writer."{call.to} = {call.fun_} called with ({comma_separated(call.args)})"
+  case try_start(catch) writer."try started, catch {catch}"
+  case try_end writer."try ended"
   case jump(jump) writer."jump to {jump.target}"
   case jump_if_variant(jump)
     writer."if {jump.condition} is {jump.variant}, jump to {jump.target}"
@@ -2706,6 +2721,12 @@ fun call(
   body: &MonoBodyBuilder, to: MonoExpr, fun_: Str, args: Vec[MonoExpr], src: Src
 ) {
   body.add(MonoStatement.call(MonoCall { to, fun_, args }) @ src)
+}
+fun try_start(body: &MonoBodyBuilder, catch: MonoLabel, src: Src) {
+  body.add(MonoStatement.try_start(catch) @ src)
+}
+fun try_end(body: &MonoBodyBuilder, src: Src) {
+  body.add(MonoStatement.try_end @ src)
 }
 fun jump(body: &MonoBodyBuilder, target: Int, src: Src) {
   body.add(MonoStatement.jump(MonoJump {
@@ -3238,6 +3259,24 @@ fun compile_in_current_scope(
       var args = vec[MonoExpr]()
       for arg in call.args do args.&.push(arg.compile(self)?)
       self.compile_call(name, callee, type_args, args)?
+    }
+    case try_scope(try_) {
+      var src = try_.keyword.src
+
+      var catch_label = self.next_label_id()
+      body.try_start(MonoLabel { id = catch_label }, src)
+      var result = try_.body.compile(self)?
+      body.try_end(src)
+
+      var after_scope = self.next_label_id()
+      var wrapped_result = self.body.&.uninitialized(
+        type("Result", vec(result.type, type("Nothing"))))
+      body.set_enum(wrapped_result, "ok", result, src)
+      body.jump(after_scope, src)
+      body.label(catch_label, src)
+      body.set_enum(wrapped_result, "error", nothing_expr, src)
+      body.label(after_scope, src)
+      wrapped_result
     }
     case make_struct(make_struct) {
       var struct_ =
@@ -4490,6 +4529,8 @@ struct Soil {
 enum Instr {
   nop,
   panic,
+  trystart: Int, | instruction index
+  tryend,
   move: RegAndReg,
   movei: RegAndInt,
   moveib: RegAndByte,
@@ -4574,6 +4615,8 @@ fun write[W](writer: W, instruction: Instr) {
   switch instruction
   case nop             { writer."nop" }
   case panic           { writer."panic" }
+  case trystart(arg)   { writer."trystart {arg}" }
+  case tryend          { writer."tryend" }
   case move(args)      { writer."move {args.first} {args.second}" }
   case movei(args)     { writer."movei {args.reg} {args.int}" }
   case moveib(args)    { writer."moveib {args.reg} {args.byte}" }
@@ -4699,6 +4742,8 @@ fun emit(asm: &Asm, instruction: Instr) {
 }
 fun nop(asm: &Asm)                      { asm.emit(Instr.nop) }
 fun panic(asm: &Asm)                    { asm.emit(Instr.panic) }
+fun trystart(asm: &Asm, catch: Int)     { asm.emit(Instr.trystart(catch)) }
+fun tryend(asm: &Asm)                   { asm.emit(Instr.tryend) }
 fun move(asm: &Asm, a: Reg, b: Reg)     { asm.emit(Instr.move(a & b)) }
 fun movei(asm: &Asm, a: Reg, b: Int)    { asm.emit(Instr.movei(a & b)) }
 fun moveib(asm: &Asm, a: Reg, b: Byte)  { asm.emit(Instr.moveib(a & b)) }
@@ -5005,6 +5050,8 @@ fun assemble_body(
         | Restore stack
         asm.smart_addi(Reg.sp, args_size + 8, Reg.a)
       }
+      case try_start(catch) asm.try_start(asm.label("{catch}"))
+      case try_end asm.try_end()
       case jump(jump) asm.jump(asm.label("{jump.target}"))
       case jump_if_variant(jump) {
         var type = jump.condition.type
@@ -5192,6 +5239,8 @@ fun fix_patches(asm: &Asm): Result[Nothing, Error] {
     case jump asm.soil.instructions.get_ref(patch.where).* = Instr.jump(target)
     case cjump asm.soil.instructions.get_ref(patch.where).* = Instr.cjump(target)
     case call asm.soil.instructions.get_ref(patch.where).* = Instr.call(target)
+    case trystart
+      asm.soil.instructions.get_ref(patch.where).* = Instr.trystart(target)
     default unreachable()
   }
   asm.patches.len = 0
@@ -5258,6 +5307,10 @@ fun to_binary(soil: Soil): Slice[Byte] {
     switch it.item
     case nop                  { bin.emit_byte(16#00) }
     case panic                { bin.emit_byte(16#e0) }
+    case trystart(word)       { bin.emit_byte(16#e1)
+                                patches.&.put(bin.bytes.len, word)
+                                bin.emit(0) }
+    case tryend               { bin.emit_byte(16#e2) }
     case move(regs)           { bin.emit_byte(16#d0) bin.emit(regs) }
     case movei(reg_and_word)  { bin.emit_byte(16#d1) bin.emit(reg_and_word) }
     case moveib(reg_and_byte) { bin.emit_byte(16#d2) bin.emit(reg_and_byte) }
