@@ -7,6 +7,8 @@ struct Pos { x: Int, y: Int }
 
 fun @(x: Int, y: Int): Pos { Pos { x, y } }
 fun ==(a: Pos, b: Pos): Bool { a.x == b.x and a.y == b.y }
+fun *(scale: Int, p: Pos): Pos { Pos { x = scale * p.x, y = scale * p.y } }
+fun +(a: Pos, b: Pos): Pos { Pos { x = a.x + b.x, y = a.y + b.y } }
 fun left(pos: Pos, n: Int): Pos  { Pos { x = pos.x - n, y = pos.y } }
 fun right(pos: Pos, n: Int): Pos { Pos { x = pos.x + n, y = pos.y } }
 fun above(pos: Pos, n: Int): Pos { Pos { x = pos.x, y = pos.y - n } }
@@ -124,7 +126,7 @@ fun generate_level(target: Int, random: &Random): Level {
   }
   println("Term: {term}")
   
-  for char in "{term}".chars() do
+  for char in "Hello".chars() do
     loop {
       var x = random.next_int(2..{level.width - 2})
       var y = random.next_int(2..{level.height - 2})
@@ -134,6 +136,25 @@ fun generate_level(target: Int, random: &Random): Level {
         break
       }
     }
+  for i in 0..10 do
+    loop {
+      var x = random.next_int(2..{level.width - 2})
+      var y = random.next_int(2..{level.height - 2})
+      var w = random.next_int(1..5)
+      var h = random.next_int(1..4)
+      println("Placing wall at {x} {y} ({w} * {h})")
+      var is_free = true
+      for xx in x..+w do
+        for yy in y..+h do
+          if level.get(xx @ yy) is free then {} else is_free = false
+      if is_free then {
+        for xx in x..+w do
+          for yy in y..+h do
+            level.set(xx @ yy, Tile.wall)
+        break
+      }
+    }
+
   | for i in 0..level.tiles.len do {
   |   if random.&.next_int(0..10) == 0 then {
   |     level.tiles.get_ref(i).* = Tile.char(
@@ -148,33 +169,25 @@ fun generate_level(target: Int, random: &Random): Level {
 
 | Gameplay  
 
-fun move_left(level: &Level) {
-  var new_pos = level.player.left(1)
-  if level.get(new_pos) is free then level.player = new_pos
-}
-fun move_right(level: &Level) {
-  var new_pos = level.player.right(1)
+fun move(level: &Level, direction: Pos) {
+  var new_pos = level.player + direction
   var pushed = 0
   loop {
-    switch level.get(new_pos.right(pushed))
+    switch level.get(new_pos + {pushed * direction})
     case free break
     case wall return {}
     case char pushed = pushed + 1
   }
   for i in 0..=pushed do {
-    level.set(new_pos.right(pushed - i),
-      level.get(level.player.right(pushed - i)))
+    level.set(new_pos + {pushed - i * direction},
+      level.get(level.player + {pushed - i * direction}))
   }
   level.player = new_pos
 }
-fun move_up(level: &Level) {
-  var new_pos = level.player.above(1)
-  if level.get(new_pos) is free then level.player = new_pos
-}
-fun move_down(level: &Level) {
-  var new_pos = level.player.below(1)
-  if level.get(new_pos) is free then level.player = new_pos
-}
+fun move_left(level: &Level)  { level.move(Pos { x = 0-1, y = 0   }) }
+fun move_right(level: &Level) { level.move(Pos { x = 1,   y = 0   }) }
+fun move_up(level: &Level)    { level.move(Pos { x = 0,   y = 0-1 }) }
+fun move_down(level: &Level)  { level.move(Pos { x = 0,   y = 1   }) }
 
 | Rendering  
 
@@ -216,11 +229,14 @@ fun main(): Never {
   var level = generate_level(3, random.&)
   | exit(0)
   switch_to_alternate_screen()
+  var last_line = ""
   loop {
     move_cursor_to_top()
     println(level)
     print("> ")
     var line = stdin.read_line().unwrap() or break
+    if line.is_empty() then line = last_line
+    last_line = line
     if line == "w" then level.&.move_up()
     if line == "a" then level.&.move_left()
     if line == "s" then level.&.move_down()
