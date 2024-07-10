@@ -125,22 +125,33 @@ fun move_down(board: Board): Board { eprintln("down") board.transpose().move_rig
 | Rendering  
 
 var background_color = color(16#1c1c1e)
-var empty_color      = color(16#f2f2f7)
-var number_color     = color(16#1a94ff)
+var empty_color = color(16#f2f2f7)
+var number_colors = vec(
+  color(16#eec60a), | 2: yellow
+  color(16#ff9f0a), | 4: orange
+  color(16#ff5959), | 8: red
+  color(16#d189f5), | 16: purple
+  color(16#1a94ff), | 32: blue
+  color(16#41d496), | 64: green
+)
 
 fun draw(texture: &Texture, board: Board) {
   var offset = 10 @ 10
-  var grid = 17
+  var grid = 60
   texture.&.fill(background_color)
-  for y in 0..size do {
-    for x in 0..size do {
-      var color =
-        switch board.get(x @ y)
-          case free empty_color
-          case number(n) number_color
-      texture.&.draw({{x @ y} * grid + offset}.by(grid @ grid), color)
-    }
-  }
+  for y in 0..size do
+    for x in 0..size do
+      switch board.get(x @ y)
+        case free {
+          texture.&.draw({{x @ y} * grid + offset}.by(grid @ grid), empty_color)
+        }
+        case number(n) {
+          texture.&.draw(
+            {{x @ y} * grid + offset}.by(grid @ grid),
+            number_colors.get(log_2(n) - 1 % number_colors.len))
+          texture.draw(
+            "{n}", {x @ y} * grid + offset + {10 @ 10}, 2, background_color)
+        }
 }
 
 fun write[W](writer: W, board: Board) {
@@ -155,7 +166,19 @@ fun write[W](writer: W, board: Board) {
     writer."\n"
   }
 }
-fun write_debug[W](writer: W, board: Board) { writer."{board}" }
+fun write_debug[W](writer: W, board: Board) {
+  for y in 0..size do {
+    for x in 0..size do {
+      writer."{
+        switch board.get(x @ y)
+          case free "_"
+          case number(n) "{n.format()}"
+      }"
+      if x < {size - 1} then writer." "
+    }
+    if y < {size - 1} then writer." | "
+  }
+}
 
 fun main(): Never {
   var random = random_number_generator(10)
