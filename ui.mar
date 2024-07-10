@@ -1,5 +1,13 @@
 import stdlib.mar
 
+fun get_screen_size(): Point asm {
+  syscall 13
+  load c sp store c a
+  moveib d 8 add c d
+  store c b
+  ret
+}
+
 | Color  
 | Represents a color, including opacity.
 
@@ -18,30 +26,6 @@ fun color(rgb: Int): Color {
 
 var black   = color(  0,   0,   0)
 var white   = color(255, 255, 255)
-
-| Point  
-
-struct Point { x: Int, y: Int }
-
-fun @(x: Int, y: Int): Point { Point { x, y } }
-fun ==(a: Point, b: Point): Bool { a.x == b.x and a.y == b.y }
-fun +(a: Point, b: Point): Point { Point { x = a.x + b.x, y = a.y + b.y } }
-fun -(a: Point, b: Point): Point { Point { x = a.x - b.x, y = a.y - b.y } }
-fun *(a: Point, f: Int): Point { Point { x = a.x * f, y = a.y * f } }
-fun *(f: Int, a: Point): Point { Point { x = a.x * f, y = a.y * f } }
-fun /(a: Point, f: Int): Point { Point { x = a.x / f, y = a.y / f } }
-
-fun write[W](writer: W, point: Point) {
-  writer.write(tuple(point.x, point.y))
-}
-
-fun get_screen_size(): Point asm {
-  syscall 13
-  load c sp store c a
-  moveib d 8 add c d
-  store c b
-  ret
-}
 
 | Rectangle  
 
