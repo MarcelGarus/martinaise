@@ -236,9 +236,9 @@ var font = {
   map.*
 }
 
-fun draw(texture: &Texture, char: Char, where: Point, color: Color) {
+fun draw(texture: &Texture, char: Char, where: Point, size: Int, color: Color) {
   switch font.get_maybe(char)
-  case none texture.draw_rect({where.x @ where.y}.by(5 @ 8), color)
+  case none texture.draw({where.x @ where.y}.by({5 @ 8} * size), color)
   case some(glyph)
     for x in 0..5 do for y in 0..8 do {
       var glyph_col =
@@ -247,13 +247,14 @@ fun draw(texture: &Texture, char: Char, where: Point, color: Color) {
       var bit = glyph_col.to_int()
       for i in 0..y do bit = bit / 2
       var is_set = bit % 2 == 1
-      if is_set then texture.draw_pixel({where.x + x} @ {where.y + y}, color)
+      if is_set then
+        texture.draw({where + {{x @ y} * size}}.by(size @ size), color)
     }
 }
 
-fun draw_str(texture: &Texture, str: Str, where: Point, color: Color) {
+fun draw(texture: &Texture, str: Str, where: Point, size: Int, color: Color) {
   for it in str.iter().enumerate() do
-    texture.draw_char(it.item, where + {6 * it.index @ 0}, color)
+    texture.draw(it.item, where + {6 * it.index * size @ 0}, size, color)
 }
 
 | Input  
