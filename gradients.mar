@@ -32,7 +32,7 @@ fun main(): Never {
           if gpattern == 16#11 then xcomponent else if gpattern == 16#22 then ycomponent else gpattern.lower_byte(),
           if bpattern == 16#11 then xcomponent else if bpattern == 16#22 then ycomponent else bpattern.lower_byte(),
         )
-        texture.&.draw_pixel(x @ y, color)
+        texture.&.draw(x @ y, color)
         if get_pressed_key() is some(key) then if key is enter then enters.& += 1
       }
     texture.show()

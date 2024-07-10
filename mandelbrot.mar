@@ -39,7 +39,7 @@ fun main(): Never {
             i % 256,
             i % 256,
           )
-        texture.&.draw_pixel(x @ y, color)
+        texture.&.draw(x @ y, color)
       }
     texture.show()
     zoom.& *= {11.to_float() / 10.to_float()}

@@ -12,6 +12,9 @@ fun color(r: Byte, g: Byte, b: Byte): Color {
 fun color(r: Int, g: Int, b: Int): Color {
   color(r.lower_byte(), g.lower_byte(), b.lower_byte())
 }
+fun color(rgb: Int): Color {
+  color({rgb >> 16}.lower_byte(), {rgb >> 8}.lower_byte(), rgb.lower_byte())
+}
 
 var black   = color(  0,   0,   0)
 var white   = color(255, 255, 255)
@@ -21,9 +24,11 @@ var white   = color(255, 255, 255)
 struct Point { x: Int, y: Int }
 
 fun @(x: Int, y: Int): Point { Point { x, y } }
+fun ==(a: Point, b: Point): Bool { a.x == b.x and a.y == b.y }
 fun +(a: Point, b: Point): Point { Point { x = a.x + b.x, y = a.y + b.y } }
 fun -(a: Point, b: Point): Point { Point { x = a.x - b.x, y = a.y - b.y } }
 fun *(a: Point, f: Int): Point { Point { x = a.x * f, y = a.y * f } }
+fun *(f: Int, a: Point): Point { Point { x = a.x * f, y = a.y * f } }
 fun /(a: Point, f: Int): Point { Point { x = a.x / f, y = a.y / f } }
 
 fun write[W](writer: W, point: Point) {
@@ -86,7 +91,8 @@ fun screen_texture(): Texture { texture(get_screen_size()) }
 fun dimensions(texture: Texture): Point { texture.width @ texture.height }
 
 fun get_ref(texture: &Texture, point: Point): &Color {
-  texture.buffer.&.get_ref(point.y * texture.width + point.x)
+  texture.buffer.&.get_maybe_ref(point.y * texture.width + point.x)
+    or panic("point {point} is not on {texture.width}x{texture.height} texture")
 }
 fun get(texture: Texture, point: Point): Color {
   texture.&.get_ref(point).*
@@ -97,10 +103,10 @@ fun fill(texture: &Texture, color: Color) {
     for y in 0..texture.height do
       texture.get_ref(x @ y).* = color
 }
-fun draw_pixel(texture: &Texture, point: Point, color: Color) {
+fun draw(texture: &Texture, point: Point, color: Color) {
   texture.get_ref(point).* = color
 }
-fun draw_rect(texture: &Texture, rect: Rectangle, color: Color) {
+fun draw(texture: &Texture, rect: Rectangle, color: Color) {
   for x in rect.left..rect.right do
     for y in rect.top..rect.bottom do
       texture.get_ref(x @ y).* = color
@@ -246,7 +252,7 @@ var font = {
   map.*
 }
 
-fun draw_char(texture: &Texture, char: Char, where: Point, color: Color) {
+fun draw(texture: &Texture, char: Char, where: Point, color: Color) {
   switch font.get_maybe(char)
   case none texture.draw_rect({where.x @ where.y}.by(5 @ 8), color)
   case some(glyph)
