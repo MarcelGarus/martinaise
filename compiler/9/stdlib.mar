@@ -1749,6 +1749,110 @@ fun next_random(random: &Random, size: Point) {
   random.next_int(0..size.x) @ random.next_int(0..size.y)
 }
 
+| Matrix  
+
+struct Matrix[T] { data: Slice[T], width: Int, height: Int }
+
+fun uninitialized_matrix[T](width: Int, height: Int): Matrix[T] {
+  Matrix { data = uninitialized_slice[T](width * height), width, height }
+}
+fun filled_matrix[T](width: Int, height: Int, fill: T): Matrix[T] {
+  var matrix = uninitialized_matrix[T](width, height)
+  for y in 0..height do for x in 0..width do matrix.get_ref(x @ y).* = fill
+  matrix
+}
+
+fun size[T](matrix: Matrix[T]): Point { matrix.width @ matrix.height }
+
+fun get_ref_unchecked[T](matrix: Matrix[T], point: Point): &T {
+  matrix.data.get_ref_unchecked(point.y * matrix.width + point.x)
+}
+fun get_unchecked[T](matrix: Matrix[T], point: Point): T {
+  matrix.get_ref_unchecked(point).*
+}
+fun get_maybe_ref[T](matrix: Matrix[T], point: Point): Maybe[&T] {
+  if {0..matrix.width}.contains(point.x)
+    and {0..matrix.height}.contains(point.y)
+  then some(matrix.get_ref_unchecked(point))
+  else none[&T]()
+}
+fun get_maybe[T](matrix: Matrix[T], point: Point): Maybe[T] {
+  switch matrix.get_maybe_ref(point)
+  case some(item) some(item.*)
+  case none none[T]()
+}
+fun get_ref[T](matrix: Matrix[T], point: Point): &T {
+  matrix.get_maybe_ref(point)
+    or panic("point out of bounds: tried to get {point} from matrix of size 
+      '{matrix.width}x{matrix.height}")
+}
+fun get[T](matrix: Matrix[T], point: Point): T { matrix.get_ref(point).* }
+
+fun ==[T](a: Matrix[T], b: Matrix[T]): Bool {
+  a.width == b.width or return false
+  a.height == b.height or return false
+  for y in 0..height do
+    for x in 0..width do
+      a.get(x @ y) == b.get(x @ y) or return false
+  true
+}
+fun hash[T](hasher: &Hasher, matrix: Matrix[T]) {
+  for y in 0..height do for x in 0..width do hasher.hash(matrix.get(x @ y))
+}
+fun write[W, T](writer: W, matrix: Matrix[T]) {
+  writer."["
+  var first_row = true
+  for y in 0..height do {
+    if first_row then first_row = false else writer.", "
+    writer."["
+    var first_col = true
+    for x in 0..width do {
+      if first_col then first_col = false else writer.", "
+      writer."{martix.get(x @ y)}"
+    }
+    writer."]"
+  }
+  writer."]"
+}
+fun write_debug[W, T](writer: W, matrix: Matrix[T]) {
+  writer."["
+  var first_row = true
+  for y in 0..matrix.height do {
+    if first_row then first_row = false else writer.", "
+    writer."["
+    var first_col = true
+    for x in 0..matrix.width do {
+      if first_col then first_col = false else writer.", "
+      writer."{matrix.get(x @ y).debug()}"
+    }
+    writer."]"
+  }
+  writer."]"
+}
+
+fun generate[T](
+  s: Static[Matrix[T]], random: &Random, complexity: Int
+): Matrix[T] {
+  var sqrt = sqrt(complexity)
+  var width = random.next_int(0..sqrt)
+  var height = random.next_int(0..sqrt)
+  var complexities = random.split(complexity, width * height)
+  var matrix = uninitialized_matrix[T](width, height)
+  for it in complexities.iter().enumerate() do
+    matrix.data.get_ref(it.index).* = static[T]().generate(random, it.item)
+  matrix
+}
+fun mutate[T](matrix: Matrix[T], random: &Random, temperature: Int): Matrix[T] {
+  if temperature == 0 then return matrix
+  | var matrix = matrix.copy()
+  var x = random.next_int(0..matrix.width)
+  var y = random.next_int(0..matrix.height)
+  matrix.get_ref(x @ y).mutate(random, temperature)
+  matrix
+}
+
+fun sum(matrix: Matrix[Int]): Int { matrix.data.sum() }
+
 | Strings & Chars  
 | A Char (short for Character) is a wrapper around a Byte. When you write
 | something like #a in your code, that gets turned into a Char. Don't confuse
