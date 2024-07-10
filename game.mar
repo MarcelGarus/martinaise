@@ -1,18 +1,10 @@
 import stdlib.mar
+import ui.mar
 
-| Position  
-| Just 2D coordinates.
-
-struct Pos { x: Int, y: Int }
-
-fun @(x: Int, y: Int): Pos { Pos { x, y } }
-fun ==(a: Pos, b: Pos): Bool { a.x == b.x and a.y == b.y }
-fun *(scale: Int, p: Pos): Pos { Pos { x = scale * p.x, y = scale * p.y } }
-fun +(a: Pos, b: Pos): Pos { Pos { x = a.x + b.x, y = a.y + b.y } }
-fun left(pos: Pos, n: Int): Pos  { Pos { x = pos.x - n, y = pos.y } }
-fun right(pos: Pos, n: Int): Pos { Pos { x = pos.x + n, y = pos.y } }
-fun above(pos: Pos, n: Int): Pos { Pos { x = pos.x, y = pos.y - n } }
-fun below(pos: Pos, n: Int): Pos { Pos { x = pos.x, y = pos.y + n } }
+fun left(p: Point, n: Int): Point  { Point { x = p.x - n, y = p.y } }
+fun right(p: Point, n: Int): Point { Point { x = p.x + n, y = p.y } }
+fun above(p: Point, n: Int): Point { Point { x = p.x, y = p.y - n } }
+fun below(p: Point, n: Int): Point { Point { x = p.x, y = p.y + n } }
 
 | Level  
 
@@ -20,119 +12,38 @@ struct Level {
   width: Int,
   height: Int,
   tiles: Slice[Tile],
-  player: Pos,
-  target: Int,
+  player: Point,
 }
-enum Tile { free, wall, char: Char }
+enum Tile { free, wall, box }
 
-fun get(level: Level, pos: Pos): Tile {
-  if {0..level.width}.contains(pos.x) and {0..level.height}.contains(pos.y) then
-    level.tiles.get(pos.y * level.width + pos.x)
+fun get(level: Level, p: Point): Tile {
+  if {0..level.width}.contains(p.x) and {0..level.height}.contains(p.y) then
+    level.tiles.get(p.y * level.width + p.x)
   else
     Tile.wall
 }
-fun set(level: Level, pos: Pos, tile: Tile) {
-  if {0..level.width}.contains(pos.x) and {0..level.height}.contains(pos.y) then
-    level.tiles.get_ref(pos.y * level.width + pos.x).* = tile
+fun set(level: Level, p: Point, tile: Tile) {
+  if {0..level.width}.contains(p.x) and {0..level.height}.contains(p.y) then
+    level.tiles.get_ref(p.y * level.width + p.x).* = tile
 }
 
 | Level Generation  
 
-enum Term {
-  number: Int,
-  add: Operands,
-  subtract: Operands,
-  multiply: Operands,
-}
-struct Operands { left: &Term, right: &Term }
-
-fun &(left: Term, right: Term): Operands {
-  Operands { left = left.put_on_heap(), right = right.put_on_heap() }
-}
-fun write[W](writer: W, term: Term) {
-  switch term
-  case number(n) writer."{n}"
-  case add(add) writer."{add.left}+{add.right}"
-  case subtract(sub) writer."{sub.left}-{{
-    var needs_parens =
-      switch sub.right.*
-      case number false
-      case add true
-      case subtract true
-      case multiply false
-    if needs_parens then "({sub.right})" else "{sub.right}"
-  }}"
-  case multiply(mul) writer."{{
-    var needs_parens =
-      switch mul.left.*
-      case number false
-      case add true
-      case subtract true
-      case multiply false
-    if needs_parens then "({mul.left})" else "{mul.left}"
-  }}*{{
-    var needs_parens =
-      switch mul.right.*
-      case number false
-      case add true
-      case subtract true
-      case multiply false
-    if needs_parens then "({mul.right})" else "{mul.right}"
-  }}"
-}
-
-fun complicate(term: &Term, random: &Random): Bool {
-  switch term.*
-  case number(n) {
-    var operation = random.next_int(0..3)
-    if operation == 0 then {
-      if n < 2 then return false
-      var a = random.next_int(1..n)
-      term.* = Term.add(Term.number(n - a) & Term.number(a))
-    }
-    if operation == 1 then {
-      var a = random.next_int({n + 1}..{3 * n})
-      term.* = Term.subtract(Term.number(a) & Term.number(a - n))
-    }
-    if operation == 2 then {
-      var divisors = vec[Int]()
-      for i in 3..={n/3} do if n / i * i == n then divisors.&.push(i)
-      if divisors.is_empty() then return false
-      var chosen = divisors.get(random.next_int(0..divisors.len))
-      var other = n / chosen
-      term.* = Term.multiply(Term.number(chosen) & Term.number(other))
-    }
-    true
-  }
-  case add(add)
-    {if random.next_bool() then add.left else add.right}.complicate(random)
-  case subtract(sub)
-    {if random.next_bool() then sub.left else sub.right}.complicate(random)
-  case multiply(mul)
-    {if random.next_bool() then mul.left else mul.right}.complicate(random)
-}
-
-fun generate_level(target: Int, random: &Random): Level {
+fun generate_level(random: &Random): Level {
   var level = Level {
     width  = 40,
     height = 10,
     tiles = filled_slice(400, Tile.free),
     player = 1 @ 1,
-    target = 77,
   }
-  var term = Term.number(77)
-  for i in 0..4 do {
-    term.&.complicate(random)
-  }
-  println("Term: {term}")
-  
-  for char in "Hello".chars() do
+
+  for i in 0..10 do
     loop {
       var x = random.next_int(2..{level.width - 2})
       var y = random.next_int(2..{level.height - 2})
-      println("Placing {char} at {x} {y}")
+      println("Placing box at {x} {y}")
       if level.get(x @ y) is free then {
-        level.set(x @ y, Tile.char(char))
+        level.set(x @ y, Tile.box)
         break
       }
     }
@@ -155,28 +66,22 @@ fun generate_level(target: Int, random: &Random): Level {
       }
     }
 
-  | for i in 0..level.tiles.len do {
-  |   if random.&.next_int(0..10) == 0 then {
-  |     level.tiles.get_ref(i).* = Tile.char(
-  |       #0 + random.&.next_int(0..9).lower_byte()
-  |     )
-  |   }
-  | }
-  | level.set(2 @ 2, Tile.char(#1))
-  | level.set(5 @ 2, Tile.char(#2))
   level
 }
 
 | Gameplay  
 
-fun move(level: &Level, direction: Pos) {
+fun move(level: &Level, direction: Point) {
   var new_pos = level.player + direction
   var pushed = 0
   loop {
     switch level.get(new_pos + {pushed * direction})
-    case free break
-    case wall return {}
-    case char pushed = pushed + 1
+      case free break
+      case wall return {} | can't move
+      case box {
+        pushed = pushed + 1
+        if pushed == 3 then return {} | too heavy
+      }
   }
   for i in 0..=pushed do {
     level.set(new_pos + {pushed - i * direction},
@@ -184,15 +89,37 @@ fun move(level: &Level, direction: Pos) {
   }
   level.player = new_pos
 }
-fun move_left(level: &Level)  { level.move(Pos { x = 0-1, y = 0   }) }
-fun move_right(level: &Level) { level.move(Pos { x = 1,   y = 0   }) }
-fun move_up(level: &Level)    { level.move(Pos { x = 0,   y = 0-1 }) }
-fun move_down(level: &Level)  { level.move(Pos { x = 0,   y = 1   }) }
+fun move_left(level: &Level)  { level.move({0-1} @ 0  ) }
+fun move_right(level: &Level) { level.move(1     @ 0  ) }
+fun move_up(level: &Level)    { level.move(0     @ {0-1}) }
+fun move_down(level: &Level)  { level.move(0     @ 1  ) }
 
 | Rendering  
 
+var box_color    = color(16#1a94ff)
+var ground_color = color(16#f2f2f7)
+var wall_color   = color(16#1c1c1e)
+
+fun draw(texture: &Texture, level: Level) {
+  var offset = 10 @ 10
+  var grid = 10
+  texture.&.fill(wall_color)
+  for y in 0..level.height do {
+    for x in 0..level.width do {
+      var color =
+        switch level.get(x @ y)
+          case free ground_color
+          case wall wall_color
+          case box box_color
+      texture.&.draw({{x @ y} * grid + offset}.by(grid @ grid), color)
+    }
+  }
+  texture.&.draw(
+    {level.player * grid + offset + {1 @ 1}}.by({grid - 2} @ {grid - 2}),
+    color(255, 0, 0))
+}
+
 fun write[W](writer: W, level: Level) {
-  writer."Target: {level.target}\n"
   for y in {0-1}..{level.height + 1} do {
     for x in {0-5}..{level.width + 5} do {
       if level.player == {x @ y} then {
@@ -200,9 +127,9 @@ fun write[W](writer: W, level: Level) {
       } else {
         writer."{
           switch level.get(x @ y)
-          case free " "
-          case wall "▓"
-          case char(c) "{c}"
+            case free " "
+            case wall "▓"
+            case box "X"
         }"
       }
     }
@@ -210,39 +137,26 @@ fun write[W](writer: W, level: Level) {
   }
 }
 
-fun write_ansi_escape_sequence[W](writer: W, sequence: Str) {
-  writer.write(27.lower_byte().to_char())
-  writer.write(sequence)
-}
-fun switch_to_alternate_screen() {
-  stdout.write_ansi_escape_sequence("[?1049h")
-}
-fun switch_from_alternate_screen() {
-  stdout.write_ansi_escape_sequence("[?1049l")
-}
-fun move_cursor_to_top() {
-  stdout.write_ansi_escape_sequence("[H")
-}
-
 fun main(): Never {
-  var random = random_number_generator()
-  var level = generate_level(3, random.&)
-  | exit(0)
-  switch_to_alternate_screen()
-  var last_line = ""
+  var random = random_number_generator(10)
+  var level = generate_level(random.&)
+  var screen = screen_texture()
+
   loop {
-    move_cursor_to_top()
+    eprintln("Drawing level")
     println(level)
-    print("> ")
-    var line = stdin.read_line().unwrap() or break
-    if line.is_empty() then line = last_line
-    last_line = line
-    if line == "w" then level.&.move_up()
-    if line == "a" then level.&.move_left()
-    if line == "s" then level.&.move_down()
-    if line == "d" then level.&.move_right()
+    screen.&.draw(level)
+    screen.show()
+
+    if get_pressed_key() is some(key) then
+      switch key
+        case w level.&.move_up()
+        case a level.&.move_left()
+        case s level.&.move_down()
+        case d level.&.move_right()
+        case q break
+        default eprintln("Pressed key: {key.debug()}")
   }
-  switch_from_alternate_screen()
   println("Thanks for playing!")
   exit(0)
 }
