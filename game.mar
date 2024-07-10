@@ -9,38 +9,30 @@ fun below(p: Point, n: Int): Point { Point { x = p.x, y = p.y + n } }
 | Level  
 
 struct Level {
-  width: Int,
-  height: Int,
-  tiles: Slice[Tile],
+  tiles: Matrix[Tile],
   player: Point,
 }
 enum Tile { free, wall, box }
 
-fun get(level: Level, p: Point): Tile {
-  if {0..level.width}.contains(p.x) and {0..level.height}.contains(p.y) then
-    level.tiles.get(p.y * level.width + p.x)
-  else
-    Tile.wall
+fun get(level: Level, point: Point): Tile {
+  level.tiles.get_maybe(point) or Tile.wall
 }
-fun set(level: Level, p: Point, tile: Tile) {
-  if {0..level.width}.contains(p.x) and {0..level.height}.contains(p.y) then
-    level.tiles.get_ref(p.y * level.width + p.x).* = tile
+fun set(level: Level, point: Point, tile: Tile) {
+  if level.tiles.get_maybe_ref(point) is some(t) then t.* = tile
 }
 
 | Level Generation  
 
 fun generate_level(random: &Random): Level {
   var level = Level {
-    width  = 40,
-    height = 10,
-    tiles = filled_slice(400, Tile.free),
+    tiles = filled_matrix(40, 10, Tile.free),
     player = 1 @ 1,
   }
 
   for i in 0..10 do
     loop {
-      var x = random.next_int(2..{level.width - 2})
-      var y = random.next_int(2..{level.height - 2})
+      var x = random.next_int(2..{level.tiles.width - 2})
+      var y = random.next_int(2..{level.tiles.height - 2})
       println("Placing box at {x} {y}")
       if level.get(x @ y) is free then {
         level.set(x @ y, Tile.box)
@@ -49,8 +41,8 @@ fun generate_level(random: &Random): Level {
     }
   for i in 0..10 do
     loop {
-      var x = random.next_int(2..{level.width - 2})
-      var y = random.next_int(2..{level.height - 2})
+      var x = random.next_int(2..{level.tiles.width - 2})
+      var y = random.next_int(2..{level.tiles.height - 2})
       var w = random.next_int(1..5)
       var h = random.next_int(1..4)
       println("Placing wall at {x} {y} ({w} * {h})")
@@ -102,10 +94,10 @@ var wall_color   = color(16#1c1c1e)
 
 fun draw(texture: &Texture, level: Level) {
   var offset = 10 @ 10
-  var grid = 10
+  var grid = 17
   texture.&.fill(wall_color)
-  for y in 0..level.height do {
-    for x in 0..level.width do {
+  for y in 0..level.tiles.height do {
+    for x in 0..level.tiles.width do {
       var color =
         switch level.get(x @ y)
           case free ground_color
@@ -120,8 +112,8 @@ fun draw(texture: &Texture, level: Level) {
 }
 
 fun write[W](writer: W, level: Level) {
-  for y in {0-1}..{level.height + 1} do {
-    for x in {0-5}..{level.width + 5} do {
+  for y in {0-1}..{level.tiles.height + 1} do {
+    for x in {0-5}..{level.tiles.width + 5} do {
       if level.player == {x @ y} then {
         writer."+"
       } else {
