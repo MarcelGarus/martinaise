@@ -47,7 +47,7 @@ class MartinaiseCodeActionsProvider implements vs.CodeActionProvider {
     // TODO: check vs.CodeActionTriggerKind;
     return [
       {
-        title: `What input reaches this code? ${JSON.stringify(selection.anchor)}`,
+        title: `What input reaches this code?`,
         command: "martinaise.fuzz",
         arguments: [document, selection.start],
       },
