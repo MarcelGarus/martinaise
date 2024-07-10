@@ -3305,7 +3305,7 @@ fun compile_in_current_scope(
 
       var after_scope = self.next_label_id()
       var wrapped_result = self.body.&.uninitialized(
-        type("Result", vec(result.type, type("Nothing"))))
+        type("Result", vec(result.type, type("Nothing"))).compile(ast, mono)?)
       body.set_enum(wrapped_result, "ok", result, src)
       body.jump(after_scope, src)
       body.label(catch_label, src)
@@ -5517,7 +5517,7 @@ fun generate_fuzzing_hooks(
     })
   }
 
-  | fun arg_strings(input: $Input): Vec[Str] {
+  | fun arg_strs(input: $Input): Slice[Str] {
   |   var v = vec[Str]()
   |   {
   |     var sb = string_builder()
@@ -5547,16 +5547,17 @@ fun generate_fuzzing_hooks(
           ), opening_paren),
       )))
     }
-    body.&.push(AstExpr.name("v" @ src))
-    ast.funs.&.get_ref_or_put_default("arg_strings", vec[AstFun]())
+    body.&.push(AstExpr.name("v" @ src)
+      .member("to_slice" @ src).call(opening_paren))
+    ast.funs.&.get_ref_or_put_default("arg_strs", vec[AstFun]())
       .push(AstFun {
-        name = "arg_strings" @ src,
+        name = "arg_strs" @ src,
         is_fallback = true,
         type_args = vec[AstStr](),
         args = vec[AstFunArg](AstFunArg {
           name = "input" @ src, type = type("$Input")
         }),
-        returns = type("_"),
+        returns = type("Slice", vec(type("Str"))),
         kind = AstFunKind.body(body),
       })
   }
@@ -5740,6 +5741,9 @@ fun instrument(
     case call(target) {
       to_patch.&.push(new.soil.instructions.len) new.&.emit(instruction)
     }
+    case trystart(catch) {
+      to_patch.&.push(new.soil.instructions.len) new.&.emit(instruction)
+    }
     default new.&.emit(instruction)
   }
 
@@ -5749,6 +5753,7 @@ fun instrument(
     case jump(target)  instr.* = Instr.jump(mapping.get(target))
     case cjump(target) instr.* = Instr.cjump(mapping.get(target))
     case call(target)  instr.* = Instr.call(mapping.get(target))
+    case trystart(catch)  instr.* = Instr.trystart(mapping.get(catch))
     default unreachable()
   }
   for entry in soil.labels_to_index do
