@@ -1199,7 +1199,7 @@ fun <=[T](a: T, b: T): Bool { if a <=> b is greater then false else true }
 
 fun min[T](a: T, b: T): T { if a < b then a else b }
 fun max[T](a: T, b: T): T { if a > b then a else b }
-fun clamp[T](a: T, low: T, high: T): T { max(low, min(high, a)) }
+fun clamp[T](a: T, range: Range[T]): T { max(range.start, min(range.end.dec(), a)) }
 
 | Pseudo-Random Number Generator  
 | This is an implementation of Xoshiro256++, a pseudo-random number generator
@@ -1592,13 +1592,13 @@ fun mutate[T](slice: Slice[T], random: &Random, temperature: Int): Slice[T] {
     | Mutate an inner element.
     var temperature = temperature * 12 / 10
     var index = random.next_int(0..slice.len)
-    copy.get_ref(index).* = copy.get(index).mutate(random, temperature)
+    copy.&.get_ref(index).* = copy.get(index).mutate(random, temperature)
   } else {
     | Change the structure of the slice itself by adding/removing an item.
     if slice.is_not_empty() and random.next_bool() then
-      copy.remove(random.next_int(0..slice.len))
+      copy.&.remove(random.next_int(0..slice.len)..+1)
     else
-      copy.insert(
+      copy.&.insert(
         random.next_int(0..=slice.len),
         static[T]().generate(random, 100)
       )
@@ -1767,8 +1767,8 @@ fun is_whitespace(char: Char): Bool {
 
 fun parse_digit(char: Char): Byte {
   if char.is_numeric() then return char.byte - #0.byte
-  if char.is_lower() then return char.byte - #a.byte + 16
-  if char.is_upper() then return char.byte - #A.byte + 16
+  if char.is_lower() then return char.byte - #a.byte + 16.lower_byte()
+  if char.is_upper() then return char.byte - #A.byte + 16.lower_byte()
   panic("not a digit")
 }
 fun <=>(a: Char, b: Char): Ordering { a.byte <=> b.byte }
@@ -1838,8 +1838,9 @@ fun generate(s: Static[Char], random: &Random, complexity: Int): Char {
   random.next_int(visible_ascii).lower_byte().to_char()
 }
 fun mutate(char: Char, random: &Random, temperature: Int): Char {
-  var visible_ascii = 32..127
-  {char.byte + random.next_int({0 - temperature}..=temperature)}
+  var visible_ascii = 32.lower_byte()..127.lower_byte()
+  {char.byte.to_int() + random.next_int({0 - temperature}..=temperature)}
+    .lower_byte()
     .clamp(visible_ascii)
     .to_char()
 }
@@ -1850,7 +1851,7 @@ fun generate(s: Static[Str], random: &Random, complexity: Int): Str {
   Str { data = slice.data, len }
 }
 fun mutate(str: Str, random: &Random, temperature: Int): Str {
-  if temperature == 0 then return slice
+  if temperature == 0 then return str
   str.chars().mutate(random, temperature).to_str()
 }
 
