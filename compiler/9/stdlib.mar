@@ -1731,6 +1731,24 @@ fun binary_search_leftmost_greater_equal(slice: Slice[Int], item: Int): Int {
   left
 }
 
+| Point  
+
+struct Point { x: Int, y: Int }
+
+fun @(x: Int, y: Int): Point { Point { x, y } }
+fun ==(a: Point, b: Point): Bool { a.x == b.x and a.y == b.y }
+fun +(a: Point, b: Point): Point { Point { x = a.x + b.x, y = a.y + b.y } }
+fun -(a: Point, b: Point): Point { Point { x = a.x - b.x, y = a.y - b.y } }
+fun *(a: Point, f: Int): Point { Point { x = a.x * f, y = a.y * f } }
+fun *(f: Int, a: Point): Point { Point { x = a.x * f, y = a.y * f } }
+fun /(a: Point, f: Int): Point { Point { x = a.x / f, y = a.y / f } }
+
+fun write[W](writer: W, point: Point) { writer.write(tuple(point.x, point.y)) }
+
+fun next_random(random: &Random, size: Point) {
+  random.next_int(0..size.x) @ random.next_int(0..size.y)
+}
+
 | Strings & Chars  
 | A Char (short for Character) is a wrapper around a Byte. When you write
 | something like #a in your code, that gets turned into a Char. Don't confuse
