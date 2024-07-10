@@ -778,6 +778,16 @@ fun sqrt(num: Int): Int {
   }
   a - 1
 }
+fun log_2(value: Int): Int {
+  value > 0 or panic("log 2 only works for positive values")
+  var i = 0
+  loop {
+    if value == 1 then break
+    i = i + 1
+    value = value / 2
+  }
+  i
+}
 fun <=>(left: Int, right: Int): Ordering asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
