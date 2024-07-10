@@ -1,0 +1,189 @@
+import stdlib.mar
+import ui.mar
+
+| Board  
+
+var size = 4
+
+struct Board { tiles: Matrix[Tile] }
+enum Tile { free, number: Int }
+
+fun copy(board: Board): Board { Board { tiles = board.tiles.copy() } }
+fun ==(a: Tile, b: Tile): Bool {
+  switch a
+  case free if b is free then true else false
+  case number(a) if b is number(b) then a == b else false
+}
+fun ==(a: Board, b: Board): Bool {
+  a.tiles == b.tiles
+}
+
+fun get(board: Board, pos: Point): Tile {
+  board.tiles.get(pos)
+}
+fun set(board: &Board, pos: Point, tile: Tile) {
+  board.tiles.&.get_ref(pos).* = tile
+}
+
+fun empty_board(): Board {
+  Board { tiles = filled_matrix(size @ size, Tile.free) }
+}
+fun add_new_2(board: Board, random: &Random): Board {
+  var board = board.copy()
+  loop {
+    var point = random.next_point(board.tiles.size())
+    if board.get(point) is free then {
+      board.&.set(point, Tile.number(2))
+      break
+    }
+  }
+  board
+}
+
+fun generate(s: Static[Board], random: &Random, complexity: Int): Board {
+  var board = empty_board()
+  for x in 0..size do
+    for y in 0..size do
+      board.&.set(x @ y,
+        if random.next_bool() then
+          Tile.free
+        else
+          Tile.number(2 ** random.next_int(0..5))
+      )
+  board
+}
+
+enum State { running, won, lost }
+fun state(board: Board): State {
+  for x in 0..size do
+    for y in 0..size do
+      if board.get(x @ y) is number(n) then
+        if n == 2048 then
+          return State.won
+
+  for x in 0..size do
+    for y in 0..size do
+      if board.get(x @ y) is free then return State.running
+
+  for y in 0..size do
+    for x in 0..{size - 1} do
+      if board.get(x @ y) == board.get({x + 1} @ y) then return State.running
+
+  for x in 0..size do
+    for y in 0..{size - 1} do
+      if board.get(x @ y) == board.get(x @ {y + 1}) then return State.running
+
+ State.lost
+}
+
+fun compress(old: Board): Board {
+  var new = empty_board()
+  for y in 0..size do {
+    var i = 0
+    for x in 0..size do {
+      if old.get(x @ y) is number(n) then {
+        new.&.set(i @ y, old.get(x @ y))
+        i = i + 1
+      }
+    }
+  }
+  new
+}
+fun merge(old: Board): Board {
+  var new = old.copy()
+  for y in 0..size do
+    for x in 0..{size - 1} do {
+      if new.get(x @ y) is number(a) then
+        if new.get({x + 1} @ y) is number(b) then
+          if a == b then {
+            new.&.set(x @ y, Tile.number(a + b))
+            new.&.set({x + 1} @ y, Tile.free)
+          }
+    }
+  new
+}
+fun reverse(old: Board): Board {
+  var new = empty_board()
+  for x in 0..size do
+    for y in 0..size do
+      new.&.set(x @ y, old.get({size - 1 - x} @ y))
+  new
+}
+fun transpose(old: Board): Board {
+  var new = empty_board()
+  for x in 0..size do
+    for y in 0..size do
+      new.&.set(x @ y, old.get(y @ x))
+  new
+}
+
+fun move_left(board: Board): Board { eprintln("left") board.compress().merge().compress() }
+fun move_right(board: Board): Board { eprintln("right") board.reverse().move_left().reverse() }
+fun move_up(board: Board): Board { eprintln("up") board.transpose().move_left().transpose() }
+fun move_down(board: Board): Board { eprintln("down") board.transpose().move_right().transpose() }
+
+| Rendering  
+
+var background_color = color(16#1c1c1e)
+var empty_color      = color(16#f2f2f7)
+var number_color     = color(16#1a94ff)
+
+fun draw(texture: &Texture, board: Board) {
+  var offset = 10 @ 10
+  var grid = 17
+  texture.&.fill(background_color)
+  for y in 0..size do {
+    for x in 0..size do {
+      var color =
+        switch board.get(x @ y)
+          case free empty_color
+          case number(n) number_color
+      texture.&.draw({{x @ y} * grid + offset}.by(grid @ grid), color)
+    }
+  }
+}
+
+fun write[W](writer: W, board: Board) {
+  for y in 0..size do {
+    for x in 0..size do {
+      writer."{
+        switch board.get(x @ y)
+          case free "____ "
+          case number(n) "{n.format().pad_right(4)} "
+      }"
+    }
+    writer."\n"
+  }
+}
+fun write_debug[W](writer: W, board: Board) { writer."{board}" }
+
+fun main(): Never {
+  var random = random_number_generator(10)
+  var board = empty_board().add_new_2(random.&)
+  var screen = screen_texture()
+
+  loop {
+    eprintln("Drawing board")
+    println(board)
+    screen.&.draw(board)
+    screen.show()
+
+    if get_pressed_key() is some(key) then {
+      var new = 
+        switch key
+          case w board.move_up()
+          case a board.move_left()
+          case s board.move_down()
+          case d board.move_right()
+          case q break
+          default {
+            eprintln("Pressed key: {key.debug()}")
+            continue
+          }
+      if board == new then continue
+      board = new.add_new_2(random.&)
+    }
+  }
+  println("Thanks for playing!")
+  exit(0)
+}
