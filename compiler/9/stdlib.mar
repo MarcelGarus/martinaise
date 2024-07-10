@@ -1159,6 +1159,14 @@ fun write_decimals[W](writer: W, value: Int) {
 
   for char in buffer.to_slice().rev_iter() do writer.write(char)
 }
+fun write_debug[W](writer: W, float: Float) { writer."{float}" }
+
+fun generate(s: Static[Float], random: &Random, complexity: Int): Float {
+  static[Int]().generate(random, complexity).to_float()
+}
+fun mutate(value: Float, random: &Random, temperature: Int): Float {
+  value.to_int().mutate(random, temperature).to_float()
+}
 
 | TODO: implement generate
 
