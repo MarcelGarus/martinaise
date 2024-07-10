@@ -267,18 +267,16 @@ fun fuzzer_main[Input](): Never {
     if input.improves_upon(front) then {
       front.&.integrate(input)
       inputs.&.push(input)
-      report(inputs)
+      report(input)
     } else
       free_everything_allocated_after(checkpoint)
   }
 
   var i = 0
   loop {
-    eprintln("At input {i}")
     if inputs.len <= i then break
     var j = 0
     loop {
-      eprintln("j = {j}")
       if j == 100 then break
       j = j + 1
 
@@ -287,82 +285,23 @@ fun fuzzer_main[Input](): Never {
       var temperature = 100000 / {j + 1} / {j + 1}
       var mutated = original.input.mutate(random.&, 10000).run_sandboxed()
 
-      eprintln("Mutated (comp {mutated.complexity()}) and original (comp {original.complexity()})")
+      | eprintln("Mutated (comp {mutated.complexity()}) and original (comp {original.complexity()})")
       if mutated.complexity() < original.complexity()
         and not(original.improves_upon(mutated))
       then {
         inputs.get_ref(i).* = mutated
-        report(inputs)
+        report(mutated)
         j = 0
       } else if mutated.improves_upon(front) then {
         front.&.integrate(mutated)
         inputs.&.push(mutated)
-        report(inputs)
+        report(mutated)
       } else {
         free_everything_allocated_after(checkpoint)
       }
     }
     i = i + 1
   }
-
-
-  | for i in 0..100 do {
-  |   var checkpoint = heap_checkpoint()
-  |   var input = static[Input]().generate(random.&, 100)
-  |   var input_strs = input.arg_strings()
-  |   var in_str = "{comma_separated(input_strs)}"
-
-  |   current_cov.reset()
-  |   var res = try input.run()
-  |   var crashes = if res is ok then true else false
-  |   var out_str = switch res case ok(res) some("{res}") case error none[Str]()
-
-  |   var has_new_coverage = current_cov.improves_upon(total_cov)
-  |   if has_new_coverage then {
-  |     current_cov.integrate_into(total_cov)
-  |     queue.&.push_back(input)
-  |   } else if crashes then {
-  |     queue.&.push_back(input)
-  |   }
-
-  |   var is_schick =
-  |     if info.has_target_position
-  |     then has_new_coverage and current_cov.reached_target()
-  |     else has_new_coverage
-  |   if is_schick then {
-  |     var json_inputs = vec[Json]()
-  |     for input in input_strs do json_inputs.&.push(Json.string(input))
-  |     println(Json.map(map(
-  |       "type" -> Json.string("example"),
-  |       "inputs" -> Json.array(json_inputs),
-  |       "result" -> Json.map(map(
-  |         "status" -> Json.string("returned"),
-  |         "value" -> Json.string(out_str or "<panicked>"),
-  |       )),
-  |       "fun_start_line" -> Json.int(info.fun_line),
-  |       "fun_name" -> Json.string(info.fun_name),
-  |     )))
-  |   }
-
-  |   | println("Running with {"{in_str} = {res}".pad_right(50)} 
-  |   |   '{current_cov} total: {total_cov} 
-  |   |   '{if is_schick then " schick!" else ""}")
-
-  |   if not(has_new_coverage or is_schick) then
-  |     checkpoint.free_everything_allocated_after()
-  | }
-
-  | println("Queue has {queue.len()} elements")
-  | loop {
-  |   var input = queue.&.pop_front_maybe() or break
-  |   for i in 0..5 do {
-  |     println("Mutating {debug(input)}")
-  |     var mutated = input.mutate(random.&, 100)
-  |     println("Mutated: {debug(mutated)}")
-  |   }
-  |   | TODO: run mutated input. if the coverage is further increased,
-  |   | append it to the queue
-  | }
 
   exit(0)
 }
@@ -411,25 +350,23 @@ fun integrate[Input](front: &FuzzFront, input: InputThatRan[Input]) {
   front.coverage.integrate(input.coverage)
   if input.result is error then front.crashes = true
 }
-fun report[Input](inputs: Vec[InputThatRan[Input]]) {
+fun report[Input](input: InputThatRan[Input]) {
   var info = static[Input]().fuzzing_info()
-  for input in inputs do {
-    if info.has_target_position and not(input.coverage.reached_target()) then
-      continue
+  if info.has_target_position and not(input.coverage.reached_target()) then
+    return {}
 
-    var json_args = vec[Json]()
-    for arg in input.arg_strs do json_args.&.push(Json.string(arg))
-    println(Json.map(map(
-      "type" -> Json.string("example"),
-      "inputs" -> Json.array(json_args),
-      "result" -> Json.map(map(
-        "status" -> Json.string("returned"),
-        "value" -> Json.string(input.result or "<panicked>"),
-      )),
-      "fun_start_line" -> Json.int(info.fun_line),
-      "fun_name" -> Json.string(info.fun_name),
-    )))
-  }
+  var json_args = vec[Json]()
+  for arg in input.arg_strs do json_args.&.push(Json.string(arg))
+  println(Json.map(map(
+    "type" -> Json.string("example"),
+    "inputs" -> Json.array(json_args),
+    "result" -> Json.map(map(
+      "status" -> Json.string("returned"),
+      "value" -> Json.string(input.result or "<panicked>"),
+    )),
+    "fun_start_line" -> Json.int(info.fun_line),
+    "fun_name" -> Json.string(info.fun_name),
+  )))
 }
 
 | Generating and mutating values  
