@@ -242,54 +242,115 @@ struct FuzzingInfo {
 }
 
 fun fuzzer_main[Input](): Never {
+  | Fuzzing works like this: We want to cover a lot of program behavior, which
+  | means we want to achieve high coverage and find crashes. To do that, we
+  | track the total program behavior we observed (total coverage and crashes).
+  |
+  | 1. Generate random inputs. Save the ones that result in new program behavior
+  |    (input, output, and behavior).
+  | 2. Iterate over the found inputs. For each of them, mutate it.
+  |    If the mutated version achieves at least the same behavior but is
+  |    smaller, replace the current input.
+  |    If the mutated version is bigger but results in new behavior, save it.
+
   var info = static[Input]().fuzzing_info()
   var random = random_number_generator()
-  var current_cov = get_coverage()
-  var total_cov = coverage(current_cov.len)
-  var queue = queue[Input]()
+  var front = FuzzFront {
+    coverage = coverage(get_coverage().len), crashes = false
+  }
+  var inputs = vec[InputThatRan[Input]]()
 
   for i in 0..100 do {
     var checkpoint = heap_checkpoint()
     var input = static[Input]().generate(random.&, 100)
-    var input_strs = input.arg_strings()
-    var in_str = "{comma_separated(input_strs)}"
-
-    current_cov.reset()
-    var res = input.run()
-    var out_str = "{res}"
-
-    var has_new_coverage = current_cov.improves_upon(total_cov)
-    if has_new_coverage then {
-      current_cov.integrate_into(total_cov)
-      queue.&.push_back(input)
-    }
-
-    var is_schick =
-      if info.has_target_position
-      then has_new_coverage and current_cov.reached_target()
-      else has_new_coverage
-    if is_schick then {
-      var json_inputs = vec[Json]()
-      for input in input_strs do json_inputs.&.push(Json.string(input))
-      println(Json.map(map(
-        "type" -> Json.string("example"),
-        "inputs" -> Json.array(json_inputs),
-        "result" -> Json.map(map(
-          "status" -> Json.string("returned"),
-          "value" -> Json.string(out_str),
-        )),
-        "fun_start_line" -> Json.int(info.fun_line),
-        "fun_name" -> Json.string(info.fun_name),
-      )))
-    }
-
-    | println("Running with {"{in_str} = {res}".pad_right(50)} 
-    |   '{current_cov} total: {total_cov} 
-    |   '{if is_schick then " schick!" else ""}")
-
-    if not(has_new_coverage or is_schick) then
-      checkpoint.free_everything_allocated_after()
+    var input = input.run_sandboxed()
+    if input.improves_upon(front) then {
+      front.&.integrate(input)
+      inputs.&.push(input)
+      report(inputs)
+    } else
+      free_everything_allocated_after(checkpoint)
   }
+
+  var i = 0
+  loop {
+    eprintln("At input {i}")
+    if inputs.len <= i then break
+    var j = 0
+    loop {
+      eprintln("j = {j}")
+      if j == 100 then break
+      j = j + 1
+
+      var checkpoint = heap_checkpoint()
+      var original = inputs.get(i)
+      var temperature = 100000 / {j + 1} / {j + 1}
+      var mutated = original.input.mutate(random.&, 10000).run_sandboxed()
+
+      eprintln("Mutated (comp {mutated.complexity()}) and original (comp {original.complexity()})")
+      if mutated.complexity() < original.complexity()
+        and not(original.improves_upon(mutated))
+      then {
+        inputs.get_ref(i).* = mutated
+        report(inputs)
+        j = 0
+      } else if mutated.improves_upon(front) then {
+        front.&.integrate(mutated)
+        inputs.&.push(mutated)
+        report(inputs)
+      } else {
+        free_everything_allocated_after(checkpoint)
+      }
+    }
+    i = i + 1
+  }
+
+
+  | for i in 0..100 do {
+  |   var checkpoint = heap_checkpoint()
+  |   var input = static[Input]().generate(random.&, 100)
+  |   var input_strs = input.arg_strings()
+  |   var in_str = "{comma_separated(input_strs)}"
+
+  |   current_cov.reset()
+  |   var res = try input.run()
+  |   var crashes = if res is ok then true else false
+  |   var out_str = switch res case ok(res) some("{res}") case error none[Str]()
+
+  |   var has_new_coverage = current_cov.improves_upon(total_cov)
+  |   if has_new_coverage then {
+  |     current_cov.integrate_into(total_cov)
+  |     queue.&.push_back(input)
+  |   } else if crashes then {
+  |     queue.&.push_back(input)
+  |   }
+
+  |   var is_schick =
+  |     if info.has_target_position
+  |     then has_new_coverage and current_cov.reached_target()
+  |     else has_new_coverage
+  |   if is_schick then {
+  |     var json_inputs = vec[Json]()
+  |     for input in input_strs do json_inputs.&.push(Json.string(input))
+  |     println(Json.map(map(
+  |       "type" -> Json.string("example"),
+  |       "inputs" -> Json.array(json_inputs),
+  |       "result" -> Json.map(map(
+  |         "status" -> Json.string("returned"),
+  |         "value" -> Json.string(out_str or "<panicked>"),
+  |       )),
+  |       "fun_start_line" -> Json.int(info.fun_line),
+  |       "fun_name" -> Json.string(info.fun_name),
+  |     )))
+  |   }
+
+  |   | println("Running with {"{in_str} = {res}".pad_right(50)} 
+  |   |   '{current_cov} total: {total_cov} 
+  |   |   '{if is_schick then " schick!" else ""}")
+
+  |   if not(has_new_coverage or is_schick) then
+  |     checkpoint.free_everything_allocated_after()
+  | }
 
   | println("Queue has {queue.len()} elements")
   | loop {
@@ -305,7 +366,71 @@ fun fuzzer_main[Input](): Never {
 
   exit(0)
 }
-struct FoundInput[Input] { input: Input, in_str: Str, out_str: Str }
+struct FuzzFront { coverage: Coverage, crashes: Bool }
+struct InputThatRan[Input] {
+  input: Input,
+  arg_strs: Slice[Str],
+  coverage: Coverage,
+  result: Result[Str, Nothing],
+}
+
+fun run_sandboxed[Input](input: Input): InputThatRan[Input] {
+  var arg_strs = input.arg_strs()
+  eprintln("Running {comma_separated(arg_strs)}")
+
+  var current_cov = get_coverage()
+  current_cov.reset()
+
+  var res = try input.run()
+
+  var coverage = coverage(current_cov.len)
+  coverage.integrate(current_cov)
+
+  var result =
+    switch res case ok(res) ok[Str, Nothing]("{res}")
+    case error error[Str, Nothing]({})
+
+  InputThatRan { input, arg_strs, coverage, result }
+}
+fun complexity[Input](input: InputThatRan[Input]): Int {
+  var sum = 0
+  for arg in input.arg_strs do sum = sum + arg.len
+  sum
+}
+fun crashes[Input](input: InputThatRan[Input]): Bool {
+  switch input.result case ok false case error true
+}
+fun improves_upon[Input](a: InputThatRan[Input], b: InputThatRan[Input]): Bool {
+  a.crashes() & b.crashes().not() or a.coverage.improves_upon(b.coverage)
+}
+fun improves_upon[Input](input: InputThatRan[Input], front: FuzzFront): Bool {
+  input.crashes() & front.crashes.not()
+    or input.coverage.improves_upon(front.coverage)
+}
+fun integrate[Input](front: &FuzzFront, input: InputThatRan[Input]) {
+  front.coverage.integrate(input.coverage)
+  if input.result is error then front.crashes = true
+}
+fun report[Input](inputs: Vec[InputThatRan[Input]]) {
+  var info = static[Input]().fuzzing_info()
+  for input in inputs do {
+    if info.has_target_position and not(input.coverage.reached_target()) then
+      continue
+
+    var json_args = vec[Json]()
+    for arg in input.arg_strs do json_args.&.push(Json.string(arg))
+    println(Json.map(map(
+      "type" -> Json.string("example"),
+      "inputs" -> Json.array(json_args),
+      "result" -> Json.map(map(
+        "status" -> Json.string("returned"),
+        "value" -> Json.string(input.result or "<panicked>"),
+      )),
+      "fun_start_line" -> Json.int(info.fun_line),
+      "fun_name" -> Json.string(info.fun_name),
+    )))
+  }
+}
 
 | Generating and mutating values  
 | To fuzz functions, we need to be able to generate random inputs of any type.
@@ -396,8 +521,8 @@ fun improves_upon(new: Coverage, original: Coverage): Bool {
     if new.is_marked(i) and not(original.is_marked(i)) then return true
   return false
 }
-fun integrate_into(new: Coverage, total: Coverage) {
-  for i in 0..new.len do if new.is_marked(i) then total.mark(i)
+fun integrate(total: Coverage, other: Coverage) {
+  for i in 0..other.len do if other.is_marked(i) then total.mark(i)
 }
 fun reached_target(coverage: Coverage): Bool {
   | If the compiler was told to instrument a specific position in the code, the
@@ -1443,7 +1568,8 @@ fun get_maybe[T](slice: Slice[T], index: Int): Maybe[T] {
   case none none[T]()
 }
 fun get_ref[T](slice: Slice[T], index: Int): &T {
-  slice.get_maybe_ref(index).unwrap("index out of bounds")
+  slice.get_maybe_ref(index)
+    or panic("index out of bounds: {index} is not in {0..slice.len}")
 }
 fun get[T](slice: Slice[T], index: Int): T { slice.get_ref(index).* }
 
@@ -1539,11 +1665,13 @@ fun next[T](iter: &Iter[T, SliceRevIter[T]]): Maybe[T] {
 }
 
 fun copy_to[T](from: Slice[T], to: Slice[T]) {
-  assert(from.len == to.len, "copy_to slice lens don't match")
+  from.len == to.len or
+    panic("copy_to slice lens don't match ({from.len} and {to.len})")
   memcopy(from.data, to.data, from.len * stride_size_of[T]())
 }
 fun subslice[T](slice: Slice[T], range: Range[Int]): Slice[T] {
-  assert(range.end <= slice.len, "subslice needs to be inside original slice")
+  range.end <= slice.len or
+    panic("tried to take subslice {range} from slice of length {slice.len}")
   Slice[T] {
     data = slice.data + {stride_size_of[T]() * range.start}, len = range.len()
   }
@@ -1554,29 +1682,29 @@ fun remove[T](slice: &Slice[T], range: Range[Int]) {
   slice.len = slice.len - range.len()
 }
 fun first[T](slice: Slice[T]): T {
-  assert(slice.is_not_empty(), "first only works on non-empty slices")
+  slice.is_not_empty() or panic("first only works on non-empty slices")
   slice.get(0)
 }
 fun first[T](slice: Slice[T], amount: Int): Slice[T] {
-  assert(amount <= slice.len, "first amount too big")
+  amount <= slice.len or panic("first amount too big")
   slice.subslice(0..amount)
 }
 fun last[T](slice: Slice[T]): T {
-  assert(slice.is_not_empty(), "last only works on non-empty slices")
+  slice.is_not_empty() or panic("last only works on non-empty slices")
   slice.get(slice.len.dec())
 }
 fun last[T](slice: Slice[T], amount: Int): Slice[T] {
-  assert(amount <= slice.len, "last amount too big")
+  amount <= slice.len or panic("last amount too big")
   slice.subslice({slice.len - amount}..slice.len)
 }
 fun without_first[T](slice: Slice[T]): Slice[T] { slice.without_first(1) }
 fun without_first[T](slice: Slice[T], amount: Int): Slice[T] {
-  assert(amount <= slice.len, "without_first amount too big")
+  amount <= slice.len or panic("without_first amount too big")
   slice.subslice(amount..slice.len)
 }
 fun without_last[T](slice: Slice[T]): Slice[T] { slice.without_last(1) }
 fun without_last[T](slice: Slice[T], amount: Int): Slice[T] {
-  assert(amount <= slice.len, "without_last amount too big")
+  amount <= slice.len or panic("without_last amount too big")
   slice.subslice(0..{slice.len - amount})
 }
 fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
