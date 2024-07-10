@@ -25,7 +25,7 @@ fun set(level: Level, point: Point, tile: Tile) {
 
 fun generate_level(random: &Random): Level {
   var level = Level {
-    tiles = filled_matrix(40, 10, Tile.free),
+    tiles = filled_matrix(40 @ 10, Tile.free),
     player = 1 @ 1,
   }
 
