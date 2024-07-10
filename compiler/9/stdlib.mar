@@ -767,6 +767,15 @@ fun round_up_to_power_of(number: Int, factor: Int): Int {
   var power = 1
   loop if power >= number then break(power) else power = power * factor
 }
+fun sqrt(num: Int): Int {
+  num >= 0 or panic("you can't take the sqrt of negative number")
+  var a = 1
+  loop {
+    if a * a > num then break
+    a = a + 1
+  }
+  a - 1
+}
 fun <=>(left: Int, right: Int): Ordering asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
@@ -985,6 +994,24 @@ fun /(left: Float, right: Float): Float asm {
   moveib b 16 add b sp load b b | right
   load c sp | return value address
   fdiv a b store c a ret
+}
+fun sqrt(x: Float): Float {
+  if x < 0.0 then panic("cannot take sqrt of a negative value")
+  if x == 0.0 then return 0.0
+  if x < 1.0 then return 1.0 / sqrt(x)
+  var high  = x
+  var low   = 0.0
+  var guess = x / 2.0
+  loop {
+    switch guess * guess <=> x
+    case less    low  = guess
+    case greater high = guess
+    case equal   break
+    var new_guess = {high + low} / 2.0
+    if new_guess == guess then break
+    guess = new_guess
+  }
+  guess
 }
 fun <=>(left: Float, right: Float): Ordering asm { | TODO: remove?
   moveib a 8  add a sp load a a | left
