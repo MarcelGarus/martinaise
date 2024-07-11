@@ -18,7 +18,7 @@ fun get(level: Level, point: Point): Tile {
   level.tiles.get_maybe(point) or Tile.wall
 }
 fun set(level: Level, point: Point, tile: Tile) {
-  if level.tiles.get_maybe_ref(point) is some(t) then t.* = tile
+  if level.tiles.&.get_maybe_ref(point) is some(t) then t.* = tile
 }
 
 | Level Generation  
@@ -94,7 +94,7 @@ var wall_color   = color(16#1c1c1e)
 
 fun draw(texture: &Texture, level: Level) {
   var offset = 10 @ 10
-  var grid = 17
+  var grid = 10
   texture.&.fill(wall_color)
   for y in 0..level.tiles.height do {
     for x in 0..level.tiles.width do {
