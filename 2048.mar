@@ -8,6 +8,18 @@ var size = 4
 struct Board { tiles: Matrix[Tile] }
 enum Tile { free, number: Int }
 
+fun empty_board(): Board {
+  Board { tiles = filled_matrix(size @ size, Tile.free) }
+}
+fun generate(s: Static[Board], random: &Random, complexity: Int): Board {
+  var board = empty_board()
+  for x in 0..size do
+    for y in 0..size do
+      if random.next_bool() then
+        board.&.set(x @ y, Tile.number(2 ** random.next_int(0..5)))
+  board
+}
+
 fun copy(board: Board): Board { Board { tiles = board.tiles.copy() } }
 fun ==(a: Tile, b: Tile): Bool {
   switch a
@@ -25,9 +37,6 @@ fun set(board: &Board, pos: Point, tile: Tile) {
   board.tiles.&.get_ref(pos).* = tile
 }
 
-fun empty_board(): Board {
-  Board { tiles = filled_matrix(size @ size, Tile.free) }
-}
 fun add_new_2(board: Board, random: &Random): Board {
   var board = board.copy()
   loop {
@@ -37,19 +46,6 @@ fun add_new_2(board: Board, random: &Random): Board {
       break
     }
   }
-  board
-}
-
-fun generate(s: Static[Board], random: &Random, complexity: Int): Board {
-  var board = empty_board()
-  for x in 0..size do
-    for y in 0..size do
-      board.&.set(x @ y,
-        if random.next_bool() then
-          Tile.free
-        else
-          Tile.number(2 ** random.next_int(0..5))
-      )
   board
 }
 
@@ -117,10 +113,10 @@ fun transpose(old: Board): Board {
   new
 }
 
-fun move_left(board: Board): Board { eprintln("left") board.compress().merge().compress() }
-fun move_right(board: Board): Board { eprintln("right") board.reverse().move_left().reverse() }
-fun move_up(board: Board): Board { eprintln("up") board.transpose().move_left().transpose() }
-fun move_down(board: Board): Board { eprintln("down") board.transpose().move_right().transpose() }
+fun move_left(board: Board): Board { board.compress().merge().compress() }
+fun move_right(board: Board): Board { board.reverse().move_left().reverse() }
+fun move_up(board: Board): Board { board.transpose().move_left().transpose() }
+fun move_down(board: Board): Board { board.transpose().move_right().transpose() }
 
 | Rendering  
 
