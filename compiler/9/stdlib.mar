@@ -1248,10 +1248,10 @@ fun size_of[T](): Int { ... }
 fun alignment_of[T](): Int { ... } | lawful evil?
 
 | The size you need to use if you want to store multiple instances of the type
-| after each other in memory.
-fun stride_size_of[T](): Int {
-  size_of[T]().round_up_to_multiple_of(alignment_of[T]())
-}
+| after each other in memory. This can also be computed at runtime:
+| size_of[T]().round_up_to_multiple_of(alignment_of[T]())
+| But having this implementated by the compiler is faster (sadly).
+fun stride_size_of[T](): Int { ... }
 
 | Makes the name of the type available at runtime.
 fun type[T](): Type { ... }

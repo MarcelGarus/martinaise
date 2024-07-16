@@ -4040,15 +4040,16 @@ fun compile_builtin_fun(
     return compile_size_of_fun(type_args, arg_types, body, src)
 
   if name == "alignment_of" then
-    return compile_alignment_of_fun(
-      type_args, arg_types, body, src)
+    return compile_alignment_of_fun(type_args, arg_types, body, src)
+
+  if name == "stride_size_of" then
+    return compile_stride_size_of_fun(type_args, arg_types, body, src)
 
   if name == "type" then
     return compile_type_fun(type_args, arg_types, body, src)
 
   if name == "write_debug" then
-    return compile_write_debug_fun(
-      type_args, arg_types, body, src)
+    return compile_write_debug_fun(type_args, arg_types, body, src)
 
   if name == "generate" then
     return compile_generate_fun(type_args, arg_types, body, src)
@@ -4080,6 +4081,19 @@ fun compile_alignment_of_fun(
 
   var alignment = body.int(body.mono.layouts.get(type_args.get(0)).alignment)
   body.return_(alignment, src)
+  ok[MonoFunBody, Error](body.finish())
+}
+
+fun compile_stride_size_of_fun(
+  type_args: Vec[Type], arg_types: Vec[Type], body: &MonoBodyBuilder, src: Src
+): Result[MonoFunBody, Error] {
+  type_args.len == 1 or return error[MonoFunBody, Error](make_error(
+    src, "stride_size_of should take exactly one type argument."))
+  type("Int").compile(body.ast, body.mono)?
+
+  var layout = body.mono.layouts.get(type_args.get(0))
+  var stride_size = layout.size.round_up_to_multiple_of(layout.alignment)
+  body.return_(body.int(stride_size), src)
   ok[MonoFunBody, Error](body.finish())
 }
 
