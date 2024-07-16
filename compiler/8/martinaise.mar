@@ -1994,9 +1994,6 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
           concrete_type_used_as_arg_error(fun_.name, arg))
       for arg in fun_.args do
         if arg.type.exists(types, fun_.type_args) is error(type) then {
-          eprintln("These types exist:")
-          for type in types do eprintln("{type.key}")
-          eprintln("That's it.")
           return error[Ast, Error](type_doesnt_exist_error(fun_.name, type))
         }
     }
