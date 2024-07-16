@@ -986,13 +986,18 @@ fun parse_digits(parser: &Parser, radix: Int): Result[Maybe[Int], Str] {
 fun parse_number(parser: &Parser): Result[Maybe[AstExpr], Str] {
   parser.consume_whitespace()
   var radix = 10
-  var value = parser.parse_digits(radix)? or return no_match[AstExpr]()
+  var sign = if parser.consume_prefix("-") is some then {0-1} else 1
+  var value = parser.parse_digits(radix)? or
+    return
+      if sign == 1
+      then no_match[AstExpr]()
+      else bad_input[AstExpr]("Expected number after the minus sign.")
   if parser.consume_prefix("#") is some then {
     radix = value
     value = parser.parse_digits(radix)? or return bad_input[AstExpr](
       "Expected the value of the number after the radix pound.")
   }
-  var expr = AstExpr.int(value)
+  var expr = AstExpr.int(sign * value)
   var cursor_before_dot = parser.cursor
   if parser.consume_prefix(".") is some then {
     var start_of_decimals = parser.cursor
@@ -1005,7 +1010,7 @@ fun parse_number(parser: &Parser): Result[Maybe[AstExpr], Str] {
 
     var integer_part = value.to_float()
     var decimal_part = decimals.to_float() / {10 ** num_decimals}.to_float()
-    expr = AstExpr.float(integer_part + decimal_part)
+    expr = AstExpr.float(sign.to_float() * {integer_part + decimal_part})
   }
   var end = parser.cursor
   parsed(expr)
@@ -4877,7 +4882,7 @@ fun assemble(mono: Mono, entry_point: Str, asm: &Asm): Result[Nothing, Error] {
 }
 
 fun smart_movei(asm: &Asm, reg: Reg, immediate: Int) {
-  if immediate < 256
+  if {0..256}.contains(immediate)
   then asm.moveib(reg, immediate.lower_byte())
   else asm.movei(reg, immediate)
 }
