@@ -260,7 +260,7 @@ fun fuzzer_main[Input](): Never {
   }
   var inputs = vec[InputThatRan[Input]]()
 
-  for i in 0..100 do {
+  for i in 0..200 do {
     var checkpoint = heap_checkpoint()
     var input = static[Input]().generate(random.&, 100)
     var input = input.run_sandboxed()
@@ -277,7 +277,7 @@ fun fuzzer_main[Input](): Never {
     if inputs.len <= i then break
     var j = 0
     loop {
-      if j == 100 then break
+      if j == 200 then break
       j = j + 1
 
       var checkpoint = heap_checkpoint()
@@ -285,8 +285,8 @@ fun fuzzer_main[Input](): Never {
       var temperature = 100000 / {j + 1} / {j + 1}
       var mutated = original.input.mutate(random.&, 10000).run_sandboxed()
 
-      | eprintln("Mutated (comp {mutated.complexity()}) and original (comp {original.complexity()})")
-      if mutated.complexity() < original.complexity()
+      | eprintln("Mutated (comp {mutated.fuzzing_complexity()}) and original (comp {original.fuzzing_complexity()})")
+      if mutated.fuzzing_complexity() < original.fuzzing_complexity()
         and not(original.improves_upon(mutated))
       then {
         inputs.get_ref(i).* = mutated
@@ -329,7 +329,8 @@ fun run_sandboxed[Input](input: Input): InputThatRan[Input] {
     switch res
     case ok(res) ok[Str, Nothing]("{res.debug()}")
     case error error[Str, Nothing]({})
-  eprintln(result or "<panicked>")
+  eprint(result or "<panicked>")
+  eprintln(" (complexity {input.fuzzing_complexity()})")
 
   InputThatRan { input, arg_strs, coverage, result }
 }
@@ -391,6 +392,9 @@ fallback fun generate[T](
 fun generate[T](s: Static[&T], random: &Random, complexity: Int): &T {
   static[T]().generate(random, complexity).put_on_heap()
 }
+
+| Returns a complexity evaluation of an input.
+fallback fun fuzzing_complexity[T](value: T): Float { ... }
 
 | Splits a complexity into n smaller complexities with a sum <= the original
 | one.
@@ -770,7 +774,7 @@ fun round_up_to_power_of(number: Int, factor: Int): Int {
   loop if power >= number then break(power) else power = power * factor
 }
 fun sqrt(num: Int): Int {
-  num >= 0 or panic("you can't take the sqrt of negative number")
+  num >= 0 or panic("you can't take the sqrt of a negative number")
   var a = 1
   loop {
     if a * a > num then break
@@ -850,6 +854,7 @@ fun generate(s: Static[Int], random: &Random, complexity: Int): Int {
   var limit = complexity * complexity
   random.next_int({0 - limit}..=limit)
 }
+fun fuzzing_complexity(int: Int): Float { int.abs().inc().log_2().to_float() }
 fun mutate(int: Int, random: &Random, temperature: Int): Int {
   int + random.next_int({0 - temperature}..=temperature)
 }
@@ -942,6 +947,9 @@ fun write_debug[W](writer: W, byte: Byte) { writer."{byte}" }
 fun generate(s: Static[Byte], random: &Random, complexity: Int): Byte {
   random.next_int().lower_byte()
 }
+fun fuzzing_complexity(byte: Byte): Float {
+  byte.to_int().abs().inc().log_2().to_float()
+}
 fun mutate(byte: Byte, random: &Random, temperature: Int): Byte {
   byte + random.next_int({0 - temperature}..=temperature).lower_byte()
 }
@@ -1007,6 +1015,7 @@ fun /(left: Float, right: Float): Float asm {
   load c sp | return value address
   fdiv a b store c a ret
 }
+fun abs(float: Float): Float { if float >= 0.0 then float else 0.0 - float }
 fun <=>(left: Float, right: Float): Ordering asm { | TODO: remove?
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
@@ -1157,6 +1166,10 @@ fun write_debug[W](writer: W, float: Float) { writer."{float}" }
 
 fun generate(s: Static[Float], random: &Random, complexity: Int): Float {
   static[Int]().generate(random, complexity).to_float()
+}
+fun fuzzing_complexity(float: Float): Float {
+  var extra = if float.to_int().to_float() == float then 0.0 else 10.0
+  float.abs().to_int().log_2().to_float() + extra
 }
 fun mutate(value: Float, random: &Random, temperature: Int): Float {
   value.to_int().mutate(random, temperature).to_float()
@@ -1577,6 +1590,11 @@ fun generate[T](
     slice.get_ref(it.index).* = static[T]().generate(random, it.item)
   slice
 }
+fun fuzzing_complexity[T](slice: Slice[T]): Float {
+  var complexity = slice.len.to_float()
+  for item in slice do complexity = complexity + item.fuzzing_complexity()
+  complexity
+}
 fun mutate[T](slice: Slice[T], random: &Random, temperature: Int): Slice[T] {
   if temperature == 0 then return slice
   var copy = uninitialized_slice[T](slice.len)
@@ -1975,6 +1993,12 @@ fun mutate(char: Char, random: &Random, temperature: Int): Char {
     .lower_byte()
     .clamp(visible_ascii)
     .to_char()
+}
+fun fuzzing_complexity(str: Str): Float {
+  var complexity = str.len.to_float()
+  for char in str.chars() do
+    complexity = complexity + char.byte.fuzzing_complexity()
+  complexity
 }
 fun generate(s: Static[Str], random: &Random, complexity: Int): Str {
   var len = random.next_int(0..=complexity)
@@ -2652,6 +2676,11 @@ fun generate[T](
     vec.&.push(static[T]().generate(random, complexity))
   vec
 }
+fun fuzzing_complexity[T](vec: Vec[T]): Float {
+  var complexity = vec.len.to_float()
+  for item in vec do complexity = complexity + item.fuzzing_complexity()
+  complexity
+}
 fun mutate[T](vec: Vec[T], random: &Random, temperature: Int): Vec[T] {
   vec.to_slice().mutate(random, temperature).to_vec()
 }
@@ -2899,6 +2928,13 @@ fun generate[K, V](
     map.&.put(key, value)
   }
   map
+}
+fun fuzzing_complexity[K, V](map: Map[K, V]): Float {
+  var complexity = map.size.to_float()
+  for entry in map do
+    complexity = complexity + entry.key.fuzzing_complexity()
+      + entry.value.fuzzing_complexity()
+  complexity
 }
 fun mutate[K, V](map: Map[K, V], random: &Random, temperature: Int): Map[K, V] {
   if temperature == 0 then return map

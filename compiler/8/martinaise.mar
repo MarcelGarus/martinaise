@@ -4144,6 +4144,9 @@ fun compile_builtin_fun(
   if name == "generate" then
     return compile_generate_fun(type_args, arg_types, body, src)
 
+  if name == "fuzzing_complexity" then
+    return compile_fuzzing_complexity_fun(type_args, arg_types, body, src)
+
   if name == "mutate" then
     return compile_mutate_fun(type_args, arg_types, body, src)
 
@@ -4388,6 +4391,58 @@ fun compile_generate_fun(
   ok[MonoFunBody, Error](body.finish())
 }
 
+fun compile_fuzzing_complexity_fun(
+  type_args: Vec[Type], arg_types: Vec[Type], body: &MonoBodyBuilder, src: Src
+): Result[MonoFunBody, Error] {
+  arg_types.len == 1 or return error[MonoFunBody, Error](make_error(
+    src, "fuzzing_complexity should only take one argument."))
+  var value_ty = arg_types.get(0)
+
+  var value = body.arg(value_ty, 0)
+  var complexity = body.float(0.to_float())
+
+  switch body.mono.type_defs.get(value_ty)
+  case opaque_ {
+    var one = body.float(1.to_float())
+    body.assign(complexity, one, src)
+  }
+  case struct_(struct_) {
+    | complexity = complexity + value.foo.fuzzing_complexity()
+    | complexity = complexity + value.bar.fuzzing_complexity()
+
+    var field_complexity = body.uninitialized(type("Float"))
+    for field in struct_.fields.iter() do {
+      body.call_matching_fun(field_complexity, "fuzzing_complexity" @ src,
+        vec(value.member(field)), src)?
+      body.call_matching_fun(complexity, "+" @ src,
+        vec(complexity, field_complexity), src)?
+    }
+  }
+  case enum_(enum_) {
+    | switch enum
+    | case foo(payload) complexity = payload.fuzzing_complexity()
+    | case bar(payload) complexity = payload.fuzzing_complexity()
+
+    for it in enum_.variants.iter().enumerate() do
+      body.jump_if_variant(value, it.item.name, it.index, src)
+    for it in enum_.variants.iter().enumerate() do {
+      body.label(it.index, src)
+      var variant = it.item
+      var payload = body.uninitialized(variant.type)
+      body.get_enum_value(payload, value, variant.name, src)
+      body.call_matching_fun(
+        complexity, "fuzzing_complexity" @ src, vec(payload), src)?
+      body.jump(enum_.variants.len, src)
+    }
+
+    body.label(enum_.variants.len, src)
+  }
+
+  body.return_(complexity, src)
+
+  ok[MonoFunBody, Error](body.finish())
+}
+
 fun compile_mutate_fun(
   type_args: Vec[Type], arg_types: Vec[Type], body: &MonoBodyBuilder, src: Src
 ): Result[MonoFunBody, Error] {
@@ -4497,14 +4552,6 @@ fun compile_mutate_fun(
 
   body.return_(value, src)
 
-  stderr.write("mutate", MonoFun {
-    name = "mutate" @ src,
-    type_args = vec[Type](),
-    arg_types = vec[Type](),
-    return_type = type("returned"),
-    kind = MonoFunKind.body(body.finish()),
-  })
-  stderr."\n\n"
   ok[MonoFunBody, Error](body.finish())
 }
 
@@ -5728,7 +5775,7 @@ fun instrument(
         new.&.push(Reg.a)
         new.&.push(Reg.b)
         new.&.moveimem(Reg.a, "_coverage_bitset")
-        new.&.movei(Reg.b, cjump_index)
+        new.&.movei(Reg.b, cjump_index) | TODO: not times 2?
         new.&.add(Reg.a, Reg.b)
         new.&.moveib(Reg.b, 1.lower_byte())
         new.&.cjump(new.soil.instructions.len + 2) |-------+
