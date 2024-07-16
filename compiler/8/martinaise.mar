@@ -6039,17 +6039,28 @@ fun main(): Never {
     print_status("{soil}")
   }
   case compile(path) {
+    var start = now_instant()
     var ast = parse_project(path).unwrap_or_report_and_exit()
+    var ast_done = now_instant()
+    print_status("Parsed        – {ast_done.nanos_since(start) / 1000000} ms\n")
     var mono = ast.compile_main().unwrap_or_report_and_exit()
+    var mono_done = now_instant()
+    print_status("Monomorphized – {mono_done.nanos_since(ast_done) / 1000000} ms\n")
     var soil = mono.soil().unwrap_or_report_and_exit()
+    var soil_done = now_instant()
+    print_status("Assembled     – {soil_done.nanos_since(mono_done) / 1000000} ms\n")
     var binary = soil.to_binary()
+    var binary_done = now_instant()
+    print_status("Binaryfied    – {binary_done.nanos_since(soil_done) / 1000000} ms\n")
 
     print_status("Writing binary")
     var out_file = path
     out_file.&.trim_suffix(".mar")
     out_file = "{out_file}.soil"
     write_file(out_file, binary)
-    print_status("Compiled to {out_file} ({binary.len} bytes). Enjoy!")
+    var write_done = now_instant()
+    print_status("Written       – {write_done.nanos_since(binary_done) / 1000000} ms\n")
+    print_status("Compiled to {out_file} ({binary.len} bytes) in {write_done.nanos_since(start) / 1000000} ms. Enjoy!")
   }
   case run(path) {
     var ast = parse_project(path).unwrap_or_report_and_exit()
