@@ -1909,20 +1909,20 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
   var asts = map[Str, FileAst]()
 
   | Reference types such as &T are type-checked just like any other types. For
-  | this to work, automatically we create an implicitly imported file with this
-  | struct:
+  | this to work, we create an implicitly imported file with this struct:
   | struct &[T] { *: T }
   var ref_file = "_ref"
   var invalid_location = src(ref_file, 0..0)
-  var ref = FileAst { imports = vec[AstStr](), defs = vec[AstDef]() }
-  ref.defs.&.push(AstDef.struct_(AstStruct {
-    name = "&" @ invalid_location,
-    type_args = vec("T" @ invalid_location),
-    fields = vec(AstStructField {
-      name = "*" @ invalid_location, type = type("T")
-    }),
-  }))
-  asts.&.put("_ref", ref)
+  asts.&.put("_ref", FileAst {
+    imports = vec[AstStr](),
+    defs = vec(AstDef.struct_(AstStruct {
+      name = "&" @ invalid_location,
+      type_args = vec("T" @ invalid_location),
+      fields = vec(AstStructField {
+        name = "*" @ invalid_location, type = type("T")
+      }),
+    }))
+  })
 
   asts.&.parse_file_and_dependencies(entry_file, none[AstStr]())?
 
