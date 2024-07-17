@@ -1,0 +1,71 @@
+| Minimal "Hello, world!" example.
+
+fun main(): Never {
+  println("Hello, world!")
+  exit(0)
+}
+
+struct Nothing {}
+enum Never {}
+struct Char { byte: Byte }
+struct Str { data: Address, len: Int }
+opaque Address = 8 bytes big, 8 bytes aligned
+struct Slice[T] { data: Address, len: Int }
+opaque Int = 8 bytes big, 8 bytes aligned
+struct Print {}
+opaque Byte = 1 byte big, 1 byte aligned
+
+var stdout = Print {}
+var newline = 10.lower_byte().to_char()
+
+fun unchecked_cast[A, B](a: A): B { a.&.to_address().to_reference[B]().* }
+
+fun write_bytes(print: Print, bytes: Slice[Byte]) asm {
+  moveib a 8  add a sp load a a | bytes.data
+  moveib b 16 add b sp load b b | bytes.len
+  syscall 1 ret
+}
+
+fun println() { print(newline) }
+
+fun lower_byte(n: Int): Byte asm {
+  moveib a 8 add a sp load a a | n
+  load b sp | return value address
+  storeb b a ret
+}
+
+fun write[W](writer: W, char: Char) { writer.write_byte(char.byte) }
+
+fun to_reference[T](address: Address): &T asm {
+  moveib a 8 add a sp load a a | address
+  load b sp | return value address
+  store b a ret
+}
+
+fun write_byte(print: Print, byte: Byte) asm {
+  moveib a 8 add a sp | byte.&
+  moveib b 1
+  syscall 1 ret
+}
+
+fun exit(status: Int): Never asm {
+  moveib a 8 add a sp load a a | status
+  syscall 0
+}
+
+
+fun println[T](value: T) { print(value) println() }
+
+fun to_char(byte: Byte): Char { Char { byte } }
+
+fun print[T](value: T) { stdout.write(value) }
+
+fun to_address[T](ref: &T): Address asm {
+  moveib a 8 add a sp load a a | ref
+  load b sp | return value address
+  store b a ret
+}
+
+fun bytes(str: Str): Slice[Byte] { str.unchecked_cast[Str, Slice[Byte]]() }
+
+fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }
