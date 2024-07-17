@@ -10,7 +10,6 @@
 
 | Todos  
 | TODO: language features
-| TODO:   var bool = foo is some?
 | TODO:   enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
 | TODO:   support getting reference to enum payload
 | TODO:   provide way to get memory layouts of types as runtime values
@@ -131,8 +130,6 @@ fun none[T](): Maybe[T] { Maybe[T].none }
 fun unwrap[T](maybe: Maybe[T], message: Str): T { maybe or panic(message) }
 fun unwrap[T](maybe: Maybe[T]): T { maybe.unwrap("called none.unwrap") }
 fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { maybe or none[T]() }
-fun is_some[T](maybe: Maybe[T]): Bool { if maybe is some then true else false }
-fun is_none[T](maybe: Maybe[T]): Bool { if maybe is none then true else false }
 
 fun write[W, T](writer: W, maybe: Maybe[T]) {
   switch maybe
@@ -932,7 +929,7 @@ fun to_int(n: Byte): Int asm {
 fun inc(a: Byte): Byte { a + 1.lower_byte() }
 fun dec(a: Byte): Byte { a - 1.lower_byte() }
 
-fun ==(a: Byte, b: Byte): Bool { if a <=> b is equal then true else false }
+fun ==(a: Byte, b: Byte): Bool { a <=> b is equal }
 fun hash(hasher: &Hasher, int: Byte)  { hasher.hash(int.to_int()) }
 
 fun write[W](writer: W, int: Byte) { writer.write(radix(int, 10)) }
@@ -1030,7 +1027,7 @@ fun <=>(left: Float, right: Float): Ordering asm { | TODO: remove?
   .greater: moveib b 2 storeb c b ret
 }
 
-fun ==(a: Float, b: Float): Bool { if a <=> b is equal then true else false }
+fun ==(a: Float, b: Float): Bool { a <=> b is equal }
 fun hash(hasher: &Hasher, int: Float) {
   hasher.hash(memhash(int.&.to_address(), 8))
 }
@@ -1199,8 +1196,8 @@ fun write[W](writer: W, ord: Ordering) {
   )
 }
 
-fun <[T](a: T, b: T): Bool { if a <=> b is less then true else false }
-fun >[T](a: T, b: T): Bool { if a <=> b is greater then true else false }
+fun <[T](a: T, b: T): Bool { a <=> b is less }
+fun >[T](a: T, b: T): Bool { a <=> b is greater }
 fun >=[T](a: T, b: T): Bool { if a <=> b is less then false else true }
 fun <=[T](a: T, b: T): Bool { if a <=> b is greater then false else true }
 
@@ -1559,13 +1556,13 @@ fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
     if i == a.len then return Ordering.less
     if i == b.len then return Ordering.greater
     var ord = a.get(i) <=> b.get(i)
-    if ord is equal then {} else return ord
+    ord is equal or return ord
     i = i.inc()
   }
 }
 fun ==[T](a: Slice[T], b: Slice[T]): Bool {
   a.len == b.len or return false
-  if a <=> b is equal then true else false
+  a <=> b is equal
 }
 fun hash[T](hasher: &Hasher, slice: Slice[T]) { hasher.hash_all(slice) }
 fun write[W, T](writer: W, slice: Slice[T]) {
@@ -2004,7 +2001,7 @@ fun <=>(a: Str, b: Str): Ordering {
 }
 fun ==(a: Str, b: Str): Bool {
   a.len == b.len or return false
-  if memcompare(a.data, b.data, a.len) is equal then true else false
+  memcompare(a.data, b.data, a.len) is equal
 }
 fun hash(hasher: &Hasher, str: Str) { hasher.hash(memhash(str.data, str.len)) }
 fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }
