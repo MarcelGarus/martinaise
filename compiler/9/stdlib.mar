@@ -1761,6 +1761,41 @@ fun next_point(random: &Random, size: Point): Point {
   random.next_int(0..size.x) @ random.next_int(0..size.y)
 }
 
+| Rectangle  
+
+struct Rectangle { left: Int, top: Int, right: Int, bottom: Int }
+
+fun @(a: Point, b: Point): Rectangle {
+  Rectangle {
+    left   = min(a.x, b.x),
+    top    = min(a.y, b.y),
+    right  = max(a.x, b.x),
+    bottom = max(a.y, b.y),
+  }
+}
+fun by(a: Point, size: Point): Rectangle {
+  Rectangle {
+    left = a.x, top = a.y, right = a.x + size.x, bottom = a.y + size.y
+  }
+}
+
+fun contains(rect: Rectangle, point: Point): Bool {
+  {rect.left..rect.right}.contains(point.x)
+    and {rect.top..rect.bottom}.contains(point.y)
+}
+
+fun center_x(rect: Rectangle): Int { rect.left + rect.right / 2 }
+fun center_y(rect: Rectangle): Int { rect.top + rect.bottom / 2 }
+fun top_left(rect: Rectangle): Point      { rect.left       @ rect.top }
+fun top_right(rect: Rectangle): Point     { rect.right      @ rect.top }
+fun bottom_left(rect: Rectangle): Point   { rect.left       @ rect.bottom }
+fun bottom_right(rect: Rectangle): Point  { rect.right      @ rect.bottom }
+fun center(rect: Rectangle): Point        { rect.center_x() @ rect.center_y() }
+fun center_left(rect: Rectangle): Point   { rect.left       @ rect.center_y() }
+fun center_top(rect: Rectangle): Point    { rect.center_x() @ rect.top }
+fun center_right(rect: Rectangle): Point  { rect.right      @ rect.center_y() }
+fun center_bottom(rect: Rectangle): Point { rect.center_x() @ rect.bottom }
+
 | Matrix  
 
 struct Matrix[T] { data: Slice[T], width: Int, height: Int }
@@ -1812,7 +1847,7 @@ fun get_ref[T](matrix: &Matrix[T], point: Point): &T {
       '{matrix.width}x{matrix.height}")
 }
 fun get[T](matrix: Matrix[T], point: Point): T { matrix.&.get_ref(point).* }
-fun set[T](matrix: &Matrix, point: Point, value: T) {
+fun set[T](matrix: &Matrix[T], point: Point, value: T) {
   matrix.get_ref(point).* = value
 }
 
