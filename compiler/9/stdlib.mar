@@ -10,14 +10,11 @@
 
 | Todos  
 | TODO: language features
-| TODO:   var bool = foo is some?
 | TODO:   enum Foo { bar: Bar, baz: Baz } -> foo.bar: Maybe[Bar]
 | TODO:   support getting reference to enum payload
 | TODO:   provide way to get memory layouts of types as runtime values
-| TODO:   allow types on vars
 | TODO:   break and continue with targets
 | TODO:   funs as values, function types, higher-order funs?
-| TODO:   slice literals? array literals?
 | TODO: catch more errors
 | TODO:   enforce that statement-like expressions evaluate to Nothing
 | TODO:   disallow _ in type args, structs, enums, and recursive functions
@@ -25,7 +22,6 @@
 | TODO:   catch circular global definitions
 | TODO:   catch circular types
 | TODO: stdlib
-| TODO:   more efficient reading of files (append to end of heap)
 | TODO:   segment tree
 | TODO:   treap
 | TODO: tooling
@@ -131,8 +127,6 @@ fun none[T](): Maybe[T] { Maybe[T].none }
 fun unwrap[T](maybe: Maybe[T], message: Str): T { maybe or panic(message) }
 fun unwrap[T](maybe: Maybe[T]): T { maybe.unwrap("called none.unwrap") }
 fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { maybe or none[T]() }
-fun is_some[T](maybe: Maybe[T]): Bool { if maybe is some then true else false }
-fun is_none[T](maybe: Maybe[T]): Bool { if maybe is none then true else false }
 
 fun write[W, T](writer: W, maybe: Maybe[T]) {
   switch maybe
@@ -934,7 +928,7 @@ fun to_int(n: Byte): Int asm {
 fun inc(a: Byte): Byte { a + 1.lower_byte() }
 fun dec(a: Byte): Byte { a - 1.lower_byte() }
 
-fun ==(a: Byte, b: Byte): Bool { if a <=> b is equal then true else false }
+fun ==(a: Byte, b: Byte): Bool { a <=> b is equal }
 fun hash(hasher: &Hasher, int: Byte)  { hasher.hash(int.to_int()) }
 
 fun write[W](writer: W, int: Byte) { writer.write(radix(int, 10)) }
@@ -1032,7 +1026,7 @@ fun <=>(left: Float, right: Float): Ordering asm { | TODO: remove?
   .greater: moveib b 2 storeb c b ret
 }
 
-fun ==(a: Float, b: Float): Bool { if a <=> b is equal then true else false }
+fun ==(a: Float, b: Float): Bool { a <=> b is equal }
 fun hash(hasher: &Hasher, int: Float) {
   hasher.hash(memhash(int.&.to_address(), 8))
 }
@@ -1201,8 +1195,8 @@ fun write[W](writer: W, ord: Ordering) {
   )
 }
 
-fun <[T](a: T, b: T): Bool { if a <=> b is less then true else false }
-fun >[T](a: T, b: T): Bool { if a <=> b is greater then true else false }
+fun <[T](a: T, b: T): Bool { a <=> b is less }
+fun >[T](a: T, b: T): Bool { a <=> b is greater }
 fun >=[T](a: T, b: T): Bool { if a <=> b is less then false else true }
 fun <=[T](a: T, b: T): Bool { if a <=> b is greater then false else true }
 
@@ -1561,13 +1555,13 @@ fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
     if i == a.len then return Ordering.less
     if i == b.len then return Ordering.greater
     var ord = a.get(i) <=> b.get(i)
-    if ord is equal then {} else return ord
+    ord is equal or return ord
     i = i.inc()
   }
 }
 fun ==[T](a: Slice[T], b: Slice[T]): Bool {
   a.len == b.len or return false
-  if a <=> b is equal then true else false
+  a <=> b is equal
 }
 fun hash[T](hasher: &Hasher, slice: Slice[T]) { hasher.hash_all(slice) }
 fun write[W, T](writer: W, slice: Slice[T]) {
@@ -1763,6 +1757,41 @@ fun next_point(random: &Random, size: Point): Point {
   random.next_int(0..size.x) @ random.next_int(0..size.y)
 }
 
+| Rectangle  
+
+struct Rectangle { left: Int, top: Int, right: Int, bottom: Int }
+
+fun @(a: Point, b: Point): Rectangle {
+  Rectangle {
+    left   = min(a.x, b.x),
+    top    = min(a.y, b.y),
+    right  = max(a.x, b.x),
+    bottom = max(a.y, b.y),
+  }
+}
+fun by(a: Point, size: Point): Rectangle {
+  Rectangle {
+    left = a.x, top = a.y, right = a.x + size.x, bottom = a.y + size.y
+  }
+}
+
+fun contains(rect: Rectangle, point: Point): Bool {
+  {rect.left..rect.right}.contains(point.x)
+    and {rect.top..rect.bottom}.contains(point.y)
+}
+
+fun center_x(rect: Rectangle): Int { rect.left + rect.right / 2 }
+fun center_y(rect: Rectangle): Int { rect.top + rect.bottom / 2 }
+fun top_left(rect: Rectangle): Point      { rect.left       @ rect.top }
+fun top_right(rect: Rectangle): Point     { rect.right      @ rect.top }
+fun bottom_left(rect: Rectangle): Point   { rect.left       @ rect.bottom }
+fun bottom_right(rect: Rectangle): Point  { rect.right      @ rect.bottom }
+fun center(rect: Rectangle): Point        { rect.center_x() @ rect.center_y() }
+fun center_left(rect: Rectangle): Point   { rect.left       @ rect.center_y() }
+fun center_top(rect: Rectangle): Point    { rect.center_x() @ rect.top }
+fun center_right(rect: Rectangle): Point  { rect.right      @ rect.center_y() }
+fun center_bottom(rect: Rectangle): Point { rect.center_x() @ rect.bottom }
+
 | Matrix  
 
 struct Matrix[T] { data: Slice[T], width: Int, height: Int }
@@ -1814,7 +1843,7 @@ fun get_ref[T](matrix: &Matrix[T], point: Point): &T {
       '{matrix.width}x{matrix.height}")
 }
 fun get[T](matrix: Matrix[T], point: Point): T { matrix.&.get_ref(point).* }
-fun set[T](matrix: &Matrix, point: Point, value: T) {
+fun set[T](matrix: &Matrix[T], point: Point, value: T) {
   matrix.get_ref(point).* = value
 }
 
@@ -1971,7 +2000,7 @@ fun <=>(a: Str, b: Str): Ordering {
 }
 fun ==(a: Str, b: Str): Bool {
   a.len == b.len or return false
-  if memcompare(a.data, b.data, a.len) is equal then true else false
+  memcompare(a.data, b.data, a.len) is equal
 }
 fun hash(hasher: &Hasher, str: Str) { hasher.hash(memhash(str.data, str.len)) }
 fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }

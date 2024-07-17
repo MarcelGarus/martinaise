@@ -904,14 +904,15 @@ fun parse_expr(parser: &Parser): Result[Maybe[AstExpr], Str] {
   parser.parse_expr(Precedence.assign)
 }
 
-enum Precedence { immediate, operator, and, or, assign }
+enum Precedence { immediate, operator, and, or, is, assign }
 fun to_int(precedence: Precedence): Int {
   switch precedence
-  case immediate 0
-  case operator 1
-  case and 2
-  case or 3
-  case assign 4
+  case immediate 5
+  case operator 4
+  case and 3
+  case or 2
+  case is 1
+  case assign 0
 }
 fun <=>(a: Precedence, b: Precedence): Ordering { a.to_int() <=> b.to_int() }
 
@@ -945,14 +946,16 @@ fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], Str] {
 fun parse_expr_suffix(
   parser: &Parser, expr: AstExpr, precedence: Precedence,
 ): Result[Maybe[AstExpr], Str] {
-  if precedence >= Precedence.or then
+  if precedence <= Precedence.is then
+    if parser.parse_expr_suffix_is(expr)? is some(is_) then return parsed(is_)
+  if precedence <= Precedence.or then
     if parser.parse_expr_suffix_or(expr)? is some(or_) then return parsed(or_)
-  if precedence >= Precedence.and then
+  if precedence <= Precedence.and then
     if parser.parse_expr_suffix_and(expr)? is some(and_) then
       return parsed(and_)
-  if precedence >= Precedence.operator then
+  if precedence <= Precedence.operator then
     if parser.parse_expr_suffix_operator(expr)? is some(o) then return parsed(o)
-  if precedence is assign then
+  if precedence <= Precedence.assign then
     if parser.parse_expr_suffix_assign(expr)? is some(a) then return parsed(a)
   if parser.parse_expr_suffix_member(expr)? is some(mem) then return parsed(mem)
   if parser.parse_expr_suffix_call(expr)? is some(call) then return parsed(call)
@@ -1184,8 +1187,8 @@ fun parse_var(parser: &Parser): Result[Maybe[AstVar], Str] {
 | They all get desugared into a switch.
 fun parse_if(parser: &Parser): Result[Maybe[AstExpr], Str] {
   var keyword = parser.consume_keyword("if") or return no_match[AstExpr]()
-  var condition = parser.parse_expr()? or return bad_input[AstExpr](
-    "Expected the condition.")
+  var condition = parser.parse_expr(Precedence.or)?
+    or return bad_input[AstExpr]("Expected the condition.")
   var variant = "true" @ keyword.src
   var binding = none[AstStr]()
   if parser.consume_keyword("is") is some then {
@@ -1420,6 +1423,26 @@ fun parse_expr_suffix_assign(
     to = current.put_on_heap(),
     value = value.put_on_heap(),
     equal_sign,
+  }))
+}
+
+fun parse_expr_suffix_is(
+  parser: &Parser, current: AstExpr,
+): Result[Maybe[AstExpr], Str] {
+  var keyword = parser.consume_keyword("is") or return no_match[AstExpr]()
+  var variant = parser.parse_lower_name()
+    or return bad_input[AstExpr]("Expected a variant.")
+  parsed(AstExpr.switch_(AstSwitch {
+    keyword,
+    value = current.put_on_heap(),
+    cases = vec(AstCase {
+      variant, binding = none[AstStr](),
+      body = AstExpr.name("true" @ keyword.src)
+    }),
+    default_ = some(AstDefaultCase {
+      keyword = "default" @ keyword.src,
+      body = AstExpr.name("false" @ keyword.src),
+    }.put_on_heap()),
   }))
 }
 
@@ -3465,28 +3488,60 @@ fun compile_in_current_scope(
         if {of.type.name == "&"} & {member.name.str != "*"}
         then of = of.member("*", of.type.args.get(0))
         else break
-      var struct_ =
-        switch mono.type_defs.get(of.type)
-        case struct_(s) s
-        default return error[MonoExpr, Error](make_error(
-          member.name.src, "Invalid field access.", "{of.type} is not a struct."
-        ))
-      var field = {
-        var the_field = none[MonoStructField]()
-        for field in struct_.fields do
-          if field.name == member.name.str then the_field = some(field)
-        the_field or return error[MonoExpr, Error](make_error(
-          member.name.src, "This is not a field on {of.type}.",
-          {
-            var out = string_builder().&
-            out."It only contains these fields:"
-            for field in struct_.fields do out."\n - {field.name}"
-            out.to_str()
-          }
-        ))
+      switch mono.type_defs.get(of.type)
+      case struct_(struct_) {
+        var field = {
+          var the_field = none[MonoStructField]()
+          for field in struct_.fields do
+            if field.name == member.name.str then the_field = some(field)
+          the_field or return error[MonoExpr, Error](make_error(
+            member.name.src, "{member.name} is not a field on {of.type}.",
+            {
+              var out = string_builder().&
+              out."It only contains these fields:"
+              for field in struct_.fields do out."\n - {field.name}"
+              out.to_str()
+            }
+          ))
+        }
+        of.member(field)
       }
-
-      of.member(field)
+      case enum_(enum_) {
+        var variant = {
+          var the_variant = none[MonoEnumVariant]()
+          for variant in enum_.variants do
+            if variant.name == member.name.str then the_variant = some(variant)
+          the_variant or return error[MonoExpr, Error](make_error(
+            member.name.src, "This is not a variant of {of.type}.",
+            {
+              var out = string_builder().&
+              out."It only has these variant:"
+              for variant in enum_.variants do out."\n - {variant.name}"
+              out.to_str()
+            }
+          ))
+        }
+        var src = member.name.src
+        var payload = body.uninitialized(variant.type)
+        var maybe = body.uninitialized(type("Maybe", vec(variant.type)))
+        var matches_label = self.next_label_id()
+        var matches_not_label = self.next_label_id()
+        var after_label = self.next_label_id()
+        body.jump_if_variant(of, variant.name, matches_label, src)
+        body.jump(matches_not_label, src)
+        body.label(matches_label, src)
+        body.get_enum_value(payload, of, variant.name, src)
+        body.set_enum(maybe, "some", payload, src)
+        body.jump(after_label, src)
+        body.label(matches_not_label, src)
+        body.set_enum(maybe, "none", nothing_expr, src)
+        body.label(after_label, src)
+        maybe
+      }
+      case opaque_ return error[MonoExpr, Error](make_error(
+        member.name.src, "Invalid member access.",
+        "{of.type} is an opaque type."
+      ))
     }
     case var_(var_) {
       var value = var_.value.compile(self)?
