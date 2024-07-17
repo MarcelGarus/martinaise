@@ -1524,7 +1524,8 @@ fun copy_to[T](from: Slice[T], to: Slice[T]) {
   memcopy(from.data, to.data, from.len * stride_size_of[T]())
 }
 fun subslice[T](slice: Slice[T], range: Range[Int]): Slice[T] {
-  assert(range.end <= slice.len, "subslice needs to be inside original slice")
+  range.end <= slice.len or
+    panic("tried to take subslice {range} from slice of length {slice.len}")
   Slice[T] {
     data = slice.data + {stride_size_of[T]() * range.start}, len = range.len()
   }
