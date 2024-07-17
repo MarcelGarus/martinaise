@@ -459,7 +459,7 @@ fun var_(name: AstStr, value: AstExpr): AstExpr {
 }
 
 fun write[W](writer: W, ast: FileAst) {
-  for import in imports do writer."import {import}\n"
+  for import_ in ast.imports do writer."import {import_}\n"
   for def in ast.defs do writer."{def}\n"
 }
 fun write[W](writer: W, def: AstDef) {
@@ -480,11 +480,11 @@ fun write[W](writer: W, opaque_: AstOpaqueType) {
 }
 fun write[W](writer: W, struct_: AstStruct) {
   writer."struct {struct_.name}{type_args(struct_.type_args)} "
-  if struct_.fields.is_empty() then writer."\{}" else {
-    writer."\{\n\}"
+  if struct_.fields.is_empty() then writer."\{\}" else {
+    writer."\{\n"
     for field in struct_.fields do
       writer."  {field.name}: {field.type},\n"
-    writer."}"
+    writer."\}"
   }
 }
 fun write[W](writer: W, enum_: AstEnum) {
