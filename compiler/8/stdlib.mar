@@ -2251,6 +2251,22 @@ fun write_bytes[W](self: &BufferedWriter[W], bytes: Slice[Byte]) {
   }
 }
 
+| Time  
+
+struct Instant { nanos: Int }
+
+fun now_instant(): Instant asm {
+  move b sp load b b
+  syscall 16
+  store b a ret
+}
+fun nanos_since(a: Instant, b: Instant): Int { a.nanos - b.nanos }
+
+struct Timer { start: Instant }
+
+fun start_timer(): Timer { Timer { start = now_instant() } }
+fun read_nanos(timer: Timer): Int { now_instant().nanos_since(timer.start) }
+
 | Tuples  
 
 fun tuple[A, B](a: A, b: B): Tuple2[A, B] { Tuple2 { a, b } }

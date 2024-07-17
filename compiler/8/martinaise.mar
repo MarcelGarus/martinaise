@@ -986,13 +986,18 @@ fun parse_digits(parser: &Parser, radix: Int): Result[Maybe[Int], Str] {
 fun parse_number(parser: &Parser): Result[Maybe[AstExpr], Str] {
   parser.consume_whitespace()
   var radix = 10
-  var value = parser.parse_digits(radix)? or return no_match[AstExpr]()
+  var sign = if parser.consume_prefix("-") is some then {0-1} else 1
+  var value = parser.parse_digits(radix)? or
+    return
+      if sign == 1
+      then no_match[AstExpr]()
+      else bad_input[AstExpr]("Expected number after the minus sign.")
   if parser.consume_prefix("#") is some then {
     radix = value
     value = parser.parse_digits(radix)? or return bad_input[AstExpr](
       "Expected the value of the number after the radix pound.")
   }
-  var expr = AstExpr.int(value)
+  var expr = AstExpr.int(sign * value)
   var cursor_before_dot = parser.cursor
   if parser.consume_prefix(".") is some then {
     var start_of_decimals = parser.cursor
@@ -1005,7 +1010,7 @@ fun parse_number(parser: &Parser): Result[Maybe[AstExpr], Str] {
 
     var integer_part = value.to_float()
     var decimal_part = decimals.to_float() / {10 ** num_decimals}.to_float()
-    expr = AstExpr.float(integer_part + decimal_part)
+    expr = AstExpr.float(sign.to_float() * {integer_part + decimal_part})
   }
   var end = parser.cursor
   parsed(expr)
@@ -1989,9 +1994,6 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
           concrete_type_used_as_arg_error(fun_.name, arg))
       for arg in fun_.args do
         if arg.type.exists(types, fun_.type_args) is error(type) then {
-          eprintln("These types exist:")
-          for type in types do eprintln("{type.key}")
-          eprintln("That's it.")
           return error[Ast, Error](type_doesnt_exist_error(fun_.name, type))
         }
     }
@@ -4924,7 +4926,7 @@ fun assemble(mono: Mono, entry_point: Str, asm: &Asm): Result[Nothing, Error] {
 }
 
 fun smart_movei(asm: &Asm, reg: Reg, immediate: Int) {
-  if immediate < 256
+  if {0..256}.contains(immediate)
   then asm.moveib(reg, immediate.lower_byte())
   else asm.movei(reg, immediate)
 }
@@ -6037,17 +6039,28 @@ fun main(): Never {
     print_status("{soil}")
   }
   case compile(path) {
+    var start = now_instant()
     var ast = parse_project(path).unwrap_or_report_and_exit()
+    var ast_done = now_instant()
+    print_status("Parsed        – {ast_done.nanos_since(start) / 1000000} ms\n")
     var mono = ast.compile_main().unwrap_or_report_and_exit()
+    var mono_done = now_instant()
+    print_status("Monomorphized – {mono_done.nanos_since(ast_done) / 1000000} ms\n")
     var soil = mono.soil().unwrap_or_report_and_exit()
+    var soil_done = now_instant()
+    print_status("Assembled     – {soil_done.nanos_since(mono_done) / 1000000} ms\n")
     var binary = soil.to_binary()
+    var binary_done = now_instant()
+    print_status("Binaryfied    – {binary_done.nanos_since(soil_done) / 1000000} ms\n")
 
     print_status("Writing binary")
     var out_file = path
     out_file.&.trim_suffix(".mar")
     out_file = "{out_file}.soil"
     write_file(out_file, binary)
-    print_status("Compiled to {out_file} ({binary.len} bytes). Enjoy!")
+    var write_done = now_instant()
+    print_status("Written       – {write_done.nanos_since(binary_done) / 1000000} ms\n")
+    print_status("Compiled to {out_file} ({binary.len} bytes) in {write_done.nanos_since(start) / 1000000} ms. Enjoy!")
   }
   case run(path) {
     var ast = parse_project(path).unwrap_or_report_and_exit()

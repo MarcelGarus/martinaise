@@ -2939,7 +2939,7 @@ fun write[W, K, V](writer: W, entry: MapEntry[K, V]) {
   writer."{entry.key}: {entry.value}"
 }
 fun write[W, K, V](writer: W, map: Map[K, V]) {
-  writer."{{comma_separated(map.iter())}}"
+  writer."\{{comma_separated(map.iter())}\}"
 }
 fun write_debug[W, K, V](writer: W, map: Map[K, V]) {
   writer."\{"
