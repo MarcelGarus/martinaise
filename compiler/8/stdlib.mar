@@ -498,6 +498,8 @@ fun write[W](writer: W, coverage: Coverage) {
 | c the second one, etc.
 | When the syscall returns, a contains the result.
 
+fun get_stack_pointer(): Address asm { load a sp store a sp ret }
+
 | Printing and Logging  
 
 fun write[W, T](writer: W, value: &T) { writer.write(value.*) }
@@ -2187,10 +2189,15 @@ fun close(file: File) asm {
 
 fun read_file(name: Str): Result[Slice[Byte], Nothing] {
   var file = open_file_for_reading(name)?
-  var content = vec[Byte]()
-  loop content.&.push(file.read_byte()? or break)
+  var all_free_memory = Slice[Byte] {
+    data = heap_head, len = get_stack_pointer().to_int() - heap_head.to_int() - 100
+  }
+  var len = file.read(all_free_memory)?
+  if len == all_free_memory.len then panic("out of memory")
   file.close()
-  ok[Slice[Byte], Nothing](content.to_slice())
+  var content = all_free_memory.subslice(0..len)
+  heap_head = heap_head + len
+  ok[Slice[Byte], Nothing](content)
 }
 fun write_file(name: Str, content: Slice[Byte]): Result[Nothing, Nothing] {
   var file = open_file_for_writing(name)?
