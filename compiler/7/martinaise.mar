@@ -3330,28 +3330,60 @@ fun compile_in_current_scope(
         if {of.type.name == "&"} & {member.name.str != "*"}
         then of = of.member("*", of.type.args.get(0))
         else break
-      var struct_ =
-        switch mono.type_defs.get(of.type)
-        case struct_(s) s
-        default return error[MonoExpr, Error](make_error(
-          member.name.src, "Invalid field access.", "{of.type} is not a struct."
-        ))
-      var field = {
-        var the_field = none[MonoStructField]()
-        for field in struct_.fields do
-          if field.name == member.name.str then the_field = some(field)
-        the_field or return error[MonoExpr, Error](make_error(
-          member.name.src, "This is not a field on {of.type}.",
-          {
-            var out = string_builder().&
-            out."It only contains these fields:"
-            for field in struct_.fields do out."\n - {field.name}"
-            out.to_str()
-          }
-        ))
+      switch mono.type_defs.get(of.type)
+      case struct_(struct_) {
+        var field = {
+          var the_field = none[MonoStructField]()
+          for field in struct_.fields do
+            if field.name == member.name.str then the_field = some(field)
+          the_field or return error[MonoExpr, Error](make_error(
+            member.name.src, "{member.name} is not a field on {of.type}.",
+            {
+              var out = string_builder().&
+              out."It only contains these fields:"
+              for field in struct_.fields do out."\n - {field.name}"
+              out.to_str()
+            }
+          ))
+        }
+        of.member(field)
       }
-
-      of.member(field)
+      case enum_(enum_) {
+        var variant = {
+          var the_variant = none[MonoEnumVariant]()
+          for variant in enum_.variants do
+            if variant.name == member.name.str then the_variant = some(variant)
+          the_variant or return error[MonoExpr, Error](make_error(
+            member.name.src, "This is not a variant of {of.type}.",
+            {
+              var out = string_builder().&
+              out."It only has these variant:"
+              for variant in enum_.variants do out."\n - {variant.name}"
+              out.to_str()
+            }
+          ))
+        }
+        var src = member.name.src
+        var payload = body.uninitialized(variant.type)
+        var maybe = body.uninitialized(type("Maybe", vec(variant.type)))
+        var matches_label = self.next_label_id()
+        var matches_not_label = self.next_label_id()
+        var after_label = self.next_label_id()
+        body.jump_if_variant(of, variant.name, matches_label, src)
+        body.jump(matches_not_label, src)
+        body.label(matches_label, src)
+        body.get_enum_value(payload, of, variant.name, src)
+        body.set_enum(maybe, "some", payload, src)
+        body.jump(after_label, src)
+        body.label(matches_not_label, src)
+        body.set_enum(maybe, "none", nothing_expr, src)
+        body.label(after_label, src)
+        maybe
+      }
+      case opaque_ return error[MonoExpr, Error](make_error(
+        member.name.src, "Invalid member access.",
+        "{of.type} is an opaque type."
+      ))
     }
     case var_(var_) {
       var value = var_.value.compile(self)?
