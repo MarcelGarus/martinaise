@@ -814,14 +814,14 @@ fun ==(a: Int, b: Int): Bool asm {
   storeb c st ret
 }
 
-fun parse_int(str: Str): Int {
+fun parse_int(str: Str): Maybe[Int] {
   var num = 0
   for char in str do {
     if not({#0..=#9}.contains(char))
-    then panic("non-digit in supposed number")
+    then return none[Int]()
     num = num * 10 + {char - #0}.to_int()
   }
-  num
+  some(num)
 }
 
 fun write[W](writer: W, int: Int) {
