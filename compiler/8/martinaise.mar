@@ -164,7 +164,7 @@ fun to_offset(position: CodePosition, file: Str): Maybe[Int] {
 
 fun <=>(a: CodePosition, b: CodePosition): Ordering {
   var line_cmp = a.line <=> b.line
-  if line_cmp is equal then {} else return line_cmp
+  line_cmp is equal or return line_cmp
   a.column <=> b.column
 }
 
@@ -243,24 +243,24 @@ fun write_line_number[W](writer: W, n: Int) {
 }
 
 fun to_json(error: Error): Json {
-  var src_obj = if error.src.to_code_range() is some(range) then
-    map(
-      "file" -> Json.string(error.src.file),
-      "start" -> Json.map(map(
-        "line"   -> Json.int(range.start.line),
-        "column" -> Json.int(range.start.column),
-      )),
-      "end" -> Json.map(map(
-        "line"   -> Json.int(range.start.line),
-        "column" -> Json.int(range.start.column),
-      ))
-    )
-  else
-    map(
-      "file"  -> Json.string(error.src.file),
-      "start" -> Json.map(map("line" -> Json.int(0), "column" -> Json.int(0))),
-      "end"   -> Json.map(map("line" -> Json.int(0), "column" -> Json.int(0))),
-    )
+  var src_obj =
+    switch error.src.to_code_range()
+      case some(range) map(
+        "file" -> Json.string(error.src.file),
+        "start" -> Json.map(map(
+          "line"   -> Json.int(range.start.line),
+          "column" -> Json.int(range.start.column),
+        )),
+        "end" -> Json.map(map(
+          "line"   -> Json.int(range.start.line),
+          "column" -> Json.int(range.start.column),
+        ))
+      )
+      case none map(
+        "file"  -> Json.string(error.src.file),
+        "start" -> Json.map(map("line" -> Json.int(0), "column" -> Json.int(0))),
+        "end"   -> Json.map(map("line" -> Json.int(0), "column" -> Json.int(0))),
+      )
 
   var context_array = vec[Json]()
   for entry in error.context do context_array.&.push(Json.string(entry))
@@ -857,7 +857,7 @@ fun parse_type(parser: &Parser): Result[Maybe[Type], Str] {
       or return bad_input[Type]("After &, there must come a type.")
     return parsed(type("&", vec(arg)))
   }
-  if parser.consume_prefix("_") is some then return parsed(type("_"))
+  if parser.consume_keyword("_") is some then return parsed(type("_"))
 
   var name = parser.parse_upper_name() or return no_match[Type]()
   var args = parser.parse_type_args()? or vec[Type]()
@@ -1380,9 +1380,9 @@ fun parse_expr_suffix_call(
 ): Result[Maybe[AstExpr], Str] {
   var type_args = parser.parse_type_args()?
   var opening_parenthesis = parser.consume_prefix("(")
-    or return if type_args is some
-      then bad_input[AstExpr]("Expected an opening parenthesis.")
-      else no_match[AstExpr]()
+    or return switch type_args
+      case some bad_input[AstExpr]("Expected an opening parenthesis.")
+      case none no_match[AstExpr]()
   var args = vec[AstExpr]()
   loop {
     args.&.push(parser.parse_expr()? or break)
@@ -2007,9 +2007,8 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
         if arg.str.exists(types, vec[AstStr]()) then return error[Ast, Error](
           concrete_type_used_as_arg_error(fun_.name, arg))
       for arg in fun_.args do
-        if arg.type.exists(types, fun_.type_args) is error(type) then {
+        if arg.type.exists(types, fun_.type_args) is error(type) then
           return error[Ast, Error](type_doesnt_exist_error(fun_.name, type))
-        }
     }
 
   ok[Ast, Error](Ast { types, globals, funs })
@@ -2145,10 +2144,10 @@ fun unify(
   | Under type env {A: Int}, is Str assignable to A? Depends on whether Str is
   | assignable to Int.
   if solver.env.get_maybe(generic.name) is some(mapped) then {
-    if generic.args.is_not_empty()
-    then return error[Bool, Str]("Generics can't have type arguments.")
-    if solver.vars.contains(mapped.name)
-    then panic("mapped generic can't be in solver vars")
+    if generic.args.is_not_empty() then
+      return error[Bool, Str]("Generics can't have type arguments.")
+    if solver.vars.contains(mapped.name) then
+      panic("mapped generic can't be in solver vars")
     return solver.unify(mapped, concrete)
   }
 
@@ -3616,8 +3615,8 @@ fun compile_in_current_scope(
       }
       if switch_.default_ is none then
         for variant in enum_.variants do
-          handled.contains(variant.name)
-            or return error[MonoExpr, Error](make_error(
+          if not(handled.contains(variant.name)) then
+            return error[MonoExpr, Error](make_error(
               switch_.keyword.src,
               "You don't handle {value.type}.{variant.name}."
             ))
@@ -3849,7 +3848,7 @@ struct MemLayoutVariant { name: Str, layout: MemLayout }
 fun mem_layout(
   type: Type, layouts: &Map[Type, MemLayout], type_defs: Map[Type, MonoTypeDef]
 ): MemLayout {
-  if layouts.get_maybe(type) is some(layout) then return layout else {
+  layouts.get_maybe(type) or {
     var layout = type.calculate_mem_layout(layouts, type_defs)
     layouts.put(type, layout)
     layout
@@ -4969,9 +4968,8 @@ fun assemble(mono: Mono, entry_point: Str, asm: &Asm): Result[Nothing, Error] {
         label != "_end_of_initial_memory"
       then return error[Nothing, Error](make_error(
         asm.soil.srcs.get(it.index), "Label {label} doesn't exist.",
-        "Note that movei only accepts labels of globals 
-          'that your program references in Martinaise 
-          'code somewhere else.",
+        "Note that movei only accepts labels of globals that your program 
+          'references in Martinaise code somewhere else.",
         vec[Str](),
       ))
     }
@@ -5007,9 +5005,7 @@ fun assemble_body(
   switch fun_.kind
   case body(body) {
     var arg_offsets =
-      if arg_layouts.get(signature).kind is struct_(fields)
-      then fields.name_to_offset_map()
-      else unreachable()
+      arg_layouts.get(signature).kind.struct_.unwrap().name_to_offset_map()
 
     | Layout locals
     var locals_struct = MonoStruct { fields = vec[MonoStructField]() }
@@ -5024,9 +5020,7 @@ fun assemble_body(
       layouts.&, mono.type_defs,
     )
     var locals_offsets =
-      if locals_layout.kind is struct_(fields)
-      then fields.name_to_offset_map()
-      else panic("locals are always a struct")
+      locals_layout.kind.struct_.unwrap().name_to_offset_map()
     var locals_size = locals_layout.size.round_up_to_multiple_of(8)
 
     | Combine all slots – args and locals
@@ -5090,10 +5084,9 @@ fun assemble_body(
       case set_enum(set) {
         var type = set.to.type
         var variant = 0
-        if mono.type_defs.get(type) is enum_(enum_) then {
-          for v in enum_.variants.iter().enumerate() do
-            if v.item.name == set.variant then variant = v.index
-        } else panic("is not an enum")
+        var enum_ = mono.type_defs.get(type).enum_.unwrap()
+        for v in enum_.variants.iter().enumerate() do
+          if v.item.name == set.variant then variant = v.index
 
         | Save the target into a.
         asm.save_address(Reg.a, set.to, 0, slot_offsets, layouts, Reg.c)
@@ -5111,12 +5104,8 @@ fun assemble_body(
       }
       case call(call) {
         var args_layout = arg_layouts.get_maybe(call.fun_)
-          .unwrap("no arg layout for {call.fun_} available")
-        var arg_offsets = {
-          if args_layout.kind is struct_(s)
-          then s
-          else panic("args layouts are always structs")
-        }.name_to_offset_map()
+          or panic("no arg layout for {call.fun_} available")
+        var arg_offsets = args_layout.kind.struct_.unwrap().name_to_offset_map()
         var args_size = args_layout.size.round_up_to_multiple_of(8)
 
         | Prepare args
@@ -5151,10 +5140,10 @@ fun assemble_body(
         var type = jump.condition.type
         var variant_tag_offset = layouts.get(type).size - 1
         var checked_tag = 0.lower_byte()
-        if mono.type_defs.get(type) is enum_(enum_) then {
-          for v in enum_.variants.iter().enumerate() do
-            if v.item.name == jump.variant then checked_tag = v.index.lower_byte()
-        } else panic("is not an enum")
+        var enum_ = mono.type_defs.get(type).enum_
+          or panic("jump_if_variant of a non-enum")
+        for v in enum_.variants.iter().enumerate() do
+          if v.item.name == jump.variant then checked_tag = v.index.lower_byte()
 
         asm.save_address(Reg.a, jump.condition, 0, slot_offsets, layouts, Reg.b)
         asm.smart_addi(Reg.a, variant_tag_offset, Reg.b)
@@ -5282,7 +5271,6 @@ fun save_address(
         case enum_(e) panic("member receiver is an enum")
         case opaque_ panic("can't access member {member.of.type}.{member.name} 
           'because {member.of.type} is opaque")
-        default panic("member receiver is always a struct")
       asm.smart_addi(register, offset_in_struct, scratch)
     }
   }
@@ -6207,7 +6195,7 @@ fun main(): Never {
       var soil = mono.soil().unwrap_or_report_and_exit()
 
       var fuzzed_fun = fuzzed_fun.compile(context().&, ast, mono.&)
-        .unwrap() | The fuzzed fun should already be compiled.
+        .unwrap("The fuzzed fun should already be compiled.")
       var soil = soil.instrument(fuzzed_fun, some(tuple(path, fuzz.target)))
 
       var binary = soil.to_binary()
