@@ -76,31 +76,25 @@ fun read_code(path: Str): Result[Str, Str] {
         or return error[Str, Str]("Stdin ended without response.")
       var response = response.parse_json()
         or return error[Str, Str]("Response was not JSON.")
-      var response =
-        switch response
-        case map(map) map
-        default return error[Str, Str]("Response was not a JSON map.")
+      var response = response.map
+        or return error[Str, Str]("Response was not a JSON map.")
       var type = response.get_maybe("type")
         or return error[Str, Str]("Response doesn't have a type.")
-      var type =
-        switch type
-        case string(str) str
-        default return error[Str, Str]("Response type is not a string.")
+      var type = type.string
+        or return error[Str, Str]("Response type is not a string.")
       type == "read_file"
         or return error[Str, Str]("Response wasn't of type read_file.")
       var success = response.get_maybe("success")
         or return error[Str, Str]("Response didn't have success field.")
-      var success =
-        switch success
-        case bool(s) s
-        default return error[Str, Str]("Response success isn't a bool.")
+      var success = success.bool
+        or return error[Str, Str]("Response success isn't a bool.")
       success or return error[Str, Str]("Couldn't read file.")
       response.get_maybe("content")
         or return error[Str, Str]("Response doesn't contain content.")
     } else {
-      switch read_file(path)
-      case ok(content) content.to_str()
-      case error return error[Str, Str]("Couldn't read file.")
+      var content = read_file(path)
+        or return error[Str, Str]("Couldn't read file.")
+      content.to_str()
     }
   code_cache.&.put(path, content)
   ok[Str, Str](content)
@@ -1158,9 +1152,7 @@ fun parse_make(parser: &Parser): Result[Maybe[AstExpr], Str] {
 fun parse_block(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
   parser.consume_prefix("\{") or return no_match[Vec[AstExpr]]()
   var statements = vec[AstExpr]()
-  loop switch parser.parse_expr()?
-  case some(expr) statements.&.push(expr)
-  case none break
+  loop statements.&.push(parser.parse_expr()? or break)
   parser.consume_prefix("}") or return bad_input[Vec[AstExpr]](
     "Expected the closing brace of the block.")
   parsed(statements)
@@ -1224,8 +1216,7 @@ fun parse_if(parser: &Parser): Result[Maybe[AstExpr], Str] {
 }
 
 fun parse_switch(parser: &Parser): Result[Maybe[AstExpr], Str] {
-  var keyword = parser.consume_keyword("switch")
-    or return no_match[AstExpr]()
+  var keyword = parser.consume_keyword("switch") or return no_match[AstExpr]()
   var value = parser.parse_expr()? or return bad_input[AstExpr](
     "Expected the value that is switched over.")
   var cases = vec[AstCase]()
@@ -1877,8 +1868,8 @@ fun parse_file_and_dependencies(
   var content = read_code(file)
     or(error) return error[Nothing, Error](make_error(
       switch parent_import
-      case some(import_) import_.src
-      case none src(file, 0..0),
+        case some(import_) import_.src
+        case none src(file, 0..0),
       "Couldn't read {file}: {error}"
     ))
 
@@ -1991,7 +1982,7 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
   for type in types do
     switch type.value
     case opaque_ {
-      | TODO: check alignment is 1, 2, 4, or 8
+      | TODO: check that alignment is 1, 2, 4, or 8
     }
     case struct_(struct_) {
       for arg in struct_.type_args do
@@ -3339,10 +3330,8 @@ fun compile_in_current_scope(
       wrapped_result
     }
     case make_struct(make_struct) {
-      var struct_ =
-        switch ast.lookup_type(make_struct.type.name)?
-        case struct_(s) s
-        default return error[MonoExpr, Error](make_error(
+      var struct_ = ast.lookup_type(make_struct.type.name)?.struct_
+        or return error[MonoExpr, Error](make_error(
           make_struct.type_src, "{make_struct.type.name} is not a struct type."
         ))
       var fields = map[Str, MonoExpr]() {
@@ -3413,10 +3402,8 @@ fun compile_in_current_scope(
       slot
     }
     case make_enum(make_enum) {
-      var enum_ =
-        switch ast.lookup_type(make_enum.type.name)?
-        case enum_(e) e
-        default return error[MonoExpr, Error](make_error(
+      var enum_ = ast.lookup_type(make_enum.type.name)?.enum_
+        or return error[MonoExpr, Error](make_error(
           make_enum.variant.src, "{make_enum.type.name} is not an enum type."))
       var arg = make_enum.arg.compile(self)?
       var variant_type = {
@@ -3593,10 +3580,8 @@ fun compile_in_current_scope(
       var type = none[Type]() | TODO: use type sink
 
       var value = switch_.value.compile(self)?
-      var enum_ =
-        switch mono.type_defs.get(value.type)
-        case enum_(e) e
-        default return error[MonoExpr, Error](make_error(
+      var enum_ = mono.type_defs.get(value.type).enum_
+        or return error[MonoExpr, Error](make_error(
           switch_.keyword.src,
           "{value.type} is not an enum.",
           "You can only switch on enums."
@@ -5766,8 +5751,7 @@ fun instrument(
         var is_new_target =
           switch target_instr
           case none true
-          case some(index)
-            soil.srcs.get(index).span.start < instr_offset
+          case some(index) soil.srcs.get(index).span.start < instr_offset
         if is_new_target then target_instr = some(it.index)
       }
     }
@@ -5823,7 +5807,8 @@ fun instrument(
 
     switch instruction
     case jump(target) {
-      to_patch.&.push(new.soil.instructions.len) new.&.emit(instruction)
+      to_patch.&.push(new.soil.instructions.len)
+      new.&.emit(instruction)
     }
     case cjump(target) {
       if label.starts_with(function) then {
