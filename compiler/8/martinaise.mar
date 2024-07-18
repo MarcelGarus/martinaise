@@ -1646,8 +1646,7 @@ fun parse_instruction(parser: &Parser): Result[Maybe[AstInstr], Str] {
 }
 
 fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
-  var is_fallback =
-    if parser.consume_keyword("fallback") is some then true else false
+  var is_fallback = parser.consume_keyword("fallback") is some
   parser.consume_keyword("fun")
     or return if is_fallback
       then bad_input[AstFun]("Expected a fun keyword after fallback.")
@@ -6146,9 +6145,7 @@ fun main(): Never {
     | generate(Generator[$Input]): $Input
     | run($Input): _
     ast.&.generate_fuzzing_hooks(
-      fuzzed_fun.fun_, fuzzed_fun.type_env,
-      if fuzz.what is position then true else false
-    )
+      fuzzed_fun.fun_, fuzzed_fun.type_env, fuzz.what is position)
 
     var mono = ast.compile_fuzzer_main(type("$Input"))
       .unwrap_or_report_and_exit()
