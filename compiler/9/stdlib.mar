@@ -1547,6 +1547,9 @@ fun get_ref[T](slice: Slice[T], index: Int): &T {
     or panic("index out of bounds: {index} is not in {0..slice.len}")
 }
 fun get[T](slice: Slice[T], index: Int): T { slice.get_ref(index).* }
+fun set[T](slice: &Slice[T], index: Int, value: T) {
+  slice.get_ref(index).* = value
+}
 
 fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
   var i = 0
