@@ -727,7 +727,7 @@ fun %(left: Int, right: Int): Int asm {
   moveib b 16 add b sp load b b | right
   load c sp | return value address
   rem a b
-  movib d 0 cmp a d isless cjump .make_positive jump .done
+  moveib d 0 cmp a d isless cjump .make_positive jump .done
   .make_positive: add a b
   .done: store c a ret
 }
