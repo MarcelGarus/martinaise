@@ -2087,10 +2087,13 @@ fun without_last(str: Str, amount: Int): Str {
   str.substr(0..{str.len - amount})
 }
 fun starts_with(str: Str, prefix: Str): Bool {
-  str.chars().starts_with(prefix.chars())
+  str.len >= prefix.len or return false
+  memcompare(str.data, prefix.data, prefix.len) is equal
 }
 fun ends_with(str: Str, suffix: Str): Bool {
-  str.chars().ends_with(suffix.chars())
+  str.len >= suffix.len or return false
+  memcompare(str.data + {str.len - suffix.len}, suffix.data, suffix.len)
+    is equal
 }
 fun trim_prefix(str: &Str, prefix: Str) {
   assert(str.starts_with(prefix), "trim_prefix doesn't match prefix")
