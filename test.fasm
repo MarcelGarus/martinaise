@@ -1,3 +1,0 @@
-use64
-mov rax, 256
-mov r8, 256
