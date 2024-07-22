@@ -136,7 +136,7 @@ fun write[W, T](writer: W, maybe: Maybe[T]) {
 fun ==[T](a: Maybe[T], b: Maybe[T]): Bool {
   switch a
   case some(aa) { switch b case some(bb) aa == bb case none false }
-  case none b.is_none()
+  case none b is none
 }
 fun hash[T](hasher: &Hasher, value: Maybe[T]) {
   switch value
@@ -2234,7 +2234,7 @@ fun next_from_iter_state[T, I](state: &I): Maybe[T] {
   state.* = iter.state
   item
 }
-fun is_empty[T, I](iter: &Iter[T, I]): Bool { iter.next().is_none() }
+fun is_empty[T, I](iter: &Iter[T, I]): Bool { iter.next() is none }
 fun contains[T, I](iter: &Iter[T, I], item: T): Bool {
   for item_ in iter do if item_ == item then return true
   return false
@@ -2899,9 +2899,7 @@ fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
       } else i = i + 1 % map.buckets.len
   }
 }
-fun contains[K, V](map: Map[K, V], key: K): Bool {
-  map.get_maybe(key).is_some()
-}
+fun contains[K, V](map: Map[K, V], key: K): Bool { map.get_maybe(key) is some }
 fun get_maybe_ref[K, V](map: &Map[K, V], key: K): Maybe[&V] {
   var i = key.hash() % map.buckets.len
   loop {
