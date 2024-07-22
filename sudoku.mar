@@ -1,0 +1,119 @@
+import stdlib.mar
+
+struct Sudoku { cells: Slice[Cell] }
+enum Cell { empty, number: Int }
+
+fun or(cell: Cell): ControlFlow[Int, Nothing] {
+  switch cell
+  case empty ControlFlow[Int, Nothing].evaluate_alternative
+  case number(n) ControlFlow[Int, Nothing].short_circuit(n)
+}
+
+fun empty_sudoku(): Sudoku {
+  Sudoku { cells = filled_slice(81, Cell.empty) }
+}
+
+fun write[W](writer: W, sudoku: Sudoku) {
+  for y in 0..9 do {
+    for x in 0..9 do
+      switch sudoku.cells.get(9 * y + x)
+        case empty writer."_ "
+        case number(n) writer."{n} "
+    writer."\n"
+  }
+}
+
+var masks = calculate_masks()
+fun calculate_masks(): Slice[Slice[Bool]] {
+  var masks = vec[Slice[Bool]]()
+  for row in 0..9 do {
+    var mask = filled_slice(81, false)
+    for x in 0..9 do mask.&.set(9 * row + x, true)
+    masks.&.push(mask)
+  }
+  for column in 0..9 do {
+    var mask = filled_slice(81, false)
+    for y in 0..9 do mask.&.set(9 * y + column, true)
+    masks.&.push(mask)
+  }
+  for blockx in 0..3 do
+    for blocky in 0..3 do {
+      var mask = filled_slice(81, false)
+      for x in 0..3 do
+        for y in 0..3 do
+          mask.&.set(9 * {3 * blocky + y} + {3 * blockx} + x, true)
+      masks.&.push(mask)
+    }
+  masks.to_slice()
+}
+
+fun is_valid(sudoku: Sudoku): Bool {
+  for mask in masks do {
+    var reached = filled_slice(9, false)
+    for zipped in zip(mask.iter(), sudoku.cells.iter()) do
+      if zipped.a then {
+        var num = zipped.b or continue
+        if reached.get(num - 1) then return false | already occurred
+        reached.&.set(num - 1, true)
+
+      }
+  }
+  true
+}
+
+fun solve(sudoku: &Sudoku, start: Int) {
+  if not(sudoku.is_valid()) then return {}
+  if start == 81 then return println(sudoku)
+  if not(sudoku.cells.get(start) is empty) then return solve(sudoku, start + 1)
+  for num in 1..=9 do {
+    sudoku.cells.&.set(start, Cell.number(num))
+    solve(sudoku, start + 1)
+    sudoku.cells.&.set(start, Cell.empty)
+  }
+}
+
+fun main(): Never {
+  var args = get_process_args()
+  var file = args.get_maybe(1) or {
+    eprintln("Usage: sudoku [file]")
+    exit(1)
+  }
+  var input = read_file(file) or {
+    eprintln("Couldn't read file {file}.")
+    exit(2)
+  }
+
+  var sudoku = empty_sudoku()
+  var y = 0
+  for line in input.to_str().lines() do {
+    if line.is_empty() then continue
+    if y == 9 then {
+      eprintln("Too many rows")
+      exit(3)
+    }
+    for num in line.split(" ").iter().enumerate() do {
+      var x = num.index
+      var num = num.item
+      if x == 9 then {
+        eprintln("Too many columns")
+        exit(3)
+      }
+      if num == "_" then continue
+      var num = num.parse_int() or {
+        eprintln("Not a number: {num}")
+        exit(3)
+      }
+      if num < 1 or num > 9 then {
+        eprintln("Number can only be 1 through 9, was {num}.")
+        exit(3)
+      }
+      sudoku.cells.&.set(y * 9 + x, Cell.number(num))
+    }
+    y = y + 1
+  }
+
+  println(sudoku)
+  sudoku.&.solve(0)
+
+  exit(0)
+}
