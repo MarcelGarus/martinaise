@@ -1759,47 +1759,56 @@ fun next(iter: &Iter[Char, StrIter]): Maybe[Char] {
 
 fun substr(str: Str, range: Range[Int]): Str {
   range.end <= str.len or panic("substr needs to be inside original str")
+  str.substr_unchecked(range)
+}
+fun substr_unchecked(str: Str, range: Range[Int]): Str {
   str.chars().subslice(range).to_str()
 }
 fun first(str: Str): Char {
-  assert(str.is_not_empty(), "first only works on non-empty strs")
+  str.is_not_empty() or panic("first only works on non-empty strs")
   str.get(0)
 }
 fun first(str: Str, amount: Int): Str {
-  assert(amount <= str.len, "first amount too big")
+  amount <= str.len or panic("first amount too big")
   str.substr(0..amount)
 }
 fun last(str: Str): T {
-  assert(str.is_not_empty(), "last only works on non-empty strs")
+  str.is_not_empty() or panic("last only works on non-empty strs")
   str.get(str.len.dec())
 }
 fun last(str: Str, amount: Int): Str {
-  assert(amount <= str.len, "last amount too big")
+  amount <= str.len or panic("last amount too big")
   str.substr({str.len - amount}..str.len)
 }
 fun without_first(str: Str, amount: Int): Str {
-  assert(amount <= str.len, "without_first amount too big")
-  str.substr(amount..str.len)
+  amount <= str.len or panic("without_first amount too big")
+  str.substr_unchecked(amount..str.len)
 }
 fun without_last(str: Str, amount: Int): Str {
-  assert(amount <= str.len, "without_last amount too big")
-  str.substr(0..{str.len - amount})
+  amount <= str.len or panic("without_last amount too big")
+  str.substr_unchecked(0..{str.len - amount})
 }
 fun starts_with(str: Str, prefix: Str): Bool {
   str.len >= prefix.len or return false
+  str.starts_with_unchecked(prefix)
+}
+fun starts_with_unchecked(str: Str, prefix: Str): Bool {
   memcompare(str.data, prefix.data, prefix.len) is equal
 }
 fun ends_with(str: Str, suffix: Str): Bool {
   str.len >= suffix.len or return false
+  str.ends_with_unchecked(suffix)
+}
+fun ends_with_unchecked(str: Str, suffix: Str): Bool {
   memcompare(str.data + {str.len - suffix.len}, suffix.data, suffix.len)
     is equal
 }
 fun trim_prefix(str: &Str, prefix: Str) {
-  assert(str.starts_with(prefix), "trim_prefix doesn't match prefix")
+  str.starts_with(prefix) or panic("trim_prefix doesn't match prefix")
   str.* = str.without_first(prefix.len)
 }
 fun trim_suffix(str: &Str, suffix: Str) {
-  assert(str.ends_with(suffix), "trim_suffix doesn't match suffix")
+  str.ends_with(suffix) or panic("trim_suffix doesn't match suffix")
   str.* = str.without_last(suffix.len)
 }
 fun trim(str: Str): Str {
