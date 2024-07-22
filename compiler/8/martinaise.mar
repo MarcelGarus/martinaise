@@ -739,13 +739,14 @@ fun parser(file: Str, code: Str): Parser {
 
 var null_char = 0.lower_byte().to_char()
 fun current(parser: Parser): Char { parser.code.get_unchecked(parser.cursor) }
-fun rest(parser: Parser): Str { parser.code.without_first(parser.cursor) }
-fun advance(parser: &Parser) { parser.advance_by(1) }
+fun rest(parser: Parser): Str {
+  parser.code.substr_unchecked(parser.cursor..parser.code.len)
+}
+fun advance(parser: &Parser) { parser.cursor = parser.cursor + 1 }
 fun advance_by(parser: &Parser, n: Int) { parser.cursor = parser.cursor + n }
 
 fun consume_whitespace(parser: &Parser) {
   loop {
-    if parser.cursor >= parser.code.len then break
     var char = parser.current()
     if char.is_whitespace() then {
       parser.cursor = parser.cursor + 1
