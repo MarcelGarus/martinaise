@@ -778,11 +778,8 @@ fun consume_keyword(parser: &Parser, keyword: Str): Maybe[AstStr] {
   parser.rest().starts_with(keyword) or return none[AstStr]()
   if parser.rest().len > keyword.len then {
     var char_after = parser.rest().get(keyword.len)
-    var goes_on = {char_after == #_}
-      / {#A..=#Z}.contains(char_after)
-      / {#a..=#z}.contains(char_after)
-      / {#0..=#9}.contains(char_after)
-    if goes_on then return none[AstStr]()
+    if char_after.is_letter() or char_after.is_digit() or char_after == #_
+    then return none[AstStr]()
   }
   parser.advance_by(keyword.len)
   var end = parser.cursor
@@ -793,13 +790,12 @@ fun parse_name(parser: &Parser): Maybe[AstStr] {
   var start = parser.cursor
   loop {
     var char = parser.current()
-    if {#A..=#Z}.contains(char) / {#a..=#z}.contains(char) / {char == #_}
-    then { parser.advance() continue }
-    if {#0..=#9}.contains(char) then
-      if parser.cursor == start
-      then break
-      else { parser.advance() continue }
-    break
+    if char.is_letter() or {char == #_} then
+      parser.advance()
+    else if char.is_digit() then {
+      if parser.cursor == start then break else parser.advance()
+    }
+    else break
   }
   var end = parser.cursor
   if start == end then return none[AstStr]()

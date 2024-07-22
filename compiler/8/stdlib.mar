@@ -1628,6 +1628,10 @@ var space = #
 var newline = 10.lower_byte().to_char()
 var tab = 9.lower_byte().to_char()
 
+var lowercase_chars = #a..=#z
+var uppercase_chars = #A..=#Z
+var digit_chars = #0..=#9
+
 fun to_char(byte: Byte): Char { Char { byte } }
 
 fun to_str(chars: Slice[Char]): Str { chars.unchecked_cast[Slice[Char], Str]() }
@@ -1636,11 +1640,11 @@ fun to_str(chars: Vec[Char]): Str { chars.to_slice().to_str() }
 fun chars(str: Str): Slice[Char] { str.unchecked_cast[Str, Slice[Char]]() }
 fun bytes(str: Str): Slice[Byte] { str.unchecked_cast[Str, Slice[Byte]]() }
 
-fun is_lower(char: Char): Bool { {#a..=#z}.contains(char) }
-fun is_upper(char: Char): Bool { {#A..=#Z}.contains(char) }
-fun is_alpha(char: Char): Bool { char.is_lower() or char.is_upper() }
-fun is_numeric(char: Char): Bool { {#0..=#9}.contains(char) }
-fun is_alphanumeric(char: Char): Bool { char.is_alpha() or char.is_numeric() }
+fun is_lower(char: Char): Bool { lowercase_chars.contains(char) }
+fun is_upper(char: Char): Bool { uppercase_chars.contains(char) }
+fun is_letter(char: Char): Bool { char.is_lower() or char.is_upper() }
+fun is_digit(char: Char): Bool { digit_chars.contains(char) }
+fun is_alphanumeric(char: Char): Bool { char.is_letter() or char.is_digit() }
 fun is_whitespace(char: Char): Bool {
   char == space or char == newline or char == tab
 }
