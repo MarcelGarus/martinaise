@@ -722,13 +722,14 @@ fun /(left: Int, right: Int): Int asm {
   load c sp | return value address
   div a b store c a ret
 }
-| TODO: Think about remainder vs modulo. Do I want to change the instruction? Do
-| I want to provide both? For now, please only use this with positive left.
 fun %(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
   load c sp | return value address
-  rem a b store c a ret
+  rem a b
+  movib d 0 cmp a d isless cjump .make_positive jump .done
+  .make_positive: add a b
+  .done: store c a ret
 }
 fun &(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
