@@ -1966,22 +1966,21 @@ fun +(char: Char, delta: Byte): Char { Char { byte = char.byte + delta } }
 fun -(char: Char, delta: Byte): Char { Char { byte = char.byte - delta } }
 fun -(char: Char, other: Char): Byte { char.byte - other.byte }
 
-fun string_builder(): StringBuilder { StringBuilder { chars = vec[Char]() } }
-struct StringBuilder { chars: Vec[Char] }
+fun string_builder(): StringBuilder { StringBuilder { bytes = vec[Byte]() } }
+struct StringBuilder { bytes: Vec[Byte] }
 fun write_byte(builder: &StringBuilder, byte: Byte) {
-  | println("StringBuilder.write_byte")
-  builder.chars.&.push(Char { byte })
+  builder.bytes.&.push(byte)
 }
 fun write_bytes(builder: &StringBuilder, bytes: Slice[Byte]) {
-  for byte in bytes do builder.write_byte(byte)
+  builder.bytes.&.push_all(bytes)
 }
-fun len(builder: StringBuilder): Int { builder.chars.len }
+fun len(builder: StringBuilder): Int { builder.bytes.len }
 fun truncate_to_len(builder: &StringBuilder, len: Int) {
-  assert(len <= builder.chars.len)
-  builder.chars.len = len
+  len <= builder.bytes.len or panic("new len is too big")
+  builder.bytes.len = len
 }
-fun write[W](writer: W, sb: StringBuilder) { writer.write(sb.to_str()) }
-fun to_str(builder: StringBuilder): Str { builder.chars.to_slice().to_str() }
+fun write[W](writer: W, sb: StringBuilder) { writer.write_bytes(sb.bytes) }
+fun to_str(builder: StringBuilder): Str { builder.bytes.to_slice().to_str() }
 
 fun is_empty(str: Str): Bool { str.len == 0 }
 fun get_maybe_ref(str: Str, index: Int): Maybe[&Char] {
@@ -2664,18 +2663,25 @@ fun vec[T](
   v.push(n) v.*
 }
 
-fun push[T](vec: &Vec[T], item: T) {
-  if vec.data.len == 0 then vec.data = uninitialized_slice[T](8)
-  if vec.data.len == vec.len then {
-    var new_data = uninitialized_slice[T](2 * vec.data.len)
+fun push_n_uninitialized[T](vec: &Vec[T], n: Int): Slice[T] {
+  if vec.data.len == 0 then
+    vec.data = uninitialized_slice[T](
+      if n <= 8 then 8 else n.round_up_to_power_of(2))
+  if {vec.len + n} > vec.data.len then {
+    var new_len = {vec.len + n}.round_up_to_multiple_of(2)
+    var new_data = uninitialized_slice[T](2 * new_len)
     vec.data.copy_to(new_data.subslice(0..vec.data.len))
     vec.data = new_data
   }
-  vec.data.get_ref_unchecked(vec.len).* = item
-  vec.len = vec.len + 1
+  var slice = vec.data.subslice(vec.len..+n)
+  vec.len = vec.len + n
+  slice
+}
+fun push[T](vec: &Vec[T], item: T) {
+  vec.push_n_uninitialized(1).get_ref_unchecked(0).* = item
 }
 fun push_all[T](vec: &Vec[T], items: Slice[T]) {
-  for item in items do vec.push(item)
+  items.copy_to(vec.push_n_uninitialized(items.len))
 }
 fun pop[T](vec: &Vec[T]): T {
   if vec.len == 0 then panic("called pop on empty Vec")
