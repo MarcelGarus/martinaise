@@ -208,13 +208,11 @@ fun write[W](writer: W, error: Error) {
   var offset_in_line = 0
   for i in 0..code.len do {
     if i == error.src.span.start then offset_in_line = current_line.len()
-    if code.get(i) == newline
-    then {
+    if code.get(i) == newline then {
       lines.&.push(current_line.to_str())
       current_line = string_builder().&
       if i >= error.src.span.start then break
-    }
-    else current_line.write(code.get(i))
+    } else current_line.write(code.get(i))
   }
   | Now, lines contains all lines up to the line that contains the error.
   | offset_in_line is the offset into the last complete line.
