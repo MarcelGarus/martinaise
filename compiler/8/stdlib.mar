@@ -1429,7 +1429,7 @@ fun get[T](slice: Slice[T], index: Int): T { slice.get_ref(index).* }
 fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
   var i = 0
   loop {
-    if {i == a.len} & {i == b.len} then return Ordering.equal
+    if i == a.len and i == b.len then return Ordering.equal
     if i == a.len then return Ordering.less
     if i == b.len then return Ordering.greater
     var ord = a.get(i) <=> b.get(i)
@@ -1841,7 +1841,7 @@ fun +-[T](mid: T, distance: T): Range[T] { | thanks to @antoniusnaumann
 
 fun len[T](range: Range[T]): Int { range.end - range.start }
 fun contains[T](range: Range[T], value: T): Bool {
-  {value >= range.start} & {value < range.end}
+  value >= range.start and value < range.end
 }
 fun is_empty[T](range: Range[T]): Bool { range.start >= range.end }
 fun write[W, T](writer: W, range: Range[T]) {

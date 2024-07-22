@@ -337,10 +337,10 @@ fun crashes[Input](input: InputThatRan[Input]): Bool {
   switch input.result case ok false case error true
 }
 fun improves_upon[Input](a: InputThatRan[Input], b: InputThatRan[Input]): Bool {
-  a.crashes() & b.crashes().not() or a.coverage.improves_upon(b.coverage)
+  a.crashes() and b.crashes().not() or a.coverage.improves_upon(b.coverage)
 }
 fun improves_upon[Input](input: InputThatRan[Input], front: FuzzFront): Bool {
-  input.crashes() & front.crashes.not()
+  input.crashes() and front.crashes.not()
     or input.coverage.improves_upon(front.coverage)
 }
 fun integrate[Input](front: &FuzzFront, input: InputThatRan[Input]) {
@@ -1554,7 +1554,7 @@ fun set[T](slice: &Slice[T], index: Int, value: T) {
 fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
   var i = 0
   loop {
-    if {i == a.len} & {i == b.len} then return Ordering.equal
+    if i == a.len and i == b.len then return Ordering.equal
     if i == a.len then return Ordering.less
     if i == b.len then return Ordering.greater
     var ord = a.get(i) <=> b.get(i)
@@ -2152,7 +2152,7 @@ fun +-[T](mid: T, distance: T): Range[T] { | thanks to @antoniusnaumann
 
 fun len[T](range: Range[T]): Int { range.end - range.start }
 fun contains[T](range: Range[T], value: T): Bool {
-  {value >= range.start} & {value < range.end}
+  value >= range.start and value < range.end
 }
 fun is_empty[T](range: Range[T]): Bool { range.start >= range.end }
 fun write[W, T](writer: W, range: Range[T]) {
