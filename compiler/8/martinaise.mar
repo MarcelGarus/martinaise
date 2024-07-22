@@ -732,12 +732,15 @@ fun write[W](writer: W, signature: StrippedFunSignature) {
 | because Martinaise generally doesn't care about whitespace and it makes the
 | code of the higher-level parsers (structs, enums, etc.) much more concise.
 
+| The code is guaranteed to have a null char at the end.
 struct Parser { file: Str, code: Str, cursor: Int }
 
-var null_char = 0.lower_byte().to_char()
-fun current(parser: Parser): Char {
-  parser.code.get_maybe(parser.cursor) or null_char
+fun parser(file: Str, code: Str): Parser {
+  Parser { file, code = "{code}{null_char}", cursor = 0 }
 }
+
+var null_char = 0.lower_byte().to_char()
+fun current(parser: Parser): Char { parser.code.get_unchecked(parser.cursor) }
 fun rest(parser: Parser): Str { parser.code.without_first(parser.cursor) }
 fun advance(parser: &Parser) { parser.advance_by(1) }
 fun advance_by(parser: &Parser, n: Int) { parser.cursor = parser.cursor + n }
@@ -1775,7 +1778,7 @@ fun parse_def(parser: &Parser): Result[Maybe[AstDef], Str] {
 fun parse_defs(parser: &Parser): Result[Vec[AstDef], Str] {
   var defs = vec[AstDef]()
   loop defs.&.push(parser.parse_def()? or break)
-  if parser.cursor < parser.code.len then
+  if parser.current() != null_char then
     return error[Vec[AstDef], Str]("Expected a definition.")
   ok[Vec[AstDef], Str](defs)
 }
@@ -1811,7 +1814,7 @@ fun parse_imports(parser: &Parser): Result[Vec[AstStr], Str] {
 }
 
 fun parse_single_file(input: Str, file: Str): Result[FileAst, Error] {
-  var parser = Parser { file, code = input, cursor = 0 }
+  var parser = parser(file, input)
   var imports = parser.&.parse_imports()
     or(error) return error[FileAst, Error](make_error(
       src(file, parser.cursor..{parser.cursor + 1}), error))
@@ -5999,7 +6002,7 @@ fun parse_args(): Command {
   else if command == "fuzz" then Command.fuzz({
     args.len == 4 or wrong_usage(help_for_fuzz)
     var path = args.get(2).ensure_mar_extension()
-    var parser = Parser { file = "_cli", code = args.get(3), cursor = 0 }
+    var parser = parser("_cli", args.get(3))
     var what =
       switch parser.&.parse_position()
       case some(pos) FuzzWhat.position(pos)
@@ -6024,7 +6027,7 @@ fun parse_args(): Command {
     else if command == "fuzz" then {
       args.len == 5 or wrong_usage(help_for_tooling)
       var path = args.get(3).ensure_mar_extension()
-      var parser = Parser { file = "_cli", code = args.get(4), cursor = 0 }
+      var parser = parser("_cli", args.get(4))
       var target = parser.&.parse_position()
         or wrong_usage(help_for_tooling)
       ToolingCommand.fuzz(ToolingFuzzCommand { path, target })

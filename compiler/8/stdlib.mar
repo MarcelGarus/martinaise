@@ -1689,6 +1689,12 @@ fun get_maybe(str: Str, index: Int): Maybe[Char] {
   switch str.get_maybe_ref(index) case some(c) some(c.*) case none none[Char]()
 }
 fun get(str: Str, index: Int): Char { str.get_ref(index).* }
+fun get_unchecked(str: Str, index: Int): Char asm {
+  moveib a 8  add a sp load a a | str.data
+  moveib b 24 add b sp load b b | index
+  add a b load a a | char
+  load c sp store c a ret
+}
 
 fun <=>(a: Str, b: Str): Ordering {
   switch memcompare(a.data, b.data, min(a.len, b.len))
