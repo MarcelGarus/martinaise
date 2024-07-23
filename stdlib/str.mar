@@ -1,0 +1,238 @@
+import stdlib.mar
+
+| Chars  
+| A Char (short for Character) is a wrapper around a Byte. When you write
+| something like #a in your code, that gets turned into a Char. Don't confuse
+| the Char with a Unicode code point, grapheme cluster, or anything like that.
+| This is as much a "character" as the C char. But who are we to judge?
+| Character is a heavily overloaded term anyways.
+
+struct Char { byte: Byte }
+
+var space = # 
+var newline = 10.lower_byte().to_char()
+var tab = 9.lower_byte().to_char()
+
+var lowercase_chars = #a..=#z
+var uppercase_chars = #A..=#Z
+var digit_chars = #0..=#9
+
+fun to_char(byte: Byte): Char { Char { byte } }
+
+fun is_lower(char: Char): Bool { lowercase_chars.contains(char) }
+fun is_upper(char: Char): Bool { uppercase_chars.contains(char) }
+fun is_letter(char: Char): Bool { char.is_lower() or char.is_upper() }
+fun is_digit(char: Char): Bool { digit_chars.contains(char) }
+fun is_alphanumeric(char: Char): Bool { char.is_letter() or char.is_digit() }
+fun is_whitespace(char: Char): Bool {
+  char == space or char == newline or char == tab
+}
+
+fun parse_digit(char: Char): Byte {
+  if char.is_numeric() then return char.byte - #0.byte
+  if char.is_lower() then return char.byte - #a.byte + 16.lower_byte()
+  if char.is_upper() then return char.byte - #A.byte + 16.lower_byte()
+  panic("not a digit")
+}
+fun <=>(a: Char, b: Char): Ordering { a.byte <=> b.byte }
+fun ==(a: Char, b: Char): Bool { a.byte == b.byte }
+fun hash(hasher: &Hasher, char: Char) { hasher.hash(char.byte) }
+fun write[W](writer: W, char: Char) { writer.write_byte(char.byte) }
+fun write_debug[W](writer: W, char: Char) { writer."#{char}" }
+fun inc(char: Char): Char { Char { byte = char.byte.inc() } }
+fun dec(char: Char): Char { Char { byte = char.byte.dec() } }
+fun +(char: Char, delta: Byte): Char { Char { byte = char.byte + delta } }
+fun -(char: Char, delta: Byte): Char { Char { byte = char.byte - delta } }
+fun -(char: Char, other: Char): Byte { char.byte - other.byte }
+
+| Strings  
+| A Str (short for String) is just a wrapper around a Slice[Byte] and it's what
+| what you get from string literals such as "blub". Try printing it! It gets
+| formatted nicely.
+
+struct Str { data: Address, len: Int }
+
+fun to_str(chars: Slice[Char]): Str { chars.unchecked_cast[Slice[Char], Str]() }
+fun to_str(bytes: Slice[Byte]): Str { bytes.unchecked_cast[Slice[Byte], Str]() }
+fun to_str(chars: Vec[Char]): Str { chars.to_slice().to_str() }
+fun chars(str: Str): Slice[Char] { str.unchecked_cast[Str, Slice[Char]]() }
+fun bytes(str: Str): Slice[Byte] { str.unchecked_cast[Str, Slice[Byte]]() }
+
+fun is_empty(str: Str): Bool { str.len == 0 }
+fun get_maybe_ref(str: Str, index: Int): Maybe[&Char] {
+  str.chars().get_maybe_ref(index)
+}
+fun get_ref(str: Str, index: Int): &Char {
+  str.get_maybe_ref(index) or panic("index out of bounds")
+}
+fun get_maybe(str: Str, index: Int): Maybe[Char] {
+  switch str.get_maybe_ref(index) case some(c) some(c.*) case none none[Char]()
+}
+fun get(str: Str, index: Int): Char { str.get_ref(index).* }
+fun get_unchecked(str: Str, index: Int): Char asm {
+  moveib a 8  add a sp load a a | str.data
+  moveib b 24 add b sp load b b | index
+  add a b load a a | char
+  load c sp store c a ret
+}
+
+fun <=>(a: Str, b: Str): Ordering {
+  switch memcompare(a.data, b.data, min(a.len, b.len))
+  case less Ordering.less
+  case greater Ordering.greater
+  case equal if a.len < b.len then Ordering.less else Ordering.greater
+}
+fun ==(a: Str, b: Str): Bool {
+  a.len == b.len or return false
+  memcompare(a.data, b.data, a.len) is equal
+}
+fun hash(hasher: &Hasher, str: Str) { hasher.hash(memhash(str.data, str.len)) }
+fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }
+fun write_debug[W](writer: W, str: Str) {
+  writer."\""
+  for char in str do
+    if char == #" then writer."\\\""
+    else if char == #\ then writer."\\\\"
+    else if char == newline then writer."\\n"
+    else writer."{char}"
+  writer."\""
+}
+
+fun generate(s: Static[Char], random: &Random, complexity: Int): Char {
+  var visible_ascii = 32..127
+  random.next_int(visible_ascii).lower_byte().to_char()
+}
+fun mutate(char: Char, random: &Random, temperature: Int): Char {
+  var visible_ascii = 32.lower_byte()..127.lower_byte()
+  {char.byte.to_int() + random.next_int({0 - temperature}..=temperature)}
+    .lower_byte()
+    .clamp(visible_ascii)
+    .to_char()
+}
+fun fuzzing_complexity(str: Str): Float {
+  var complexity = str.len.to_float()
+  for char in str.chars() do
+    complexity = complexity + char.byte.fuzzing_complexity()
+  complexity
+}
+fun generate(s: Static[Str], random: &Random, complexity: Int): Str {
+  var len = random.next_int(0..=complexity)
+  var slice = uninitialized_slice[Char](len)
+  for i in 0..len do slice.get_ref(i).* = static[Char]().generate(random, 1)
+  Str { data = slice.data, len }
+}
+fun mutate(str: Str, random: &Random, temperature: Int): Str {
+  if temperature == 0 then return str
+  str.chars().mutate(random, temperature).to_str()
+}
+
+fun iter(str: Str): Iter[Char, _] {
+  Iter[Char, StrIter] { state = StrIter { str, index = 0 } }
+}
+struct StrIter { str: Str, index: Int }
+fun next(iter: &Iter[Char, StrIter]): Maybe[Char] {
+  var state = iter.state.&
+  if state.index >= state.str.len then none[Char]() else {
+    var char = state.str.chars().get(state.index)
+    state.index = state.index.inc()
+    some(char)
+  }
+}
+
+fun substr(str: Str, range: Range[Int]): Str {
+  range.end <= str.len or panic("substr needs to be inside original str")
+  str.chars().subslice(range).to_str()
+}
+fun first(str: Str): Char {
+  assert(str.is_not_empty(), "first only works on non-empty strs")
+  str.get(0)
+}
+fun first(str: Str, amount: Int): Str {
+  assert(amount <= str.len, "first amount too big")
+  str.substr(0..amount)
+}
+fun last(str: Str): T {
+  assert(str.is_not_empty(), "last only works on non-empty strs")
+  str.get(str.len.dec())
+}
+fun last(str: Str, amount: Int): Str {
+  assert(amount <= str.len, "last amount too big")
+  str.substr({str.len - amount}..str.len)
+}
+fun without_first(str: Str, amount: Int): Str {
+  assert(amount <= str.len, "without_first amount too big")
+  str.substr(amount..str.len)
+}
+fun without_last(str: Str, amount: Int): Str {
+  assert(amount <= str.len, "without_last amount too big")
+  str.substr(0..{str.len - amount})
+}
+fun starts_with(str: Str, prefix: Str): Bool {
+  str.len >= prefix.len or return false
+  memcompare(str.data, prefix.data, prefix.len) is equal
+}
+fun ends_with(str: Str, suffix: Str): Bool {
+  str.len >= suffix.len or return false
+  memcompare(str.data + {str.len - suffix.len}, suffix.data, suffix.len)
+    is equal
+}
+fun trim_prefix(str: &Str, prefix: Str) {
+  assert(str.starts_with(prefix), "trim_prefix doesn't match prefix")
+  str.* = str.without_first(prefix.len)
+}
+fun trim_suffix(str: &Str, suffix: Str) {
+  assert(str.ends_with(suffix), "trim_suffix doesn't match suffix")
+  str.* = str.without_last(suffix.len)
+}
+fun trim(str: Str): Str {
+  var start = 0
+  var end = str.len
+  loop if start < str.len and str.get(start).is_whitespace()
+    then start = start + 1
+    else break
+  loop if end > 0 and str.get(end - 1).is_whitespace() and not(start == end)
+    then end = end - 1
+    else break
+  str.substr(start..end)
+}
+fun split(str: Str, separator: Str): Slice[Str] {
+  var parts = vec[Str]()
+  for part in str.iter().split(separator.chars()) do parts.&.push(part.to_str())
+  parts.to_slice()
+}
+fun lines(str: Str): Slice[Str] { str.split("{newline}") }
+fun pad_right(str: Str, len: Int, char: Char): Str {
+  var string = string_builder().&
+  string.write(str)
+  loop if string.len() < len then string.write(char) else break
+  string.to_str()
+}
+fun pad_right(str: Str, len: Int): Str { str.pad_right(len, space) }
+fun pad_left(str: Str, len: Int, char: Char): Str {
+  var string = string_builder().&
+  loop if string.len() + str.len < len then string.write(char) else break
+  string.write(str)
+  string.to_str()
+}
+fun pad_left(str: Str, len: Int): Str { str.pad_left(len, space) }
+
+| String Building  
+| To build strings efficiently, we need some sort of growable buffer where we
+| can append more data over time. That's exactly what a StringBuilder is.
+
+struct StringBuilder { bytes: Vec[Byte] }
+
+fun string_builder(): StringBuilder { StringBuilder { bytes = vec[Byte]() } }
+fun write_byte(builder: &StringBuilder, byte: Byte) {
+  builder.bytes.&.push(byte)
+}
+fun write_bytes(builder: &StringBuilder, bytes: Slice[Byte]) {
+  builder.bytes.&.push_all(bytes)
+}
+fun len(builder: StringBuilder): Int { builder.bytes.len }
+fun truncate_to_len(builder: &StringBuilder, len: Int) {
+  len <= builder.bytes.len or panic("new len is too big")
+  builder.bytes.len = len
+}
+fun write[W](writer: W, sb: StringBuilder) { writer.write_bytes(sb.bytes) }
+fun to_str(builder: StringBuilder): Str { builder.bytes.to_slice().to_str() }

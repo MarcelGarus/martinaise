@@ -1,0 +1,23 @@
+import stdlib.mar
+
+| Equality  
+| You should implement an ==(T, T): Bool function for types that can be compared
+| for equality.
+
+fun !=[T](a: T, b: T): Bool { not(a == b) }
+
+| Emptiness  
+| Do you sometimes feel empty inside? Some collections in the stdlib do so as
+| well! In fact, many have an is_empty function. For convencience, we also
+| define an is_not_empty function.
+
+fun is_not_empty[T](container: T): Bool { not(container.is_empty()) }
+
+| Modifying operators  
+
+fun +=[A, B](left: &A, right: B) { left.* = left.* + right }
+fun -=[A, B](left: &A, right: B) { left.* = left.* - right }
+fun *=[A, B](left: &A, right: B) { left.* = left.* * right }
+fun /=[A, B](left: &A, right: B) { left.* = left.* / right }
+fun %=[A, B](left: &A, right: B) { left.* = left.* % right }
+

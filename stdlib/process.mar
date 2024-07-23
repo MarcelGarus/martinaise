@@ -1,0 +1,53 @@
+import stdlib.mar
+
+| Halting, Exiting, and Panicking  
+
+fun halt(): Never { loop {} }
+fun exit(status: Int): Never asm {
+  moveib a 8 add a sp load a a | status
+  syscall 0
+}
+fun panic(message: Str): Never asm {
+  moveib a 8  add a sp load a a | message.data
+  moveib b 16 add b sp load b b | message.len
+  syscall 2
+  panic
+}
+fun panic(): Never asm { panic }
+fun unreachable(): Never { panic("unreachable") }
+fun todo(): Never { panic("todo") }
+fun assert(condition: Bool) { assert(condition, "assert failed") }
+fun assert(condition: Bool, message: Str) {
+  if not(condition) then panic(message)
+}
+
+| Process Arguments  
+
+fun get_process_args(): Slice[Str] {
+  var argc = get_argc()
+  var args = uninitialized_slice[Str](argc)
+  for i in 0..argc do args.get_ref(i).* = read_argv(i)
+  args
+}
+fun get_argc(): Int asm {
+  load b sp | return value address
+  syscall 9
+  store b a ret
+}
+fun read_argv(index: Int): Str {
+  var cap = 32
+  loop {
+    var buffer = uninitialized_slice[Byte](cap)
+    var read = read_argv(index, buffer)
+    if read < cap then return buffer.subslice(0..read).to_str()
+    cap = cap * 2
+  }
+}
+fun read_argv(index: Int, buffer: Slice[Byte]): Int asm {
+  moveib a 8 add a sp load a a  | index
+  moveib b 16 add b sp load b b | buffer.data
+  moveib c 24 add c sp load c c | buffer.len
+  syscall 10
+  load d sp | return value address
+  store d a ret
+}

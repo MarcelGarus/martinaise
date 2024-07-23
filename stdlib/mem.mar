@@ -1,0 +1,448 @@
+import stdlib.mar
+
+| References & Addresses  
+| Martinaise supports references: &T is a reference to a T. You can get a
+| reference to a value using the expr.& syntax. You can follow a reference
+| using the expr.* syntax.
+| Addresses are like references, but they don't have any information about what
+| kind of object is stored at the address. You can basically do nothing with an
+| address – it's on opaque handle.
+| Addresses can be turned into Ints. This allows you to do arbitrary
+| calculations with the value.
+|
+| ┌────┐       ┌─────────┐       ┌─────┐
+| │ &T │ <───> │ Address │ <───> │ Int |
+| └────┘       └─────────┘       └─────┘
+
+opaque Address = 8 bytes big, 8 bytes aligned
+
+fun to_address[T](ref: &T): Address asm {
+  moveib a 8 add a sp load a a | ref
+  load b sp | return value address
+  store b a ret
+}
+fun to_reference[T](address: Address): &T asm {
+  moveib a 8 add a sp load a a | address
+  load b sp | return value address
+  store b a ret
+}
+
+fun to_int(address: Address): Int asm {
+  moveib a 8 add a sp load a a | address
+  load b sp | return value address
+  store b a ret
+}
+fun to_address(number: Int): Address asm {
+  moveib a 8 add a sp load a a | number
+  load b sp | return value address
+  store b a ret
+}
+
+| Casts an A to a B by reinterpreting the memory of A. This is unsafe, so only
+| use it if you know what you're doing.
+fun cast[A, B](a: A): B {
+  | at least a small sanity check
+  assert(size_of[A]() == size_of[B](), "cast between types of different sizes")
+  a.unchecked_cast[A, B]()
+}
+fun unchecked_cast[A, B](a: A): B { a.&.to_address().to_reference[B]().* }
+
+var null = 0.to_address() | Million dollar mistake?
+
+fun ==(a: Address, b: Address): Bool { a.to_int() == b.to_int() }
+fun +(a: Address, offset: Int): Address { {a.to_int() + offset}.to_address() }
+
+fun or(address: Address): ControlFlow[Address] {
+  if address == null
+  then ControlFlow[Address].evaluate_alternative
+  else ControlFlow[Address].short_circuit(address)
+}
+
+fun write[W](writer: W, address: Address) {
+  | max Int is 18_446_744_073_709_551_615
+  var divisor = 1_152_921_504_606_846_976 | 16 ^ something
+  var address = address.to_int()
+  writer."0x"
+  loop {
+    writer.write({address / divisor % 16}.lower_byte().digit_to_char())
+    if divisor == 1 then break
+    divisor = divisor / 16
+  }
+}
+fun write_debug[W, T](writer: W, ref: &T) {
+  writer.write("&")
+  writer.write_debug(ref.*)
+}
+
+fun swap[T](a: &T, b: &T) {
+  var tmp = a.*
+  a.* = b.*
+  b.* = tmp
+}
+
+| Assuming multiple instances of T are saved in memory next to each other,
+| return a reference to the item at the index.
+fun add_stride_offset[T](ref: &T, index: Int): &T {
+  {ref.to_address() + {stride_size_of[T]() * index}}.to_reference[T]()
+}
+
+| Heap & Memory Allocations  
+| Sometimes you need to allocate memory on the heap – for example, if you want
+| to return a value from a function, but you don't know its size before calling
+| it.
+| For those cases, Martinaise uses basic bump allocation: It keeps a pointer to
+| the end of the heap and increases it each time new memory is allocated.
+| Because Martinaise targets mostly short-lived programs, we let the operating
+| system free all memory at once when the program ends. That simplifies things
+| for Martinaise code and generally leads to better runtime performance.
+
+var heap_head = end_of_initial_memory()
+fun end_of_initial_memory(): Address asm {
+  load a sp | return value address
+  movei b _end_of_initial_memory | defined by the compiler, moves end into a
+  store a b
+  ret
+}
+
+fun malloc(size: Int, alignment: Int): Address {
+  heap_head
+  malloc_impl(size, alignment)
+}
+fun malloc_impl(size: Int, alignment: Int): Address asm {
+  moveib a 8  add a sp load a a | size
+  moveib b 16 add b sp load b b | alignment
+  movei c heap_head load c c    | heap_head
+  moveib d 1 cmp b d isequal cjump .bump_head
+  moveib d 2 cmp b d isequal cjump .align
+  moveib d 4 cmp b d isequal cjump .align
+  moveib d 8 cmp b d isequal cjump .align
+  | Round up c to a multiple of the alignment: c = (c + (b - 1)) & negate(b - 1)
+  .align: moveib d 1 sub b d add c b negate b and c b
+  .bump_head: move b c add b a move a c movei c heap_head store c b
+  .check_oom: cmp b sp isgreaterequal cjump .oom
+  load b sp | return value address
+  store b a ret
+  .bad_alignment: movei a "bad alignment" moveib b 13 syscall 2 panic
+  .oom: movei a "out of memory" moveib b 13 syscall 2 panic
+}
+
+struct HeapCheckpoint { heap_head: Address }
+fun heap_checkpoint(): HeapCheckpoint {
+  heap_head
+  heap_checkpoint_impl()
+}
+fun heap_checkpoint_impl(): HeapCheckpoint asm {
+  movei a heap_head load a a
+  load b sp | return value address
+  store b a ret
+}
+fun free_everything_allocated_after(checkpoint: HeapCheckpoint) asm {
+  | use malloc
+  moveib a 8 add a sp load a a | checkpoint.heap_head
+  movei b heap_head load b b   | heap_head
+  cmp a b isgreaterequal cjump .done
+  movei b heap_head store b a
+  .done: ret
+}
+
+fun uninitialized[T](): &T {
+  malloc(size_of[T](), alignment_of[T]()).to_reference[T]()
+}
+fun put_on_heap[T](value: T): &T {
+  var ref = uninitialized[T]()
+  ref.* = value
+  ref
+}
+
+fun memcopy(from: Address, to: Address, amount: Int) asm {
+  moveib a 8  add a sp load a a | from
+  moveib b 16 add b sp load b b | to
+  moveib c 24 add c sp load c c | amount
+  moveib e 1
+  cmp a b isless cjump .right_to_left
+  .left_to_right: ..loop:
+  move st c isequal cjump .done
+  loadb d a storeb b d
+  add a e add b e sub c e
+  jump ..loop
+  .right_to_left:
+  add a c add b c sub a e sub b e | make a and b point to the last byte
+  ..loop:
+  move st c isequal cjump .done
+  loadb d a storeb b d
+  sub a e sub b e sub c e
+  jump ..loop
+  .done: ret
+}
+fun memcompare(left: Address, right: Address, amount: Int): Ordering asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  moveib c 24 add c sp load c c | amount
+  moveib d 1
+  .loop:
+  move st c isequal cjump .equal
+  loadb e a loadb f b
+  cmp e f isless cjump .less
+  cmp e f isgreater cjump .greater
+  add a d add b d sub c d
+  jump .loop
+  .equal:   load a sp moveib b 1 storeb a b ret
+  .less:    load a sp moveib b 0 storeb a b ret
+  .greater: load a sp moveib b 2 storeb a b ret
+}
+fun memhash(address: Address, amount: Int): Int asm {
+  moveib a 8  add a sp load a a | address
+  moveib b 16 add b sp load b b | amount
+  movei c 5381                  | hasher state
+  moveib e 33 moveib f 1        | constants
+  .loop:
+  move st b isequal cjump .done | if amount == 0, we're done
+  loadb d a mul c e add c d     | state = 33 * state + address[i]
+  sub b f add a f jump .loop
+  .done:
+  mul c e
+  load a sp store a c ret
+}
+
+| Slice  
+| A slice refers to a memory region where values of the same type are right next
+| to each other. A slice has a pointer to the first element as well as a length.
+|
+| [  item  ][  item  ][  item  ][  item  ]
+| ^
+| len 4
+
+struct Slice[T] { data: Address, len: Int }
+
+fun empty_slice[T](): Slice[T] {
+  | Storing a reference that is effectively a null pointer is an antipattern.
+  | Here, we still do that because storing a Maybe[&T] would make the Slice type
+  | bigger. If the len is 0, we know not to follow the data reference.
+  Slice[T] { data = null, len = 0 }
+}
+fun uninitialized_slice[T](len: Int): Slice[T] {
+  if len == 0 then return empty_slice[T]()
+  Slice[T] { data = malloc(len * stride_size_of[T](), alignment_of[T]()), len }
+}
+fun filled_slice[T](len: Int, fill: T): Slice[T] {
+  var slice = uninitialized_slice[T](len)
+  for i in 0..len do slice.get_ref(i).* = fill
+  slice
+}
+
+fun is_empty[T](slice: Slice[T]): Bool { slice.len == 0 }
+fun get_ref_unchecked[T](slice: Slice[T], index: Int): &T {
+  {slice.data + {index * stride_size_of[T]()}}.to_reference[T]()
+}
+fun get_unchecked[T](slice: Slice[T], index: Int): T {
+  slice.get_ref_unchecked(index).*
+}
+fun get_maybe_ref[T](slice: Slice[T], index: Int): Maybe[&T] {
+  if {0..slice.len}.contains(index)
+  then some(slice.get_ref_unchecked(index))
+  else none[&T]()
+}
+fun get_maybe[T](slice: Slice[T], index: Int): Maybe[T] {
+  switch slice.get_maybe_ref(index)
+  case some(item) some(item.*)
+  case none none[T]()
+}
+fun get_ref[T](slice: Slice[T], index: Int): &T {
+  slice.get_maybe_ref(index)
+    or panic("index out of bounds: {index} is not in {0..slice.len}")
+}
+fun get[T](slice: Slice[T], index: Int): T { slice.get_ref(index).* }
+fun set[T](slice: &Slice[T], index: Int, value: T) {
+  slice.get_ref(index).* = value
+}
+
+fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
+  var i = 0
+  loop {
+    if {i == a.len} and {i == b.len} then return Ordering.equal
+    if i == a.len then return Ordering.less
+    if i == b.len then return Ordering.greater
+    var ord = a.get(i) <=> b.get(i)
+    ord is equal or return ord
+    i = i.inc()
+  }
+}
+fun ==[T](a: Slice[T], b: Slice[T]): Bool {
+  a.len == b.len or return false
+  a <=> b is equal
+}
+fun hash[T](hasher: &Hasher, slice: Slice[T]) { hasher.hash_all(slice) }
+fun write[W, T](writer: W, slice: Slice[T]) {
+  writer.write("[{comma_separated(slice)}]")
+}
+fun write_debug[W, T](writer: W, slice: Slice[T]) {
+  writer."["
+  var first = true
+  for item in slice do {
+    if first then first = false else writer.", "
+    writer.write_debug(item)
+  }
+  writer."]"
+}
+
+fun generate[T](
+  s: Static[Slice[T]], random: &Random, complexity: Int
+): Slice[T] {
+  var complexities = random.split(complexity)
+  var slice = uninitialized_slice[T](complexities.len)
+  for it in complexities.iter().enumerate() do
+    slice.get_ref(it.index).* = static[T]().generate(random, it.item)
+  slice
+}
+fun fuzzing_complexity[T](slice: Slice[T]): Float {
+  var complexity = slice.len.to_float()
+  for item in slice do complexity = complexity + item.fuzzing_complexity()
+  complexity
+}
+fun mutate[T](slice: Slice[T], random: &Random, temperature: Int): Slice[T] {
+  if temperature == 0 then return slice
+  var copy = uninitialized_slice[T](slice.len)
+  slice.copy_to(copy)
+  var rand = random.next_int(0..temperature)
+  if slice.is_not_empty() and rand < 50 then {
+    | Mutate an inner element.
+    var temperature = temperature * 12 / 10
+    var index = random.next_int(0..slice.len)
+    copy.&.get_ref(index).* = copy.get(index).mutate(random, temperature)
+  } else {
+    | Change the structure of the slice itself by adding/removing an item.
+    if slice.is_not_empty() and random.next_bool() then
+      copy.&.remove(random.next_int(0..slice.len)..+1)
+    else
+      copy.&.insert(
+        random.next_int(0..=slice.len),
+        static[T]().generate(random, 100)
+      )
+  }
+  copy
+}
+
+fun iter[T](slice: Slice[T]): Iter[T, _] {
+  Iter[T, SliceIter[T]] { state = SliceIter { slice, index = 0 } }
+}
+struct SliceIter[T] { slice: Slice[T], index: Int }
+fun next[T](iter: &Iter[T, SliceIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  if state.index < state.slice.len
+  then {
+    var item = state.slice.get(state.index)
+    state.index = state.index + 1
+    some(item)
+  }
+  else none[T]()
+}
+
+fun rev_iter[T](slice: Slice[T]): Iter[T, _] {
+  Iter[T, SliceRevIter[T]] { state = SliceRevIter { slice, index = slice.len } }
+}
+struct SliceRevIter[T] {
+  slice: Slice[T],
+  index: Int, | last yielded item
+}
+fun next[T](iter: &Iter[T, SliceRevIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  if state.index > 0 then {
+    state.index = state.index - 1
+    some[T](state.slice.get(state.index))
+  } else none[T]()
+}
+
+fun copy_to[T](from: Slice[T], to: Slice[T]) {
+  from.len == to.len or
+    panic("copy_to slice lens don't match ({from.len} and {to.len})")
+  memcopy(from.data, to.data, from.len * stride_size_of[T]())
+}
+fun subslice[T](slice: Slice[T], range: Range[Int]): Slice[T] {
+  range.end <= slice.len or
+    panic("tried to take subslice {range} from slice of length {slice.len}")
+  Slice[T] {
+    data = slice.data + {stride_size_of[T]() * range.start}, len = range.len()
+  }
+}
+fun remove[T](slice: &Slice[T], range: Range[Int]) {
+  slice.subslice(range.end..slice.len)
+    .copy_to(slice.subslice(range.start..{slice.len - range.len()}))
+  slice.len = slice.len - range.len()
+}
+fun first[T](slice: Slice[T]): T {
+  slice.is_not_empty() or panic("first only works on non-empty slices")
+  slice.get(0)
+}
+fun first[T](slice: Slice[T], amount: Int): Slice[T] {
+  amount <= slice.len or panic("first amount too big")
+  slice.subslice(0..amount)
+}
+fun last[T](slice: Slice[T]): T {
+  slice.is_not_empty() or panic("last only works on non-empty slices")
+  slice.get(slice.len.dec())
+}
+fun last[T](slice: Slice[T], amount: Int): Slice[T] {
+  amount <= slice.len or panic("last amount too big")
+  slice.subslice({slice.len - amount}..slice.len)
+}
+fun without_first[T](slice: Slice[T]): Slice[T] { slice.without_first(1) }
+fun without_first[T](slice: Slice[T], amount: Int): Slice[T] {
+  amount <= slice.len or panic("without_first amount too big")
+  slice.subslice(amount..slice.len)
+}
+fun without_last[T](slice: Slice[T]): Slice[T] { slice.without_last(1) }
+fun without_last[T](slice: Slice[T], amount: Int): Slice[T] {
+  amount <= slice.len or panic("without_last amount too big")
+  slice.subslice(0..{slice.len - amount})
+}
+fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
+  prefix.len <= slice.len or return false
+  slice.first(prefix.len) == prefix
+}
+fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
+  suffix.len <= slice.len or return false
+  slice.last(suffix.len) == suffix
+}
+fun trim_prefix[T](slice: &Slice[T], prefix: Slice[T]): Bool {
+  var matches = slice.starts_with(prefix)
+  if matches then slice.* = slice.without_first(prefix.len)
+  matches
+}
+fun trim_suffix[T](slice: &Slice[T], suffix: Slice[T]): Bool {
+  var matches = slice.ends_with(suffix)
+  if matches then slice.* = slice.without_last(suffix.len)
+  matches
+}
+
+fun sum(slice: Slice[Int]): Int {
+  var sum = 0
+  for item in slice do sum = sum + item
+  sum
+}
+
+fun sort[T](slice: &Slice[T]) {
+  | quick sort
+  if slice.len <= 1 then return {}
+  var pivot = slice.get(slice.len.dec())
+  var i = 0
+  for j in 0..slice.len do
+    if slice.get(j) < pivot then {
+      i = i.inc()
+      swap(slice.get_ref(i.dec()), slice.get_ref(j))
+    }
+  swap(slice.get_ref(i), slice.get_ref(slice.len.dec()))
+  sort(slice.subslice(0..i).&)
+  sort(slice.subslice(min(i.inc(), slice.len.dec())..slice.len).&)
+}
+
+| Returns the position of the leftmost item of the ordered slice that is equal
+| or greater to the given item.
+fun binary_search_leftmost_greater_equal(slice: Slice[Int], item: Int): Int {
+  var left  = 0         | inclusive
+  var right = slice.len | exclusive
+  loop if left >= right then break else {
+    var mid = {left + right} / 2
+    if slice.get(mid) < item then left = mid + 1 else right = mid
+  }
+  left
+}

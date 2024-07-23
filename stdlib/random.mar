@@ -1,0 +1,34 @@
+import stdlib.mar
+
+| Pseudo-Random Number Generator  
+| This is an implementation of Xoshiro256++, a pseudo-random number generator
+| that is reasonably fast.
+| Rust RNG comparisons: https://rust-random.github.io/book/guide-rands.html
+| Original C implementation: https://xoshiro.di.unimi.it/xoshiro256plusplus.c
+| TODO: The implementation doesn't work correctly. Probably because of overflow.
+
+struct Random { a: Int, b: Int, c: Int, d: Int }
+fun random_number_generator(): Random { Random { a = 1, b = 2, c = 3, d = 4 } }
+fun random_number_generator(seed: Int): Random {
+  Random { a = seed, b = 2, c = 3, d = 4 }
+}
+fun rotl(x: Int, k: Int): Int { {x << k}.or(x >> {64 - k}) }
+fun next_int(rand: &Random): Int {
+  var res = {rand.a + rand.d}.rotl(23) + rand.a
+  var t = rand.b << 17
+  rand.c = rand.c ^ rand.a
+  rand.d = rand.d ^ rand.b
+  rand.b = rand.b ^ rand.c
+  rand.a = rand.a ^ rand.d
+  rand.c = rand.b ^ t
+  rand.d = rand.d.rotl(45)
+  res
+}
+fun next_int(rand: &Random, range: Range[Int]): Int {
+  rand.next_int().abs() % range.len() + range.start
+}
+fun next_bool(rand: &Random): Bool { rand.next_int().abs() % 2 == 0 }
+fun child(rand: &Random): Random { random_number_generator(rand.next_int()) }
+fun choose[T](rand: &Random, slice: Slice[T]): T {
+  slice.get_unchecked(rand.next_int(0..slice.len))
+}

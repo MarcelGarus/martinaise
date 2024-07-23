@@ -1,0 +1,32 @@
+import stdlib.mar
+
+| Comparisons  
+| You should implement the spaceship operator <=>(T, T): Ordering for types that
+| can be compared. This allows you to use operators such as <= or functions such
+| as min.
+
+enum Ordering { less, equal, greater }
+
+fun ==(a: Ordering, b: Ordering): Bool {
+  switch a
+  case less b.is_less()
+  case equal b.is_equal()
+  case greater b.is_greater()
+}
+fun hash(hasher: &Hasher, ord: Ordering) {
+  hasher.hash(switch ord case less #l case equal #e case greater #g)
+}
+fun write[W](writer: W, ord: Ordering) {
+  writer.write(
+    switch ord case less "less" case equal "equal" case greater "greater"
+  )
+}
+
+fun <[T](a: T, b: T): Bool { a <=> b is less }
+fun >[T](a: T, b: T): Bool { a <=> b is greater }
+fun >=[T](a: T, b: T): Bool { not(a <=> b is less) }
+fun <=[T](a: T, b: T): Bool { not(a <=> b is greater) }
+
+fun min[T](a: T, b: T): T { if a < b then a else b }
+fun max[T](a: T, b: T): T { if a > b then a else b }
+fun clamp[T](a: T, range: Range[T]): T { max(range.start, min(range.end.dec(), a)) }

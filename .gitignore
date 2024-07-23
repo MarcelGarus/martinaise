@@ -3,7 +3,6 @@ compiler/0/zig-cache/
 compiler/0/.zig-cache/
 
 martinaise
-/stdlib.mar
 
 *.o
 *.s

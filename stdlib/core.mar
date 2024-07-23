@@ -1,0 +1,64 @@
+import stdlib.mar
+
+| Nothing (aka Unit or Void)  
+| Nothing is a type with only one instance. From an information theoretical
+| perspective, being given an instance of a Nothing type gives you no
+| information whatsoever. The size of a Nothing instance is zero – it disappears
+| at compile time! Like a ghost!
+| Functions without an explicit return type return Nothing by default. Functions
+| that don't have anything useful to return (such as print) return Nothing
+| instead. Empty bodies return Nothing. If you really need a Nothing, you can
+| just write {}.
+
+struct Nothing {}
+
+fun write[W](writer: W, nothing: Nothing) { writer."nothing" }
+fun write_debug[W](writer: W, nothing: Nothing) { writer."nothing" }
+fun ==(a: Nothing, b: Nothing): Bool { true }
+fun ignore[T](value: T) {}
+
+| Never  
+| Never is a type with zero instances. If you write a function that accepts an
+| argument of Never, it can never be called (otherwise, the caller would have
+| a Never instance).
+| Why do we need something like this? Some expressions always abort control
+| flow, for example `return 3` or `continue` or `break(your_leg)`. These
+| evaluate to the Never type. Because Never is never instantiated, it can be
+| assigned to anything:
+|
+| foo.some_bool = return "Hi"
+| 2 + if condition then 3 else break
+| Maybe[Int].some(todo())
+
+enum Never {}
+
+| And and Or  
+| Martinaise has "and" and "or" keywords, which allow short-circuiting. They are
+| keywords because they control the program flow just as much as an if or a
+| switch.
+|
+| Here are cases where the control flow short-circuits and the alternatives
+| don't get evaluated:
+|
+| false and panic() | this is false
+| true or panic()   | this is true
+| some(2) or 3      | this is 2
+| 
+| In these cases, the control flow doesn't short-circuit and the alternatives
+| are evaluated as well:
+|
+| false or foo      | this is foo
+| true and stuff    | this is stuff
+| none[Int]() or 3  | this is 3
+|
+| The "and" and "or" keywords turn into a call of left.and() or left.or(), which
+| returns a ControlFlow. This logic flow determines whether the expression
+| short-circuits or not.
+
+enum ControlFlow[T, A] { short_circuit: T, evaluate_alternative: A }
+
+fun or[O, E](result: Result[O, E]): ControlFlow[O, E] {
+  switch result
+  case ok(o)    ControlFlow[O, E].short_circuit(o)
+  case error(e) ControlFlow[O, E].evaluate_alternative(e)
+}

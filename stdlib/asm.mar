@@ -1,0 +1,107 @@
+import stdlib.mar
+
+| Assembly  
+| In the end, all Martinaise code is lowered to Soil assembly. You can easily
+| switch back and forth between Martinaise and assembly. Using the asm keyword,
+| you can implement functions in assembly language. In order for them to behave
+| correctly, you need to be aware of the memory layout and calling convention
+| used by Martinaise.
+|
+| Memory Layout  
+| All types have a size and an alignment. The memory layout depends on the type:
+|
+| - Opaque types define exactly how they are aligned.
+|
+|   opaque Byte = 1 byte big, 1 byte aligned
+|
+| - Struct types have an alignment equal to the biggest alignment of their
+|   fields. All fields with a size that is a multiple of this alignment are
+|   moved to the front. All other fields are ordered in a way to minimize the
+|   overall size. You should not depend on the order of these other fields.
+|
+| - Enum types contain the payload followed by a single byte indicating which
+|   variant is active. The size reserved for the payload is the biggest size of
+|   all the possible variant payloads.
+|
+| Here's an example of a more complex type:
+|
+| enum CType { char: Byte, short: I16, int: I32, long: Int }
+| struct Foo {
+|   value: U32,
+|   flup: CType,
+|   foo: &Foo,
+|   baz: Maybe[Maybe[Str]],
+|   blub: Map[Str, Int],
+| }
+|
+| ▏0      ▏8      ▏16     ▏24     ▏32     ▏40     ▏48     ▏56     ▏64
+| ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 65
+| Foo
+| foo     blub                    baz                 val…flup
+| ▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓..▓▓▓▓░░░░░░░░░
+| &Foo    Map[Str, Int]           Maybe[Maybe[Str]…│  U32 CType   │
+|         buckets         size    some─────────────┤      char────┤
+|         ░░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░│      ░.......│
+|         Slice[MapBucket…Int     Maybe[Str]      ││      …       │
+|         data    len             some────────────┤│      short───┤
+|         ░░░░░░░░▓▓▓▓▓▓▓▓        ░░░░░░░░░░░░░░░░││      ░░......│
+|         &MapBuc…Int             Str             ││      I…      │
+|                                 chars           ││      int─────┤
+|                                 ░░░░░░░░░░░░░░░░││      ░░░░....│
+|                                 Slice[Char]     ││      I32     │
+|                                 data    len     ││      long────┘
+|                                 ░░░░░░░░▓▓▓▓▓▓▓▓││      ░░░░░░░░
+|                                 &Char   Int     ││      Int
+|                                 none────────────┘│
+|                                 ................ │
+|                                 none─────────────┘
+|                                 .................
+|
+| Calling Convention  
+| Martinaise has its own calling convention. It is often less efficient than the
+| cdecl and RISC-V calling conventions, but way simpler.
+|
+| - Registers  
+|   After a function returns, the ip and sp registers have the same value. All
+|   the other registers may have changed (st, a, b, c, d, e, f).
+|
+| - Arguments  
+|   All arguments are passed on the stack. When a function starts executing, the
+|   last value on the stack is the address that indicates where the return value
+|   should be saved to. After that come the arguments, layed out as if they were
+|   in an anonymous struct that is 8-byte aligned.
+|
+|   Example: foo(a: Int, b: Byte) is called. When layouting a struct containing
+|   a and b, its layout would look like this (one character is one byte):
+|
+|   aaaaaaaab
+|
+|   This value is padded to a multiple of 8 bytes, so at the beginning of the
+|   function execution, the stack looks like this:
+|
+|   [return]aaaaaaaab.......[other stuff on the stack]
+|   ▏       ▏       ▏       ▏       ▏
+|   sp     +8      +16     +24     +32
+|
+|   More notes about this:
+|   - 1 character in this visualization represents one byte.
+|   - The stack grows down to lower addresses, so the relevant parts are at the
+|     lower addresses.
+|   - The arguments all fulfill their alignment requirements.
+|   - You can rely on the fact that all arguments with a size that is a multiple
+|     of the highest alignment (here 8) are at the beginning in the order they
+|     were declared (in this example, a is at the beginning). You should NOT
+|     depend on the order of the other fields. This restriction effectively
+|     prohibits you from manually implementing asm functions that take multiple
+|     arguments with a size that is not a multiple of the biggest alignment.
+|     Instead, consider writing asm functions with arguments that are explicitly
+|     of the same length and wrapping them with nicer-typed functions when
+|     necessary.
+|
+| Syscalls  
+| The syscall calling convention is different than the Martinaise calling
+| convention: a contains the syscall number, b contains the first argument,
+| c the second one, etc.
+| When the syscall returns, a contains the result.
+
+fun get_stack_pointer(): Address asm { load a sp store a sp ret }

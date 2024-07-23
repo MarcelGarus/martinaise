@@ -1,0 +1,51 @@
+import stdlib.mar
+
+| Set  
+
+struct Set[T] { map: Map[T, Nothing] }
+
+fun set[T](): Set[T] { Set[T] { map = map[T, Nothing]() } }
+fun to_set[T](vec: Vec[T]): Set[T] {
+  var set = set[T]()
+  for item in vec do set.&.put(item)
+  set
+}
+
+fun is_empty[T](set: Set[T]): Bool { set.map.size == 0 }
+fun put[T](set: &Set[T], value: T) { set.map.&.put(value, {}) }
+fun contains[T](set: Set[T], value: T): Bool { set.map.contains(value) }
+
+fun write[W, T](writer: W, set: Set[T]) {
+  writer.write(#{)
+  var first = true
+  for item in set do {
+    if first then first = false else writer.write(", ")
+    writer.write(item)
+  }
+  writer.write(#})
+}
+
+fun iter[T](set: Set[T]): Iter[T, _] {
+  Iter[T, SetIter[T]] {
+    state = SetIter { buckets = set.map.buckets, index = 0 }
+  }
+}
+struct SetIter[T] { buckets: Slice[MapBucket[T, Nothing]], index: Int }
+fun next[T](iter: &Iter[T, SetIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  loop {
+    if state.index >= state.buckets.len then return none[T]()
+    state.index = state.index + 1
+    if state.buckets.get(state.index - 1) is filled(entry)
+    then return some(entry.key)
+  }
+}
+
+fun min[T](slice: Set[T]): Maybe[T] {
+  var candidate = none[T]()
+  for item in slice do
+    switch candidate
+    case some(c) candidate = some(min(c, item))
+    case none candidate = some(item)
+  return candidate
+}

@@ -1,6 +1,5 @@
-martinaise.soil: compiler/8/martinaise.soil compiler/9/stdlib.mar
+martinaise.soil: compiler/8/martinaise.soil
 	@cp compiler/8/martinaise.soil martinaise.soil
-	@cp compiler/9/stdlib.mar stdlib.mar
 	@echo "# Ready for dev work"
 
 # Adjust this based on your system.

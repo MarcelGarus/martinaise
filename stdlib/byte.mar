@@ -1,0 +1,97 @@
+import stdlib.mar
+
+| Byte  
+| A value from 0 to 255. All arithmetic operations wrap around.
+
+| A byte is one byte big. Who would have known?
+opaque Byte = 1 byte big, 1 byte aligned
+
+fun +(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  load c sp | return value address
+  add a b storeb c a ret
+}
+fun -(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  load c sp | return value address
+  sub a b storeb c a ret
+}
+fun *(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  load c sp | return value address
+  mul a b storeb c a ret
+}
+fun /(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  load c sp | return value address
+  div a b storeb c a ret
+}
+fun %(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  load c sp | return value address
+  rem a b storeb c a ret
+}
+fun &(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  load c sp | return value address
+  and a b storeb c a ret
+}
+fun or(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  load c sp | return value address
+  or a b storeb c a ret
+}
+fun ^(left: Byte, right: Byte): Byte asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  load c sp | return value address
+  xor a b storeb c a ret
+}
+fun <=>(left: Byte, right: Byte): Ordering asm {
+  moveib a 8 add a sp loadb a a | left
+  moveib b 9 add b sp loadb b b | right
+  load c sp | return value address
+  sub a b
+  move st a isless cjump .less
+  move st a isgreater cjump .greater
+  .equal:   moveib b 1 storeb c b ret
+  .less:    moveib b 0 storeb c b ret
+  .greater: moveib b 2 storeb c b ret
+}
+fun to_int(n: Byte): Int asm {
+  moveib a 8 add a sp loadb a a | n
+  load b sp | return value address
+  store b a ret
+}
+
+fun inc(a: Byte): Byte { a + 1.lower_byte() }
+fun dec(a: Byte): Byte { a - 1.lower_byte() }
+
+fun ==(a: Byte, b: Byte): Bool { a <=> b is equal }
+fun hash(hasher: &Hasher, int: Byte)  { hasher.hash(int.to_int()) }
+
+fun write[W](writer: W, int: Byte) { writer.write(radix(int, 10)) }
+fun radix(int: Byte, radix: Int): RadixFormat { radix(int.to_int(), radix) }
+fun digit_to_char(digit: Byte): Char {
+  if digit.to_int() > 9
+  then {digit - 10.lower_byte() + #a.byte}.to_char()
+  else {digit + #0.byte}.to_char()
+}
+fun write_debug[W](writer: W, byte: Byte) { writer."{byte}" }
+
+fun generate(s: Static[Byte], random: &Random, complexity: Int): Byte {
+  random.next_int().lower_byte()
+}
+fun fuzzing_complexity(byte: Byte): Float {
+  byte.to_int().abs().inc().log_2().to_float()
+}
+fun mutate(byte: Byte, random: &Random, temperature: Int): Byte {
+  byte + random.next_int({0 - temperature}..=temperature).lower_byte()
+}

@@ -1,0 +1,197 @@
+import stdlib.mar
+
+| Map   
+| Stores key-value-pairs for efficient lookup. The key has to support hash and
+| ==.
+
+struct Map[K, V] { buckets: Slice[MapBucket[K, V]], size: Int }
+enum MapBucket[K, V] { empty, filled: MapEntry[K, V] }
+struct MapEntry[K, V] { key: K, value: V }
+
+fun map[K, V](): Map[K, V] {
+  Map { buckets = filled_slice(8, MapBucket[K, V].empty), size = 0 }
+}
+
+fun ->[K, V](key: K, value: V): MapEntry[K, V] { MapEntry { key, value } }
+fun map[K, V](a: MapEntry[K, V]): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.*
+}
+fun map[K, V](a: MapEntry[K, V], b: MapEntry[K, V]): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.put(b) m.*
+}
+fun map[K, V](
+  a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V]
+): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.put(b) m.put(c) m.*
+}
+fun map[K, V](
+  a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V], d: MapEntry[K, V]
+): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.put(b) m.put(c) m.put(d) m.*
+}
+fun map[K, V](
+  a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V], d: MapEntry[K, V],
+  e: MapEntry[K, V],
+): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.put(b) m.put(c) m.put(d) m.put(e) m.*
+}
+
+fun is_empty[K, V](map: Map[K, V]): Bool { map.size == 0 }
+fun put[K, V](map: &Map[K, V], entry: MapEntry[K, V]) {
+  map.put(entry.key, entry.value)
+}
+fun put[K, V](map: &Map[K, V], key: K, value: V) {
+  var fill_percentage = 100 * map.size / map.buckets.len
+  if fill_percentage >= 60 then {
+    var old_buckets = map.buckets
+    map.* = Map {
+      buckets = filled_slice(map.buckets.len * 2, MapBucket[K, V].empty),
+      size = 0,
+    }
+    for bucket in old_buckets do
+      if bucket is filled(entry) then map.raw_insert(entry.key, entry.value)
+  }
+  map.raw_insert(key, value)
+}
+fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
+  var i = key.hash() % map.buckets.len
+  loop {
+    var bucket = map.buckets.get_ref_unchecked(i)
+    switch bucket.*
+    case empty {
+      bucket.* = MapBucket.filled(MapEntry { key, value })
+      map.size = map.size.inc()
+      break
+    }
+    case filled(entry)
+      if entry.key == key then {
+        bucket.* = MapBucket.filled(MapEntry { key, value })
+        break
+      } else i = i + 1 % map.buckets.len
+  }
+}
+fun contains[K, V](map: Map[K, V], key: K): Bool { map.get_maybe(key) is some }
+fun get_maybe_ref[K, V](map: &Map[K, V], key: K): Maybe[&V] {
+  var i = key.hash() % map.buckets.len
+  loop {
+    var bucket = map.buckets.get_unchecked(i)
+    switch bucket
+    case empty return none[&V]()
+    case filled(entry)
+      if entry.key == key
+      then return some(map.buckets.get_ref_unchecked(i)
+        .cast[&MapBucket[K, V], &MapEntry[K, V]]()
+        .value.&)
+      else i = i + 1 % map.buckets.len
+  }
+}
+fun get_ref[K, V](map: Map[K, V], key: K): &V {
+  map.get_maybe_ref(key) or panic("Key {debug(key)} is not in the map.")
+}
+fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
+  var i = key.hash() % map.buckets.len
+  loop {
+    var bucket = map.buckets.get_unchecked(i)
+    switch bucket
+    case empty return none[V]()
+    case filled(entry)
+      if entry.key == key
+      then return some(entry.value)
+      else i = i + 1 % map.buckets.len
+  }
+}
+fun get[K, V](map: Map[K, V], key: K): V {
+  map.get_maybe(key) or panic("Key {debug(key)} is not in the map.")
+}
+fun get_ref_or_put_default[K, V](map: &Map[K, V], key: K, default_: V): &V {
+  if not(map.contains(key)) then map.put(key, default_)
+  map.get_maybe_ref(key).unwrap()
+}
+
+fun write[W, K, V](writer: W, entry: MapEntry[K, V]) {
+  writer."{entry.key}: {entry.value}"
+}
+fun write[W, K, V](writer: W, map: Map[K, V]) {
+  writer."\{{comma_separated(map.iter())}\}"
+}
+fun write_debug[W, K, V](writer: W, map: Map[K, V]) {
+  writer."\{"
+  var first = true
+  for entry in map do {
+    if first then first = false else writer.", "
+    writer."{debug(entry.key)}: {debug(entry.value)}"
+  }
+  writer."}"
+}
+
+fun generate[K, V](
+  s: Static[Map[K, V]], random: &Random, complexity: Int
+): Map[K, V] {
+  var complexities = random.split(complexity)
+  var map = map[K, V]()
+  for complexity in complexities do {
+    var complexities = random.split_2(complexity)
+    var key   = static[K]().generate(random, complexities.a)
+    var value = static[V]().generate(random, complexities.b)
+    map.&.put(key, value)
+  }
+  map
+}
+fun fuzzing_complexity[K, V](map: Map[K, V]): Float {
+  var complexity = map.size.to_float()
+  for entry in map do
+    complexity = complexity + entry.key.fuzzing_complexity()
+      + entry.value.fuzzing_complexity()
+  complexity
+}
+fun mutate[K, V](map: Map[K, V], random: &Random, temperature: Int): Map[K, V] {
+  if temperature == 0 then return map
+  var copy = map[K, V]()
+  if map.is_not_empty() and random.next_int(0..temperature) < 50 then {
+    | Mutate a random entry.
+    var mutated_entry = random.next_int(0..map.size)
+    var entry_index = 0
+    for entry in map do {
+      if entry_index == mutated_entry
+      then {
+        if random.next_bool()
+        then copy.&.put(entry.key.mutate(random, temperature).value)
+        else copy.&.put(entry.key, entry.value.mutate(random, temperature))
+      }
+      else copy.&.put(entry)
+      entry_index = entry_index + 1
+    }
+  } else {
+    | Randomly remove/add an entry.
+    if map.is_not_empty() and random.next_bool() then {
+      var removed_entry = random.next_int(0..map.size)
+      var entry_index = 0
+      for entry in map do {
+        if entry_index != removed_entry then copy.&.put(entry)
+        entry_index = entry_index + 1
+      }
+    } else {
+      for entry in map do copy.&.put(entry)
+      copy.&.put(static[MapEntry[K, V]]().generate(random, 100))
+    }
+  }
+}
+
+fun iter[K, V](map: Map[K, V]): Iter[MapEntry[K, V], _] {
+  Iter[MapEntry[K, V], MapIter[K, V]] {
+    state = MapIter { buckets = map.buckets, index = 0 }
+  }
+}
+struct MapIter[K, V] { buckets: Slice[MapBucket[K, V]], index: Int }
+fun next[K, V](
+  iter: &Iter[MapEntry[K, V], MapIter[K, V]],
+): Maybe[MapEntry[K, V]] {
+  var state = iter.state.&
+  loop {
+    if state.index >= state.buckets.len
+    then return none[MapEntry[K, V]]()
+    state.index = state.index + 1
+    if state.buckets.get(state.index - 1) is filled(entry)
+    then return some(entry)
+  }
+}

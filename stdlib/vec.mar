@@ -1,0 +1,144 @@
+import stdlib.mar
+
+| Vec  
+| A growable array where you can efficiently push and pop data to/from the back.
+| This is implemented using a fixed-size slice. Once it fills up, a new slice is
+| allocated and the old items are copied over.
+
+struct Vec[T] { data: Slice[T], len: Int }
+
+fun vec[T](): Vec[T] { Vec { data = empty_slice[T](), len = 0 } }
+| TODO: remove when there are slice literals
+fun vec[T](a: T): Vec[T] { var v = vec[T]().& v.push(a) v.* }
+fun vec[T](a: T, b: T): Vec[T] { var v = vec[T]().& v.push(a) v.push(b) v.* }
+fun vec[T](a: T, b: T, c: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.*
+}
+fun vec[T](a: T, b: T, c: T, d: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.*
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.*
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.*
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.*
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.*
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.*
+}
+fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.*
+}
+fun vec[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T,
+): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.*
+}
+fun vec[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T,
+): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.push(l) v.*
+}
+fun vec[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.push(l) v.push(m) v.*
+}
+fun vec[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T,
+): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.push(l) v.push(m)
+  v.push(n) v.*
+}
+
+fun reserve_uninitialized[T](vec: &Vec[T], n: Int): Slice[T] {
+  if vec.data.len == 0 then
+    vec.data = uninitialized_slice[T](
+      if n <= 8 then 8 else n.round_up_to_power_of(2))
+  if {vec.len + n} > vec.data.len then {
+    var new_len = {vec.len + n}.round_up_to_power_of(2)
+    var new_data = uninitialized_slice[T](2 * new_len)
+    vec.data.copy_to(new_data.subslice(0..vec.data.len))
+    vec.data = new_data
+  }
+  var slice = vec.data.subslice(vec.len..+n)
+  vec.len = vec.len + n
+  slice
+}
+fun push[T](vec: &Vec[T], item: T) {
+  vec.reserve_uninitialized(1).get_ref_unchecked(0).* = item
+}
+fun push_all[T](vec: &Vec[T], items: Slice[T]) {
+  items.copy_to(vec.reserve_uninitialized(items.len))
+}
+fun pop[T](vec: &Vec[T]): T {
+  if vec.len == 0 then panic("called pop on empty Vec")
+  vec.len = vec.len.dec()
+  vec.data.get(vec.len)
+}
+fun clear[T](vec: &Vec[T]) { vec.len = 0 }
+fun get[T](vec: Vec[T], index: Int): T { vec.data.get(index) }
+fun get_maybe[T](vec: Vec[T], index: Int): Maybe[T] {
+  vec.data.get_maybe(index)
+}
+fun get_ref[T](vec: Vec[T], index: Int): &T { vec.data.get_ref(index) }
+fun get_maybe_ref[T](vec: Vec[T], index: Int): Maybe[&T] {
+  vec.data.get_maybe_ref(index)
+}
+fun last_maybe[T](vec: Vec[T]): Maybe[T] {
+  if vec.is_empty() then none[T]() else some(vec.data.get(vec.len - 1))
+}
+fun is_empty[T](vec: Vec[T]): Bool { vec.len == 0 }
+fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0..vec.len) }
+
+fun make_space_at[T](vec: &Vec[T], pos: Int, amount: Int, fill: T) {
+  for i in 0..amount do vec.push(fill)
+  vec.to_slice().subslice(pos..{vec.len - amount})
+    .copy_to(vec.to_slice().subslice({pos + amount}..vec.len))
+}
+fun remove[T](vec: &Vec[T], range: Range[Int]) {
+  var slice = vec.to_slice()
+  slice.&.remove(range)
+  vec.len = slice.len
+}
+
+fun ==[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice() == b.to_slice() }
+fun iter[T](vec: Vec[T]): Iter[T, _] { vec.to_slice().iter() }
+fun write[W, T](writer: W, vec: Vec[T]) { writer.write(vec.to_slice()) }
+fun write_debug[W, T](writer: W, vec: Vec[T]) {
+  writer.write_debug(vec.to_slice())
+}
+
+fun generate[T](
+  static: Static[Vec[T]], random: &Random, complexity: Int
+): Vec[T] {
+  var complexities = random.split(complexity)
+  var vec = vec[T]()
+  for complexity in complexities do
+    vec.&.push(static[T]().generate(random, complexity))
+  vec
+}
+fun fuzzing_complexity[T](vec: Vec[T]): Float {
+  var complexity = vec.len.to_float()
+  for item in vec do complexity = complexity + item.fuzzing_complexity()
+  complexity
+}
+fun mutate[T](vec: Vec[T], random: &Random, temperature: Int): Vec[T] {
+  vec.to_slice().mutate(random, temperature).to_vec()
+}

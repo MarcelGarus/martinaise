@@ -1,0 +1,19 @@
+import stdlib.mar
+
+| Tuples  
+
+fun tuple[A, B](a: A, b: B): Tuple2[A, B] { Tuple2 { a, b } }
+fun tuple[A, B, C](a: A, b: B, c: C): Tuple3[A, B, C] { Tuple3 { a, b, c } }
+
+struct Tuple2[A, B] { a: A, b: B }
+struct Tuple3[A, B, C] { a: A, b: B, c: C }
+
+fun write[W, A, B](writer: W, tuple: Tuple2[A, B]) {
+  writer."({tuple.a}, {tuple.b})"
+}
+fun writer[W, A, B, C](writer: W, tuple: Tuple3[A, B, C]) {
+  writer."({tuple.a}, {tuple.b}, {tuple.c})"
+}
+
+fun min[A](tuple: Tuple2[A, A]): A { min(tuple.a, tuple.b) }
+fun max[A](tuple: Tuple2[A, A]): A { max(tuple.a, tuple.b) }

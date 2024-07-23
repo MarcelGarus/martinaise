@@ -1,5 +1,12 @@
 import stdlib.mar
 
+| Units  
+| Values from the so-called "real" world sometimes have units attached to them,
+| or so I'm told by people who sometimes touch grass. Here, we define some
+| dimensions and operations between them.
+
+| Prefixes  
+
 fun nano(a: Float): Float  { a / 1000000000.0 }
 fun micro(a: Float): Float { a / 1000000.0 }
 fun milli(a: Float): Float { a / 1000.0 }
@@ -10,12 +17,17 @@ fun mega(a: Float): Float { a * 1000000.0 }
 fun giga(a: Float): Float { a * 1000000000.0 }
 fun tera(a: Float): Float { a * 1000000000000.0 }
 
+| Dimensions  
+
 struct Duration { seconds: Float }
 struct Length { meters: Float }
 struct Area { square_meters: Float }
 struct Volume { cubic_meters: Float }
 struct Speed { meters_per_second: Float }
 struct Acceleration { meters_per_square_second: Float }
+
+| Conversion from and to floats  
+| For each dimension, there is a block of conversion functions.
 
 fun seconds(seconds: Float): Duration { Duration { seconds } }
 fun milliseconds(val: Float): Duration { Duration { seconds = val / 1000.0 } }
@@ -63,6 +75,8 @@ fun in_kilometers_per_hour(speed: Speed): Float { speed.meters_per_second / 1000
 fun meters_per_square_second(meters_per_square_second: Float): Acceleration { Acceleration { meters_per_square_second } }
 fun in_meters_per_square_second(acceleration: Acceleration): Float { acceleration.meters_per_square_second }
 
+| Printing  
+
 fun with_fitting_si_suffix(a: Float): WithFittingSiSuffix { WithFittingSiSuffix { a } }
 struct WithFittingSiSuffix { a: Float }
 fun write[W](writer: W, suffixed: WithFittingSiSuffix) {
@@ -83,6 +97,8 @@ fun write[W](writer: W, volume: Volume) { writer."{volume.cubic_meters} m³" }
 fun write[W](writer: W, speed: Speed) { writer."{speed.meters_per_second.with_fitting_si_suffix()}m/s" }
 fun write[W](writer: W, acceleration: Acceleration) { writer."{acceleration.meters_per_square_second} m/s²" }
 
+| Addition and subtraction  
+
 fun +(a: Duration, b: Duration): Duration { Duration { seconds = a.seconds + b.seconds } }
 fun -(a: Duration, b: Duration): Duration { Duration { seconds = a.seconds + b.seconds } }
 
@@ -100,6 +116,8 @@ fun -(a: Speed, b: Speed): Speed { Speed { meters_per_second = a.meters_per_seco
 
 fun +(a: Acceleration, b: Acceleration): Acceleration { Acceleration { meters_per_square_second = a.meters_per_square_second + b.meters_per_square_second } }
 fun -(a: Acceleration, b: Acceleration): Acceleration { Acceleration { meters_per_square_second = a.meters_per_square_second + b.meters_per_square_second } }
+
+| Multiplication  
 
 fun *(a: Float, b: Duration): Duration { Duration { seconds = a * b.seconds } }
 fun *(a: Float, b: Length): Length { Length { meters = a * b.meters } }
@@ -125,15 +143,8 @@ fun *(a: Speed, b: Duration): Length { Length { meters = a.meters_per_second * b
 fun *(a: Acceleration, b: Float): Acceleration { Acceleration { meters_per_square_second = a.meters_per_square_second * b } }
 fun *(a: Acceleration, b: Duration): Speed { Speed { meters_per_second = a.meters_per_square_second * b.seconds } }
 
+| Division  
+
 fun /(a: Length, b: Duration): Speed { Speed { meters_per_second = a.meters / b.seconds } }
 
 fun /(a: Speed, b: Duration): Acceleration { Acceleration { meters_per_square_second = a.meters_per_second / b.seconds } }
-
-fun main(): Never {
-  var track = 10.0.kilometers()
-  var speed = track / 40.0.minutes()
-  var width = 2.0.meters()
-  println(track * width)
-  println(speed)
-  exit(0)
-}

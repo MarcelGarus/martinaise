@@ -1,0 +1,37 @@
+import stdlib.mar
+
+| Bool  
+| A type with two instances.
+
+| The variants are ordered this way so that in memory, true is represented as a
+| 1 and false as a 0.
+enum Bool { false, true }
+
+| Please, please, please don't reassign. Seriously. Bad things happen if you do
+| (I tried).
+var true = Bool.true
+var false = Bool.false
+
+fun not(a: Bool): Bool { if a then false else true }
+fun ==(a: Bool, b: Bool): Bool { if a then b else not(b) }
+fun &(a: Bool, b: Bool): Bool { if a then b else false }  | and
+fun /(a: Bool, b: Bool): Bool { if a then true else b }   | or
+fun ^(a: Bool, b: Bool): Bool { if a then not(b) else b } | xor
+fun implies(a: Bool, b: Bool): Bool { if a then b else true }
+
+fun write[W](writer: W, b: Bool) {
+  writer.write(if b then "true" else "false")
+}
+fun hash(hasher: &Hasher, value: Bool) { hasher.hash(if value then 0 else 1) }
+
+fun and(bool: Bool): ControlFlow[Bool, Nothing] {
+  if bool
+  then ControlFlow[Bool, Nothing].evaluate_alternative
+  else ControlFlow[Bool, Nothing].short_circuit(false)
+}
+
+fun or(bool: Bool): ControlFlow[Bool, Nothing] {
+  if bool
+  then ControlFlow[Bool, Nothing].short_circuit(true)
+  else ControlFlow[Bool, Nothing].evaluate_alternative
+}

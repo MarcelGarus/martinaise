@@ -1,0 +1,244 @@
+import stdlib.mar
+
+| Files, Input & Output  
+
+opaque File = 8 bytes big, 8 bytes aligned
+
+fun create_file(filename: Str, mode: Int): Result[File, Nothing] asm {
+  moveib a 8  add a sp load a a | filename.data
+  moveib b 16 add b sp load b b | filename.len
+  moveib c 24 add c sp load c c | mode
+  syscall 3
+  load b sp | return value address
+  move st a isequal cjump .ret_error
+  .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
+  .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
+}
+fun open_file_for_reading(filename: Str): Result[File, Nothing] asm {
+  moveib a 8  add a sp load a a | filename.data
+  moveib b 16 add b sp load b b | filename.len
+  syscall 4
+  load b sp | return value address
+  move st a isequal cjump .ret_error
+  .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
+  .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
+}
+fun open_file_for_writing(filename: Str): Result[File, Nothing] asm {
+  moveib a 8  add a sp load a a | filename.data
+  moveib b 16 add b sp load b b | filename.len
+  syscall 5
+  load b sp | return value address
+  move st a isequal cjump .ret_error
+  .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
+  .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
+}
+
+fun read(file: File, buffer: Slice[Byte]): Result[Int, Nothing] asm {
+  moveib a 8  add a sp load a a | file
+  moveib b 16 add b sp load b b | buffer.data
+  moveib c 24 add c sp load c c | buffer.len
+  syscall 6
+  load b sp | return value address
+  move st a isless cjump .ret_error
+  .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
+  .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
+}
+fun read_byte(file: File): Result[Maybe[Byte], Nothing] {
+  var char = 0.lower_byte()
+  ok[Maybe[Byte], Nothing](
+    if file.read(Slice[Byte] { data = char.&.to_address(), len = 1 })? == 0
+    then none[Byte]()
+    else some(char)
+  )
+}
+fun read_line(file: File): Result[Maybe[Str], Nothing] {
+  var content = vec[Byte]()
+  loop {
+    var byte = file.read_byte()? or {
+      if content.is_empty() then return ok[Maybe[Str], Nothing](none[Str]())
+      break
+    }
+    if byte == newline.byte then break
+    content.&.push(byte)
+  }
+  ok[Maybe[Str], Nothing](some(content.to_slice().to_str()))
+}
+
+fun write_bytes_safely(
+  file: File, buffer: Slice[Byte],
+): Result[Nothing, Nothing] asm {
+  moveib a 8  add a sp load a a | file
+  moveib b 16 add b sp load b b | buffer.data
+  moveib c 24 add c sp load c c | buffer.len
+  syscall 7
+  load b sp | return value address
+  move st a cjump .ret_ok
+  .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
+  .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
+}
+fun write_byte_safely(file: File, byte: Byte): Result[Nothing, Nothing] {
+  file.write_bytes_safely(Slice { data = byte.&, len = 1 })
+}
+fun write_bytes(file: File, buffer: Slice[Byte]) {
+  file.write_bytes_safely(buffer) or panic("couldn't write byte")
+}
+fun write_byte(file: File, byte: Byte) {
+  file.write_byte_safely(byte) or panic("couldn't write byte")
+}
+
+fun close(file: File) asm {
+  moveib a 8 add a sp load a a | file
+  syscall 8 ret
+}
+
+fun read_file(name: Str): Result[Slice[Byte], Nothing] {
+  var file = open_file_for_reading(name)?
+  var all_free_memory = Slice[Byte] {
+    data = heap_head, len = get_stack_pointer().to_int() - heap_head.to_int()
+  }
+  var len = file.read(all_free_memory)?
+  if len == all_free_memory.len then panic("out of memory")
+  file.close()
+  var content = all_free_memory.subslice(0..len)
+  heap_head = heap_head + len
+  ok[Slice[Byte], Nothing](content)
+}
+fun write_file(name: Str, content: Slice[Byte]): Result[Nothing, Nothing] {
+  var file = open_file_for_writing(name)?
+  file.write_bytes_safely(content)?
+  file.close()
+  ok[Nothing, Nothing]({})
+}
+
+
+| Printing and Logging  
+
+fun write[W, T](writer: W, value: &T) { writer.write(value.*) }
+
+struct Print {}
+var stdout = Print {}
+fun print[T](value: T) { stdout.write(value) }
+fun println() { print(newline) }
+fun println[T](value: T) { print(value) println() }
+fun write_byte(print: Print, byte: Byte) asm {
+  moveib a 8 add a sp | byte.&
+  moveib b 1
+  syscall 1 ret
+}
+fun write_bytes(print: Print, bytes: Slice[Byte]) asm {
+  moveib a 8  add a sp load a a | bytes.data
+  moveib b 16 add b sp load b b | bytes.len
+  syscall 1 ret
+}
+
+struct Log {}
+var stderr = Log {}
+fun eprint[T](value: T) { stderr.write(value) }
+fun eprintln() { eprint(newline) }
+fun eprintln[T](value: T) { eprint(value) eprintln() }
+fun log[T](value: T) { eprint(value) eprintln() }
+fun write_byte(log: Log, byte: Byte) asm {
+  moveib a 8 add a sp | byte.&
+  moveib b 1
+  syscall 2 ret
+}
+fun write_bytes(log: Log, bytes: Slice[Byte]) asm {
+  moveib a 8  add a sp load a a | bytes.data
+  moveib b 16 add b sp load b b | bytes.len
+  syscall 2 ret
+}
+
+struct Stdin {}
+var stdin = Stdin {}
+fun read(stdin: Stdin, buffer: Slice[Byte]): Result[Int, Nothing] asm {
+  moveib a 8  add a sp load a a | buffer.data
+  moveib b 16 add b sp load b b | buffer.len
+  syscall 11
+  load b sp | return value address
+  move st a isless cjump .ret_error
+  .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
+  .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
+}
+fun read_byte(stdin: Stdin): Result[Maybe[Byte], Nothing] {
+  var char = 0.lower_byte()
+  ok[Maybe[Byte], Nothing](
+    if stdin.read(Slice[Byte] { data = char.&.to_address(), len = 1 })? == 0
+    then none[Byte]()
+    else some(char)
+  )
+}
+fun read_line(stdin: Stdin): Result[Maybe[Str], Nothing] {
+  var content = vec[Byte]()
+  loop {
+    var byte = stdin.read_byte()? or {
+      if content.is_empty() then return ok[Maybe[Str], Nothing](none[Str]())
+      break
+    }
+    if byte == newline.byte then break
+    content.&.push(byte)
+  }
+  ok[Maybe[Str], Nothing](some(content.to_slice().to_str()))
+}
+
+| Printing  
+| You should implement a write[Writer](Writer, T) function for types that can be
+| printed. Writers are anything that has a write_byte(Writer, Byte) function and
+| a write_bytes(Writer, Slice[Byte]) function.
+
+fun format[T](value: T): Str { "{value}" }
+
+fun writeln[W](writer: W) { writer.write(newline) }
+fun writeln[W, T](writer: W, value: T) { writer.write(value) writer.writeln() }
+
+fun comma_separated[I](iter: I): CommaSeparatedFormat[I] {
+  CommaSeparatedFormat { iter }
+}
+struct CommaSeparatedFormat[I] { iter: I }
+fun write[W, T](writer: W, format: CommaSeparatedFormat[T]) {
+  var first = true
+  for item in format.iter do {
+    if first then first = false else writer.write(", ")
+    writer.write(item)
+  }
+}
+
+fun buffered_writer[W](writer: W, capacity: Int): BufferedWriter[W] {
+  assert(capacity > 0)
+  BufferedWriter {
+    buffer = filled_slice(capacity, 0.lower_byte()), len = 0, inner = writer
+  }
+}
+struct BufferedWriter[W] { buffer: Slice[Byte], len: Int, inner: W }
+fun flush[W](self: &BufferedWriter[W]) {
+  self.inner.write_bytes(self.buffer.first(self.len))
+  self.len = 0
+}
+fun amount_free[W](self: BufferedWriter[W]): Int {
+  self.buffer.len - self.len
+}
+fun write_byte[W](self: &BufferedWriter[W], byte: Byte) {
+  if self.amount_free() == 0 then self.flush()
+  self.buffer.get_ref(self.len).* = byte
+  self.len = self.len.inc()
+}
+fun write_bytes[W](self: &BufferedWriter[W], bytes: Slice[Byte]) {
+  if bytes.len <= self.amount_free()
+  then for byte in bytes do self.write_byte(byte)
+  else {
+    self.flush()
+    if bytes.len <= self.amount_free()
+    then for byte in bytes do self.write_byte(byte)
+    else self.inner.write_bytes(bytes)
+  }
+}
+
+| Debug printing  
+| Just like the write function, you can also implement a write_debug function to
+| customize how a value is formatted when debugging. If you don't, the compiler
+| auto-generates an implementation.
+
+fallback fun write_debug[W, T](writer: W, value: T) { ... }
+
+fun debug[T](value: T): Debug[T] { Debug { value } }
+struct Debug[T] { value: T }
+fun write[W, T](writer: W, debug: Debug[T]) { writer.write_debug(debug.value) }

@@ -1,0 +1,252 @@
+import stdlib.mar
+
+| Fuzzing  
+| You can fuzz almost every Martinaise function. When you do, the compiler
+| generates a $Input struct that contains the inputs to the fuzzed function and
+| then calls fuzzer_main[$Input](). The following functions are also generated:
+| - run($Input): _                       | runs the fuzzed function
+| - arg_strings($Input): Vec[Str]        | stringifies the arguments
+
+struct FuzzingInfo {
+  has_target_position: Bool,
+  fun_line: Int,
+  fun_name: Str,
+}
+
+fun fuzzer_main[Input](): Never {
+  | Fuzzing works like this: We want to cover a lot of program behavior, which
+  | means we want to achieve high coverage and find crashes. To do that, we
+  | track the total program behavior we observed (total coverage and crashes).
+  |
+  | 1. Generate random inputs. Save the ones that result in new program behavior
+  |    (input, output, and behavior).
+  | 2. Iterate over the found inputs. For each of them, mutate it.
+  |    If the mutated version achieves at least the same behavior but is
+  |    smaller, replace the current input.
+  |    If the mutated version is bigger but results in new behavior, save it.
+
+  var info = static[Input]().fuzzing_info()
+  var random = random_number_generator()
+  var front = FuzzFront {
+    coverage = coverage(get_coverage().len), crashes = false
+  }
+  var inputs = vec[InputThatRan[Input]]()
+
+  for i in 0..200 do {
+    var checkpoint = heap_checkpoint()
+    var input = static[Input]().generate(random.&, 100)
+    var input = input.run_sandboxed()
+    if input.improves_upon(front) then {
+      front.&.integrate(input)
+      inputs.&.push(input)
+      report(input)
+    } else
+      free_everything_allocated_after(checkpoint)
+  }
+
+  var i = 0
+  loop {
+    if inputs.len <= i then break
+    var j = 0
+    loop {
+      if j == 200 then break
+      j = j + 1
+
+      var checkpoint = heap_checkpoint()
+      var original = inputs.get(i)
+      var temperature = 100000 / {j + 1} / {j + 1}
+      var mutated = original.input.mutate(random.&, 10000).run_sandboxed()
+
+      | eprintln("Mutated (comp {mutated.fuzzing_complexity()}) and original (comp {original.fuzzing_complexity()})")
+      if mutated.fuzzing_complexity() < original.fuzzing_complexity()
+        and not(original.improves_upon(mutated))
+      then {
+        inputs.get_ref(i).* = mutated
+        report(mutated)
+        j = 0
+      } else if mutated.improves_upon(front) then {
+        front.&.integrate(mutated)
+        inputs.&.push(mutated)
+        report(mutated)
+      } else {
+        free_everything_allocated_after(checkpoint)
+      }
+    }
+    i = i + 1
+  }
+
+  exit(0)
+}
+struct FuzzFront { coverage: Coverage, crashes: Bool }
+struct InputThatRan[Input] {
+  input: Input,
+  arg_strs: Slice[Str],
+  coverage: Coverage,
+  result: Result[Str, Nothing],
+}
+
+fun run_sandboxed[Input](input: Input): InputThatRan[Input] {
+  var arg_strs = input.arg_strs()
+  eprint("Running {comma_separated(arg_strs)} -> ")
+
+  var current_cov = get_coverage()
+  current_cov.reset()
+
+  var res = try input.run()
+
+  var coverage = coverage(current_cov.len)
+  coverage.integrate(current_cov)
+
+  var result =
+    switch res
+    case ok(res) ok[Str, Nothing]("{res.debug()}")
+    case error error[Str, Nothing]({})
+  eprint(result or "<panicked>")
+  eprintln(" (complexity {input.fuzzing_complexity()})")
+
+  InputThatRan { input, arg_strs, coverage, result }
+}
+fun complexity[Input](input: InputThatRan[Input]): Int {
+  var sum = 0
+  for arg in input.arg_strs do sum = sum + arg.len
+  sum
+}
+fun crashes[Input](input: InputThatRan[Input]): Bool {
+  switch input.result case ok false case error true
+}
+fun improves_upon[Input](a: InputThatRan[Input], b: InputThatRan[Input]): Bool {
+  a.crashes() and b.crashes().not() or a.coverage.improves_upon(b.coverage)
+}
+fun improves_upon[Input](input: InputThatRan[Input], front: FuzzFront): Bool {
+  input.crashes() and front.crashes.not()
+    or input.coverage.improves_upon(front.coverage)
+}
+fun integrate[Input](front: &FuzzFront, input: InputThatRan[Input]) {
+  front.coverage.integrate(input.coverage)
+  if input.result is error then front.crashes = true
+}
+fun report[Input](input: InputThatRan[Input]) {
+  var info = static[Input]().fuzzing_info()
+  if info.has_target_position and not(input.coverage.reached_target()) then
+    return {}
+
+  var json_args = vec[Json]()
+  for arg in input.arg_strs do json_args.&.push(Json.string(arg))
+  println(Json.map(map(
+    "type" -> Json.string("example"),
+    "inputs" -> Json.array(json_args),
+    "result" -> Json.map(map(
+      "status" -> Json.string("returned"),
+      "value" -> Json.string(input.result or "<panicked>"),
+    )),
+    "fun_start_line" -> Json.int(info.fun_line),
+    "fun_name" -> Json.string(info.fun_name),
+  )))
+}
+
+| Generating and mutating values  
+| To fuzz functions, we need to be able to generate random inputs of any type.
+
+| This type allows dispatching based on type. For example, if you implement a
+| foo(s: Static[Int]), foo(s: Static[Str]), etc. then you can do
+| static[T]().foo() in generic functions even if you don't have a T at hand.
+struct Static[T] {}
+
+fun static[T](): Static[T] { Static[T] {} }
+
+| The compiler can auto-implement this function for structs and enums. The
+| random instance should be used as the only source for randomness. The
+| size of the generated input should be in O(complexity).
+fallback fun generate[T](
+  s: Static[T], random: &Random, complexity: Int
+): T { ... }
+
+fun generate[T](s: Static[&T], random: &Random, complexity: Int): &T {
+  static[T]().generate(random, complexity).put_on_heap()
+}
+
+| Returns a complexity evaluation of an input.
+fallback fun fuzzing_complexity[T](value: T): Float { ... }
+
+| Splits a complexity into n smaller complexities with a sum <= the original
+| one.
+fun split(random: &Random, complexity: Int, n: Int): Slice[Int] {
+  | TODO: add some random variation
+  if n == 0 then return empty_slice[Int]()
+  filled_slice(n, complexity / n)
+}
+fun split_2(random: &Random, complexity: Int): Tuple2[Int, Int] {
+  var complexities = random.split(complexity, 2)
+  tuple(complexities.get(0), complexities.get(1))
+}
+fun split(random: &Random, complexity: Int): Slice[Int] {
+  var len = random.next_int(0..={complexity / 10})
+  random.split(complexity, len)
+}
+
+| Returns a mutated version of the value. The temperature should be an indicator
+| for how big the changes are.
+fallback fun mutate[T](value: T, random: &Random, temperature: Int): T { ... }
+
+fun mutate[T](value: &T, random: &Random, temperature: Int): &T {
+  value.*.mutate(random, temperature).put_on_heap()
+}
+
+| Coverage  
+| The compiler can be configured to instrument the fuzzed function with coverage
+| tracking. In that case, the _coverage_bitset and _coverage_len assembly labels
+| will point to a section of bytes that are 1 or 0, depending on if a cjump in
+| the fuzzed function was executed. To track coverage, we just have to reset the
+| global coverage bitmap and call the function to fuzz – this automatically
+| updates the global coverage field.
+
+struct Coverage { bitset: Address, len: Int }
+
+fun coverage(len: Int): Coverage {
+  var coverage = Coverage { bitset = malloc(len, 1), len }
+  coverage.reset()
+  coverage
+}
+fun get_coverage(): Coverage asm {
+  load a sp | return address
+  movei b _coverage_bitset store a b | coverage.bitset
+  moveib b 8 add a b movei b _coverage_len load b b store a b | coverage.len
+  ret
+}
+fun reset(coverage: Coverage) asm {
+  moveib a 8  add a sp load a a | a = cursor = coverage.bitset
+  moveib b 16 add b sp load b b | b = coverage.len
+  moveib c 0                    | c = counter
+  moveib d 0 moveib e 1         | constants
+  .loop:
+  cmp c b isequal cjump .done
+  storeb a d
+  add a e add c e jump .loop
+  .done: ret
+}
+fun get_ref(coverage: Coverage, index: Int): &Bool {
+  {coverage.bitset + index}.to_reference[Bool]()
+}
+fun is_marked(coverage: Coverage, index: Int): Bool {
+  coverage.get_ref(index).*
+}
+fun mark(coverage: Coverage, index: Int) { coverage.get_ref(index).* = true }
+fun improves_upon(new: Coverage, original: Coverage): Bool {
+  for i in 0..new.len do
+    if new.is_marked(i) and not(original.is_marked(i)) then return true
+  return false
+}
+fun integrate(total: Coverage, other: Coverage) {
+  for i in 0..other.len do if other.is_marked(i) then total.mark(i)
+}
+fun reached_target(coverage: Coverage): Bool {
+  | If the compiler was told to instrument a specific position in the code, the
+  | last mark in the coverage map is for the target position.
+  coverage.is_marked(coverage.len - 1)
+}
+fun write[W](writer: W, coverage: Coverage) {
+  for i in 0..coverage.len do {
+    var byte = {coverage.bitset + i}.to_reference[Byte]().*.to_int()
+    writer."{if byte == 0 then "." else if byte == 1 then "X" else "?"}"
+  }
+}

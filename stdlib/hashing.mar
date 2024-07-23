@@ -1,0 +1,19 @@
+import stdlib.mar
+
+| Hashing  
+| You should implement a hash(&Hasher, T) function for types that can be hashed.
+| In this function, they can contribute some uniqueness/entropy to the Hasher by
+| calling other hash functions on it. In the end, all hash functions boil down
+| to hash(&Hasher, Int). The Hasher uses the djb2 algorithm.
+
+fun hash[T](value: T): Int {
+  var hasher = Hasher { state = 5381 }
+  hasher.&.hash(value)
+  hasher.state * 33
+}
+
+struct Hasher { state: Int }
+fun hash(hasher: &Hasher, val: Int) { hasher.state = hasher.state * 33 + val }
+fun hash_all[I](hasher: &Hasher, iter: I) {
+  for item in iter do hasher.hash(item)
+}

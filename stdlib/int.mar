@@ -1,0 +1,169 @@
+import stdlib.mar
+
+| Int  
+| If you write a number such as 3 in the code, it's an Int.
+
+opaque Int = 8 bytes big, 8 bytes aligned
+
+var min_int = 0 - 9223372036854775806
+var max_int = 9223372036854775807
+
+fun +(left: Int, right: Int): Int asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  add a b store c a ret
+}
+fun -(left: Int, right: Int): Int asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  sub a b store c a ret
+}
+fun *(left: Int, right: Int): Int asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  mul a b store c a ret
+}
+fun /(left: Int, right: Int): Int asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  div a b store c a ret
+}
+| TODO: Think about remainder vs modulo. Do I want to change the instruction? Do
+| I want to provide both? For now, please only use this with positive left.
+fun %(left: Int, right: Int): Int asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  rem a b
+  moveib d 0 cmp a d isgreaterequal cjump .done
+  .make_positive: add a b
+  .done: store c a ret
+}
+fun &(left: Int, right: Int): Int asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  and a b store c a ret
+}
+fun or(left: Int, right: Int): Int asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  or a b store c a ret
+}
+fun ^(left: Int, right: Int): Int asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  xor a b store c a ret
+}
+fun <<(left: Int, by: Int): Int {
+  for i in 0..by do left = left * 2
+  left
+}
+fun >>(left: Int, by: Int): Int {
+  for i in 0..by do left = left / 2
+  left
+}
+fun **(a: Int, b: Int): Int {
+  var res = 1
+  for i in 0..b do res = res * a
+  res
+}
+fun abs(value: Int): Int { if value >= 0 then value else 0 - value }
+fun round_up_to_multiple_of(number: Int, factor: Int): Int {
+  {number + factor.dec()} / factor * factor
+}
+fun round_up_to_power_of(number: Int, factor: Int): Int {
+  var power = 1
+  loop if power >= number then break(power) else power = power * factor
+}
+fun sqrt(num: Int): Int {
+  num >= 0 or panic("you can't take the sqrt of a negative number")
+  var a = 1
+  loop {
+    if a * a > num then break
+    a = a + 1
+  }
+  a - 1
+}
+fun log_2(value: Int): Int {
+  value > 0 or panic("log 2 only works for positive values")
+  var i = 0
+  loop {
+    if value == 1 then break
+    i = i + 1
+    value = value / 2
+  }
+  i
+}
+fun <=>(left: Int, right: Int): Ordering asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  cmp a b isless cjump .less
+  cmp a b isgreater cjump .greater
+  .equal:   moveib b 1 storeb c b ret
+  .less:    moveib b 0 storeb c b ret
+  .greater: moveib b 2 storeb c b ret
+}
+fun lower_byte(n: Int): Byte asm {
+  moveib a 8 add a sp load a a | n
+  load b sp | return value address
+  storeb b a ret
+}
+
+fun inc(a: Int): Int { a + 1 }
+fun dec(a: Int): Int { a - 1 }
+fun ==(a: Int, b: Int): Bool asm {
+  moveib a 8  add a sp load a a | left
+  moveib b 16 add b sp load b b | right
+  load c sp | return value address
+  cmp a b isequal
+  storeb c st ret
+}
+
+fun parse_int(str: Str): Maybe[Int] {
+  var num = 0
+  for char in str do {
+    if not({#0..=#9}.contains(char))
+    then return none[Int]()
+    num = num * 10 + {char - #0}.to_int()
+  }
+  some(num)
+}
+
+fun write[W](writer: W, int: Int) {
+  if int < 0
+  then writer."-{ {0 - int}.radix(10)}"
+  else writer."{int.radix(10)}"
+}
+fun radix(int: Int, radix: Int): RadixFormat { RadixFormat { radix, int } }
+struct RadixFormat { radix: Int, int: Int }
+fun write[W](writer: W, format: RadixFormat) {
+  var divisor = 1
+  loop {
+    if format.int / divisor < format.radix then break
+    divisor = divisor * format.radix
+  }
+  loop {
+    writer.write(
+      {format.int / divisor % format.radix}.lower_byte().digit_to_char())
+    if divisor == 1 then break
+    divisor = divisor / format.radix
+  }
+}
+fun write_debug[W](writer: W, int: Int) { writer."{int}" }
+
+fun generate(s: Static[Int], random: &Random, complexity: Int): Int {
+  var limit = complexity * complexity
+  random.next_int({0 - limit}..=limit)
+}
+fun fuzzing_complexity(int: Int): Float { int.abs().inc().log_2().to_float() }
+fun mutate(int: Int, random: &Random, temperature: Int): Int {
+  int + random.next_int({0 - temperature}..=temperature)
+}

@@ -1,0 +1,172 @@
+import stdlib.mar
+
+| Iterating  
+| Martinaise supports for loops for iterating. They are just syntactic sugar for
+| calling an iter() function and then repeatedly calling next() on the result:
+|
+| for a in b do ...
+|
+| $iter = b.iter().&
+| loop switch $iter.next() case none break case some(a) {
+|   ...
+| }
+|
+| Because Martinaise has no concept of traits or constraints, defining methods
+| for iterators becomes difficult: You want it to work on all iterators, but
+| defining a method such as split[I](iter: I) means that you can call split on
+| every single type now, polluting the namespace. Also, you can't constrain the
+| item type: What if you want to offer a new function only on iterators which
+| yield bytes?
+| That's why there's a wrapper struct Iter[T, I], which just wraps an actual
+| iterator implementation and delegates next() to it. The T is not used or
+| constrained by the type system, but things fail if I.next() doesn't return a
+| Maybe[T] – the T is a poor man's associated type, if you will.
+|
+| When you chain iterators together, you actually just nest the types. Take this
+| example:
+| 
+| zip("Hello".iter().enumerate(), "world".iter())
+| 
+| Here, "Hello".iter() and "world".iter() return an Iter[Char, StrIter]. The
+| enumerate() gets the inner StrIter, wraps it in an EnumeratedIter and re-wraps
+| it in an Iter to an Iter[Enumerated[Char], EnumeratedIter[Char, StrIter]].
+| Finally, the zip() unwraps both Iters and creates an Iter with a ZipIter,
+| resulting in this:
+| 
+| Iter[
+|   Tuple2[Enumerated[Char], Char],
+|   ZipIter[EnumeratedIter[StrIter], StrIter],
+| ]
+
+struct Iter[T, S] { state: S }
+
+fun iter[T, I](iter: Iter[T, I]): Iter[T, I] { iter }
+fun next_from_iter_state[T, I](state: &I): Maybe[T] {
+  var iter = Iter[T, I] { state = state.* }
+  var item = iter.&.next()
+  state.* = iter.state
+  item
+}
+fun is_empty[T, I](iter: &Iter[T, I]): Bool { iter.next() is none }
+fun contains[T, I](iter: &Iter[T, I], item: T): Bool {
+  for it in iter do if it == item then return true
+  return false
+}
+
+| Skips the given amount of elements on the inner iter, then acts like the inner
+| iter.
+fun skip[T, I](iter: Iter[T, I], amount: Int): Iter[T, _] {
+  Iter { state = SkipIter[T, I] { inner = iter.state, amount } }
+}
+struct SkipIter[T, I] { inner: I, amount: Int }
+fun next[T, I](iter: &Iter[T, SkipIter[I]]): Maybe[T] {
+  var state = iter.state.&
+  for i in 0..state.amount do {
+    var next = state.inner.&.next_from_iter_state[T, I]()
+    if next is none then return none[T]()
+  }
+  state.amount = 0
+  state.inner.&.next_from_iter_state[T, I]()
+}
+
+| Takes the given amount of elements, then ends.
+fun take[T, I](iter: Iter[T, I]): Iter[T, _] {
+  Iter[T, _] { state = TakeIter[I] { inner = iter.state, amount } }
+}
+struct TakeIter[T, I] { inner: I, amount: Int }
+fun next[T, I](iter: &Iter[T, TakeIter[I]]): Maybe[T] {
+  var state = iter.state.&
+  if state.amount < 0 then none[T]() else {
+    state.amount = state.amount.dec()
+    state.inner.&.next_from_iter_state[T, I]()
+  }
+}
+
+| Zips two iters of equal length.
+fun zip[A, B, IA, IB](a: Iter[A, IA], b: Iter[B, IB]): Iter[Tuple2[A, B], _] {
+  Iter[Tuple2[A, B], ZipIter[IA, IB]] {
+    state = ZipIter[IA, IB] { a = a.state, b = b.state }
+  }
+}
+struct ZipIter[IA, IB] { a: IA, b: IB }
+fun next[A, B, IA, IB](
+  iter: &Iter[Tuple2[A, B], ZipIter[IA, IB]],
+): Maybe[Tuple2[A, B]] {
+  switch iter.state.a.&.next_from_iter_state[A, IA]()
+  case some(a) {
+    switch iter.state.b.&.next_from_iter_state[B, IB]()
+    case none panic("zip iters have unequal length")
+    case some(b) some(tuple(a, b))
+  }
+  case none {
+    switch iter.state.b.&.next_from_iter_state[B, IB]()
+    case some panic("zip iters have unequal length")
+    case none none[Tuple2[A, B]]()
+  }
+}
+
+| Wraps items in Enumerated[T], which also has an index.
+fun enumerate[T, I](iter: Iter[T, I]): Iter[Enumerated[T], _] {
+  Iter[Enumerated[T], EnumeratedIter[I]] {
+    state = EnumeratedIter[I] { inner = iter.state, index = 0 }
+  }
+}
+struct Enumerated[T] { index: Int, item: T }
+struct EnumeratedIter[S] { inner: S, index: Int }
+fun next[T, I](
+  iter: &Iter[Enumerated[T], EnumeratedIter[I]],
+): Maybe[Enumerated[T]] {
+  var state = iter.state.&
+  switch state.inner.&.next_from_iter_state[T, I]()
+  case some(item) {
+    var index = state.index
+    state.index = state.index.inc()
+    some(Enumerated { index, item })
+  }
+  case none none[Enumerated[T]]()
+}
+fun write[W, T](writer: W, enumerated: Enumerated[T]) {
+  writer."({enumerated.index}: {enumerated.item})"
+}
+
+| Gets the element at the given index.
+fun get[T, I](iter: &Iter[T, I], index: Int): T {
+  iter.get_maybe(index) or panic("index {index} is out of bounds")
+}
+fun get_maybe[T, I](iter: &Iter[T, I], index: Int): Maybe[T] {
+  iter.skip(index).get()
+}
+
+| Finds the needle in the iter, returning its position.
+fun find[T, I](iter: &Iter[T, I], needle: T): Maybe[Int] {
+  for en in iter.enumerate() do if en.item == needle then return some(en.index)
+  none[Int]()
+}
+
+| Splits an Iter at the given items forming a separator.
+fun split[T, I](iter: Iter[T, I], separator: Slice[T]): Iter[Slice[T], _] {
+  Iter[Slice[T], SplitIter[T, I]] {
+    state = SplitIter { inner = iter.state, separator }
+  }
+}
+struct SplitIter[T, I] { inner: I, separator: Slice[T] }
+fun next[T, I](iter: &Iter[Slice[T], SplitIter[T, I]]): Maybe[Slice[T]] {
+  var state = iter.state.&
+  var current = vec[T]()
+  loop
+    switch state.inner.&.next_from_iter_state[T, I]()
+    case none
+      if current.len > 0
+      then return some(current.to_slice())
+      else return none[Slice[T]]()
+    case some(item) {
+      current.&.push(item)
+      if current.to_slice().ends_with(state.separator)
+      then return some(current.to_slice().without_last(state.separator.len))
+    }
+}
+
+| Splits an Iter at the given separator.
+fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
+  iter.split(vec(separator).to_slice())
+}

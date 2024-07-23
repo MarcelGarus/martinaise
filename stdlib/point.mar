@@ -1,0 +1,19 @@
+import stdlib.mar
+
+| Point  
+
+struct Point { x: Int, y: Int }
+
+fun @(x: Int, y: Int): Point { Point { x, y } }
+fun ==(a: Point, b: Point): Bool { a.x == b.x and a.y == b.y }
+fun +(a: Point, b: Point): Point { Point { x = a.x + b.x, y = a.y + b.y } }
+fun -(a: Point, b: Point): Point { Point { x = a.x - b.x, y = a.y - b.y } }
+fun *(a: Point, f: Int): Point { Point { x = a.x * f, y = a.y * f } }
+fun *(f: Int, a: Point): Point { Point { x = a.x * f, y = a.y * f } }
+fun /(a: Point, f: Int): Point { Point { x = a.x / f, y = a.y / f } }
+
+fun write[W](writer: W, point: Point) { writer.write(tuple(point.x, point.y)) }
+
+fun next_point(random: &Random, size: Point): Point {
+  random.next_int(0..size.x) @ random.next_int(0..size.y)
+}
