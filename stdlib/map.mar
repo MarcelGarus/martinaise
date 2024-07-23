@@ -188,10 +188,9 @@ fun next[K, V](
 ): Maybe[MapEntry[K, V]] {
   var state = iter.state.&
   loop {
-    if state.index >= state.buckets.len
-    then return none[MapEntry[K, V]]()
+    if state.index >= state.buckets.len then return none[MapEntry[K, V]]()
     state.index = state.index + 1
-    if state.buckets.get(state.index - 1) is filled(entry)
-    then return some(entry)
+    if state.buckets.get(state.index - 1) is filled(entry) then
+      return some(entry)
   }
 }

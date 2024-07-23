@@ -222,8 +222,8 @@ fun write_byte[W](self: &BufferedWriter[W], byte: Byte) {
   self.len = self.len.inc()
 }
 fun write_bytes[W](self: &BufferedWriter[W], bytes: Slice[Byte]) {
-  if bytes.len <= self.amount_free()
-  then for byte in bytes do self.write_byte(byte)
+  if bytes.len <= self.amount_free() then
+    for byte in bytes do self.write_byte(byte)
   else {
     self.flush()
     if bytes.len <= self.amount_free()

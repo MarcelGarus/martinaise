@@ -161,8 +161,8 @@ fun next[T, I](iter: &Iter[Slice[T], SplitIter[T, I]]): Maybe[Slice[T]] {
       else return none[Slice[T]]()
     case some(item) {
       current.&.push(item)
-      if current.to_slice().ends_with(state.separator)
-      then return some(current.to_slice().without_last(state.separator.len))
+      if current.to_slice().ends_with(state.separator) then
+        return some(current.to_slice().without_last(state.separator.len))
     }
 }
 
