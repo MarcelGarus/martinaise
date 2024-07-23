@@ -44,8 +44,7 @@ fun fuzzer_main[Input](): Never {
       free_everything_allocated_after(checkpoint)
   }
 
-  var i = 0
-  loop {
+  for i in 0..infinity do {
     if inputs.len <= i then break
     var j = 0
     loop {
@@ -71,7 +70,6 @@ fun fuzzer_main[Input](): Never {
       } else
         free_everything_allocated_after(checkpoint)
     }
-    i = i + 1
   }
 
   exit(0)
