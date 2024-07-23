@@ -2,7 +2,6 @@ import stdlib.mar
 
 | Halting, Exiting, and Panicking  
 
-fun halt(): Never { loop {} }
 fun exit(status: Int): Never asm {
   moveib a 8 add a sp load a a | status
   syscall 0

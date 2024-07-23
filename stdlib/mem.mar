@@ -261,7 +261,7 @@ fun set[T](slice: &Slice[T], index: Int, value: T) {
 fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
   var i = 0
   loop {
-    if {i == a.len} and {i == b.len} then return Ordering.equal
+    if i == a.len and i == b.len then return Ordering.equal
     if i == a.len then return Ordering.less
     if i == b.len then return Ordering.greater
     var ord = a.get(i) <=> b.get(i)
