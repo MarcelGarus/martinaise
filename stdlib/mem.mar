@@ -42,7 +42,9 @@ fun to_address(number: Int): Address asm {
 | use it if you know what you're doing.
 fun cast[A, B](a: A): B {
   | at least a small sanity check
-  assert(size_of[A]() == size_of[B](), "cast between types of different sizes")
+  size_of[A]() == size_of[B]()
+    or panic("Tried to cast {type[A]()} to {type[B]()}, although both types 
+      'have different sizes ({size_of[A]()} bytes and {size_of[B]()} bytes).")
   a.unchecked_cast[A, B]()
 }
 fun unchecked_cast[A, B](a: A): B { a.&.to_address().to_reference[B]().* }

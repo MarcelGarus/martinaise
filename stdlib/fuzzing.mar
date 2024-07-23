@@ -68,9 +68,8 @@ fun fuzzer_main[Input](): Never {
         front.&.integrate(mutated)
         inputs.&.push(mutated)
         report(mutated)
-      } else {
+      } else
         free_everything_allocated_after(checkpoint)
-      }
     }
     i = i + 1
   }

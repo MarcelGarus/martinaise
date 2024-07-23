@@ -16,10 +16,6 @@ fun panic(message: Str): Never asm {
 fun panic(): Never asm { panic }
 fun unreachable(): Never { panic("unreachable") }
 fun todo(): Never { panic("todo") }
-fun assert(condition: Bool) { assert(condition, "assert failed") }
-fun assert(condition: Bool, message: Str) {
-  if not(condition) then panic(message)
-}
 
 | Process Arguments  
 

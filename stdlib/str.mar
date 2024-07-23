@@ -144,27 +144,27 @@ fun substr(str: Str, range: Range[Int]): Str {
   str.chars().subslice(range).to_str()
 }
 fun first(str: Str): Char {
-  assert(str.is_not_empty(), "first only works on non-empty strs")
+  str.is_not_empty() or panic("first only works on non-empty strs")
   str.get(0)
 }
 fun first(str: Str, amount: Int): Str {
-  assert(amount <= str.len, "first amount too big")
+  amount <= str.len or panic("first amount too big")
   str.substr(0..amount)
 }
 fun last(str: Str): T {
-  assert(str.is_not_empty(), "last only works on non-empty strs")
+  str.is_not_empty() or panic("last only works on non-empty strs")
   str.get(str.len.dec())
 }
 fun last(str: Str, amount: Int): Str {
-  assert(amount <= str.len, "last amount too big")
+  amount <= str.len or panic("last amount too big")
   str.substr({str.len - amount}..str.len)
 }
 fun without_first(str: Str, amount: Int): Str {
-  assert(amount <= str.len, "without_first amount too big")
+  amount <= str.len or panic("without_first amount too big")
   str.substr(amount..str.len)
 }
 fun without_last(str: Str, amount: Int): Str {
-  assert(amount <= str.len, "without_last amount too big")
+  amount <= str.len or panic("without_last amount too big")
   str.substr(0..{str.len - amount})
 }
 fun starts_with(str: Str, prefix: Str): Bool {
@@ -177,11 +177,13 @@ fun ends_with(str: Str, suffix: Str): Bool {
     is equal
 }
 fun trim_prefix(str: &Str, prefix: Str) {
-  assert(str.starts_with(prefix), "trim_prefix doesn't match prefix")
+  str.starts_with(prefix)
+    or panic("trim_prefix doesn't match prefix {prefix.debug()}")
   str.* = str.without_first(prefix.len)
 }
 fun trim_suffix(str: &Str, suffix: Str) {
-  assert(str.ends_with(suffix), "trim_suffix doesn't match suffix")
+  str.ends_with(suffix)
+    or panic("trim_suffix doesn't match suffix {suffix.debug()}")
   str.* = str.without_last(suffix.len)
 }
 fun trim(str: Str): Str {

@@ -203,7 +203,7 @@ fun write[W, T](writer: W, format: CommaSeparatedFormat[T]) {
 }
 
 fun buffered_writer[W](writer: W, capacity: Int): BufferedWriter[W] {
-  assert(capacity > 0)
+  capacity > 0 or panic("The capacity of a BufferedWriter must be positive.")
   BufferedWriter {
     buffer = filled_slice(capacity, 0.lower_byte()), len = 0, inner = writer
   }
