@@ -54,3 +54,46 @@ fun next[T](iter: &Iter[T, RangeIter[T]]): Maybe[T] {
     some(current)
   }
 }
+
+| To Infinity and Beyond  
+| Open ended ranges can be created using 4..infinity syntax.
+
+struct Infinity {}
+var infinity = Infinity {}
+
+struct OpenRange[T] { start: T }
+
+fun ..[T](start: T, end: Infinity): OpenRange[T] { OpenRange { start } }
+
+fun contains[T](range: OpenRange[T], value: T): Bool {
+  value >= range.start
+}
+fun write[W, T](writer: W, range: OpenRange[T]) {
+  writer."{range.start}..infinity"
+}
+fun write_debug[W, T](writer: W, range: OpenRange[T]) {
+  writer."{debug(range.start)}..infinity"
+}
+fun generate[T](
+  s: Static[OpenRange[T]], random: &Random, complexity: Int
+): Range[T] {
+  var complexities = random.split_2(complexity)
+  var a = static[T]().generate(random, complexities.a)
+  a..infinity
+}
+fun mutate[T](
+  range: OpenRange[T], random: &Random, temperature: Int
+): OpenRange[T] {
+  range.start.mutate(random, temperature)..infinity
+}
+
+fun iter[T](range: OpenRange[T]): Iter[T, _] {
+  Iter[T, OpenRangeIter[T]] { state = OpenRangeIter { rest = range } }
+}
+struct OpenRangeIter[T] { rest: OpenRange[T] }
+fun next[T](iter: &Iter[T, OpenRangeIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  var current = state.rest.start
+  state.rest.start = current.inc()
+  some(current)
+}
