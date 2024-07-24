@@ -7,8 +7,16 @@ import stdlib.mar
 
 struct Vec[T] { data: Slice[T], len: Int }
 
+fun uninitialized_vec[T](len: Int) {
+  Vec {
+    data = uninitialized_slice[T](
+      if len <= 8 then 8 else len.round_up_to_power_of(2)),
+    len
+  }
+}
+
 fun vec[T](): Vec[T] { Vec { data = empty_slice[T](), len = 0 } }
-| TODO: remove when there are slice literals
+| TODO: choose the right size directly
 fun vec[T](a: T): Vec[T] { var v = vec[T]().& v.push(a) v.* }
 fun vec[T](a: T, b: T): Vec[T] { var v = vec[T]().& v.push(a) v.push(b) v.* }
 fun vec[T](a: T, b: T, c: T): Vec[T] {
@@ -87,6 +95,9 @@ fun push[T](vec: &Vec[T], item: T) {
 fun push_all[T](vec: &Vec[T], items: Slice[T]) {
   items.copy_to(vec.reserve_uninitialized(items.len))
 }
+fun push_all[T, I](vec: &Vec[T], items: Iter[T, I]) {
+  for item in items do vec.push(item)
+}
 fun pop[T](vec: &Vec[T]): T {
   if vec.len == 0 then panic("called pop on empty Vec")
   vec.len = vec.len.dec()
@@ -101,6 +112,10 @@ fun get_ref[T](vec: Vec[T], index: Int): &T { vec.data.get_ref(index) }
 fun get_maybe_ref[T](vec: Vec[T], index: Int): Maybe[&T] {
   vec.data.get_maybe_ref(index)
 }
+fun set[T](vec: &Vec[T], index: Int, value: T) {
+  vec.get_ref(index).* = value
+}
+
 fun last_maybe[T](vec: Vec[T]): Maybe[T] {
   if vec.is_empty() then none[T]() else some(vec.data.get(vec.len - 1))
 }

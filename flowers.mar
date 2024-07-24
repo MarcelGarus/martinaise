@@ -1,0 +1,28 @@
+import stdlib.mar
+
+enum Plot { empty, full }
+
+fun can_place_flowers(flowerbed: Vec[Plot], n: Int): Bool {
+  var flowerbed = {
+    var new = vec(Plot.empty)
+    new.&.push_all(flowerbed.iter())
+    new.&.push(Plot.empty)
+    new
+  }
+
+  for i in 1..{flowerbed.len - 1} do {
+    if {flowerbed.get(i) is empty} and {flowerbed.get(i + 1) is empty}
+      and {flowerbed.get(i - 1) is empty}
+    then {
+      flowerbed.&.set(i, Plot.full)
+      n = n - 1
+    }
+    if n <= 0 then return true
+  }
+  false
+}
+
+fun main(): Never {
+  vec(Plot.empty, Plot.full, Plot.empty).can_place_flowers(2)
+  exit(0)
+}
