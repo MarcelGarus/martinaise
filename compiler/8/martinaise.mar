@@ -745,6 +745,30 @@ fun rest(parser: Parser): Str {
 fun advance(parser: &Parser) { parser.cursor = parser.cursor + 1 }
 fun advance_by(parser: &Parser, n: Int) { parser.cursor = parser.cursor + n }
 
+fun consume_until_newline(parser: &Parser): AstStr {
+  var start = parser.cursor
+  loop {
+    if parser.cursor >= parser.code.len then break
+    if parser.current() == newline then break
+    parser.cursor = parser.cursor + 1
+  }
+  var end = parser.cursor
+  var str = parser.code.substr(start..end)
+  AstStr { src = src(parser.file, start..end), str }
+}
+
+fun consume_non_whitespace(parser: &Parser): AstStr {
+  var start = parser.cursor
+  loop {
+    if parser.cursor >= parser.code.len then break
+    if parser.current().is_whitespace() then break
+    parser.cursor = parser.cursor + 1
+  }
+  var end = parser.cursor
+  var str = parser.code.substr(start..end)
+  AstStr { src = src(parser.file, start..end), str }
+}
+
 fun consume_whitespace(parser: &Parser) {
   loop {
     var char = parser.current()
@@ -753,11 +777,7 @@ fun consume_whitespace(parser: &Parser) {
       continue
     }
     if char == #| then {
-      loop {
-        if parser.cursor >= parser.code.len then break
-        if parser.current() == newline then break
-        parser.cursor = parser.cursor + 1
-      }
+      parser.consume_until_newline()
       continue
     }
     break | not a whitespace nor comment
@@ -1779,28 +1799,32 @@ fun parse_defs(parser: &Parser): Result[Vec[AstDef], Str] {
 }
 
 fun parse_import(parser: &Parser): Result[Maybe[AstStr], Str] {
-  parser.consume_keyword("import") or return no_match[AstStr]()
-  | The imported thing goes until the end of the line.
-  var start = parser.cursor
-  loop {
-    if parser.cursor >= parser.code.len then break
-    if parser.current() == newline then break
-    parser.cursor = parser.cursor + 1
+  if parser.consume_keyword("import") is some then {
+    | The imported thing goes until the end of the line.
+    parser.consume_whitespace()
+    var path = parser.consume_until_newline()
+    var path_str = path.str.trim()
+    if path_str.is_empty() then
+      return bad_input[AstStr]("Expected a file path.")
+    return parsed(AstStr { src = path.src, str = path_str })
   }
-  var end = parser.cursor
-  | Trim it.
-  loop if start < end and parser.code.get(start).is_whitespace()
-    then start = start + 1
-    else break
-  loop if end > start and parser.code.get(end - 1).is_whitespace()
-    then end = end - 1
-    else break
-  if start == end then
-    return bad_input[AstStr]("Expected an import (a file path).")
-  parsed(AstStr {
-    src = src(parser.file, start..end),
-    str = parser.code.substr(start..end),
-  })
+  if parser.consume_keyword("with") is some then {
+    parser.consume_whitespace()
+    var path = parser.consume_non_whitespace()
+    var path_str = path.str.trim()
+    if path_str.is_empty() then
+      return bad_input[AstStr]("Expected a file path.")
+    parser.consume_keyword("use")
+      or return bad_input[AstStr]("Expected a with keyword (like in Ada).")
+    parser.consume_whitespace()
+    var path_again = parser.consume_non_whitespace()
+    if path_again.str != path_str then
+      return bad_input[AstStr](
+        "Path after \"use\" and path after \"with\" have to be the same. 
+        'This is not verbose. This is poetic.")
+    return parsed(AstStr { src = path.src, str = path_str })
+  }
+  no_match[AstStr]()
 }
 fun parse_imports(parser: &Parser): Result[Vec[AstStr], Str] {
   var imports = vec[AstStr]()
