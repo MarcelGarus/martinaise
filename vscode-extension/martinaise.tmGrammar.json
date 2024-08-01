@@ -35,7 +35,7 @@
       "patterns": [
         {
           "name": "keyword",
-          "match": "\\b(import|fun|fallback|var|struct|enum|opaque|byte big|bytes big|byte aligned|bytes aligned)\\b"
+          "match": "\\b(import|with|use|fun|fallback|var|struct|enum|opaque|byte big|bytes big|byte aligned|bytes aligned)\\b"
         },
         {
           "name": "keyword.control",
