@@ -4,8 +4,8 @@ fun sqrt(x: Float): Float {
   if x < 0.0 then panic("cannot take sqrt of a negative value")
   if x == 0.0 then return 0.0
   if x < 1.0 then return 1.0 / sqrt(x)
-  var high  = x
   var low   = 0.0
+  var high  = x
   var guess = x / 2.0
   loop {
     switch guess * guess <=> x
