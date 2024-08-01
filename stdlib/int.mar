@@ -160,8 +160,9 @@ fun write[W](writer: W, format: RadixFormat) {
 fun write_debug[W](writer: W, int: Int) { writer."{int}" }
 
 fun generate(s: Static[Int], random: &Random, complexity: Int): Int {
-  var limit = complexity * complexity
-  random.next_int({0 - limit}..=limit)
+  random.next_int(if complexity < 50 then 0 +- 10 else {
+    0 +- complexity
+  })
 }
 fun fuzzing_complexity(int: Int): Float { int.abs().inc().log_2().to_float() }
 fun mutate(int: Int, random: &Random, temperature: Int): Int {
