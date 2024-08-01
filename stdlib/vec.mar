@@ -7,7 +7,7 @@ import stdlib.mar
 
 struct Vec[T] { data: Slice[T], len: Int }
 
-fun uninitialized_vec[T](len: Int) {
+fun uninitialized_vec[T](len: Int): Vec[T] {
   Vec {
     data = uninitialized_slice[T](
       if len <= 8 then 8 else len.round_up_to_power_of(2)),
@@ -123,9 +123,13 @@ fun is_empty[T](vec: Vec[T]): Bool { vec.len == 0 }
 fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0..vec.len) }
 
 fun make_space_at[T](vec: &Vec[T], pos: Int, amount: Int, fill: T) {
-  for i in 0..amount do vec.push(fill)
+  for i in 0..amount do vec.reserve_uninitialized(amount)
   vec.to_slice().subslice(pos..{vec.len - amount})
     .copy_to(vec.to_slice().subslice({pos + amount}..vec.len))
+  vec.to_slice().subslice(pos..+amount).&.fill(fill)
+}
+fun insert[T](vec: &Vec[T], index: Int, item: T) {
+  vec.make_space_at(0, 1, item)
 }
 fun remove[T](vec: &Vec[T], range: Range[Int]) {
   var slice = vec.to_slice()
@@ -156,4 +160,11 @@ fun fuzzing_complexity[T](vec: Vec[T]): Float {
 }
 fun mutate[T](vec: Vec[T], random: &Random, temperature: Int): Vec[T] {
   vec.to_slice().mutate(random, temperature).to_vec()
+}
+
+fun +[T](a: Vec[T], b: Vec[T]): Vec[T] {
+  var concatenated = uninitialized_vec[T](a.len + b.len)
+  a.to_slice().copy_to(concatenated.to_slice().subslice(0..a.len))
+  b.to_slice().copy_to(concatenated.to_slice().subslice(a.len..+b.len))
+  concatenated
 }
