@@ -228,8 +228,11 @@ fun uninitialized_slice[T](len: Int): Slice[T] {
 }
 fun filled_slice[T](len: Int, fill: T): Slice[T] {
   var slice = uninitialized_slice[T](len)
-  for i in 0..len do slice.get_ref(i).* = fill
+  slice.&.fill(fill)
   slice
+}
+fun fill[T](slice: &Slice[T], item: T) {
+  for i in 0..slice.len do slice.get_ref(i).* = item
 }
 
 fun is_empty[T](slice: Slice[T]): Bool { slice.len == 0 }
@@ -266,7 +269,7 @@ fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
     if i == b.len then return Ordering.greater
     var ord = a.get(i) <=> b.get(i)
     ord is equal or return ord
-    i = i.inc()
+    i = i + 1
   }
 }
 fun ==[T](a: Slice[T], b: Slice[T]): Bool {
@@ -320,6 +323,12 @@ fun mutate[T](slice: Slice[T], random: &Random, temperature: Int): Slice[T] {
         random.next_int(0..=slice.len), static[T]().generate(random, 100))
   }
   copy.to_slice()
+}
+
+fun to_vec[T](slice: Slice[T]): Vec[T] {
+  var vec = uninitialized_vec[T](slice.len)
+  slice.copy_to(vec.to_slice())
+  vec
 }
 
 fun iter[T](slice: Slice[T]): Iter[T, _] {
