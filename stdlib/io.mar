@@ -110,6 +110,47 @@ fun write_file(name: Str, content: Slice[Byte]): Result[Nothing, Nothing] {
   ok[Nothing, Nothing]({})
 }
 
+struct DirEntry { name: Str, kind: DirEntryKind }
+enum DirEntryKind { file, directory, other }
+fun read_dir(path: Str): Result[Slice[DirEntry], Nothing] {
+  var all_free_memory = Slice[Byte] {
+    data = heap_head, len = get_stack_pointer().to_int() - heap_head.to_int()
+  }
+  var len = path.read_dir_impl(all_free_memory)
+  if len < 0 then return error[Slice[DirEntry], Nothing]({})
+  heap_head = heap_head + len
+
+  var buffer = all_free_memory.subslice(0..len)
+  println(buffer.debug())
+  println(buffer.to_str().debug())
+  var cursor = 0
+  var entries = vec[DirEntry]()
+  loop {
+    if cursor >= buffer.len then break
+    var kind = buffer.get(cursor).to_int()
+    cursor = cursor + 1
+    var kind =
+      if kind == 1 then DirEntryKind.file
+      else if kind == 2 then DirEntryKind.directory
+      else DirEntryKind.other
+    var len = buffer.get_ref(cursor).to_address().to_reference[Int]().*
+    cursor = cursor + 8
+    println("name len: {len}")
+    var name = buffer.subslice(cursor ..+ len).to_str()
+    cursor = cursor + len
+    entries.&.push(DirEntry { name, kind })
+  }
+  ok[Slice[DirEntry], Nothing](entries.to_slice())
+}
+fun read_dir_impl(path: Str, buffer: Slice[Byte]): Int asm {
+  moveib a 8  add a sp load a a | path.data
+  moveib b 16 add b sp load b b | path.len
+  moveib c 24 add c sp load c c | buffer.data
+  moveib d 32 add d sp load d d | buffer.len
+  syscall 17
+  load b sp | return value address
+  store b a ret
+}
 
 | Printing and Logging  
 
