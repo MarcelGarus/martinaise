@@ -29,3 +29,9 @@ fun hash[O, E](hasher: &Hasher, result: Result[O, E]) {
   case ok(o) { hasher.hash(#o) hasher.hash(o) }
   case error(e) { hasher.hash(#e) hasher.hash(e) }
 }
+
+fun or[O, E](result: Result[O, E]): ControlFlow[O, E] {
+  switch result
+  case ok(o)    ControlFlow[O, E].short_circuit(o)
+  case error(e) ControlFlow[O, E].evaluate_alternative(e)
+}

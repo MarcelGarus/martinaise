@@ -56,9 +56,3 @@ enum Never {}
 | short-circuits or not.
 
 enum ControlFlow[T, A] { short_circuit: T, evaluate_alternative: A }
-
-fun or[O, E](result: Result[O, E]): ControlFlow[O, E] {
-  switch result
-  case ok(o)    ControlFlow[O, E].short_circuit(o)
-  case error(e) ControlFlow[O, E].evaluate_alternative(e)
-}
