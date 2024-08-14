@@ -61,10 +61,8 @@ fun skip[T, I](iter: Iter[T, I], amount: Int): Iter[T, _] {
 struct SkipIter[T, I] { inner: I, amount: Int }
 fun next[T, I](iter: &Iter[T, SkipIter[I]]): Maybe[T] {
   var state = iter.state.&
-  for i in 0..state.amount do {
-    var next = state.inner.&.next_from_iter_state[T, I]()
-    if next is none then return none[T]()
-  }
+  for i in 0..state.amount do
+    state.inner.&.next_from_iter_state[T, I]() or return none[T]()
   state.amount = 0
   state.inner.&.next_from_iter_state[T, I]()
 }
