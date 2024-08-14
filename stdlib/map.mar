@@ -35,6 +35,13 @@ fun map[K, V](
 ): Map[K, V] {
   var m = map[K, V]().& m.put(a) m.put(b) m.put(c) m.put(d) m.put(e) m.*
 }
+fun map[K, V](
+  a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V], d: MapEntry[K, V],
+  e: MapEntry[K, V], f: MapEntry[K, V],
+): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.put(b) m.put(c) m.put(d) m.put(e) m.put(f)
+  m.*
+}
 
 fun is_empty[K, V](map: Map[K, V]): Bool { map.size == 0 }
 fun put[K, V](map: &Map[K, V], entry: MapEntry[K, V]) {
