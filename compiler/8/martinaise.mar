@@ -3106,8 +3106,7 @@ fun call_matching_fun(
 | results in the function signature foo(Int) and creates all required types and
 | functions on the Mono.
 fun compile(
-  lookup_solution: LookupFunSolution,
-  context: &Context, ast: Ast, mono: &Mono,
+  lookup_solution: LookupFunSolution, context: &Context, ast: Ast, mono: &Mono
 ): Result[Str, Error] {
   lookup_solution.fun_.compile(lookup_solution.type_env, context, ast, mono)
 }
@@ -3701,7 +3700,16 @@ fun compile_in_current_scope(
         body.update_target(default_jump.unwrap("no default jump"), label)
         var default_result = default_.body.compile(self)?
         if not(default_result.type.is_never()) then {
-          type = some(default_result.type)
+          switch type
+          case none type = some(default_result.type)
+          case some(expected) {
+            default_result.type == expected or return error[MonoExpr, Error](make_error(
+              src,
+              "The default case evaluates to a {default_result.type}, but previous cases to 
+                '{expected}."
+            ))
+            {}
+          }
           body.assign(
             body.typed(result, default_result.type), default_result, src)
         }
