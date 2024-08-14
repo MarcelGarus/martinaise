@@ -16,6 +16,10 @@ fun kilo(a: Float): Float { a * 1000.0 }
 fun mega(a: Float): Float { a * 1000000.0 }
 fun giga(a: Float): Float { a * 1000000000.0 }
 fun tera(a: Float): Float { a * 1000000000000.0 }
+fun mol(a: Float): Float {
+  a * 6.02214076 * {10.0 ** 1000000000} * {10.0 ** 1000000000}
+    * {10.0 ** 100000}
+}
 
 | Dimensions  
 
@@ -145,6 +149,16 @@ fun *(a: Acceleration, b: Duration): Speed { Speed { meters_per_second = a.meter
 
 | Division  
 
+fun /(a: Duration, b: Float): Duration { Duration { seconds = a.seconds / b } }
+
+fun /(a: Length, b: Float): Length { Length { meters = a.meters / b } }
 fun /(a: Length, b: Duration): Speed { Speed { meters_per_second = a.meters / b.seconds } }
 
+fun /(a: Area, b: Float): Area { Area { square_meters = a.square_meters / b } }
+
+fun /(a: Volume, b: Float): Volume { Volume { cubic_meters = a.cubic_meters / b } }
+
+fun /(a: Speed, b: Float): Speed { Speed { meters_per_second = a.meters_per_second / b } }
 fun /(a: Speed, b: Duration): Acceleration { Acceleration { meters_per_square_second = a.meters_per_second / b.seconds } }
+
+fun /(a: Acceleration, b: Float): Acceleration { Acceleration { meters_per_second = a.meters_per_second / b } }

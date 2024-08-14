@@ -21,6 +21,12 @@ fun write[W](writer: W, ord: Ordering) {
     switch ord case less "less" case equal "equal" case greater "greater"
   )
 }
+fun flip(ord: Ordering): Ordering {
+  switch ord
+  case less Ordering.greater
+  case greater Ordering.less
+  case equal Ordering.equal
+}
 
 fun <[T](a: T, b: T): Bool { a <=> b is less }
 fun >[T](a: T, b: T): Bool { a <=> b is greater }
