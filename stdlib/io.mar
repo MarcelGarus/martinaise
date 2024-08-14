@@ -72,9 +72,9 @@ fun write_bytes_safely(
   moveib c 24 add c sp load c c | buffer.len
   syscall 7
   load b sp | return value address
-  move st a cjump .ret_ok
-  .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
-  .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
+  cmp a c isequal cjump .ret_ok
+  .ret_error: moveib c 1 storeb b c ret
+  .ret_ok:    moveib c 0 storeb b c ret
 }
 fun write_byte_safely(file: File, byte: Byte): Result[Nothing, Nothing] {
   file.write_bytes_safely(Slice { data = byte.&, len = 1 })
@@ -104,8 +104,14 @@ fun read_file(name: Str): Result[Slice[Byte], Nothing] {
   ok[Slice[Byte], Nothing](content)
 }
 fun write_file(name: Str, content: Slice[Byte]): Result[Nothing, Nothing] {
-  var file = open_file_for_writing(name)?
-  file.write_bytes_safely(content)?
+  var file = open_file_for_writing(name) or {
+    println("Couldn't open file")
+    return error[Nothing, Nothing]({})
+  }
+  file.write_bytes_safely(content) or {
+    println("Writing {content.len} bytes failed")
+    return error[Nothing, Nothing]({})
+  }
   file.close()
   ok[Nothing, Nothing]({})
 }
