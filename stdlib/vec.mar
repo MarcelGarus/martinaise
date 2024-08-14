@@ -74,6 +74,22 @@ fun vec[T](
   v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.push(l) v.push(m)
   v.push(n) v.*
 }
+fun vec[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T, o: T
+): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.push(l) v.push(m)
+  v.push(n) v.push(o) v.*
+}
+fun vec[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T, o: T, p: T
+): Vec[T] {
+  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
+  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.push(l) v.push(m)
+  v.push(n) v.push(o) v.push(p) v.*
+}
 
 fun reserve_uninitialized[T](vec: &Vec[T], n: Int): Slice[T] {
   if vec.data.len == 0 then
