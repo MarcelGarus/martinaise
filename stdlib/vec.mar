@@ -132,9 +132,12 @@ fun set[T](vec: &Vec[T], index: Int, value: T) {
   vec.get_ref(index).* = value
 }
 
-fun last_maybe[T](vec: Vec[T]): Maybe[T] {
-  if vec.is_empty() then none[T]() else some(vec.data.get(vec.len - 1))
+fun last_maybe_ref[T](vec: &Vec[T]): Maybe[&T] {
+  vec.to_slice().&.last_maybe_ref()
 }
+fun last_maybe[T](vec: Vec[T]): Maybe[T] { vec.to_slice().last_maybe() }
+fun last_ref[T](vec: &Vec[T]): &T { vec.to_slice().&.last_ref() }
+fun last[T](vec: Vec[T]): T { vec.to_slice().last() }
 fun is_empty[T](vec: Vec[T]): Bool { vec.len == 0 }
 fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0..vec.len) }
 
