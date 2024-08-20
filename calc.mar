@@ -1,0 +1,550 @@
+import stdlib.mar
+
+| A unit consists of multiple dimensions with exponents. For example, m²/s has
+| the exponents m = 2, s = -1.
+struct Unit { exponents: Map[Str, Int] }
+
+struct Amount { src: Range[Int], number: Float, unit: Unit }
+
+struct Operands[T] { left: &T, right: &T }
+
+enum Term {
+  amount: Amount,
+  add: Operands[Term],
+  subtract: Operands[Term],
+  multiply: Operands[Term],
+  divide: Operands[Term],
+}
+
+fun no_unit(): Unit { Unit { exponents = map[Str, Int]() } }
+fun unit(str: Str): Unit { Unit { exponents = map(str -> 1) } }
+fun is_none(unit: Unit): Bool { unit.exponents.is_empty() }
+fun ==(a: Unit, b: Unit): Bool {
+  a.exponents.size == b.exponents.size or return false
+  for entry in a.exponents do
+    {b.exponents.get_maybe(entry.key) or return false} == entry.value or return false
+  true
+}
+fun *(a: Unit, b: Unit): Unit {
+  var exponents = map[Str, Int]()
+  for entry in a.exponents do exponents.&.get_ref_or_put_default(entry.key, 0) += entry.value
+  for entry in b.exponents do exponents.&.get_ref_or_put_default(entry.key, 0) += entry.value
+  var final = map[Str, Int]()
+  for entry in exponents do if entry.value != 0 then final.&.put(entry.key, entry.value)
+  Unit { exponents = final }
+}
+fun inverse(unit: Unit): Unit {
+  var exponents = map[Str, Int]()
+  for entry in unit.exponents do exponents.&.put(entry.key, 0 - entry.value)
+  Unit { exponents }
+}
+fun /(a: Unit, b: Unit): Unit { a * b.inverse() }
+
+fun ops[T](left: T, right: T): Operands[T] {
+  Operands { left = left.put_on_heap(), right = right.put_on_heap() }
+}
+
+| Parsing  
+
+struct Parser { line: Str, cursor: Int }
+
+var null_char = 0.lower_byte().to_char()
+fun parser(line: Str): Parser {
+  Parser { line = "{line}{null_char}", cursor = 0 }
+}
+
+fun current(parser: Parser): Char { parser.line.get_unchecked(parser.cursor) }
+fun rest(parser: Parser): Str {
+  parser.line.substr(parser.cursor..parser.line.len)
+}
+fun advance(parser: &Parser) { parser.cursor = parser.cursor + 1 }
+fun advance_by(parser: &Parser, n: Int) { parser.cursor = parser.cursor + n }
+
+fun consume(parser: &Parser, prefix: Str): Bool {
+  parser.consume_whitespace()
+  var start = parser.cursor
+  parser.rest().starts_with(prefix) or return false
+  parser.advance_by(prefix.len)
+  var end = parser.cursor
+  true
+}
+
+fun bad_input[T](error: Str): Result[Maybe[T], Str] {
+  error[Maybe[T], Str](error)
+}
+fun no_match[T](): Result[Maybe[T], Str] {
+  ok[Maybe[T], Str](none[T]())
+}
+fun parsed[T](val: T): Result[Maybe[T], Str] {
+  ok[Maybe[T], Str](some(val))
+}
+
+fun consume_whitespace(parser: &Parser) {
+  loop {
+    var char = parser.current()
+    if char.is_whitespace() then {
+      parser.cursor = parser.cursor + 1
+    }
+    else break
+  }
+}
+
+fun parse_digits(parser: &Parser): Result[Maybe[Int], Str] {
+  var start = parser.cursor
+  var num = 0
+  loop {
+    var char = parser.current()
+    {#0..=#9}.contains(char) or break
+    num = num * 10 + {char - #0}.to_int()
+    parser.advance()
+  }
+  if parser.cursor == start then return no_match[Int]()
+  parsed(num)
+}
+fun parse_float(parser: &Parser): Result[Maybe[Float], Str] {
+  parser.consume_whitespace()
+  var sign = 1 | if parser.consume("-") then -1 else 1
+  var integer_part = parser.parse_digits()? or
+    return
+      if sign == 1
+      then no_match[Float]()
+      else bad_input[Float]("Expected number after the minus sign.")
+  var integer_part = integer_part.to_float()
+
+  var number =
+    if parser.consume(".") then {
+      var start_of_decimals = parser.cursor
+      var decimals = parser.parse_digits()? or 0
+      var num_decimals = parser.cursor - start_of_decimals
+      if num_decimals > 18 then return bad_input[Float]("Too many decimals.")
+
+      var decimal_part = decimals.to_float() / {10 ** num_decimals}.to_float()
+      sign.to_float() * {integer_part + decimal_part}
+    } else
+      sign.to_float() * integer_part
+  parsed(number)
+}
+
+fun parse_unit(parser: &Parser): Maybe[Str] {
+  parser.consume_whitespace()
+  var start = parser.cursor
+  loop {
+    var char = parser.current()
+    if char.is_letter() then parser.advance() else break
+  }
+  var end = parser.cursor
+  if start == end then return none[Str]()
+  some(parser.line.substr(start..end))
+}
+
+enum Precedence { atom, neighbors, parenthesize, multiply_divide, add_subtract }
+
+fun parse_term(parser: &Parser, precedence: Precedence): Result[Maybe[Term], Str] {
+  switch precedence
+  case atom {
+    parser.consume_whitespace()
+    var start = parser.cursor
+    if parser.parse_float()? is some(number) then {
+      var end = parser.cursor
+      return parsed(Term.amount(Amount { src = start..end, number, unit = no_unit() }))
+    }
+    if parser.parse_unit() is some(unit) then {
+      var end = parser.cursor
+      return parsed(Term.amount(Amount { src = start..end, number = 1.0, unit = unit(unit) }))
+    }
+    return no_match[Term]()
+  }
+  case neighbors {
+    var term = parser.parse_term(Precedence.atom)? or return no_match[Term]()
+    loop
+      term = Term.multiply(ops(term, parser.parse_term(Precedence.atom)? or break))
+    parsed(term)
+  }
+  case parenthesize {
+    if parser.consume("(") then {
+      var term = parser.parse_term(Precedence.add_subtract)? or return bad_input[Term]("Expected parenthesized term.")
+      parser.consume(")") or return bad_input[Term]("Expected closing parenthesis.")
+      parsed(term)
+    } else
+      parser.parse_term(Precedence.neighbors)
+  }
+  case multiply_divide {
+    var term = parser.parse_term(Precedence.parenthesize)?
+      or return no_match[Term]()
+    loop {
+      if parser.consume("*") then
+        term = Term.multiply(ops(term, parser.parse_term(Precedence.parenthesize)? or return bad_input[Term]("Expected right factor.")))
+      else if parser.consume("/") then
+        term = Term.divide(ops(term, parser.parse_term(Precedence.parenthesize)? or return bad_input[Term]("Expected divisor.")))
+      else break
+    }
+    parsed(term)
+  }
+  case add_subtract {
+    var term = parser.parse_term(Precedence.multiply_divide)?
+      or return no_match[Term]()
+    loop {
+      if parser.consume("+") then
+        term = Term.add(ops(term, parser.parse_term(Precedence.multiply_divide)? or return bad_input[Term]("Expected right addend.")))
+      else if parser.consume("-") then
+        term = Term.subtract(ops(term, parser.parse_term(Precedence.multiply_divide)? or return bad_input[Term]("Expected subtrahend.")))
+      else break
+    }
+    parsed(term)
+  }
+}
+
+struct ParseError { cursor: Int, msg: Str }
+
+enum Line {
+  term: Term,
+  definition: Tuple2[Term, Term],
+  quit,
+}
+
+fun parse_line(line: Str): Result[Line, ParseError] {
+  if line == "quit" then return ok[Line, ParseError](Line.quit)
+  var parser = parser(line)
+  var term =
+    switch parser.&.parse_term(Precedence.add_subtract)
+    case error(msg) return error[Line, ParseError](ParseError { cursor = parser.cursor, msg })
+    case ok(term) term or return error[Line, ParseError](ParseError { cursor = parser.cursor, msg = "Expected term." })
+  parser.&.consume_whitespace()
+  if parser.current() == null_char then
+    return ok[Line, ParseError](Line.term(term))
+  parser.&.consume("=") or return error[Line, ParseError](ParseError { cursor = parser.cursor, msg = "Weird stuff." })
+  var second_term =
+    switch parser.&.parse_term(Precedence.add_subtract)
+    case error(msg) return error[Line, ParseError](ParseError { cursor = parser.cursor, msg })
+    case ok(term) term or return error[Line, ParseError](ParseError { cursor = parser.cursor, msg = "Expected term." })
+  if parser.current() != null_char then return error[Line, ParseError](ParseError { cursor = parser.cursor, msg = "Weird stuff." }) 
+  ok[Line, ParseError](Line.definition(tuple(term, second_term)))
+}
+
+fun write[W](writer: W, unit: Unit) {
+  if unit.is_none() then return {}
+
+  var positive = vec[MapEntry[Str, Int]]()
+  var negative = vec[MapEntry[Str, Int]]()
+  for entry in unit.exponents do
+    {if entry.value > 0 then positive.& else negative.&}.push(entry)
+
+  { | Positive part
+    if positive.is_empty() then writer."1"
+    if positive.len > 1 then writer."("
+    var first = true
+    for entry in positive do {
+      if first then first = false else writer." "
+      writer."{entry.key}"
+      if entry.value != 1 then writer."^{entry.value}"
+    }
+    if positive.len > 1 then writer.")"
+  }
+  { | Negative part
+    if negative.is_not_empty() then writer."/"
+    if negative.len > 1 then writer."("
+    var first = true
+    for entry in negative do {
+      writer."{entry.key}"
+      if entry.value != -1 then writer."^{0 - entry.value}"
+    }
+    if negative.len > 1 then writer.")"
+  }
+  | writer." ({unit.exponents.debug()})"
+}
+fun write[W](writer: W, amount: Amount) {
+  writer."{amount.number}{if amount.unit.is_none() then "" else " {amount.unit}"}"
+}
+
+fun as_tree[T](value: T, indent: Int): AsTree[T] { AsTree { value, indent } }
+struct AsTree[T] { value: T, indent: Int }
+fun write[W](writer: W, term: AsTree[Term]) {
+  var indent = term.indent
+  for i in 0..indent do writer."  "
+  switch term.value
+  case amount(amount) writer."amount"
+  case add(ops) writer."+\n{ops.left.*.as_tree(indent + 1)}\n{ops.right.*.as_tree(indent + 1)}"
+  case subtract(ops) writer."-\n{ops.left.*.as_tree(indent + 1)}\n{ops.right.*.as_tree(indent + 1)}"
+  case multiply(ops) writer."*\n{ops.left.*.as_tree(indent + 1)}\n{ops.right.*.as_tree(indent + 1)}"
+  case divide(ops) writer."/\n{ops.left.*.as_tree(indent + 1)}\n{ops.right.*.as_tree(indent + 1)}"
+}
+
+fun write[W](writer: W, term: Term) {
+  switch term
+  case amount(amount) writer."amount"
+  case add(ops) writer."{ops.left} + {ops.right}"
+  case subtract(ops) writer."{ops.left} - {{
+      var parens =
+        switch ops.right.*
+        case amount false case add true case subtract true case multiply false case divide false
+      if parens then "({ops.right})" else "{ops.right}"
+    }}"
+  case multiply(ops) writer."{{
+      var parens =
+        switch ops.left.*
+        case amount false case add true case subtract true case multiply false case divide false
+      if parens then "({ops.left})" else "{ops.left}"
+    }} * {{
+      var parens =
+        switch ops.right.*
+        case amount false case add true case subtract true case multiply false case divide false
+      if parens then "({ops.right})" else "{ops.right}"
+    }}"
+  case divide(ops) writer."{{
+      var parens =
+        switch ops.left.*
+        case amount false case add true case subtract true case multiply false case divide false
+      if parens then "({ops.left})" else "{ops.left}"
+    }} / {{
+      var parens =
+        switch ops.right.*
+        case amount false case add true case subtract true case multiply true case divide true
+      if parens then "({ops.right})" else "{ops.right}"
+    }}"
+}
+
+| Calculating
+
+fun simplify_leaves(term: Term): Result[Term, Str] {
+  ok[Term, Str](
+    switch term
+    case amount term
+    case add(ops) {
+      if ops.left.* is amount(a) then if ops.right.* is amount(b) then {
+        a.unit == b.unit or return error[Term, Str]("Not the same unit: {a.unit} and {b.unit}")
+        return ok[Term, Str](Term.amount(Amount {
+          src = a.src.start..b.src.end, number = a.number + b.number, unit = a.unit
+        }))
+      }
+      Term.add(ops(ops.left.simplify_leaves()?, ops.right.simplify_leaves()?))
+    }
+    case subtract(ops) {
+      if ops.left.* is amount(a) then if ops.right.* is amount(b) then {
+        a.unit == b.unit or return error[Term, Str]("Not the same unit: {a.unit} and {b.unit}")
+        return ok[Term, Str](Term.amount(Amount {
+          src = a.src.start..b.src.end, number = a.number - b.number, unit = a.unit
+        }))
+      }
+      Term.subtract(ops(ops.left.simplify_leaves()?, ops.right.simplify_leaves()?))
+    }
+    case multiply(ops) {
+      if ops.left.* is amount(a) then if ops.right.* is amount(b) then {
+        return ok[Term, Str](Term.amount(Amount {
+          src = a.src.start..b.src.end, number = a.number * b.number, unit = a.unit * b.unit
+        }))
+      }
+      Term.multiply(ops(ops.left.simplify_leaves()?, ops.right.simplify_leaves()?))
+    }
+    case divide(ops) {
+      if ops.left.* is amount(a) then if ops.right.* is amount(b) then {
+        if b.number == 0.0 then return error[Term, Str]("This is zero.")
+        return ok[Term, Str](Term.amount(Amount {
+          src = a.src.start..b.src.end, number = a.number / b.number, unit = a.unit / b.unit
+        }))
+      }
+      Term.divide(ops(ops.left.simplify_leaves()?, ops.right.simplify_leaves()?))
+    }
+  )
+}
+
+struct EvalError { inputs: Vec[Amount], msg: Str }
+
+fun eval(term: Term, dict: Dictionary): Result[Amount, EvalError] {
+  ok[Amount, EvalError](
+    switch term
+    case amount(amount) amount
+    case add(ops) {
+      var a = ops.left.eval(dict)?
+      var b = ops.right.eval(dict)?
+      if a.unit != b.unit then {
+        a = dict.canonicalize(a)
+        b = dict.canonicalize(b)
+      }
+      a.unit == b.unit or return error[Amount, EvalError](EvalError {
+        inputs = vec(a, b),
+        msg = "Plus operands {a} and {b} don't have the same unit."
+      })
+      Amount {
+        src = a.src.start..b.src.end, number = a.number + b.number, unit = a.unit
+      }
+    }
+    case subtract(ops) {
+      var a = ops.left.eval(dict)?
+      var b = ops.right.eval(dict)?
+      if a.unit != b.unit then {
+        a = dict.canonicalize(a)
+        b = dict.canonicalize(b)
+      }
+      a.unit == b.unit or return error[Amount, EvalError](EvalError {
+        inputs = vec(a, b),
+        msg = "Minus operands {a} and {b} don't have the same unit."
+      })
+      Amount {
+        src = a.src.start..b.src.end, number = a.number - b.number, unit = a.unit
+      }
+    }
+    case multiply(ops) {
+      var a = ops.left.eval(dict)?
+      var b = ops.right.eval(dict)?
+      Amount {
+        src = a.src.start..b.src.end, number = a.number * b.number, unit = a.unit * b.unit
+      }
+    }
+    case divide(ops) {
+      var a = ops.left.eval(dict)?
+      var b = ops.right.eval(dict)?
+      if b.number == 0.0 then return error[Amount, EvalError](EvalError {
+        inputs = vec(b),
+        msg = "Dividend {b} is zero."
+      })
+      Amount {
+        src = a.src.start..b.src.end, number = a.number / b.number, unit = a.unit / b.unit
+      }
+    }
+  )
+}
+
+struct Dictionary {
+  defs: Map[Str, Amount],
+}
+
+fun define(dict: &Dictionary, left: Amount, right: Amount): Result[Nothing, Str] {
+  left.number != 0.0 or return error[Nothing, Str]("Left side is zero.")
+  left.unit.exponents.size == 1 or return error[Nothing, Str]("Left side doesn't not have an atomic unit.")
+  left.unit.exponents.iter().&.get(0).value == 1 or return error[Nothing, Str]("Left unit has exponent.")
+  var unit = left.unit.exponents.iter().&.get(0).key
+  not(dict.defs.contains(unit)) or return error[Nothing, Str]("Already defined.")
+  dict.defs.&.put(unit, Amount { src = 0..0, number = right.number / left.number, unit = right.unit })
+  ok[Nothing, Str]({})
+}
+fun canonicalize(dict: Dictionary, amount: Amount): Amount {
+  loop {
+    var something_changed = false
+    for entry in amount.unit.exponents do
+      if dict.defs.get_maybe(entry.key) is some(more_fundamental) then {
+        | println("{entry.key} -> {more_fundamental}")
+        if entry.value > 0 then {
+          amount.number = amount.number * more_fundamental.number
+          amount.unit = amount.unit / unit(entry.key) * more_fundamental.unit
+        } else {
+          amount.number = amount.number / more_fundamental.number
+          amount.unit = amount.unit * unit(entry.key) / more_fundamental.unit
+        }
+        something_changed = true
+        break
+      }
+    if not(something_changed) then break
+    | println("canonicalizing... {amount}")
+  }
+  amount
+}
+fun predef(dict: &Dictionary, line: Str) {
+  var line = line.parse_line() or panic("predef line {line.debug()} is invalid")
+  var def = line.definition or panic("predef line {line.debug()} is not a definition")
+  var left = def.a.eval(dict.*) or panic("predef {line.debug()}: left eval failed")
+  var right = def.b.eval(dict.*) or panic("predef {line.debug()}: right eval failed")
+  dict.define(left, right) or panic("predef {line.debug()} failed")
+}
+
+fun main(): Never {
+  var dict = Dictionary { defs = map[Str, Amount]() }
+
+  dict.&.predef("1000 fempto = pico")
+  dict.&.predef("1000 pico = nano")
+  dict.&.predef("1000 nano = micro")
+  dict.&.predef("1000 micro = milli")
+  dict.&.predef("1000 milli = 1")
+  dict.&.predef("100 centi = 1")
+  dict.&.predef("10 dezi = 1")
+  dict.&.predef("kilo = 1000")
+  dict.&.predef("mega = 1000 kilo")
+  dict.&.predef("giga = 1000 mega")
+  dict.&.predef("tera = 1000 giga")
+  dict.&.predef("kibi = 1024")
+  dict.&.predef("mibi = 1024 kibi")
+  dict.&.predef("gibi = 1024 mibi")
+  dict.&.predef("tibi = 1024 gibi")
+  dict.&.predef("8 bits = byte")
+  dict.&.predef("KB = kilo byte")
+  dict.&.predef("MB = mega byte")
+  dict.&.predef("GB = giga byte")
+  dict.&.predef("TB = tera byte")
+  dict.&.predef("KiB = kibi byte")
+  dict.&.predef("MiB = mibi byte")
+  dict.&.predef("GiB = gibi byte")
+  dict.&.predef("TiB = tibi byte")
+  dict.&.predef("mm = milli m")
+  dict.&.predef("cm = centi m")
+  dict.&.predef("km = kilo m")
+  dict.&.predef("lightspeed = 299792458 m/s")
+  dict.&.predef("gravity = 9.8 m/s/s")
+  dict.&.predef("min = 60 s")
+  dict.&.predef("h = 60 min")
+  dict.&.predef("day = 60 h")
+  dict.&.predef("week = 4 day")
+  dict.&.predef("year = 356 day")
+
+  loop {
+    print("> ")
+    var line = {stdin.read_line() or panic("Couldn't read line")} or break
+    var line = line.parse_line() or(err) {
+      stderr."  "
+      for i in 0..err.cursor do stderr." "
+      stderr."^\n"
+      stderr."{err.msg}\n"
+      continue
+    }
+    switch line
+    case quit break
+    case term(term) {
+      var amount = term.eval(dict) or(err) {
+        if err.inputs.len == 1 then {
+          var a = err.inputs.get(0)
+          stderr."  "
+          for i in 0..a.src.start do stderr." "
+          for i in a.src do stderr."-"
+          stderr."\n"
+        }
+        if err.inputs.len == 2 then {
+          var a = err.inputs.get(0)
+          var b = err.inputs.get(1)
+          stderr."  "
+          for i in 0..a.src.start do stderr." "
+          for i in a.src do stderr."-"
+          for i in a.src.end..b.src.start do stderr." "
+          for i in b.src do stderr."-"
+          stderr."\n"
+        }
+        stderr."{err.msg}\n"
+        continue
+      }
+      var amount = dict.canonicalize(amount)
+      println("= {amount}")
+      if amount.unit.is_none() then continue
+      for def in dict.defs do {
+        var canonicalized = dict.canonicalize(Amount { src = 0..0, number = 1.0, unit = unit(def.key) })
+        if canonicalized.unit == amount.unit then {
+          var alternative = Amount { src = 0..0, number = amount.number / canonicalized.number, unit = unit(def.key) }
+          println("= {alternative}")
+        }
+      }
+      println()
+    }
+    case definition(def) {
+      var left = def.a.eval(dict) or(err) {
+        stderr."Couldn't eval left: {err.msg}\n"
+        continue
+      }
+      var right = def.b.eval(dict) or(err) {
+        stderr."Couldn't eval right: {err.msg}\n"
+        continue
+      }
+      dict.&.define(left, right) or(err) {
+        stderr."{err}\n"
+        continue
+      }
+      stdout."Defined {left.unit}.\n"
+    }
+  }
+  exit(0)
+}
