@@ -56,10 +56,10 @@ fun contains[T, I](iter: &Iter[T, I], item: T): Bool {
 | Skips the given amount of elements on the inner iter, then acts like the inner
 | iter.
 fun skip[T, I](iter: Iter[T, I], amount: Int): Iter[T, _] {
-  Iter { state = SkipIter[T, I] { inner = iter.state, amount } }
+  Iter[T, SkipIter[T, I]] { state = SkipIter[T, I] { inner = iter.state, amount } }
 }
 struct SkipIter[T, I] { inner: I, amount: Int }
-fun next[T, I](iter: &Iter[T, SkipIter[I]]): Maybe[T] {
+fun next[T, I](iter: &Iter[T, SkipIter[T, I]]): Maybe[T] {
   var state = iter.state.&
   for i in 0..state.amount do
     state.inner.&.next_from_iter_state[T, I]() or return none[T]()
@@ -132,7 +132,7 @@ fun get[T, I](iter: &Iter[T, I], index: Int): T {
   iter.get_maybe(index) or panic("index {index} is out of bounds")
 }
 fun get_maybe[T, I](iter: &Iter[T, I], index: Int): Maybe[T] {
-  iter.skip(index).get()
+  iter.skip(index).&.next()
 }
 
 | Finds the needle in the iter, returning its position.
