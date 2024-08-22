@@ -478,6 +478,7 @@ fun main(): Never {
   dict.&.predef("km = kilo m")
   dict.&.predef("lightspeed = 299792458 m/s")
   dict.&.predef("gravity = 9.8 m/s/s")
+  dict.&.predef("ms = milli s")
   dict.&.predef("min = 60 s")
   dict.&.predef("h = 60 min")
   dict.&.predef("day = 60 h")
@@ -485,10 +486,11 @@ fun main(): Never {
   dict.&.predef("year = 356 day")
 
   loop {
-    print("> ")
+    print(">> ")
     var line = {stdin.read_line() or panic("Couldn't read line")} or break
+    if line.trim().is_empty() then continue
     var line = line.parse_line() or(err) {
-      stderr."  "
+      stderr."   "
       for i in 0..err.cursor do stderr." "
       stderr."^\n"
       stderr."{err.msg}\n"
@@ -500,7 +502,7 @@ fun main(): Never {
       var amount = term.eval(dict) or(err) {
         if err.inputs.len == 1 then {
           var a = err.inputs.get(0)
-          stderr."  "
+          stderr."   "
           for i in 0..a.src.start do stderr." "
           for i in a.src do stderr."-"
           stderr."\n"
@@ -508,7 +510,7 @@ fun main(): Never {
         if err.inputs.len == 2 then {
           var a = err.inputs.get(0)
           var b = err.inputs.get(1)
-          stderr."  "
+          stderr."   "
           for i in 0..a.src.start do stderr." "
           for i in a.src do stderr."-"
           for i in a.src.end..b.src.start do stderr." "
@@ -519,13 +521,13 @@ fun main(): Never {
         continue
       }
       var amount = dict.canonicalize(amount)
-      println("= {amount}")
+      println(" = {amount}")
       if amount.unit.is_none() then continue
       for def in dict.defs do {
         var canonicalized = dict.canonicalize(Amount { src = 0..0, number = 1.0, unit = unit(def.key) })
         if canonicalized.unit == amount.unit then {
           var alternative = Amount { src = 0..0, number = amount.number / canonicalized.number, unit = unit(def.key) }
-          println("= {alternative}")
+          println(" = {alternative}")
         }
       }
       println()
@@ -546,5 +548,6 @@ fun main(): Never {
       stdout."Defined {left.unit}.\n"
     }
   }
+  println()
   exit(0)
 }
