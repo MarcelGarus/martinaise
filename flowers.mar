@@ -3,12 +3,7 @@ import stdlib.mar
 enum Plot { empty, full }
 
 fun can_place_flowers(flowerbed: Vec[Plot], n: Int): Bool {
-  var flowerbed = {
-    var new = vec(Plot.empty)
-    new.&.push_all(flowerbed.iter())
-    new.&.push(Plot.empty)
-    new
-  }
+  var flowerbed = vec(Plot.empty) + flowerbed + vec(Plot.empty)
 
   for i in 1..{flowerbed.len - 1} do {
     if {flowerbed.get(i) is empty} and {flowerbed.get(i + 1) is empty}
