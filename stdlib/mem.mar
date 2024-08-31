@@ -274,7 +274,9 @@ fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
 }
 fun ==[T](a: Slice[T], b: Slice[T]): Bool {
   a.len == b.len or return false
-  a <=> b is equal
+  for i in 0..a.len do
+    a.get_unchecked(i) == b.get_unchecked(i) or return false
+  true
 }
 fun hash[T](hasher: &Hasher, slice: Slice[T]) { hasher.hash_all(slice) }
 fun write[W, T](writer: W, slice: Slice[T]) {
