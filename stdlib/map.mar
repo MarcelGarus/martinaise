@@ -115,6 +115,13 @@ fun get_ref_or_put_default[K, V](map: &Map[K, V], key: K, default_: V): &V {
   map.get_maybe_ref(key).unwrap()
 }
 
+fun ==[K, V](a: Map[K, V], b: Map[K, V]): Bool {
+  a.size == b.size or return false
+  for a in a do
+    a.value == {b.get_maybe(a.key) or return false} or return false
+  true
+}
+
 fun write[W, K, V](writer: W, entry: MapEntry[K, V]) {
   writer."{entry.key}: {entry.value}"
 }
