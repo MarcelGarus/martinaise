@@ -92,7 +92,7 @@ fun get_maybe_ref[K, V](map: &Map[K, V], key: K): Maybe[&V] {
       else i = i + 1 % map.buckets.len
   }
 }
-fun get_ref[K, V](map: Map[K, V], key: K): &V {
+fun get_ref[K, V](map: &Map[K, V], key: K): &V {
   map.get_maybe_ref(key) or panic("Key {debug(key)} is not in the map.")
 }
 fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
