@@ -267,7 +267,9 @@ fun truncate_to_len(builder: &StringBuilder, len: Int) {
   len <= builder.bytes.len or panic("new len is too big")
   builder.bytes.len = len
 }
-fun write[W](writer: W, sb: StringBuilder) { writer.write_bytes(sb.bytes) }
+fun write[W](writer: W, sb: StringBuilder) {
+  writer.write_bytes(sb.bytes.to_slice())
+}
 fun to_str(builder: StringBuilder): Str { builder.bytes.to_slice().to_str() }
 
 | Formatting  

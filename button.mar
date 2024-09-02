@@ -1,0 +1,14 @@
+import ui.mar
+
+fun main(): Never {
+  var texture = screen_texture()
+
+  texture.&.fill(white)
+  texture.&.draw({20 @ 20} @ {40 @ 40}, color(100, 0, 0))
+  texture.&.draw({20 @ 20} @ {40 @ 39}, color(200, 0, 0))
+  texture.&.draw("Hello, world!", 1 @ 1, 1, black)
+
+  loop texture.show()
+
+  exit(0)
+}

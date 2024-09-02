@@ -365,7 +365,6 @@ fun get_pressed_key(): Maybe[KeyboardKey] {
     else if id == 348 then KeyboardKey.kb_menu
     else panic("unknown key id {id}")
   )
-
 }
 fun raw_get_key_pressed(): Int asm {
   syscall 15

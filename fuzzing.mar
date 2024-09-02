@@ -3,7 +3,3 @@ import stdlib.mar
 fun stuff(a: Bool, b: Bool, c: Bool): Bool {
   a or b and c
 }
-
-fun generate(generator: Generator[Bool]): Bool {
-  generator.rng.next_int() % 2 == 0
-}

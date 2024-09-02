@@ -1,18 +1,15 @@
 import stdlib.mar
 
-struct Pos { x: Int, y: Int }
-fun @(x: Int, y: Int): Pos { Pos { x, y } }
-
 struct Level {
   width: Int,
   height: Int,
-  objs: Vec[ObjAndPos],
+  objs: Vec[ObjAndPoint],
 }
-struct ObjAndPos { obj: Obj, pos: Pos }
+struct ObjAndPoint { obj: Obj, pos: Point }
 enum Obj { word: Word, baba, flag }
 enum Word { baba, is, you, flag, win }
 
-fun @(obj: Obj, pos: Pos): ObjAndPos { ObjAndPos { obj, pos } }
+fun @(obj: Obj, pos: Point): ObjAndPoint { ObjAndPoint { obj, pos } }
 
 fun write[W](writer: W, level: Level) {
   var map = uninitialized_slice[Slice[Vec[Obj]]](level.height)
@@ -28,11 +25,11 @@ fun write[W](writer: W, level: Level) {
   for y in 0..level.height do {
     for x in 0..level.width do {
       var objs = map.get(y).get(x)
-      var tile = string_builder()
+      var tile = str_builder()
       for obj in objs do {
         tile.&."{obj}"
       }
-      loop if tile.chars.len < 4 then tile.&."_" else break
+      loop if tile.bytes.len < 4 then tile.&."_" else break
       tile.&." "
       writer."{tile}"
     }
@@ -53,15 +50,15 @@ struct Rule {
 enum What { word, baba, flag }
 enum How { you, win }
 
-fun ->(what: What, how: How): Rule { Rule { what, how } }
+fun =>(what: What, how: How): Rule { Rule { what, how } }
 fun write[W](writer: W, rule: Rule) {
   writer."{rule.what.debug()} is {rule.how.debug()}"
 }
 
 fun find_rules(level: Level): Vec[Rule] {
   vec(
-    What.baba -> How.you,
-    What.flag -> How.win,
+    What.baba => How.you,
+    What.flag => How.win,
   )
 }
 fun find_rules(run: Slice[Word]): Vec[Rule] {

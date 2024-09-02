@@ -28,9 +28,9 @@ fun main(): Never {
         var xcomponent = x * 255 / texture.width
         var ycomponent = y * 255 / texture.height
         var color = color(
-          if rpattern == 16#11 then xcomponent else if rpattern == 16#22 then ycomponent else rpattern.lower_byte(),
-          if gpattern == 16#11 then xcomponent else if gpattern == 16#22 then ycomponent else gpattern.lower_byte(),
-          if bpattern == 16#11 then xcomponent else if bpattern == 16#22 then ycomponent else bpattern.lower_byte(),
+          if rpattern == 16#11 then xcomponent else if rpattern == 16#22 then ycomponent else rpattern.lower_byte().to_int(),
+          if gpattern == 16#11 then xcomponent else if gpattern == 16#22 then ycomponent else gpattern.lower_byte().to_int(),
+          if bpattern == 16#11 then xcomponent else if bpattern == 16#22 then ycomponent else bpattern.lower_byte().to_int(),
         )
         texture.&.draw(x @ y, color)
         if get_pressed_key() is some(key) then if key is enter then enters.& += 1

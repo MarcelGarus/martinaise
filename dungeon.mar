@@ -12,7 +12,7 @@ struct Level {
   tiles: Matrix[Tile],
   player: Point,
 }
-enum Tile { free, wall, box }
+enum Tile { free, wall }
 
 fun get(level: Level, point: Point): Tile {
   level.tiles.get_maybe(point) or Tile.wall
@@ -25,38 +25,81 @@ fun set(level: Level, point: Point, tile: Tile) {
 
 fun generate_level(random: &Random): Level {
   var level = Level {
-    tiles = filled_matrix(40 @ 10, Tile.free),
+    tiles = filled_matrix(40 @ 30, Tile.wall),
     player = 1 @ 1,
   }
-
-  for i in 0..10 do
+  for i in 0..20 do
     loop {
       var x = random.next_int(2..{level.tiles.width - 2})
       var y = random.next_int(2..{level.tiles.height - 2})
-      println("Placing box at {x} {y}")
-      if level.get(x @ y) is free then {
-        level.set(x @ y, Tile.box)
-        break
-      }
-    }
-  for i in 0..10 do
-    loop {
-      var x = random.next_int(2..{level.tiles.width - 2})
-      var y = random.next_int(2..{level.tiles.height - 2})
-      var w = random.next_int(1..5)
-      var h = random.next_int(1..4)
-      println("Placing wall at {x} {y} ({w} * {h})")
-      var is_free = true
+      var w = random.next_int(1..10)
+      var h = random.next_int(1..7)
+      println("Placing room at {x} {y} ({w} * {h})")
       for xx in x..+w do
         for yy in y..+h do
-          if level.get(xx @ yy) is free then {} else is_free = false
-      if is_free then {
-        for xx in x..+w do
-          for yy in y..+h do
-            level.set(xx @ yy, Tile.wall)
-        break
-      }
+          level.set(xx @ yy, Tile.free)
+      break
     }
+
+  { | Place the player.
+    var placed = false
+    var i = 0
+    loop {
+      if placed then break
+      for j in 0..i do
+        if level.get(j @ {i - j}) is free then {
+          level.player = j @ {i - j}
+          placed = true
+          break
+        }
+      i = i + 1
+    }
+  }
+
+  { | Make sure the rooms are reachable by using a flood fill.
+    var reachable = filled_matrix(level.tiles.size(), false)
+    var queue = queue[Point]()
+    queue.&.push_back(level.player)
+    loop {
+      var pos = queue.&.pop_front_maybe() or break
+      if not({0 @ 0}.by(level.tiles.size()).contains(pos)) then continue
+      if level.get(pos) is wall then continue
+      if reachable.get(pos) then continue
+      reachable.&.set(pos, true)
+      for direction in vec(0 @ 1, 0 @ {0-1}, 1 @ 0, {0-1} @ 0) do
+        queue.&.push_back(pos + direction)
+    }
+
+    for y in 0..level.tiles.height do {
+      for x in 0..level.tiles.width do
+        stdout."{if reachable.get(x @ y) then "x" else "_"}"
+      stdout."\n"
+    }
+    
+    var distance = filled_matrix(level.tiles.size(), level.tiles.size().x)
+    var queue = queue[Tuple2[Point, Int]]()
+    for y in 0..level.tiles.height do
+      for x in 0..level.tiles.width do
+        if reachable.get(x @ y) then
+          queue.&.push_back(tuple(x @ y, 0))
+    loop {
+      var data = queue.&.pop_front_maybe() or break
+      var point = data.a
+      var dist = data.b
+      if not({0 @ 0}.by(level.tiles.size()).contains(point)) then continue
+      if distance.get(point) <= dist then continue
+      distance.&.set(point, dist)
+      for direction in vec(0 @ 1, 0 @ {0-1}, 1 @ 0, {0-1} @ 0) do
+        queue.&.push_back(tuple(point + direction, dist + 1))
+    }
+
+    for y in 0..level.tiles.height do {
+      for x in 0..level.tiles.width do
+        stdout."{distance.get(x @ y)} "
+      stdout."\n"
+    }
+  }
+  exit(0)
 
   level
 }
@@ -65,19 +108,10 @@ fun generate_level(random: &Random): Level {
 
 fun move(level: &Level, direction: Point) {
   var new_pos = level.player + direction
-  var pushed = 0
   loop {
-    switch level.get(new_pos + {pushed * direction})
+    switch level.get(new_pos + direction)
       case free break
       case wall return {} | can't move
-      case box {
-        pushed = pushed + 1
-        if pushed == 3 then return {} | too heavy
-      }
-  }
-  for i in 0..=pushed do {
-    level.set(new_pos + {pushed - i * direction},
-      level.get(level.player + {pushed - i * direction}))
   }
   level.player = new_pos
 }
@@ -102,7 +136,6 @@ fun draw(texture: &Texture, level: Level) {
         switch level.get(x @ y)
           case free ground_color
           case wall wall_color
-          case box box_color
       texture.&.draw({{x @ y} * grid + offset}.by(grid @ grid), color)
     }
   }
@@ -113,18 +146,13 @@ fun draw(texture: &Texture, level: Level) {
 
 fun write[W](writer: W, level: Level) {
   for y in {0-1}..{level.tiles.height + 1} do {
-    for x in {0-5}..{level.tiles.width + 5} do {
-      if level.player == {x @ y} then {
-        writer."+"
-      } else {
-        writer."{
-          switch level.get(x @ y)
-            case free " "
-            case wall "▓"
-            case box "X"
-        }"
-      }
-    }
+    for x in {0-5}..{level.tiles.width + 5} do
+      writer."{
+        if level.player == {x @ y} then
+          "+"
+        else
+          switch level.get(x @ y) case free " " case wall "▓"
+      }"
     writer."\n"
   }
 }

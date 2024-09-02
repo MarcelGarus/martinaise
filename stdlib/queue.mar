@@ -35,7 +35,7 @@ fun reserve[T](queue: &Queue[T], size: Int) {
   var len = queue.len()
   queue.data = uninitialized_slice[T]({size + 1}.round_up_to_power_of(2))
   slices.a.copy_to(queue.data.subslice(0..slices.a.len))
-  slices.b.copy_to(queue.data.subslice(slices.a.len .. len))
+  slices.b.copy_to(queue.data.subslice(slices.a.len..{slices.a.len + slices.b.len}))
   queue.start = 0
   queue.end = len
 }
