@@ -157,8 +157,6 @@ fun read_dir_impl(path: Str, buffer: Slice[Byte]): Int asm {
 
 | Printing and Logging  
 
-fun write[W, T](writer: W, value: &T) { writer.write(value.*) }
-
 struct Print {}
 var stdout = Print {}
 fun print[T](value: T) { stdout.write(value) }
@@ -223,66 +221,3 @@ fun read_line(stdin: Stdin): Result[Maybe[Str], Nothing] {
   }
   ok[Maybe[Str], Nothing](some(content.to_slice().to_str()))
 }
-
-| Printing  
-| You should implement a write[Writer](Writer, T) function for types that can be
-| printed. Writers are anything that has a write_byte(Writer, Byte) function and
-| a write_bytes(Writer, Slice[Byte]) function.
-
-fun format[T](value: T): Str { "{value}" }
-
-fun writeln[W](writer: W) { writer.write(newline) }
-fun writeln[W, T](writer: W, value: T) { writer.write(value) writer.writeln() }
-
-fun comma_separated[I](iter: I): CommaSeparatedFormat[I] {
-  CommaSeparatedFormat { iter }
-}
-struct CommaSeparatedFormat[I] { iter: I }
-fun write[W, T](writer: W, format: CommaSeparatedFormat[T]) {
-  var first = true
-  for item in format.iter do {
-    if first then first = false else writer.write(", ")
-    writer.write(item)
-  }
-}
-
-fun buffered_writer[W](writer: W, capacity: Int): BufferedWriter[W] {
-  capacity > 0 or panic("The capacity of a BufferedWriter must be positive.")
-  BufferedWriter {
-    buffer = filled_slice(capacity, 0.lower_byte()), len = 0, inner = writer
-  }
-}
-struct BufferedWriter[W] { buffer: Slice[Byte], len: Int, inner: W }
-fun flush[W](self: &BufferedWriter[W]) {
-  self.inner.write_bytes(self.buffer.first(self.len))
-  self.len = 0
-}
-fun amount_free[W](self: BufferedWriter[W]): Int {
-  self.buffer.len - self.len
-}
-fun write_byte[W](self: &BufferedWriter[W], byte: Byte) {
-  if self.amount_free() == 0 then self.flush()
-  self.buffer.get_ref(self.len).* = byte
-  self.len = self.len.inc()
-}
-fun write_bytes[W](self: &BufferedWriter[W], bytes: Slice[Byte]) {
-  if bytes.len <= self.amount_free() then
-    for byte in bytes do self.write_byte(byte)
-  else {
-    self.flush()
-    if bytes.len <= self.amount_free()
-    then for byte in bytes do self.write_byte(byte)
-    else self.inner.write_bytes(bytes)
-  }
-}
-
-| Debug printing  
-| Just like the write function, you can also implement a write_debug function to
-| customize how a value is formatted when debugging. If you don't, the compiler
-| auto-generates an implementation.
-
-fallback fun write_debug[W, T](writer: W, value: T) { ... }
-
-fun debug[T](value: T): Debug[T] { Debug { value } }
-struct Debug[T] { value: T }
-fun write[W, T](writer: W, debug: Debug[T]) { writer.write_debug(debug.value) }

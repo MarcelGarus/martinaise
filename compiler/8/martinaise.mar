@@ -204,13 +204,13 @@ fun write[W](writer: W, error: Error) {
   }
 
   var lines = vec[Str]()
-  var current_line = string_builder().&
+  var current_line = str_builder().&
   var offset_in_line = 0
   for i in 0..code.len do {
     if i == error.src.span.start then offset_in_line = current_line.len()
     if code.get(i) == newline then {
       lines.&.push(current_line.to_str())
-      current_line = string_builder().&
+      current_line = str_builder().&
       if i >= error.src.span.start then break
     } else current_line.write(code.get(i))
   }
@@ -1061,7 +1061,7 @@ fun parse_str(parser: &Parser): Result[Maybe[AstExpr], Str] {
   }
   var block = vec[AstExpr]()
   block.&.push(var_("$str" @ src,
-    AstExpr.name("string_builder" @ src)
+    AstExpr.name("str_builder" @ src)
       .call(none[Vec[Type]](), vec[AstExpr](), "(" @ src)
       .member("&" @ src)))
   for part in parts do
@@ -2187,7 +2187,7 @@ fun unify(
 fun finish(solver: TypeSolver): Result[Map[Str, Type], Str] {
   for var_ in solver.vars do
     if not(solver.env.contains(var_)) then return error[Map[Str, Type], Str]({
-      var out = string_builder().&
+      var out = str_builder().&
       if solver.env.size > 0 then {
         out."These type variables are bound:\n"
         for entry in solver.env do out." - {entry.key} = {entry.value}\n"
@@ -2309,7 +2309,7 @@ fun pop(context: &Context) {
 }
 
 fun print_status(context: Context) {
-  var out = string_builder().&
+  var out = str_builder().&
   out.write("Monoing ")
   var first = true
   for signature in context.signatures do {
@@ -2337,7 +2337,7 @@ fun lookup_type(ast: Ast, name: Str): Result[AstType, Error] {
   case some(match) ok[AstType, Error](match)
   case none return error[AstType, Error](
     make_error(src("todo", 0..0), {
-      var sb = string_builder().&
+      var sb = str_builder().&
       sb."There is no type named \"{name}\".\n"
       sb."Types:"
       for type in ast.types do
@@ -2399,7 +2399,7 @@ fun lookup_fun(
       name.src,
       "This call doesn't work.",
       {
-        var out = string_builder().&
+        var out = str_builder().&
         out."
           'This is the signature:\n
           ' > {signature(name.str, type_args, arg_types)}\n"
@@ -2425,7 +2425,7 @@ fun lookup_fun(
       name.src,
       "This call matches multiple functions.",
       {
-        var out = string_builder().&
+        var out = str_builder().&
         out."  call: {signature(name.str, type_args, arg_types)}\n"
         for match in non_fallback_matches do {
           var padded_signature = match.fun_.stripped_signature().format()
@@ -2452,7 +2452,7 @@ fun lookup_fun(
       name.src,
       "This call matches multiple fallback functions.",
       {
-        var out = string_builder().&
+        var out = str_builder().&
         out."  call: {signature(name.str, type_args, arg_types)}\n"
         for match in fallback_matches do {
           var padded_signature = match.fun_.stripped_signature().format()
@@ -3503,7 +3503,7 @@ fun compile_in_current_scope(
           the_field or return error[MonoExpr, Error](make_error(
             member.name.src, "{member.name} is not a field on {of.type}.",
             {
-              var out = string_builder().&
+              var out = str_builder().&
               out."It only contains these fields:"
               for field in struct_.fields do out."\n - {field.name}"
               out.to_str()
@@ -3520,7 +3520,7 @@ fun compile_in_current_scope(
           the_variant or return error[MonoExpr, Error](make_error(
             member.name.src, "This is not a variant of {of.type}.",
             {
-              var out = string_builder().&
+              var out = str_builder().&
               out."It only has these variant:"
               for variant in enum_.variants do out."\n - {variant.name}"
               out.to_str()
@@ -3626,7 +3626,7 @@ fun compile_in_current_scope(
         return error[MonoExpr, Error](make_error(
           case_.variant.src, "This is not a variant.",
           {
-            var out = string_builder().&
+            var out = str_builder().&
             out."{value.type} only has these variants:"
             for variant in enum_.variants do out."\n - {variant.name}"
             out.to_str()
@@ -4049,7 +4049,7 @@ fun mem_writer(lines: Int): MemWriter {
   var lines_vec = vec[StringBuilder]()
   var last_shades = vec[MemShade]()
   for i in 0..lines do {
-    lines_vec.&.push(string_builder())
+    lines_vec.&.push(str_builder())
     last_shades.&.push(MemShade.padding)
   }
   MemWriter { lines = lines_vec, last_shades }
@@ -4172,7 +4172,7 @@ fun fit_to_size(str: Str, size: Int, padding: Str): Str {
   if size == 1 then return "…"
   if str.len >= size then str = "{str.first(size - 1)}…"
 
-  var string = string_builder().&
+  var string = str_builder().&
   string.write(str)
   for i in str.len..size do string.write(padding)
   string.to_str()
@@ -4915,7 +4915,7 @@ fun mangle(name: Str): Str {
   var contains_dot = false
   for char in name do if char == #. then contains_dot = true
   if contains_dot then {
-    var str = string_builder()
+    var str = str_builder()
     for char in name do if char == #. then str.&."[dot]" else str.&."{char}"
     str.to_str()
   } else name
@@ -5338,7 +5338,7 @@ fun fix_patches(asm: &Asm): Result[Nothing, Error] {
         "Label {patch.label} doesn't exist",
         {
           | TODO: reformat
-          var builder = string_builder().&
+          var builder = str_builder().&
           builder."Note that only functions and constants referenced by 
             'Martinaise code are compiled."
           | for label in asm.soil.labels_to_index do builder."\n- {label.key}"
@@ -5640,7 +5640,7 @@ fun generate_fuzzing_hooks(
   | fun arg_strs(input: $Input): Slice[Str] {
   |   var v = vec[Str]()
   |   {
-  |     var sb = string_builder()
+  |     var sb = str_builder()
   |     sb.&.write_debug(input.arg_0)
   |     v.&.push(sb.to_str())
   |   }
@@ -5656,7 +5656,7 @@ fun generate_fuzzing_hooks(
     for index in 0..arg_types.len do {
       body.&.push(AstExpr.block(vec(
         var_("sb" @ src,
-          AstExpr.name("string_builder" @ src).call(opening_paren)),
+          AstExpr.name("str_builder" @ src).call(opening_paren)),
         AstExpr.name("sb" @ src).member("&" @ src)
           .member("write_debug" @ src).call(vec(
             AstExpr.name("input" @ src).member("arg_{index}" @ src)
@@ -6035,7 +6035,7 @@ fun parse_args(): Command {
       case some(pos) FuzzWhat.position(pos)
       case none FuzzWhat.fun_(
         parser.&.parse_signature() or(error) wrong_usage({
-          var sb = string_builder().&
+          var sb = str_builder().&
           sb."{args.get(3)}\n"
           for i in 0..parser.cursor do sb." "
           sb."^\n{error}"

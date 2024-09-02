@@ -1023,7 +1023,7 @@ fun parse_str(parser: &Parser): Result[Maybe[AstExpr], Str] {
   }
   var block = vec[AstExpr]()
   block.&.push(var_("$str" @ src,
-    AstExpr.name("string_builder" @ src)
+    AstExpr.name("str_builder" @ src)
       .call(none[Vec[Type]](), vec[AstExpr](), "(" @ src)
       .member("&" @ src)))
   for part in parts do
@@ -5486,7 +5486,7 @@ fun generate_fuzzing_hooks(
   | fun arg_strings(input: $Input): Vec[Str] {
   |   var v = vec[Str]()
   |   {
-  |     var sb = string_builder()
+  |     var sb = str_builder()
   |     sb.&.write_debug(input.arg_0)
   |     v.&.push(sb.to_str())
   |   }
@@ -5502,7 +5502,7 @@ fun generate_fuzzing_hooks(
     for index in 0..arg_types.len do {
       body.&.push(AstExpr.block(vec(
         var_("sb" @ src,
-          AstExpr.name("string_builder" @ src).call(opening_paren)),
+          AstExpr.name("str_builder" @ src).call(opening_paren)),
         AstExpr.name("sb" @ src).member("&" @ src)
           .member("write_debug" @ src).call(vec(
             AstExpr.name("input" @ src).member("arg_{index}" @ src)

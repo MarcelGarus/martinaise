@@ -1666,7 +1666,7 @@ fun +(char: Char, delta: Byte): Char { Char { byte = char.byte + delta } }
 fun -(char: Char, delta: Byte): Char { Char { byte = char.byte - delta } }
 fun -(char: Char, other: Char): Byte { char.byte - other.byte }
 
-fun string_builder(): StringBuilder { StringBuilder { bytes = vec[Byte]() } }
+fun str_builder(): StringBuilder { StringBuilder { bytes = vec[Byte]() } }
 struct StringBuilder { bytes: Vec[Byte] }
 fun write_byte(builder: &StringBuilder, byte: Byte) {
   builder.bytes.&.push(byte)
@@ -1829,14 +1829,14 @@ fun split(str: Str, separator: Str): Slice[Str] {
 }
 fun lines(slice: Str): Slice[Str] { slice.split("{newline}") }
 fun pad_right(str: Str, len: Int, char: Char): Str {
-  var string = string_builder().&
+  var string = str_builder().&
   string.write(str)
   loop if string.len() < len then string.write(char) else break
   string.to_str()
 }
 fun pad_right(str: Str, len: Int): Str { str.pad_right(len, space) }
 fun pad_left(str: Str, len: Int, char: Char): Str {
-  var string = string_builder().&
+  var string = str_builder().&
   loop if string.len() + str.len < len then string.write(char) else break
   string.write(str)
   string.to_str()

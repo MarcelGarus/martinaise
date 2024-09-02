@@ -205,7 +205,7 @@ fun trim(str: Str): Str {
   str.substr(start..end)
 }
 fun replace(str: Str, from: Str, to: Str): Str {
-  var b = string_builder().&
+  var b = str_builder().&
   var cursor = 0
   loop if cursor == str.len then break else {
     if str.without_first(cursor).starts_with(from) then {
@@ -225,14 +225,14 @@ fun split(str: Str, separator: Str): Slice[Str] {
 }
 fun lines(str: Str): Slice[Str] { str.split("{newline}") }
 fun pad_right(str: Str, len: Int, char: Char): Str {
-  var string = string_builder().&
+  var string = str_builder().&
   string.write(str)
   loop if string.len() < len then string.write(char) else break
   string.to_str()
 }
 fun pad_right(str: Str, len: Int): Str { str.pad_right(len, space) }
 fun pad_left(str: Str, len: Int, char: Char): Str {
-  var string = string_builder().&
+  var string = str_builder().&
   loop if string.len() + str.len < len then string.write(char) else break
   string.write(str)
   string.to_str()
@@ -240,7 +240,7 @@ fun pad_left(str: Str, len: Int, char: Char): Str {
 fun pad_left(str: Str, len: Int): Str { str.pad_left(len, space) }
 
 fun join(items: Slice[Str], separator: Str): Str {
-  var b = string_builder().&
+  var b = str_builder().&
   var is_first = true
   for item in items do {
     if is_first then is_first = false else b."{separator}"
@@ -255,7 +255,7 @@ fun join(items: Slice[Str], separator: Str): Str {
 
 struct StringBuilder { bytes: Vec[Byte] }
 
-fun string_builder(): StringBuilder { StringBuilder { bytes = vec[Byte]() } }
+fun str_builder(): StringBuilder { StringBuilder { bytes = vec[Byte]() } }
 fun write_byte(builder: &StringBuilder, byte: Byte) {
   builder.bytes.&.push(byte)
 }
@@ -269,3 +269,68 @@ fun truncate_to_len(builder: &StringBuilder, len: Int) {
 }
 fun write[W](writer: W, sb: StringBuilder) { writer.write_bytes(sb.bytes) }
 fun to_str(builder: StringBuilder): Str { builder.bytes.to_slice().to_str() }
+
+| Formatting  
+| You should implement a write[Writer](Writer, T) function for types that can be
+| printed. Writers are anything that has a write_byte(Writer, Byte) function and
+| a write_bytes(Writer, Slice[Byte]) function.
+
+fun format[T](value: T): Str { "{value}" }
+
+fun writeln[W](writer: W) { writer.write(newline) }
+fun writeln[W, T](writer: W, value: T) { writer.write(value) writer.writeln() }
+
+fun write[W, T](writer: W, value: &T) { writer.write(value.*) }
+
+fun comma_separated[I](iter: I): CommaSeparatedFormat[I] {
+  CommaSeparatedFormat { iter }
+}
+struct CommaSeparatedFormat[I] { iter: I }
+fun write[W, T](writer: W, format: CommaSeparatedFormat[T]) {
+  var first = true
+  for item in format.iter do {
+    if first then first = false else writer.write(", ")
+    writer.write(item)
+  }
+}
+
+fun buffered_writer[W](writer: W, capacity: Int): BufferedWriter[W] {
+  capacity > 0 or panic("The capacity of a BufferedWriter must be positive.")
+  BufferedWriter {
+    buffer = filled_slice(capacity, 0.lower_byte()), len = 0, inner = writer
+  }
+}
+struct BufferedWriter[W] { buffer: Slice[Byte], len: Int, inner: W }
+fun flush[W](self: &BufferedWriter[W]) {
+  self.inner.write_bytes(self.buffer.first(self.len))
+  self.len = 0
+}
+fun amount_free[W](self: BufferedWriter[W]): Int {
+  self.buffer.len - self.len
+}
+fun write_byte[W](self: &BufferedWriter[W], byte: Byte) {
+  if self.amount_free() == 0 then self.flush()
+  self.buffer.get_ref(self.len).* = byte
+  self.len = self.len.inc()
+}
+fun write_bytes[W](self: &BufferedWriter[W], bytes: Slice[Byte]) {
+  if bytes.len <= self.amount_free() then
+    for byte in bytes do self.write_byte(byte)
+  else {
+    self.flush()
+    if bytes.len <= self.amount_free()
+    then for byte in bytes do self.write_byte(byte)
+    else self.inner.write_bytes(bytes)
+  }
+}
+
+| Debug printing  
+| Just like the write function, you can also implement a write_debug function to
+| customize how a value is formatted when debugging. If you don't, the compiler
+| auto-generates an implementation.
+
+fallback fun write_debug[W, T](writer: W, value: T) { ... }
+
+fun debug[T](value: T): Debug[T] { Debug { value } }
+struct Debug[T] { value: T }
+fun write[W, T](writer: W, debug: Debug[T]) { writer.write_debug(debug.value) }
