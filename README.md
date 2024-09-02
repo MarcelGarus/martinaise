@@ -50,31 +50,41 @@ The language evolved substantially while writing the first Martinaise compiler i
 All other compilers are written in Martinaise itself.
 
 Each compiler can be compiled using the previous compiler.
-Each `compiler/<version>` folder contains a compiler and the standard library that this compiler can compile.
+Each `compiler/<version>` folder contains a compiler.
 
-For example, compiler 1 uses the compiler 0 stdlib and can be compiled using compiler 0.
-It's designed to compile the compiler 1 stdlib.
-
-- 0: The first compiler, written in Zig.
-- 1: A compiler written in Martinaise.
-  - makes `orelse` customizable (not just work on `Maybe`)
-  - ints support radixes such as `8#666:U32`
-  - fixes inner variables replacing ones in outer scopes
-  - ensure all struct fields are set during creation
-  - support global variables
-  - allow omitting types
-  - introduces `Str`, `Char`, `OsStr`
-  - char literals use `#` instead of `'`
-  - string literals support interpolation, including metaness
-- 2: Another compiler written in Martinaise.
-  - uses all the new features, making it more concise
-  - produces the exact same C output as compiler 1
-  - adds buffered stdout stream for writing the C output faster
-  - can compile itself
-- 3: Another compiler written in Martinaise.
-  - Replace the C backend with an x86_64 assembly backend.
-  - Add opaque types and asm functions.
-  - The integer types and their operations are no longer built-into the language, but implemented as opaque types.
-  - Add support for operators.
-- 4: Another compiler written in Martinaise.
-  - Support FASM as well as NASM.
+- Compiler 0
+  - Written in Zig
+- Compiler 1
+  - Written in Martinaise (every compiler after this as well)
+  - Makes `orelse` customizable (not just work on `Maybe`)
+  - Ints support radixes such as `8#666:U32`
+  - Fixes inner variables replacing ones in outer scopes
+  - Ensures all struct fields are set during creation
+  - Supports global variables
+  - Allows omitting types
+  - Introduces `Str`, `Char`, `OsStr`
+  - Char literals use `#` instead of `'`
+  - String literals support interpolation, including metaness
+- Compiler 2
+  - Uses all the new features, making it more concise
+  - Produces the exact same C output as compiler 1
+  - Adds buffered stdout stream for writing the C output faster
+  - Can compile itself
+- Compiler 3
+  - Replaces the C backend with an x86_64 assembly backend
+  - Adds opaque types and asm functions
+  - The integer types and their operations are no longer built-into the language, but implemented as opaque types
+  - Adds support for operators
+- Compiler 4
+  - Supports FASM as well as NASM
+- Compiler 5
+  - Compiles to [Soil byte code](https://github.com/MarcelGarus/soil) instead of FASM or NASM
+  - Parses ASM functions that contain byte code instructions
+  - Replaces `orelse` with `and` and `or`
+  - Supports imports.
+- Compiler 6
+  - Replaces specific int types (`U8`, `U64`, `I8`, `I64`) with simpler `Int` and `Byte` (which correspond to `I64` and `U8`, respectively)
+- Compiler 7
+  - Adds builtin functions for fuzzing (`write_debug`, `generate`, `mutate`)
+- Compiler 8
+  - Adds fuzz command
