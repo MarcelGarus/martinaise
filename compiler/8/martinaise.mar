@@ -4422,7 +4422,15 @@ fun compile_generate_fun(
     }
   }
   case enum_(enum_) {
-    | var variant = random.next_int(0..2)
+    | var variant =
+    |   if complexity < 100
+    |   then {
+    |     | Choose among all variants that are not recursive.
+    |     var random = random.next_int(0..1)
+    |     if random == 0 then 0
+    |     else unreachable()
+    |   }
+    |   else random.next_int(0..2)
     | if variant == 0 then return SomeEnum.foo
     | if variant == 1 then
     |   return SomeEnum.bar(Static[Int]{}.generate(random, complexity))
@@ -4433,12 +4441,51 @@ fun compile_generate_fun(
     type("Bool").compile(body.ast, body.mono)?
     type("Range", vec(type("Int"))).compile(body.ast, body.mono)?
 
+    var non_recursive_variants = vec[Int]()
+    var has_recursive_variants = false
+    for variant in enum_.variants.iter().&.enumerate() do
+      if body.mono.is_guaranteed_to_contain( variant.item.type, value_ty)
+      then has_recursive_variants = true
+      else non_recursive_variants.&.push(variant.index)
+
+    var label_choose_any_variant = enum_.variants.len + 1
+    var label_choose_non_recursive_variant = enum_.variants.len + 2
+    var label_generate_variant = enum_.variants.len + 3
+    var label_end = enum_.variants.len + 4
+
+    | Step 1: Pick a variant.
+
+    var variant = body.uninitialized(type("Int"))
+
+    if has_recursive_variants then {
+      var complexity_is_small = body.uninitialized(type("Bool"))
+      var ten = body.int(10)
+      body.call_matching_fun(complexity_is_small, "<" @ src, vec(complexity, ten), src)?
+      body.jump_if_variant(complexity_is_small, "true", label_choose_non_recursive_variant, src)
+      body.jump_if_variant(complexity_is_small, "false", label_choose_any_variant, src)
+
+      body.label(label_choose_non_recursive_variant, src)
+
+      var lower = body.int(0)
+      var upper = body.int(non_recursive_variants.len)
+      var range = body.uninitialized(type("Range", vec(type("Int"))))
+      body.call_matching_fun(range, ".." @ src, vec(lower, upper), src)?
+      body.call_matching_fun(variant, "next_int" @ src, vec(random, range), src)?
+
+      var check = body.uninitialized(type("Bool"))
+      for non_recursive in non_recursive_variants.iter().&.enumerate() do {
+        var index = body.int(non_recursive.index)
+        body.call_matching_fun(check, "==" @ src, vec(variant, index), src)?
+        body.jump_if_variant(check, "true", non_recursive.item, src)
+      }
+    }
+
+    body.label(label_choose_any_variant, src)
+
     var lower = body.int(0)
     var upper = body.int(enum_.variants.len)
     var range = body.uninitialized(type("Range", vec(type("Int"))))
     body.call_matching_fun(range, ".." @ src, vec(lower, upper), src)?
-
-    var variant = body.uninitialized(type("Int"))
     body.call_matching_fun(variant, "next_int" @ src, vec(random, range), src)?
 
     var check = body.uninitialized(type("Bool"))
@@ -4447,6 +4494,8 @@ fun compile_generate_fun(
       body.call_matching_fun(check, "==" @ src, vec(variant, constant), src)?
       body.jump_if_variant(check, "true", index, src)
     }
+
+    | Step 2: Actually generate the variant.
 
     for it in enum_.variants.iter().enumerate() do {
       var variant = it.item
@@ -4460,14 +4509,31 @@ fun compile_generate_fun(
       body.call_matching_fun(payload, "generate" @ src,
         vec(static_payload, random, complexity), src)?
       body.set_enum(value, variant.name, payload, src)
-      body.jump(enum_.variants.len, src)
+      body.jump(label_end, src)
     }
 
-    body.label(enum_.variants.len, src)
+    body.label(label_end, src)
   }
 
   body.return_(value, src)
   ok[MonoFunBody, Error](body.finish())
+}
+| Whether an instance of `type` always contains an instance of type `other`.
+fun is_guaranteed_to_contain(mono: Mono, type: Type, other: Type): Bool {
+  if type == other then return true
+  switch mono.type_defs.get(type)
+  case opaque_ false
+  case struct_(struct_) {
+    for field in struct_.fields do
+      if mono.is_guaranteed_to_contain(field.type, other) then return true
+    false
+  }
+  case enum_(enum_) {
+    for variant in enum_.variants do
+      if not(mono.is_guaranteed_to_contain(variant.type, other))
+        then return false
+    true
+  }
 }
 
 fun compile_fuzzing_complexity_fun(
