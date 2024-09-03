@@ -4201,6 +4201,9 @@ fun compile_builtin_fun(
   if name == "stride_size_of" then
     return compile_stride_size_of_fun(type_args, arg_types, body, src)
 
+  if name == "copy" then
+    return compile_copy_fun(type_args, arg_types, body, src)
+
   if name == "type" then
     return compile_type_fun(type_args, arg_types, body, src)
 
@@ -4253,6 +4256,57 @@ fun compile_stride_size_of_fun(
   var layout = body.mono.layouts.get(type_args.get(0))
   var stride_size = layout.size.round_up_to_multiple_of(layout.alignment)
   body.return_(body.int(stride_size), src)
+  ok[MonoFunBody, Error](body.finish())
+}
+
+fun compile_copy_fun(
+  type_args: Vec[Type], arg_types: Vec[Type], body: &MonoBodyBuilder, src: Src,
+): Result[MonoFunBody, Error] {
+  arg_types.len == 1 or return error[MonoFunBody, Error](make_error(
+    src, "copy should take exactly one argument."))
+  var value_ty = arg_types.get(0)
+  var value = body.arg(value_ty, 0)
+
+  var copy = body.uninitialized(value_ty)
+
+  switch body.mono.type_defs.get(value_ty)
+  case opaque_ return error[MonoFunBody, Error](make_error(src,
+    "For opaque types, you need to implement a copy function yourself."))
+  case struct_(struct_) {
+    | SomeStruct {
+    |   foo = value.foo.copy(),
+    |   bar = value.bar.copy(),
+    | }
+    for field in struct_.fields do {
+      var copied_field = body.uninitialized(field.type)
+      body.call_matching_fun(
+        copied_field, "copy" @ src, vec(value.member(field)), src)?
+      body.assign(copy.member(field), copied_field, src)
+    }
+  }
+  case enum_(enum_) {
+    | switch value
+    | case foo(payload) SomeEnum.foo(payload.copy())
+    | case bar(payload) SomeEnum.bar(payload.copy())
+    for it in enum_.variants.iter().enumerate() do
+      body.jump_if_variant(value, it.item.name, it.index, src)
+
+    var label_end = enum_.variants.len
+    for it in enum_.variants.iter().enumerate() do {
+      var variant = it.item
+      body.label(it.index, src)
+
+      var payload = body.uninitialized(variant.type)
+      body.get_enum_value(payload, value, variant.name, src)
+      body.call_matching_fun(payload, "copy" @ src, vec(payload), src)?
+      body.set_enum(value, variant.name, payload, src)
+      body.jump(label_end, src)
+    }
+
+    body.label(label_end, src)
+  }
+
+  body.return_(value, src)
   ok[MonoFunBody, Error](body.finish())
 }
 

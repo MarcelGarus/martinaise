@@ -89,7 +89,8 @@ fun run_sandboxed[Input](input: Input): InputThatRan[Input] {
   var current_cov = get_coverage()
   current_cov.reset()
 
-  var res = try input.run()
+  var input_copy = input.copy()
+  var res = try input_copy.run()
 
   var coverage = coverage(current_cov.len)
   coverage.integrate(current_cov)
@@ -150,6 +151,11 @@ fun report[Input](input: InputThatRan[Input]) {
 struct Static[T] {}
 
 fun static[T](): Static[T] { Static[T] {} }
+
+| The compiler can auto-implement this function for structs and enums by calling
+| copy on the fields/variants.
+fallback fun copy[T](value: T): T { ... }
+fun copy[T](value: &T): &T { value.*.copy().put_on_heap() }
 
 | The compiler can auto-implement this function for structs and enums. The
 | random instance should be used as the only source for randomness. The

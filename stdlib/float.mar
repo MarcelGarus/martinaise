@@ -77,9 +77,11 @@ fun <=>(left: Float, right: Float): Ordering asm { | TODO: remove?
 }
 
 fun ==(a: Float, b: Float): Bool { a <=> b is equal }
-fun hash(hasher: &Hasher, int: Float) {
-  hasher.hash(memhash(int.&.to_address(), 8))
+fun hash(hasher: &Hasher, float: Float) {
+  | TODO: is this correct?
+  hasher.hash(memhash(float.&.to_address(), 8))
 }
+fun copy(float: Float) { float }
 
 fun sqrt(x: Float): Float {
   if x < 0.0 then panic("cannot take sqrt of a negative value")
