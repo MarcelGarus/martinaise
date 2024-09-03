@@ -251,26 +251,26 @@ fun join(items: Slice[Str], separator: Str): Str {
 
 | String Building  
 | To build strings efficiently, we need some sort of growable buffer where we
-| can append more data over time. That's exactly what a StringBuilder is.
+| can append more data over time. That's exactly what a StrBuilder is.
 
-struct StringBuilder { bytes: Vec[Byte] }
+struct StrBuilder { bytes: Vec[Byte] }
 
-fun str_builder(): StringBuilder { StringBuilder { bytes = vec[Byte]() } }
-fun write_byte(builder: &StringBuilder, byte: Byte) {
+fun str_builder(): StrBuilder { StrBuilder { bytes = vec[Byte]() } }
+fun write_byte(builder: &StrBuilder, byte: Byte) {
   builder.bytes.&.push(byte)
 }
-fun write_bytes(builder: &StringBuilder, bytes: Slice[Byte]) {
+fun write_bytes(builder: &StrBuilder, bytes: Slice[Byte]) {
   builder.bytes.&.push_all(bytes)
 }
-fun len(builder: StringBuilder): Int { builder.bytes.len }
-fun truncate_to_len(builder: &StringBuilder, len: Int) {
+fun len(builder: StrBuilder): Int { builder.bytes.len }
+fun truncate_to_len(builder: &StrBuilder, len: Int) {
   len <= builder.bytes.len or panic("new len is too big")
   builder.bytes.len = len
 }
-fun write[W](writer: W, sb: StringBuilder) {
+fun write[W](writer: W, sb: StrBuilder) {
   writer.write_bytes(sb.bytes.to_slice())
 }
-fun to_str(builder: StringBuilder): Str { builder.bytes.to_slice().to_str() }
+fun to_str(builder: StrBuilder): Str { builder.bytes.to_slice().to_str() }
 
 | Formatting  
 | You should implement a write[Writer](Writer, T) function for types that can be
