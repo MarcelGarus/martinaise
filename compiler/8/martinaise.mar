@@ -89,8 +89,10 @@ fun read_code(path: Str): Result[Str, Str] {
       var success = success.bool
         or return error[Str, Str]("Response success isn't a bool.")
       success or return error[Str, Str]("Couldn't read file.")
-      response.get_maybe("content")
+      var content = response.get_maybe("content")
         or return error[Str, Str]("Response doesn't contain content.")
+      content.string
+        or return error[Str, Str]("Response content is not a string.")
     } else {
       var content = read_file(path)
         or return error[Str, Str]("Couldn't read file.")
@@ -134,7 +136,7 @@ struct CodePosition { line: Int, column: Int }
 fun get_lines_of_file(file: Str): Maybe[Slice[Int]] {
   if line_cache.get_maybe(file) is some(lines) then return some(lines)
   var content = read_cached_code(file) or return none[Slice[Int]]()
-  var lines = vec(0)
+  var lines = list(0)
   for it in content.iter().enumerate() do
     if it.item == newline then lines.&.push(it.index + 1)
   var lines = lines.to_slice()
@@ -178,13 +180,13 @@ fun write[W](writer: W, position: CodePosition) {
 | a piece of the code, or a squiggly line in the IDE directly at the error
 | location.
 
-struct Error { src: Src, title: Str, description: Str, context: Vec[Str] }
+struct Error { src: Src, title: Str, description: Str, context: List[Str] }
 
 fun make_error(
-  src: Src, title: Str, description: Str, context: Vec[Str]
+  src: Src, title: Str, description: Str, context: List[Str]
 ): Error { Error { src, title, description, context } }
 fun make_error(src: Src, title: Str, description: Str): Error {
-  make_error(src, title, description, vec[Str]())
+  make_error(src, title, description, list[Str]())
 }
 fun make_error(src: Src, title: Str): Error { make_error(src, title, "") }
 
@@ -203,7 +205,7 @@ fun write[W](writer: W, error: Error) {
     return {}
   }
 
-  var lines = vec[Str]()
+  var lines = list[Str]()
   var current_line = str_builder().&
   var offset_in_line = 0
   for i in 0..code.len do {
@@ -256,11 +258,13 @@ fun to_json(error: Error): Json {
       )
       case none map(
         "file"  -> Json.string(error.src.file),
-        "start" -> Json.map(map("line" -> Json.int(0), "column" -> Json.int(0))),
-        "end"   -> Json.map(map("line" -> Json.int(0), "column" -> Json.int(0))),
+        "start" ->
+          Json.map(map("line" -> Json.int(0), "column" -> Json.int(0))),
+        "end" ->
+          Json.map(map("line" -> Json.int(0), "column" -> Json.int(0))),
       )
 
-  var context_array = vec[Json]()
+  var context_array = list[Json]()
   for entry in error.context do context_array.&.push(Json.string(entry))
 
   Json.map(map(
@@ -280,7 +284,7 @@ fun to_json(error: Error): Json {
 | A string that appears in the input and knows where it comes from.
 struct AstStr { str: Str, src: Src }
 
-struct FileAst { imports: Vec[AstStr], defs: Vec[AstDef] }
+struct FileAst { imports: List[AstStr], defs: List[AstDef] }
 enum AstDef {
   opaque_: AstOpaqueType,
   struct_: AstStruct,
@@ -293,29 +297,29 @@ struct AstOpaqueType { name: AstStr, size: Int, alignment: Int }
 
 struct AstStruct {
   name: AstStr,
-  type_args: Vec[AstStr],
-  fields: Vec[AstStructField],
+  type_args: List[AstStr],
+  fields: List[AstStructField],
 }
 struct AstStructField { name: AstStr, type: Type }
 
 struct AstEnum {
   name: AstStr,
-  type_args: Vec[AstStr],
-  variants: Vec[AstEnumVariant],
+  type_args: List[AstStr],
+  variants: List[AstEnumVariant],
 }
 struct AstEnumVariant { name: AstStr, type: Type }
 
 struct AstFun {
   name: AstStr,
   is_fallback: Bool,
-  type_args: Vec[AstStr],
-  args: Vec[AstFunArg],
+  type_args: List[AstStr],
+  args: List[AstFunArg],
   returns: Type,
   kind: AstFunKind,
 }
 struct AstFunArg { name: AstStr, type: Type }
 enum AstFunKind {
-  builtin: AstBuiltinDots, body: Vec[AstExpr], asm_: Vec[AstInstr]
+  builtin: AstBuiltinDots, body: List[AstExpr], asm_: List[AstInstr]
 }
 struct AstBuiltinDots { dots: AstStr }
 enum AstExpr {
@@ -336,16 +340,16 @@ enum AstExpr {
   return_: AstReturn,         | return ...
   try: AstTry,                | ...?
   try_scope: AstTryScope,     | try ...
-  block: Vec[AstExpr],        | { ... }
+  block: List[AstExpr],        | { ... }
 }
 struct AstCall {
   callee: &AstExpr,
-  type_args: Maybe[Vec[Type]],
+  type_args: Maybe[List[Type]],
   opening_parenthesis: AstStr,
-  args: Vec[AstExpr],
+  args: List[AstExpr],
 }
 struct AstMakeStruct {
-  type: Type, type_src: Src, fields: Vec[AstMakeStructField]
+  type: Type, type_src: Src, fields: List[AstMakeStructField]
 }
 struct AstMakeStructField { name: AstStr, value: AstExpr }
 struct AstMakeEnum { type: Type, variant: AstStr, arg: &AstExpr }
@@ -354,7 +358,7 @@ struct AstVar { name: AstStr, value: &AstExpr }
 struct AstAssign { to: &AstExpr, value: &AstExpr, equal_sign: AstStr }
 struct AstSwitch {
   keyword: AstStr, value: &AstExpr,
-  cases: Vec[AstCase], default_: Maybe[&AstDefaultCase],
+  cases: List[AstCase], default_: Maybe[&AstDefaultCase],
 }
 struct AstCase { variant: AstStr, binding: Maybe[AstStr], body: AstExpr }
 struct AstDefaultCase { keyword: AstStr, body: AstExpr }
@@ -430,7 +434,7 @@ fun &(reg: Reg, byte: Byte): RegAndByte { RegAndByte { reg, byte } }
 fun @(str: Str, src: Src): AstStr { AstStr { str, src } }
 
 fun call(
-  callee: AstExpr, type_args: Maybe[Vec[Type]], args: Vec[AstExpr],
+  callee: AstExpr, type_args: Maybe[List[Type]], args: List[AstExpr],
   opening_parenthesis: AstStr
 ): AstExpr {
   AstExpr.call(AstCall {
@@ -438,10 +442,10 @@ fun call(
   })
 }
 fun call(
-  callee: AstExpr, args: Vec[AstExpr], opening_parenthesis: AstStr
-): AstExpr { callee.call(none[Vec[Type]](), args, opening_parenthesis) }
+  callee: AstExpr, args: List[AstExpr], opening_parenthesis: AstStr
+): AstExpr { callee.call(none[List[Type]](), args, opening_parenthesis) }
 fun call(callee: AstExpr, opening_parenthesis: AstStr): AstExpr {
-  callee.call(vec[AstExpr](), opening_parenthesis)
+  callee.call(list[AstExpr](), opening_parenthesis)
 }
 fun member(of: AstExpr, name: AstStr): AstExpr {
   AstExpr.member(AstMember { of = of.put_on_heap(), name })
@@ -522,7 +526,7 @@ fun write[W](writer: W, fun_: AstFun) {
     writer."}"
   }
 }
-fun write_block[W](writer: W, indent: Indent, body: Vec[AstExpr]) {
+fun write_block[W](writer: W, indent: Indent, body: List[AstExpr]) {
   if body.is_empty() then { writer."\{}" return {} }
   writer."\{\n"
   for expr in body do
@@ -674,17 +678,17 @@ fun write[W](writer: W, signature: AstSignature) {
 
 | A signature that doesn't print argument names, only types.
 fun stripped_signature(fun_: AstFun): StrippedFunSignature {
-  var type_args = vec[Type]()
+  var type_args = list[Type]()
   for arg in fun_.type_args do type_args.&.push(type(arg.str))
-  var arg_types = vec[Type]()
+  var arg_types = list[Type]()
   for arg in fun_.args do arg_types.&.push(arg.type)
   signature(fun_.name.str, some(type_args), arg_types)
 }
 fun signature(
-  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type]
+  name: Str, type_args: Maybe[List[Type]], arg_types: List[Type]
 ): StrippedFunSignature { StrippedFunSignature { name, type_args, arg_types } }
 struct StrippedFunSignature {
-  name: Str, type_args: Maybe[Vec[Type]], arg_types: Vec[Type]
+  name: Str, type_args: Maybe[List[Type]], arg_types: List[Type]
 }
 fun write[W](writer: W, signature: StrippedFunSignature) {
   writer."{signature.name}"
@@ -873,37 +877,37 @@ fun parse_type(parser: &Parser): Result[Maybe[Type], Str] {
   if parser.consume_prefix("&") is some then {
     var arg = parser.parse_type()?
       or return bad_input[Type]("After &, there must come a type.")
-    return parsed(type("&", vec(arg)))
+    return parsed(type("&", list(arg)))
   }
   if parser.consume_keyword("_") is some then return parsed(type("_"))
 
   var name = parser.parse_upper_name() or return no_match[Type]()
-  var args = parser.parse_type_args()? or vec[Type]()
+  var args = parser.parse_type_args()? or list[Type]()
   parsed(Type { name = name.str, args })
 }
 
-fun parse_type_args(parser: &Parser): Result[Maybe[Vec[Type]], Str] {
-  var args = vec[Type]()
-  parser.consume_prefix("[") or return no_match[Vec[Type]]()
+fun parse_type_args(parser: &Parser): Result[Maybe[List[Type]], Str] {
+  var args = list[Type]()
+  parser.consume_prefix("[") or return no_match[List[Type]]()
   loop {
     args.&.push(parser.parse_type()? or break)
     parser.consume_prefix(",") or break
   }
-  parser.consume_prefix("]") or return bad_input[Vec[Type]](
+  parser.consume_prefix("]") or return bad_input[List[Type]](
     "Expected a closing bracket to end the type arguments.")
   parsed(args)
 }
 
 | Like parse_type_args, but the args can only be strings, not types with
 | generics.
-fun parse_type_params(parser: &Parser): Result[Maybe[Vec[AstStr]], Str] {
-  var args = vec[AstStr]()
-  parser.consume_prefix("[") or return no_match[Vec[AstStr]]()
+fun parse_type_params(parser: &Parser): Result[Maybe[List[AstStr]], Str] {
+  var args = list[AstStr]()
+  parser.consume_prefix("[") or return no_match[List[AstStr]]()
   loop {
     args.&.push(parser.parse_upper_name() or break)
     parser.consume_prefix(",") or break
   }
-  parser.consume_prefix("]") or return bad_input[Vec[AstStr]](
+  parser.consume_prefix("]") or return bad_input[List[AstStr]](
     "Expected a closing bracket to end the type arguments.")
   parsed(args)
 }
@@ -986,12 +990,12 @@ fun parse_digits(parser: &Parser, radix: Int): Result[Maybe[Int], Str] {
       parser.advance()
       continue
     }
-    if radix >= 10 then if {#a ..+ min(radix - 10, 26).lower_byte()}.contains(char)
+    if radix >= 10 and {#a ..+ min(radix - 10, 26).lower_byte()}.contains(char)
     then {
-      num = num * radix + {char - #a + 10.lower_byte()}.to_int()
-      parser.advance()
-      continue
-    }
+        num = num * radix + {char - #a + 10.lower_byte()}.to_int()
+        parser.advance()
+        continue
+      }
     if char == #_ then parser.advance() else break
   }
   if parser.cursor == start then return no_match[Int]()
@@ -1040,7 +1044,7 @@ fun parse_char(parser: &Parser): Result[Maybe[AstExpr], Str] {
   parsed(AstExpr.make_struct(AstMakeStruct {
     type = type("Char"),
     type_src = src,
-    fields = vec(AstMakeStructField {
+    fields = list(AstMakeStructField {
       name = "byte" @ src,
       value = AstExpr.int(char.byte.to_int())
         .member("lower_byte" @ src).call("(" @ src),
@@ -1059,14 +1063,14 @@ fun parse_str(parser: &Parser): Result[Maybe[AstExpr], Str] {
     var expr = parts.get(0)
     if expr is str then return parsed(expr)
   }
-  var block = vec[AstExpr]()
+  var block = list[AstExpr]()
   block.&.push(var_("$str" @ src,
     AstExpr.name("str_builder" @ src)
-      .call(none[Vec[Type]](), vec[AstExpr](), "(" @ src)
+      .call(none[List[Type]](), list[AstExpr](), "(" @ src)
       .member("&" @ src)))
   for part in parts do
     block.&.push(AstExpr.name("$str" @ src).member("write" @ src)
-      .call(vec(part), "(" @ src))
+      .call(list(part), "(" @ src))
   block.&.push(AstExpr.name("$str" @ src)
     .member("to_str" @ src).call("(" @ src))
   parsed(AstExpr.block(block))
@@ -1075,11 +1079,11 @@ fun parse_str(parser: &Parser): Result[Maybe[AstExpr], Str] {
 | "Hello" -> ["Hello"]
 | "Hello, {3}!" -> ["Hello", 3]
 | "foo \" bar" -> ["foo \" bar "]
-fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
-  parser.consume_prefix("\"") or return no_match[Vec[AstExpr]]()
+fun parse_str_parts(parser: &Parser): Result[Maybe[List[AstExpr]], Str] {
+  parser.consume_prefix("\"") or return no_match[List[AstExpr]]()
 
-  var parts = vec[AstExpr]()
-  var part = vec[Char]()
+  var parts = list[AstExpr]()
+  var part = list[Char]()
   loop {
     var c = parser.current()
     | double quote -> string ends
@@ -1089,12 +1093,12 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
       parser.advance()
       if part.is_not_empty() then {
         parts.&.push(AstExpr.str(part.to_str()))
-        part = vec[Char]()
+        part = list[Char]()
       }
-      var expr = parser.parse_expr()? or return bad_input[Vec[AstExpr]](
+      var expr = parser.parse_expr()? or return bad_input[List[AstExpr]](
         "Expected an expression as string interpolation.")
       parts.&.push(expr)
-      parser.consume_prefix("}") or return bad_input[Vec[AstExpr]](
+      parser.consume_prefix("}") or return bad_input[List[AstExpr]](
         "Expected a closing brace after string interpolation.")
       continue
     }
@@ -1106,13 +1110,13 @@ fun parse_str_parts(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
       if parser.current() == #{ then { part.&.push(#{) parser.advance() continue }
       if parser.current() == #} then { part.&.push(#}) parser.advance() continue }
       if parser.current() == #n then { part.&.push(newline) parser.advance() continue }
-      return bad_input[Vec[AstExpr]]("Unknown string escape.")
+      return bad_input[List[AstExpr]]("Unknown string escape.")
     }
     | newline -> skip, consume whitespace in next line until single quote
     if c == newline then {
       parser.advance()
       loop if parser.current() == space then parser.advance() else break
-      parser.current() == #' or return bad_input[Vec[AstExpr]](
+      parser.current() == #' or return bad_input[List[AstExpr]](
         "After a newline, a string needs to have a single quote.")
       parser.advance()
       continue
@@ -1134,7 +1138,7 @@ fun parse_make(parser: &Parser): Result[Maybe[AstExpr], Str] {
   var end = parser.cursor
   var type_src = src(parser.file, start..end)
   if parser.consume_prefix("\{") is some then {
-    var fields = vec[AstMakeStructField]()
+    var fields = list[AstMakeStructField]()
     loop {
       var name = parser.parse_lower_name() or break
       var value =
@@ -1154,12 +1158,13 @@ fun parse_make(parser: &Parser): Result[Maybe[AstExpr], Str] {
     var variant = parser.parse_lower_name()
       or return bad_input[AstExpr]("Expected the variant.")
 
-    var arg = AstExpr.block(vec[AstExpr]())
+    var arg = AstExpr.block(list[AstExpr]())
     if parser.consume_prefix("(") is some then {
       arg = parser.parse_expr()? or return bad_input[AstExpr](
         "Expected an argument for the variant.")
       parser.consume_prefix(")")
         or return bad_input[AstExpr]("Expected a closing parenthesis.")
+      {}
     }
     parsed(AstExpr.make_enum(
       AstMakeEnum { type, variant, arg = arg.put_on_heap() }
@@ -1167,11 +1172,11 @@ fun parse_make(parser: &Parser): Result[Maybe[AstExpr], Str] {
   }
 }
 
-fun parse_block(parser: &Parser): Result[Maybe[Vec[AstExpr]], Str] {
-  parser.consume_prefix("\{") or return no_match[Vec[AstExpr]]()
-  var statements = vec[AstExpr]()
+fun parse_block(parser: &Parser): Result[Maybe[List[AstExpr]], Str] {
+  parser.consume_prefix("\{") or return no_match[List[AstExpr]]()
+  var statements = list[AstExpr]()
   loop statements.&.push(parser.parse_expr()? or break)
-  parser.consume_prefix("}") or return bad_input[Vec[AstExpr]](
+  parser.consume_prefix("}") or return bad_input[List[AstExpr]](
     "Expected the closing brace of the block.")
   parsed(statements)
 }
@@ -1209,13 +1214,14 @@ fun parse_if(parser: &Parser): Result[Maybe[AstExpr], Str] {
         or return bad_input[AstExpr]("Expected the name of the binding."))
       parser.consume_prefix(")")
         or return bad_input[AstExpr]("Expected a closing parenthesis.")
+      {}
     }
   }
   parser.consume_keyword("then")
     or return bad_input[AstExpr]("Expected then keyword.")
   var then_ = parser.parse_expr()?
     or return bad_input[AstExpr]("Expected a then expression.")
-  var else_ = AstExpr.block(vec[AstExpr]())
+  var else_ = AstExpr.block(list[AstExpr]())
   var else_src = keyword.src
   if parser.consume_keyword("else") is some(keyword) then {
     else_ = parser.parse_expr()?
@@ -1225,7 +1231,7 @@ fun parse_if(parser: &Parser): Result[Maybe[AstExpr], Str] {
   parsed(AstExpr.switch_(AstSwitch {
     keyword,
     value = condition.put_on_heap(),
-    cases = vec(AstCase { variant, binding, body = then_ }),
+    cases = list(AstCase { variant, binding, body = then_ }),
     default_ = some(AstDefaultCase {
       keyword = "default" @ else_src,
       body = else_,
@@ -1237,7 +1243,7 @@ fun parse_switch(parser: &Parser): Result[Maybe[AstExpr], Str] {
   var keyword = parser.consume_keyword("switch") or return no_match[AstExpr]()
   var value = parser.parse_expr()? or return bad_input[AstExpr](
     "Expected the value that is switched over.")
-  var cases = vec[AstCase]()
+  var cases = list[AstCase]()
   loop {
     parser.consume_keyword("case") or break
     var variant = parser.parse_lower_name()
@@ -1249,6 +1255,7 @@ fun parse_switch(parser: &Parser): Result[Maybe[AstExpr], Str] {
         or return bad_input[AstExpr]("Expected the name of the binding."))
       parser.consume_prefix(")")
         or return bad_input[AstExpr]("Expected a closing parenthesis.")
+      {}
     }
     var body = parser.parse_expr()?
       or return bad_input[AstExpr]("Expected a case expression.")
@@ -1294,17 +1301,17 @@ fun parse_for(parser: &Parser): Result[Maybe[AstExpr], Str] {
     or return bad_input[AstExpr]("Expected do keyword.")
   var expr = parser.parse_expr()?
     or return bad_input[AstExpr]("Expected a loop expression.")
-  parsed(AstExpr.block(vec(
+  parsed(AstExpr.block(list(
     var_("$iter" @ src,
       iter.member("iter" @ src).call("(" @ src).member("&" @ src)),
     AstExpr.loop_(AstLoop {
       keyword,
-      body = AstExpr.block(vec(
+      body = AstExpr.block(list(
         var_(iter_var, AstExpr.switch_(AstSwitch {
           keyword,
           value = AstExpr.name("$iter" @ src)
             .member("next" @ src).call("(" @ src).put_on_heap(),
-          cases = vec(
+          cases = list(
             AstCase {
               variant = "some" @ src,
               binding = some("a" @ src),
@@ -1318,7 +1325,7 @@ fun parse_for(parser: &Parser): Result[Maybe[AstExpr], Str] {
                 value = AstExpr.make_struct(AstMakeStruct {
                   type = type("Nothing"),
                   type_src = src,
-                  fields = vec[AstMakeStructField](),
+                  fields = list[AstMakeStructField](),
                 }).put_on_heap()
               }),
             },
@@ -1345,7 +1352,7 @@ fun parse_break(parser: &Parser): Result[Maybe[AstExpr], Str] {
     else AstExpr.make_struct(AstMakeStruct {
       type = type("Nothing"),
       type_src = keyword.src,
-      fields = vec[AstMakeStructField](),
+      fields = list[AstMakeStructField](),
     })
   parsed(AstExpr.break_(AstBreak { keyword, value = expr.put_on_heap() }))
 }
@@ -1382,12 +1389,12 @@ fun parse_expr_suffix_member(
   if parser.parse_lower_name() is some(name) then
     return parsed(current.member(name))
   if parser.parse_str_parts()? is some(parts) then return {
-    var block = vec[AstExpr]()
+    var block = list[AstExpr]()
     block.&.push(var_("$str" @ dot.src, current))
     for part in parts do
       block.&.push(AstExpr.name("$str" @ dot.src)
         .member("write" @ dot.src)
-        .call(vec(part), "(" @ dot.src))
+        .call(list(part), "(" @ dot.src))
     parsed(AstExpr.block(block))
   }
   return bad_input[AstExpr]("Expected the name of a member.")
@@ -1401,7 +1408,7 @@ fun parse_expr_suffix_call(
     or return switch type_args
       case some bad_input[AstExpr]("Expected an opening parenthesis.")
       case none no_match[AstExpr]()
-  var args = vec[AstExpr]()
+  var args = list[AstExpr]()
   loop {
     args.&.push(parser.parse_expr()? or break)
     parser.consume_prefix(",") or break
@@ -1419,7 +1426,7 @@ fun parse_expr_suffix_operator(
     or return bad_input[AstExpr](
       "Expected an expression on the right side of the operator.")
   parsed(AstExpr.name(operator)
-    .call(none[Vec[Type]](), vec(current, value), operator))
+    .call(none[List[Type]](), list(current, value), operator))
 }
 
 fun parse_expr_suffix_assign(
@@ -1444,7 +1451,7 @@ fun parse_expr_suffix_is(
   parsed(AstExpr.switch_(AstSwitch {
     keyword,
     value = current.put_on_heap(),
-    cases = vec(AstCase {
+    cases = list(AstCase {
       variant, binding = none[AstStr](),
       body = AstExpr.name("true" @ keyword.src)
     }),
@@ -1464,7 +1471,7 @@ fun parse_expr_suffix_and(
   parsed(AstExpr.switch_(AstSwitch {
     keyword,
     value = current.member(keyword).call("(" @ keyword.src).put_on_heap(),
-    cases = vec(
+    cases = list(
       AstCase {
         variant = "short_circuit" @ keyword.src,
         binding = some("$primary" @ keyword.src),
@@ -1486,6 +1493,7 @@ fun parse_expr_suffix_or(
   var keyword = parser.consume_keyword("or") or return no_match[AstExpr]()
   var binding = if parser.consume_prefix("(") is some then {
     var name = parser.parse_lower_name()
+      or return bad_input[AstExpr]("Expected binding.")
     parser.consume_prefix(")") or return bad_input[AstExpr](
       "Expected closing parenthesis after or binding.")
     some(name)
@@ -1495,7 +1503,7 @@ fun parse_expr_suffix_or(
   parsed(AstExpr.switch_(AstSwitch {
     keyword,
     value = current.member(keyword).call("(" @ keyword.src).put_on_heap(),
-    cases = vec(
+    cases = list(
       AstCase {
         variant = "short_circuit" @ keyword.src,
         binding = some("$primary" @ keyword.src),
@@ -1673,8 +1681,8 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
     or parser.parse_operator_name()
     or return bad_input[AstFun]("
       'Expected a lowercase name or operator name of the function.")
-  var type_args = parser.parse_type_params()? or vec[AstStr]()
-  var args = vec[AstFunArg]()
+  var type_args = parser.parse_type_params()? or list[AstStr]()
+  var args = list[AstFunArg]()
   parser.consume_prefix("(")
     or return bad_input[AstFun]("Expected an opening parenthesis.")
   loop {
@@ -1697,7 +1705,7 @@ fun parse_fun(parser: &Parser): Result[Maybe[AstFun], Str] {
     if parser.consume_prefix("\{ ... }") is some(dots) then
       AstFunKind.builtin(AstBuiltinDots { dots })
     else if parser.consume_prefix("asm \{") is some then {
-      var instructions = vec[AstInstr]()
+      var instructions = list[AstInstr]()
       loop instructions.&.push(parser.parse_instruction()? or break)
       parser.consume_prefix("}") or return bad_input[AstFun](
         "Expected an instruction or closing brace.")
@@ -1742,10 +1750,10 @@ fun parse_struct(parser: &Parser): Result[Maybe[AstStruct], Str] {
   parser.consume_keyword("struct") or return no_match[AstStruct]()
   var name = parser.parse_upper_name()
     or return bad_input[AstStruct]("Expected an uppercase name.")
-  var type_args = parser.parse_type_params()? or vec[AstStr]()
+  var type_args = parser.parse_type_params()? or list[AstStr]()
   parser.consume_prefix("\{")
     or return bad_input[AstStruct]("Expected an opening brace.")
-  var fields = vec[AstStructField]()
+  var fields = list[AstStructField]()
   loop {
     var field_name = parser.parse_lower_name() or break
     parser.consume_prefix(":")
@@ -1764,10 +1772,10 @@ fun parse_enum(parser: &Parser): Result[Maybe[AstEnum], Str] {
   parser.consume_keyword("enum") or return no_match[AstEnum]()
   var name = parser.parse_upper_name()
     or return bad_input[AstEnum]("Expected an uppercase name.")
-  var type_args = parser.parse_type_params()? or vec[AstStr]()
+  var type_args = parser.parse_type_params()? or list[AstStr]()
   parser.consume_prefix("\{")
     or return bad_input[AstEnum]("Expected an opening brace.")
-  var variants = vec[AstEnumVariant]()
+  var variants = list[AstEnumVariant]()
   loop {
     var variant_name = parser.parse_lower_name() or break
     var variant_type = type("Nothing")
@@ -1790,12 +1798,12 @@ fun parse_def(parser: &Parser): Result[Maybe[AstDef], Str] {
   if parser.parse_fun()? is some(fun_) then return parsed(AstDef.fun_(fun_))
   no_match[AstDef]()
 }
-fun parse_defs(parser: &Parser): Result[Vec[AstDef], Str] {
-  var defs = vec[AstDef]()
+fun parse_defs(parser: &Parser): Result[List[AstDef], Str] {
+  var defs = list[AstDef]()
   loop defs.&.push(parser.parse_def()? or break)
   if parser.current() != null_char then
-    return error[Vec[AstDef], Str]("Expected a definition.")
-  ok[Vec[AstDef], Str](defs)
+    return error[List[AstDef], Str]("Expected a definition.")
+  ok[List[AstDef], Str](defs)
 }
 
 fun parse_import(parser: &Parser): Result[Maybe[AstStr], Str] {
@@ -1826,10 +1834,10 @@ fun parse_import(parser: &Parser): Result[Maybe[AstStr], Str] {
   }
   no_match[AstStr]()
 }
-fun parse_imports(parser: &Parser): Result[Vec[AstStr], Str] {
-  var imports = vec[AstStr]()
+fun parse_imports(parser: &Parser): Result[List[AstStr], Str] {
+  var imports = list[AstStr]()
   loop imports.&.push(parser.parse_import()? or break)
-  ok[Vec[AstStr], Str](imports)
+  ok[List[AstStr], Str](imports)
 }
 
 fun parse_single_file(input: Str, file: Str): Result[FileAst, Error] {
@@ -1857,7 +1865,7 @@ fun parse_single_file(input: Str, file: Str): Result[FileAst, Error] {
 struct Ast {
   types: Map[Str, AstType],
   globals: Map[Str, AstVar],
-  funs: Map[Str, Vec[AstFun]],
+  funs: Map[Str, List[AstFun]],
 }
 enum AstType { opaque_: AstOpaqueType, struct_: AstStruct, enum_: AstEnum }
 
@@ -1949,11 +1957,11 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
   var ref_file = "_ref"
   var invalid_location = src(ref_file, 0..0)
   asts.&.put("_ref", FileAst {
-    imports = vec[AstStr](),
-    defs = vec(AstDef.struct_(AstStruct {
+    imports = list[AstStr](),
+    defs = list(AstDef.struct_(AstStruct {
       name = "&" @ invalid_location,
-      type_args = vec("T" @ invalid_location),
-      fields = vec(AstStructField {
+      type_args = list("T" @ invalid_location),
+      fields = list(AstStructField {
         name = "*" @ invalid_location, type = type("T")
       }),
     }))
@@ -1963,7 +1971,7 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
 
   var types = map[Str, AstType]()
   var globals = map[Str, AstVar]()
-  var funs = map[Str, Vec[AstFun]]()
+  var funs = map[Str, List[AstFun]]()
 
   for ast in asts do {
     for def in ast.value.defs do {
@@ -1996,7 +2004,7 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
           overloads.&.push(fun_)
           funs.&.put(fun_.name.str, overloads)
         }
-        else funs.&.put(fun_.name.str, vec(fun_))
+        else funs.&.put(fun_.name.str, list(fun_))
     }
   }
 
@@ -2007,7 +2015,7 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
     }
     case struct_(struct_) {
       for arg in struct_.type_args do
-        if arg.str.exists(types, vec[AstStr]()) then return error[Ast, Error](
+        if arg.str.exists(types, list[AstStr]()) then return error[Ast, Error](
           concrete_type_used_as_arg_error(struct_.name, arg))
       for field in struct_.fields do
         if field.type.exists(types, struct_.type_args) is error(type) then
@@ -2015,7 +2023,7 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
     }
     case enum_(enum_) {
       for arg in enum_.type_args do
-        if arg.str.exists(types, vec[AstStr]()) then return error[Ast, Error](
+        if arg.str.exists(types, list[AstStr]()) then return error[Ast, Error](
           concrete_type_used_as_arg_error(enum_.name, arg))
       for variant in enum_.variants do
         if variant.type.exists(types, enum_.type_args) is error(type) then
@@ -2025,7 +2033,7 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
   for funs in funs do
     for fun_ in funs.value do {
       for arg in fun_.type_args do
-        if arg.str.exists(types, vec[AstStr]()) then return error[Ast, Error](
+        if arg.str.exists(types, list[AstStr]()) then return error[Ast, Error](
           concrete_type_used_as_arg_error(fun_.name, arg))
       for arg in fun_.args do
         if arg.type.exists(types, fun_.type_args) is error(type) then
@@ -2038,14 +2046,14 @@ fun parse_project(entry_file: Str): Result[Ast, Error] {
 | Checks if the type exists.
 | TODO: This is a horrible name for a function that doesn't return a Bool.
 fun exists(
-  type: Type, types: Map[Str, AstType], extra: Vec[AstStr],
+  type: Type, types: Map[Str, AstType], extra: List[AstStr],
 ): Result[Nothing, Str] {
   if not(type.name.exists(types, extra))
   then return error[Nothing, Str](type.name)
   for arg in type.args do arg.exists(types, extra)?
   ok[Nothing, Str]({})
 }
-fun exists(type: Str, types: Map[Str, AstType], extra: Vec[AstStr]): Bool {
+fun exists(type: Str, types: Map[Str, AstType], extra: List[AstStr]): Bool {
   if types.contains(type) then true else {
     for extra in extra do if extra.str == type then return true
     false
@@ -2112,7 +2120,7 @@ fun merge(a: Type, b: Type): Maybe[Type] {
   if b.name == "_" then return some(a)
   if a.name != b.name then return none[Type]()
   if a.args.len != b.args.len then return none[Type]()
-  var merged_args = vec[Type]()
+  var merged_args = list[Type]()
   for i in 0..a.args.len do
     switch merge(a.args.get(i), b.args.get(i))
     case none return none[Type]()
@@ -2151,7 +2159,7 @@ fun finish(sink: TypeSink): Type { sink.current.unwrap("type sink failed") }
 
 struct TypeSolver { vars: Set[Str], env: Map[Str, Type] }
 
-fun create_type_solver(vars_: Vec[AstStr]): TypeSolver {
+fun create_type_solver(vars_: List[AstStr]): TypeSolver {
   | TODO: make sure each type var only exists once
   var vars = set[Str]()
   for var_ in vars_ do vars.&.put(var_.str)
@@ -2214,7 +2222,7 @@ fun finish(solver: TypeSolver): Result[Map[Str, Type], Str] {
 | Martinaise uses a much simpler approach: When new variables are defined, they
 | are just appended to a vector. When entering scopes, we remember the length of
 | the vector and we truncate it to that length when we exit the scope. For
-| variable lookups, we walk the vec in reverse. Here's an example:
+| variable lookups, we walk the list in reverse. Here's an example:
 |
 | var foo = 2
 | var bar = 3
@@ -2257,11 +2265,11 @@ fun finish(solver: TypeSolver): Result[Map[Str, Type], Str] {
 |   fastest memory access patterns you can have, unlike traversing down nodes of
 |   a hash map.
 
-struct Vars[T] { visible: Vec[VarInScope[T]] }
+struct Vars[T] { visible: List[VarInScope[T]] }
 struct VarInScope[T] { name: Str, data: T }
 struct VarScope { num_visible: Int }
 
-fun vars[T](): Vars[T] { Vars { visible = vec[VarInScope[T]]() } }
+fun vars[T](): Vars[T] { Vars { visible = list[VarInScope[T]]() } }
 
 fun define[T](vars: &Vars[T], name: Str, data: T) {
   vars.visible.&.push(VarInScope { name, data })
@@ -2291,9 +2299,9 @@ fun restore[T](vars: &Vars[T], scope: VarScope) {
 | TODO: don't print every line, only visible changes
 | TODO: debounce printing
 
-struct Context { signatures: Vec[Str] }
+struct Context { signatures: List[Str] }
 
-fun context(): Context { Context { signatures = vec[Str]() } }
+fun context(): Context { Context { signatures = list[Str]() } }
 
 fun push(context: &Context, signature: Str) {
   context.signatures.&.push(signature)
@@ -2356,13 +2364,13 @@ fun lookup_global(ast: Ast, name: Str): Maybe[AstVar] {
 | (none means they are inferred) and the args of the given types.
 struct LookupFunSolution { fun_: AstFun, type_env: Map[Str, Type] }
 fun lookup_fun(
-  ast: Ast, name: AstStr, type_args: Maybe[Vec[Type]], arg_types: Vec[Type]
+  ast: Ast, name: AstStr, type_args: Maybe[List[Type]], arg_types: List[Type]
 ): Result[LookupFunSolution, Error] {
   var name_matches = ast.funs.get_maybe(name.str)
     or return error[LookupFunSolution, Error](
       make_error(name.src, "There are no defintions named \"{name}\"."))
 
-  var full_matches = vec[LookupFunSolution]()
+  var full_matches = list[LookupFunSolution]()
   for fun_ in name_matches do {
     var solver = create_type_solver(fun_.type_args)
     if type_args is some(type_args_) then {
@@ -2413,8 +2421,8 @@ fun lookup_fun(
       }
     ))
 
-  var non_fallback_matches = vec[LookupFunSolution]()
-  var fallback_matches = vec[LookupFunSolution]()
+  var non_fallback_matches = list[LookupFunSolution]()
+  var fallback_matches = list[LookupFunSolution]()
   for match in full_matches do
     {if match.fun_.is_fallback
      then fallback_matches.&
@@ -2540,7 +2548,7 @@ struct Mono {
 
   | Global variables. They map to a function that computes the value.
   globals: Map[Str, MonoFun],
-  globals_init_order: Vec[Str],
+  globals_init_order: List[Str],
 
   | Monomorphized functions. Keys are signatures such as "foo[Byte](Byte)".
   funs: Map[Str, MonoFun],
@@ -2553,26 +2561,26 @@ enum MonoTypeDef {
   enum_: MonoEnum,
 }
 struct MonoOpaqueType { size: Int, alignment: Int }
-struct MonoStruct { fields: Vec[MonoStructField] }
+struct MonoStruct { fields: List[MonoStructField] }
 struct MonoStructField { name: Str, type: Type }
-struct MonoEnum { variants: Vec[MonoEnumVariant] }
+struct MonoEnum { variants: List[MonoEnumVariant] }
 struct MonoEnumVariant { name: Str, type: Type }
 
 struct MonoFun {
   name: AstStr,
-  type_args: Vec[Type],
-  arg_types: Vec[Type],
+  type_args: List[Type],
+  arg_types: List[Type],
   return_type: Type,
   kind: MonoFunKind,
 }
 
 enum MonoFunKind {
   body: MonoFunBody,
-  asm_: Vec[AstInstr],
+  asm_: List[AstInstr],
 }
 struct MonoFunBody {
-  slots: Vec[MonoSlot],
-  statements: Vec[MonoStatementAndSrc],
+  slots: List[MonoSlot],
+  statements: List[MonoStatementAndSrc],
 }
 
 struct MonoSlot { type: Type, initial_value: MonoSlotValue }
@@ -2597,7 +2605,7 @@ enum MonoStatement {
 struct MonoLabel { id: Int }
 struct MonoAssign { to: MonoExpr, value: MonoExpr }
 struct MonoSetEnum { to: MonoExpr, variant: Str, payload: MonoExpr }
-struct MonoCall { to: MonoExpr, fun_: Str, args: Vec[MonoExpr] }
+struct MonoCall { to: MonoExpr, fun_: Str, args: List[MonoExpr] }
 struct MonoJump { target: MonoLabel }
 struct MonoJumpIfVariant {
   condition: MonoExpr,
@@ -2690,8 +2698,8 @@ fun write[W](writer: W, expr: MonoExpr) {
 
 | Helper for building a MonoFunBody.
 struct MonoBodyBuilder {
-  slots: Vec[MonoSlot],
-  statements: Vec[MonoStatementAndSrc],
+  slots: List[MonoSlot],
+  statements: List[MonoStatementAndSrc],
   context: &Context,
   ast: Ast,
   mono: &Mono,
@@ -2754,7 +2762,8 @@ fun set_enum(
   body.add(MonoStatement.set_enum(MonoSetEnum { to, variant, payload }) @ src)
 }
 fun call(
-  body: &MonoBodyBuilder, to: MonoExpr, fun_: Str, args: Vec[MonoExpr], src: Src
+  body: &MonoBodyBuilder, to: MonoExpr, fun_: Str, args: List[MonoExpr],
+  src: Src
 ) {
   body.add(MonoStatement.call(MonoCall { to, fun_, args }) @ src)
 }
@@ -2877,7 +2886,7 @@ fun compile_entry_point(
     type_defs = map[Type, MonoTypeDef](),
     layouts = map[Type, MemLayout](),
     globals = map[Str, MonoFun](),
-    globals_init_order = vec[Str](),
+    globals_init_order = list[Str](),
     funs = map[Str, MonoFun](),
     entry_point = "<placeholder>",
   }
@@ -2894,10 +2903,10 @@ fun compile_entry_point(
 }
 fun compile_main(ast: Ast): Result[Mono, Error] {
   var src = src("_entry_point", 0..0)
-  var main = ast.lookup_fun("main" @ src, none[Vec[Type]](), vec[Type]())
+  var main = ast.lookup_fun("main" @ src, none[List[Type]](), list[Type]())
     or return error[Mono, Error](make_error(
       src, "There is no main().", "Your project must have a main() function.",
-      vec[Str]()
+      list[Str]()
     ))
   var mono = ast.compile_entry_point(main)?
   var return_type = mono.funs.get(mono.entry_point).return_type
@@ -2906,18 +2915,18 @@ fun compile_main(ast: Ast): Result[Mono, Error] {
       src, "main() returns {return_type}.",
       "The main() function should return Never. You can call exit(0) if you 
       'want the program to stop.",
-      vec[Str]()
+      list[Str]()
     ))
   ok[Mono, Error](mono)
 }
 fun compile_fuzzer_main(ast: Ast, input: Type): Result[Mono, Error] {
   var src = src("_entry_point", 0..0)
   var fuzzer_main = ast.lookup_fun(
-    "fuzzer_main" @ src, some(vec(input)), vec[Type]()
+    "fuzzer_main" @ src, some(list(input)), list[Type]()
   ) or(error) return error[Mono, Error](make_error(
     src, "There is no fuzzer_main().",
     "Your project must have a fuzzer_main() function.",
-    vec[Str]()
+    list[Str]()
   ))
   var mono = ast.compile_entry_point(fuzzer_main).unwrap_or_report_and_exit()
   var return_type = mono.funs.get(mono.entry_point).return_type
@@ -2951,7 +2960,7 @@ fun mono_type_def(
 ): Result[Type, Error] {
   | TODO: Make sure generic types don't have parameters.
   var type = type_env.get_maybe(type.name) or {
-    var args = vec[Type]()
+    var args = list[Type]()
     for arg in type.args do args.&.push(arg.mono_type_def(type_env, ast, mono)?)
     Type { name = type.name, args }
   }
@@ -2962,7 +2971,7 @@ fun mono_type_def(
 
   | Types are allowed to contain themselves. For example, you can do this:
   |
-  | struct Tree { children: Vec[Tree] }
+  | struct Tree { children: List[Tree] }
   |
   | In order to not run into infinite recursion, we insert a placeholder type
   | into the type defs map, then lower the type, and then replace that
@@ -2970,15 +2979,15 @@ fun mono_type_def(
   |
   | 1. Lower Tree
   |    1. Insert a placeholder for Tree in the type defs
-  |    2. Lower Vec[Tree]
-  |       1. Insert a placeholder for Vec[Tree] in the type defs
+  |    2. Lower List[Tree]
+  |       1. Insert a placeholder for List[Tree] in the type defs
   |       2. Lower Slice[Tree]
   |          ...
   |          (this will not lower Tree again because it's already in the defs)
   |       3. Lower Int
-  |       4. Put Vec[Tree]: struct { data: Slice[Tree], cap: Int } in the type
+  |       4. Put List[Tree]: struct { data: Slice[Tree], cap: Int } in the type
   |          defs, replacing the placeholder.
-  |    3. Put Tree: struct { children: Vec[Tree] } in the type defs
+  |    3. Put Tree: struct { children: List[Tree] } in the type defs
   mono.type_defs.&.put(type,
     MonoTypeDef.opaque_(MonoOpaqueType { size = 0, alignment = 0 }))
 
@@ -2999,7 +3008,7 @@ fun mono_type_def(
     for zip in zip(struct_.type_args.iter(), type.args.iter()) do
       inner_type_env.&.put(zip.a.str, zip.b)
 
-    var fields = vec[MonoStructField]()
+    var fields = list[MonoStructField]()
     for field in struct_.fields do
       fields.&.push(MonoStructField {
         name = field.name.str,
@@ -3019,7 +3028,7 @@ fun mono_type_def(
     for i in 0..type.args.len do
       inner_type_env.&.put(enum_.type_args.get(i).str, type.args.get(i))
 
-    var variants = vec[MonoEnumVariant]()
+    var variants = list[MonoEnumVariant]()
     for variant in enum_.variants do
       variants.&.push(MonoEnumVariant {
         name = variant.name.str,
@@ -3054,7 +3063,7 @@ fun compile(
     context, ast, mono, type_env = map[Str, Type](),
     return_type = type_sink(),
     body = MonoBodyBuilder {
-      slots = vec[MonoSlot](), statements = vec[MonoStatementAndSrc](),
+      slots = list[MonoSlot](), statements = list[MonoStatementAndSrc](),
       context, ast, mono
     },
     next_label = 0, vars = vars[MonoExpr](),
@@ -3070,8 +3079,8 @@ fun compile(
 
   mono.globals.&.put(global.name.str, MonoFun {
     name = global.name,
-    type_args = vec[Type](),
-    arg_types = vec[Type](),
+    type_args = list[Type](),
+    arg_types = list[Type](),
     return_type = compile_fun.return_type.finish(),
     kind = MonoFunKind.body(compile_fun.body.finish()),
   })
@@ -3085,9 +3094,9 @@ fun compile(
 fun call_matching_fun(
   body: &MonoBodyBuilder,
   target: MonoExpr,
-  name: AstStr, type_args: Maybe[Vec[Type]], args: Vec[MonoExpr], src: Src
+  name: AstStr, type_args: Maybe[List[Type]], args: List[MonoExpr], src: Src
 ): Result[Nothing, Error] {
-  var arg_types = vec[Type]()
+  var arg_types = list[Type]()
   for arg in args do arg_types.&.push(arg.type)
   var fun_ = body.ast
     .lookup_fun(name, type_args, arg_types)?
@@ -3095,10 +3104,10 @@ fun call_matching_fun(
   ok[Nothing, Error](body.call(target, fun_, args, src))
 }
 fun call_matching_fun(
-  body: &MonoBodyBuilder, target: MonoExpr, name: AstStr, args: Vec[MonoExpr],
+  body: &MonoBodyBuilder, target: MonoExpr, name: AstStr, args: List[MonoExpr],
   src: Src
 ): Result[Nothing, Error] {
-  body.call_matching_fun(target, name, none[Vec[Type]](), args, src)
+  body.call_matching_fun(target, name, none[List[Type]](), args, src)
 }
 
 | Monos a function with a type env, outputting it into the Mono. Returns the
@@ -3114,11 +3123,11 @@ fun compile(
   fun_: AstFun, type_env: Map[Str, Type],
   context: &Context, ast: Ast, mono: &Mono,
 ): Result[Str, Error] {
-  var type_args = vec[Type]()
+  var type_args = list[Type]()
   for arg in fun_.type_args do
     type_args.&.push(type(arg.str).compile(type_env, ast, mono)?)
 
-  var arg_types = vec[Type]()
+  var arg_types = list[Type]()
   for arg in fun_.args do
     arg_types.&.push(arg.type.compile(type_env, ast, mono)?)
 
@@ -3131,7 +3140,7 @@ fun compile(
   | TODO: explain
   mono.funs.&.put(signature, MonoFun {
     name = fun_.name, type_args, arg_types, return_type,
-    kind = MonoFunKind.asm_(vec[AstInstr]()),
+    kind = MonoFunKind.asm_(list[AstInstr]()),
   })
 
   var kind =
@@ -3145,7 +3154,7 @@ fun compile(
         context, ast, mono, type_env,
         return_type = type_sink(return_type),
         body = MonoBodyBuilder {
-          slots = vec[MonoSlot](), statements = vec[MonoStatementAndSrc](),
+          slots = list[MonoSlot](), statements = list[MonoStatementAndSrc](),
           context, ast, mono
         },
         next_label = 0, vars = vars[MonoExpr](),
@@ -3197,9 +3206,9 @@ struct CompileFun {
   continue_scopes: Stack[ContinueScope],
 }
 struct BreakScope {
-  result: MonoSlotRef, type: Maybe[Type], breaks: Vec[MonoPlaceholder]
+  result: MonoSlotRef, type: Maybe[Type], breaks: List[MonoPlaceholder]
 }
-struct ContinueScope { continues: Vec[MonoPlaceholder] }
+struct ContinueScope { continues: List[MonoPlaceholder] }
 
 fun next_label_id(self: &CompileFun): Int {
   var id = self.next_label
@@ -3224,7 +3233,7 @@ fun compile(expr: AstExpr, self: &CompileFun): Result[MonoExpr, Error] {
   self.vars.&.restore(scope)
   mono
 }
-fun compile(body: Vec[AstExpr], self: &CompileFun): Result[MonoExpr, Error] {
+fun compile(body: List[AstExpr], self: &CompileFun): Result[MonoExpr, Error] {
   var scope = self.vars.snapshot()
   var last = none[MonoExpr]()
   for expr in body do last = some(expr.compile_in_current_scope(self)?)
@@ -3284,24 +3293,24 @@ fun compile_in_current_scope(
           call.opening_parenthesis.src, "This expression can't be called."))
       var type_args =
         switch call.type_args
-        case none none[Vec[Type]]()
+        case none none[List[Type]]()
         case some(type_args) {
-          var mono_type_args = vec[Type]()
+          var mono_type_args = list[Type]()
           for arg in type_args do
             mono_type_args.&.push(arg.compile(self.type_env, ast, mono)?)
           some(mono_type_args)
         }
-      var mono_args = vec[MonoExpr]()
+      var mono_args = list[MonoExpr]()
       for arg in call.args do mono_args.&.push(arg.compile(self)?)
 
-      | Martinaise supports auto-dereferencing: If you call value.foo() on a value
-      | of type &T, we first look for functions matching foo(&T). If none match, we
-      | try dereferencing the value and look for functions matching foo(T). If we
-      | find one, your code acts as if it was value.*.foo().
+      | Martinaise supports auto-dereferencing: If you call value.foo() on a
+      | value of type &T, we first look for functions matching foo(&T). If none
+      | match, we try dereferencing the value and look for functions matching
+      | foo(T). If we find one, your code acts as if it was value.*.foo().
       var first_error = none[Error]()
       var fun_and_args = loop {
-        var args = vec[MonoExpr]()
-        var arg_types = vec[Type]()
+        var args = list[MonoExpr]()
+        var arg_types = list[Type]()
         if callee is some(c) then {
           args.&.push(c)
           arg_types.&.push(c.type)
@@ -3340,7 +3349,7 @@ fun compile_in_current_scope(
 
       var after_scope = self.next_label_id()
       var wrapped_result = self.body.&.uninitialized(
-        type("Result", vec(result.type, type("Nothing"))).compile(ast, mono)?)
+        type("Result", list(result.type, type("Nothing"))).compile(ast, mono)?)
       body.set_enum(wrapped_result, "ok", result, src)
       body.jump(after_scope, src)
       body.label(catch_label, src)
@@ -3481,7 +3490,7 @@ fun compile_in_current_scope(
       var of = member.of.compile(self)?
       | expr.& references the of
       if member.name.str == "&" then {
-        var ref_type = type("&", vec(of.type))
+        var ref_type = type("&", list(of.type))
           .compile(self.type_env, ast, mono)?
         var slot = self.body.&.uninitialized(ref_type)
         self.body.&.ref(slot, of, member.name.src)
@@ -3529,7 +3538,7 @@ fun compile_in_current_scope(
         }
         var src = member.name.src
         var payload = body.uninitialized(variant.type)
-        var maybe = body.uninitialized(type("Maybe", vec(variant.type)))
+        var maybe = body.uninitialized(type("Maybe", list(variant.type)))
         var matches_label = self.next_label_id()
         var matches_not_label = self.next_label_id()
         var after_label = self.next_label_id()
@@ -3653,7 +3662,7 @@ fun compile_in_current_scope(
         case none none[MonoPlaceholder]()
       | Contains indices of statements which will be replaced with unconditional
       | jumps to after the switch.
-      var after_switch_jumps = vec[MonoPlaceholder]()
+      var after_switch_jumps = list[MonoPlaceholder]()
 
       | Case bodies
       for case_ in switch_.cases do {
@@ -3680,11 +3689,12 @@ fun compile_in_current_scope(
           switch type
           case none type = some(case_expr.type)
           case some(expected) {
-            case_expr.type == expected or return error[MonoExpr, Error](make_error(
-              case_.variant.src,
-              "This case evaluates to a {case_expr.type}, but previous cases to 
-                '{expected}."
-            ))
+            case_expr.type == expected
+              or return error[MonoExpr, Error](make_error(
+                case_.variant.src,
+                "This case evaluates to a {case_expr.type}, but previous cases to 
+                  '{expected}."
+              ))
             {}
           }
           body.assign(body.typed(result, case_expr.type), case_expr, src)
@@ -3703,11 +3713,12 @@ fun compile_in_current_scope(
           switch type
           case none type = some(default_result.type)
           case some(expected) {
-            default_result.type == expected or return error[MonoExpr, Error](make_error(
-              src,
-              "The default case evaluates to a {default_result.type}, but previous cases to 
-                '{expected}."
-            ))
+            default_result.type == expected
+              or return error[MonoExpr, Error](make_error(
+                src,
+                "The default case evaluates to a {default_result.type}, but previous cases to 
+                  '{expected}."
+              ))
             {}
           }
           body.assign(
@@ -3752,11 +3763,11 @@ fun compile_in_current_scope(
       self.break_scopes.&.push(BreakScope {
         result,
         type = none[Type](), | TODO: use type sink
-        breaks = vec[MonoPlaceholder](),
+        breaks = list[MonoPlaceholder](),
       })
       | TODO: save the loop start instead
       self.continue_scopes.&.push(ContinueScope {
-        continues = vec[MonoPlaceholder]()
+        continues = list[MonoPlaceholder]()
       })
 
       var loop_start = self.next_label_id()
@@ -3784,13 +3795,15 @@ fun compile_in_current_scope(
       var src = break_.keyword.src
       var value = break_.value.compile(self)?
 
-      if scope.type is some(expected) then
+      if scope.type is some(expected) then {
         value.type == expected or return error[MonoExpr, Error](make_error(
           break_.keyword.src,
           "Inconsistent break values.",
           "  previous break > {expected}\n
           '      this break > {value.type}"
         ))
+        {}
+      }
       scope.type = some(value.type)
       | TODO: This is not correct. The type of the slot is only updated after
       | the loop body is fully lowered. The created slot expr still has the
@@ -3868,7 +3881,7 @@ fun compile_in_current_scope(
 
 struct MemLayout { type: Type, size: Int, alignment: Int, kind: MemLayoutKind }
 enum MemLayoutKind {
-  opaque_, struct_: Vec[MemLayoutStructPart], enum_: Vec[MemLayoutVariant]
+  opaque_, struct_: List[MemLayoutStructPart], enum_: List[MemLayoutVariant]
 }
 enum MemLayoutStructPart { padding: Int, field: MemLayoutField }
 struct MemLayoutField { name: Str, layout: MemLayout }
@@ -3912,7 +3925,7 @@ fun calculate_mem_layout(
   }
   case struct_(struct_) {
     | First, layout all the fields and determine this struct's alignment.
-    var fields = vec[MemLayoutField]()
+    var fields = list[MemLayoutField]()
     var alignment = 1
     for field in struct_.fields do {
       var layout = field.type.mem_layout(layouts, type_defs)
@@ -3922,8 +3935,8 @@ fun calculate_mem_layout(
 
     | Fields with a size that is a multiple of the alignment can all be put to
     | the beginning.
-    var fields_sized_multiple_of_alignment = vec[MemLayoutField]()
-    var remaining_fields = vec[MemLayoutField]()
+    var fields_sized_multiple_of_alignment = list[MemLayoutField]()
+    var remaining_fields = list[MemLayoutField]()
     for field in fields do
       if field.layout.size % alignment == 0
       then fields_sized_multiple_of_alignment.&.push(field)
@@ -3952,7 +3965,7 @@ fun calculate_mem_layout(
     }
 
     | Build the actual layout.
-    var parts = vec[MemLayoutStructPart]()
+    var parts = list[MemLayoutStructPart]()
     var size = 0
     for field in fields_sized_multiple_of_alignment do {
       parts.&.push(MemLayoutStructPart.field(field))
@@ -3971,7 +3984,7 @@ fun calculate_mem_layout(
     MemLayout { type, size, alignment, kind = MemLayoutKind.struct_(parts) }
   }
   case enum_(enum_) {
-    var variants = vec[MemLayoutVariant]()
+    var variants = list[MemLayoutVariant]()
     var alignment = 1
     var size = 0
     for variant in enum_.variants do {
@@ -3991,7 +4004,7 @@ fun needed_for_multiple_of(number: Int, factor: Int): Int {
 
 | TODO: move to stdlib?
 fun permutations(size: Int): Iter[Slice[Int], Permutations] {
-  var numbers = vec[Int]()
+  var numbers = list[Int]()
   for i in 0..size do numbers.&.push(i)
   Iter[Slice[Int], Permutations] {
     state = Permutations { is_first = true, last = numbers.to_slice() }
@@ -4042,12 +4055,12 @@ fun choose_shade(previous: MemShade, preffered: MemShade) {
 | When walking the memory layout, we basically need to write multiple lines
 | simultaneously. So, that's what we do.
 struct MemWriter {
-  lines: Vec[StringBuilder],
-  last_shades: Vec[MemShade],
+  lines: List[StringBuilder],
+  last_shades: List[MemShade],
 }
 fun mem_writer(lines: Int): MemWriter {
-  var lines_vec = vec[StringBuilder]()
-  var last_shades = vec[MemShade]()
+  var lines_vec = list[StringBuilder]()
+  var last_shades = list[MemShade]()
   for i in 0..lines do {
     lines_vec.&.push(str_builder())
     last_shades.&.push(MemShade.padding)
@@ -4184,11 +4197,11 @@ fun write_n[W](writer: W, n: Int, str: Str) {
 | Builtin Functions  
 
 fun compile_builtin_fun(
-  name: Str, type_args: Vec[Type], arg_types: Vec[Type], src: Src,
+  name: Str, type_args: List[Type], arg_types: List[Type], src: Src,
   context: &Context, ast: Ast, mono: &Mono
 ): Result[MonoFunBody, Error] {
   var body = MonoBodyBuilder {
-    slots = vec[MonoSlot](), statements = vec[MonoStatementAndSrc](),
+    slots = list[MonoSlot](), statements = list[MonoStatementAndSrc](),
     context, ast, mono
   }.&
   
@@ -4223,7 +4236,7 @@ fun compile_builtin_fun(
 }
 
 fun compile_size_of_fun(
-  type_args: Vec[Type], arg_types: Vec[Type], body: &MonoBodyBuilder, src: Src
+  type_args: List[Type], arg_types: List[Type], body: &MonoBodyBuilder, src: Src
 ): Result[MonoFunBody, Error] {
   type_args.len == 1 or return error[MonoFunBody, Error](make_error(
     src, "size_of should take exactly one type argument."))
@@ -4235,7 +4248,7 @@ fun compile_size_of_fun(
 }
 
 fun compile_alignment_of_fun(
-  type_args: Vec[Type], arg_types: Vec[Type], body: &MonoBodyBuilder, src: Src
+  type_args: List[Type], arg_types: List[Type], body: &MonoBodyBuilder, src: Src
 ): Result[MonoFunBody, Error] {
   type_args.len == 1 or return error[MonoFunBody, Error](make_error(
     src, "alignment_of should take exactly one type argument."))
@@ -4247,7 +4260,7 @@ fun compile_alignment_of_fun(
 }
 
 fun compile_stride_size_of_fun(
-  type_args: Vec[Type], arg_types: Vec[Type], body: &MonoBodyBuilder, src: Src
+  type_args: List[Type], arg_types: List[Type], body: &MonoBodyBuilder, src: Src
 ): Result[MonoFunBody, Error] {
   type_args.len == 1 or return error[MonoFunBody, Error](make_error(
     src, "stride_size_of should take exactly one type argument."))
@@ -4260,7 +4273,7 @@ fun compile_stride_size_of_fun(
 }
 
 fun compile_copy_fun(
-  type_args: Vec[Type], arg_types: Vec[Type], body: &MonoBodyBuilder, src: Src,
+  type_args: List[Type], arg_types: List[Type], body: &MonoBodyBuilder, src: Src
 ): Result[MonoFunBody, Error] {
   arg_types.len == 1 or return error[MonoFunBody, Error](make_error(
     src, "copy should take exactly one argument."))
@@ -4280,7 +4293,7 @@ fun compile_copy_fun(
     for field in struct_.fields do {
       var copied_field = body.uninitialized(field.type)
       body.call_matching_fun(
-        copied_field, "copy" @ src, vec(value.member(field)), src)?
+        copied_field, "copy" @ src, list(value.member(field)), src)?
       body.assign(copy.member(field), copied_field, src)
     }
   }
@@ -4298,7 +4311,7 @@ fun compile_copy_fun(
 
       var payload = body.uninitialized(variant.type)
       body.get_enum_value(payload, value, variant.name, src)
-      body.call_matching_fun(payload, "copy" @ src, vec(payload), src)?
+      body.call_matching_fun(payload, "copy" @ src, list(payload), src)?
       body.set_enum(value, variant.name, payload, src)
       body.jump(label_end, src)
     }
@@ -4311,12 +4324,12 @@ fun compile_copy_fun(
 }
 
 fun compile_type_fun(
-  type_args: Vec[Type], arg_types: Vec[Type], body: &MonoBodyBuilder, src: Src
+  type_args: List[Type], arg_types: List[Type], body: &MonoBodyBuilder, src: Src
 ): Result[MonoFunBody, Error] {
   type_args.len == 1 or return error[MonoFunBody, Error](make_error(
     src, "type should take exactly one type argument."))
   type("Type").compile(body.ast, body.mono)?
-  type("Vec", vec(type("Type"))).compile(body.ast, body.mono)?
+  type("List", list(type("Type"))).compile(body.ast, body.mono)?
 
   var reflected = compile_type_fun_rec(type_args.get(0), body, src)?
   body.return_(reflected, src)
@@ -4327,28 +4340,29 @@ fun compile_type_fun_rec(
 ): Result[MonoExpr, Error] {
   var name = body.str(type.name)
 
-  var vec = body.uninitialized(type("Vec", vec(type("Type"))))
+  var list = body.uninitialized(type("List", list(type("Type"))))
   body.call_matching_fun(
-    vec, "vec" @ src, some(vec(type("Type"))), vec[MonoExpr](), src)?
+    list, "list" @ src, some(list(type("Type"))), list[MonoExpr](), src)?
 
-  var ref_vec = body.uninitialized(type("&", vec(type("Vec", vec(type("Type"))))))
-  body.ref(ref_vec, vec, src)
+  var ref_vec =
+    body.uninitialized(type("&", list(type("List", list(type("Type"))))))
+  body.ref(ref_vec, list, src)
 
   for arg in type.args do {
     var nothing = body.uninitialized(type("Nothing"))
     var arg = compile_type_fun_rec(arg, body, src)?
-    body.call_matching_fun(nothing, "push" @ src, vec(ref_vec, arg), src)?
+    body.call_matching_fun(nothing, "push" @ src, list(ref_vec, arg), src)?
   }
 
   var type = body.uninitialized(type("Type"))
   body.assign(type.member("name", type("Str")), name, src)
-  body.assign(type.member("args", type("Vec", vec(type("Type")))), vec, src)
+  body.assign(type.member("args", type("List", list(type("Type")))), list, src)
 
   ok[MonoExpr, Error](type)
 }
 
 fun compile_write_debug_fun(
-  type_args: Vec[Type], arg_types: Vec[Type], body: &MonoBodyBuilder, src: Src
+  type_args: List[Type], arg_types: List[Type], body: &MonoBodyBuilder, src: Src
 ): Result[MonoFunBody, Error] {
   arg_types.len == 2 or return error[MonoFunBody, Error](make_error(
     src, "write_debug should take exactly two arguments."))
@@ -4361,11 +4375,11 @@ fun compile_write_debug_fun(
   switch body.mono.type_defs.get(value.type)
   case opaque_ {
     var dots = body.str("...")
-    body.call_matching_fun(nothing, "write" @ src, vec(writer, dots), src)?
+    body.call_matching_fun(nothing, "write" @ src, list(writer, dots), src)?
   }
   case struct_(struct_) {
     body.call_matching_fun(nothing, "write" @ src,
-      vec(writer, body.str("{value.type} \{")), src)?
+      list(writer, body.str("{value.type} \{")), src)?
     for it in struct_.fields.iter().enumerate() do {
       var field = it.item
       var str =
@@ -4373,16 +4387,16 @@ fun compile_write_debug_fun(
         then " {field.name} = "
         else ", {field.name} = "
       var str = body.str(str)
-      body.call_matching_fun(nothing, "write" @ src, vec(writer, str), src)?
+      body.call_matching_fun(nothing, "write" @ src, list(writer, str), src)?
       body.call_matching_fun(
-        nothing, "write_debug" @ src, vec(writer, value.member(field)), src)?
+        nothing, "write_debug" @ src, list(writer, value.member(field)), src)?
     }
     var str = body.str(" }")
-    body.call_matching_fun(nothing, "write" @ src, vec(writer, str), src)?
+    body.call_matching_fun(nothing, "write" @ src, list(writer, str), src)?
   }
   case enum_(enum_) {
-    var payloads = vec[MonoExpr]()
-    var variant_strs = vec[MonoExpr]()
+    var payloads = list[MonoExpr]()
+    var variant_strs = list[MonoExpr]()
     for variant in enum_.variants do {
       payloads.&.push(body.uninitialized(variant.type))
       variant_strs.&.push(body.str(variant.name))
@@ -4399,15 +4413,15 @@ fun compile_write_debug_fun(
 
       body.label(it.index, src)
       body.call_matching_fun(nothing, "write" @ src,
-        vec(writer, variant_strs.get(it.index)), src)?
+        list(writer, variant_strs.get(it.index)), src)?
       if variant.type != type("Nothing") then {
         body.get_enum_value(payload, value, variant.name, src)
         body.call_matching_fun(nothing, "write" @ src,
-          vec(writer, opening_str), src)?
+          list(writer, opening_str), src)?
         body.call_matching_fun(
-          nothing, "write_debug" @ src, vec(writer, payload), src)?
+          nothing, "write_debug" @ src, list(writer, payload), src)?
         body.call_matching_fun(nothing, "write" @ src,
-          vec(writer, closing_str), src)?
+          list(writer, closing_str), src)?
       }
       body.jump(enum_.variants.len, src)
     }
@@ -4420,7 +4434,7 @@ fun compile_write_debug_fun(
 }
 
 fun compile_generate_fun(
-  type_args: Vec[Type], arg_types: Vec[Type], body: &MonoBodyBuilder, src: Src,
+  type_args: List[Type], arg_types: List[Type], body: &MonoBodyBuilder, src: Src
 ): Result[MonoFunBody, Error] {
   arg_types.len == 3 or return error[MonoFunBody, Error](make_error(
     src, "generate should take exactly three arguments."))
@@ -4430,7 +4444,7 @@ fun compile_generate_fun(
   static_ty.args.len == 1 or return error[MonoFunBody, Error](make_error(
     src, "Static should have one type argument."))
   var value_ty = static_ty.args.get(0)
-  arg_types.get(1) == type("&", vec(type("Random")))
+  arg_types.get(1) == type("&", list(type("Random")))
     or return error[MonoFunBody, Error](make_error(
       src, "generate should take a &Random as the second argument."))
   arg_types.get(2) == type("Int")
@@ -4438,7 +4452,7 @@ fun compile_generate_fun(
       src, "generate should take an complexity Int as the third argument."))
 
   var static = body.arg(static_ty, 0)
-  var random = body.arg(type("&", vec(type("Random"))), 1)
+  var random = body.arg(type("&", list(type("Random"))), 1)
   var complexity = body.arg(type("Int"), 2)
   var nothing = body.uninitialized(type("Nothing"))
   var value = body.uninitialized(value_ty)
@@ -4453,25 +4467,25 @@ fun compile_generate_fun(
     |   bar = Static[Bar]{}.generate(random, complexities.get(1)),
     | }
     var num_fields = body.int(struct_.fields.len)
-    var complexities = body.uninitialized(type("Slice", vec(type("Int"))))
+    var complexities = body.uninitialized(type("Slice", list(type("Int"))))
     body.call_matching_fun(
-      complexities, "split" @ src, vec(random, complexity, num_fields), src)?
+      complexities, "split" @ src, list(random, complexity, num_fields), src)?
 
     for it in struct_.fields.iter().enumerate() do {
       var field = it.item
 
       | doesn't have to be initialized (size 0)
       var static_field = body.uninitialized(
-        type("Static", vec(field.type)).compile(body.ast, body.mono)?)
+        type("Static", list(field.type)).compile(body.ast, body.mono)?)
 
       var field_complexity = body.uninitialized(type("Int"))
       var index = body.int(it.index)
       body.call_matching_fun(field_complexity, "get" @ src,
-        vec(complexities, index), src)?
+        list(complexities, index), src)?
 
       var new_field_value = body.uninitialized(field.type)
       body.call_matching_fun(new_field_value, "generate" @ src,
-        vec(static_field, random, field_complexity), src)?
+        list(static_field, random, field_complexity), src)?
       body.assign(value.member(field), new_field_value, src)
     }
   }
@@ -4493,9 +4507,9 @@ fun compile_generate_fun(
       src, "Can't generate instances of {value_ty}."))
 
     type("Bool").compile(body.ast, body.mono)?
-    type("Range", vec(type("Int"))).compile(body.ast, body.mono)?
+    type("Range", list(type("Int"))).compile(body.ast, body.mono)?
 
-    var non_recursive_variants = vec[Int]()
+    var non_recursive_variants = list[Int]()
     var has_recursive_variants = false
     for variant in enum_.variants.iter().&.enumerate() do
       if body.mono.is_guaranteed_to_contain( variant.item.type, value_ty)
@@ -4514,7 +4528,7 @@ fun compile_generate_fun(
     if has_recursive_variants then {
       var complexity_is_small = body.uninitialized(type("Bool"))
       var ten = body.int(10)
-      body.call_matching_fun(complexity_is_small, "<" @ src, vec(complexity, ten), src)?
+      body.call_matching_fun(complexity_is_small, "<" @ src, list(complexity, ten), src)?
       body.jump_if_variant(complexity_is_small, "true", label_choose_non_recursive_variant, src)
       body.jump_if_variant(complexity_is_small, "false", label_choose_any_variant, src)
 
@@ -4522,14 +4536,14 @@ fun compile_generate_fun(
 
       var lower = body.int(0)
       var upper = body.int(non_recursive_variants.len)
-      var range = body.uninitialized(type("Range", vec(type("Int"))))
-      body.call_matching_fun(range, ".." @ src, vec(lower, upper), src)?
-      body.call_matching_fun(variant, "next_int" @ src, vec(random, range), src)?
+      var range = body.uninitialized(type("Range", list(type("Int"))))
+      body.call_matching_fun(range, ".." @ src, list(lower, upper), src)?
+      body.call_matching_fun(variant, "next_int" @ src, list(random, range), src)?
 
       var check = body.uninitialized(type("Bool"))
       for non_recursive in non_recursive_variants.iter().&.enumerate() do {
         var index = body.int(non_recursive.index)
-        body.call_matching_fun(check, "==" @ src, vec(variant, index), src)?
+        body.call_matching_fun(check, "==" @ src, list(variant, index), src)?
         body.jump_if_variant(check, "true", non_recursive.item, src)
       }
     }
@@ -4538,14 +4552,14 @@ fun compile_generate_fun(
 
     var lower = body.int(0)
     var upper = body.int(enum_.variants.len)
-    var range = body.uninitialized(type("Range", vec(type("Int"))))
-    body.call_matching_fun(range, ".." @ src, vec(lower, upper), src)?
-    body.call_matching_fun(variant, "next_int" @ src, vec(random, range), src)?
+    var range = body.uninitialized(type("Range", list(type("Int"))))
+    body.call_matching_fun(range, ".." @ src, list(lower, upper), src)?
+    body.call_matching_fun(variant, "next_int" @ src, list(random, range), src)?
 
     var check = body.uninitialized(type("Bool"))
     for index in 0..enum_.variants.len do {
       var constant = body.int(index)
-      body.call_matching_fun(check, "==" @ src, vec(variant, constant), src)?
+      body.call_matching_fun(check, "==" @ src, list(variant, constant), src)?
       body.jump_if_variant(check, "true", index, src)
     }
 
@@ -4557,11 +4571,11 @@ fun compile_generate_fun(
 
       | doesn't need to be initialized (size 0)
       var static_payload = body.uninitialized(
-        type("Static", vec(variant.type)).compile(body.ast, body.mono)?)
+        type("Static", list(variant.type)).compile(body.ast, body.mono)?)
 
       var payload = body.uninitialized(variant.type)
       body.call_matching_fun(payload, "generate" @ src,
-        vec(static_payload, random, complexity), src)?
+        list(static_payload, random, complexity), src)?
       body.set_enum(value, variant.name, payload, src)
       body.jump(label_end, src)
     }
@@ -4591,7 +4605,7 @@ fun is_guaranteed_to_contain(mono: Mono, type: Type, other: Type): Bool {
 }
 
 fun compile_fuzzing_complexity_fun(
-  type_args: Vec[Type], arg_types: Vec[Type], body: &MonoBodyBuilder, src: Src
+  type_args: List[Type], arg_types: List[Type], body: &MonoBodyBuilder, src: Src
 ): Result[MonoFunBody, Error] {
   arg_types.len == 1 or return error[MonoFunBody, Error](make_error(
     src, "fuzzing_complexity should only take one argument."))
@@ -4612,9 +4626,9 @@ fun compile_fuzzing_complexity_fun(
     var field_complexity = body.uninitialized(type("Float"))
     for field in struct_.fields.iter() do {
       body.call_matching_fun(field_complexity, "fuzzing_complexity" @ src,
-        vec(value.member(field)), src)?
+        list(value.member(field)), src)?
       body.call_matching_fun(complexity, "+" @ src,
-        vec(complexity, field_complexity), src)?
+        list(complexity, field_complexity), src)?
     }
   }
   case enum_(enum_) {
@@ -4630,7 +4644,7 @@ fun compile_fuzzing_complexity_fun(
       var payload = body.uninitialized(variant.type)
       body.get_enum_value(payload, value, variant.name, src)
       body.call_matching_fun(
-        complexity, "fuzzing_complexity" @ src, vec(payload), src)?
+        complexity, "fuzzing_complexity" @ src, list(payload), src)?
       body.jump(enum_.variants.len, src)
     }
 
@@ -4643,12 +4657,12 @@ fun compile_fuzzing_complexity_fun(
 }
 
 fun compile_mutate_fun(
-  type_args: Vec[Type], arg_types: Vec[Type], body: &MonoBodyBuilder, src: Src
+  type_args: List[Type], arg_types: List[Type], body: &MonoBodyBuilder, src: Src
 ): Result[MonoFunBody, Error] {
   arg_types.len == 3 or return error[MonoFunBody, Error](make_error(
     src, "mutate should take exactly three arguments."))
   var value_ty = arg_types.get(0)
-  arg_types.get(1) == type("&", vec(type("Random")))
+  arg_types.get(1) == type("&", list(type("Random")))
     or return error[MonoFunBody, Error](make_error(
       src, "mutate should take a &Random as the second argument."))
   arg_types.get(2) == type("Int")
@@ -4656,7 +4670,7 @@ fun compile_mutate_fun(
       src, "mutate should take a temperature Int as the third argument."))
 
   var value = body.arg(value_ty, 0)
-  var random = body.arg(type("&", vec(type("Random"))), 1)
+  var random = body.arg(type("&", list(type("Random"))), 1)
   var temperature = body.arg(type("Int"), 2)
   var nothing = body.uninitialized(type("Nothing"))
   var result = body.uninitialized(value_ty)
@@ -4671,12 +4685,12 @@ fun compile_mutate_fun(
     |   bar = if field_to_change == 1 then value.bar.mutate(random, temperature) else value.bar,
     | }
     if struct_.fields.len > 0 then {
-      var range = body.uninitialized(type("Range", vec(type("Int"))))
+      var range = body.uninitialized(type("Range", list(type("Int"))))
       body.call_matching_fun(range, ".." @ src,
-        vec(body.int(0), body.int(struct_.fields.len)), src)?
+        list(body.int(0), body.int(struct_.fields.len)), src)?
       var field_to_change = body.uninitialized(type("Int"))
       body.call_matching_fun(field_to_change, "next_int" @ src,
-        vec(random, range), src)?
+        list(random, range), src)?
 
       var check = body.uninitialized(type("Bool"))
       for it in struct_.fields.iter().enumerate() do {
@@ -4684,13 +4698,13 @@ fun compile_mutate_fun(
 
         body.label(it.index, src)
         body.call_matching_fun(check, "==" @ src,
-          vec(field_to_change, body.int(it.index)), src)?
+          list(field_to_change, body.int(it.index)), src)?
         body.assign(result.member(field), value.member(field), src)
         body.jump_if_variant(check, "false", it.index + 1, src)
 
         var new_field_value = body.uninitialized(field.type)
         body.call_matching_fun(new_field_value, "mutate" @ src,
-          vec(value.member(field), random, temperature), src)?
+          list(value.member(field), random, temperature), src)?
         body.assign(value.member(field), new_field_value, src)
       }
 
@@ -4707,19 +4721,19 @@ fun compile_mutate_fun(
       src, "Can't mutate instances of {value_ty}."))
 
     type("Bool").compile(body.ast, body.mono)?
-    type("Range", vec(type("Int"))).compile(body.ast, body.mono)?
+    type("Range", list(type("Int"))).compile(body.ast, body.mono)?
 
     var lower = body.int(0)
     var upper = body.int(enum_.variants.len)
-    var range = body.uninitialized(type("Range", vec(type("Int"))))
-    body.call_matching_fun(range, ".." @ src, vec(lower, upper), src)?
+    var range = body.uninitialized(type("Range", list(type("Int"))))
+    body.call_matching_fun(range, ".." @ src, list(lower, upper), src)?
 
     var choice = body.uninitialized(type("Int"))
-    body.call_matching_fun(choice, "next_int" @ src, vec(random, range), src)?
+    body.call_matching_fun(choice, "next_int" @ src, list(random, range), src)?
 
     var is_greater = body.uninitialized(type("Bool"))
     body.call_matching_fun(
-      is_greater, ">" @ src, vec(choice, body.int(50)), src)?
+      is_greater, ">" @ src, list(choice, body.int(50)), src)?
     body.jump_if_variant(is_greater, "true", enum_.variants.len, src)
 
     for it in enum_.variants.iter().enumerate() do
@@ -4732,7 +4746,7 @@ fun compile_mutate_fun(
 
       var new_payload = body.uninitialized(variant.type)
       body.call_matching_fun(
-        new_payload, "mutate" @ src, vec(payload, random, temperature), src)?
+        new_payload, "mutate" @ src, list(payload, random, temperature), src)?
       body.set_enum(value, variant.name, new_payload, src)
       body.jump(enum_.variants.len + 1, src)
     }
@@ -4741,10 +4755,10 @@ fun compile_mutate_fun(
 
     | doesn't need to be initialized (size 0)
     var static_payload = body.uninitialized(
-      type("Static", vec(value_ty)).compile(body.ast, body.mono)?)
+      type("Static", list(value_ty)).compile(body.ast, body.mono)?)
 
     body.call_matching_fun(value, "mutate" @ src,
-      vec(static_payload, random, temperature), src)?
+      list(static_payload, random, temperature), src)?
     body.jump(enum_.variants.len + 1, src)
     body.label(enum_.variants.len + 1, src)
   }
@@ -4762,11 +4776,11 @@ fun compile_mutate_fun(
 
 struct Soil {
   initial_mem: Map[Str, Slice[Byte]], | map from mem label to bytes
-  instructions: Vec[Instr],
-  srcs: Vec[Src],
+  instructions: List[Instr],
+  srcs: List[Src],
   | TODO: OrderedMap in stdlib
   labels_to_index: Map[Str, Int], | maps label to the instruction index
-  labels: Vec[Str], | only so that labels can be printed in order
+  labels: List[Str], | only so that labels can be printed in order
 }
 enum Instr {
   nop,
@@ -4923,7 +4937,7 @@ fun write[W](writer: W, instruction: Instr) {
 struct Asm {
   current_src: Src,
   last_label: Str,
-  patches: Vec[Patch],
+  patches: List[Patch],
   soil: Soil,
 }
 struct Patch { where: Int, label: Str} | where is the instruction index
@@ -4953,7 +4967,7 @@ fun globalize(asm: Asm, label: Str): Result[Str, Str] {
     }
     shared_prefix = shared_prefix + 1
   }
-  var global = vec[Char]()
+  var global = list[Char]()
   global.&.push_all(asm.last_label.substr(0..shared_prefix).chars())
   global.&.push(#.)
   for i in 0..label.len do global.&.push(label.chars().get(i))
@@ -5041,7 +5055,7 @@ fun mangle(name: Str): Str {
   } else name
 }
 
-fun name_to_offset_map(parts: Vec[MemLayoutStructPart]): Map[Str, Int] {
+fun name_to_offset_map(parts: List[MemLayoutStructPart]): Map[Str, Int] {
   var offsets = map[Str, Int]()
   var offset = 0
   for part in parts do
@@ -5079,7 +5093,7 @@ fun assemble(mono: Mono, entry_point: Str, asm: &Asm): Result[Nothing, Error] {
   var arg_layouts = map[Str, MemLayout]() | fun signature to arg layouts
   for fun_ in mono.funs do {
     var name = fun_.key
-    var arg_struct = MonoStruct { fields = vec[MonoStructField]() }
+    var arg_struct = MonoStruct { fields = list[MonoStructField]() }
     for arg in fun_.value.arg_types.iter().enumerate() do
       arg_struct.fields.&.push(MonoStructField {
         name = "arg_{arg.index}", type = arg.item,
@@ -5095,7 +5109,7 @@ fun assemble(mono: Mono, entry_point: Str, asm: &Asm): Result[Nothing, Error] {
       type = type("Nothing"),
       size = 0,
       alignment = 1,
-      kind = MemLayoutKind.struct_(vec[MemLayoutStructPart]()),
+      kind = MemLayoutKind.struct_(list[MemLayoutStructPart]()),
     })
     asm.define_label("{global.key}.init")
     global.value.assemble_body(global.key, mono, arg_layouts, asm)?
@@ -5119,7 +5133,7 @@ fun assemble(mono: Mono, entry_point: Str, asm: &Asm): Result[Nothing, Error] {
         asm.soil.srcs.get(it.index), "Label {label} doesn't exist.",
         "Note that movei only accepts labels of globals that your program 
           'references in Martinaise code somewhere else.",
-        vec[Str](),
+        list[Str](),
       ))
     }
 
@@ -5157,7 +5171,7 @@ fun assemble_body(
       arg_layouts.get(signature).kind.struct_.unwrap().name_to_offset_map()
 
     | Layout locals
-    var locals_struct = MonoStruct { fields = vec[MonoStructField]() }
+    var locals_struct = MonoStruct { fields = list[MonoStructField]() }
     for slot in body.slots.iter().enumerate() do {
       if slot.item.initial_value is arg then continue | already on the stack
       locals_struct.fields.&.push(MonoStructField {
@@ -5464,7 +5478,7 @@ fun fix_patches(asm: &Asm): Result[Nothing, Error] {
           | for label in asm.soil.labels_to_index do builder."\n- {label.key}"
           builder.to_str()
         },
-        vec[Str]()
+        list[Str]()
       ))
     switch asm.soil.instructions.get(patch.where)
     case jump asm.soil.instructions.get_ref(patch.where).* = Instr.jump(target)
@@ -5484,13 +5498,13 @@ fun soil(mono: Mono): Result[Soil, Error] {
   var asm = Asm {
     current_src = src("_nowhere", 0..0),
     last_label = "",
-    patches = vec[Patch](),
+    patches = list[Patch](),
     soil = Soil {
       initial_mem = map[Str, Slice[Byte]](),
-      instructions = vec[Instr](),
-      srcs = vec[Src](),
+      instructions = list[Instr](),
+      srcs = list[Src](),
       labels_to_index = map[Str, Int](),
-      labels = vec[Str](),
+      labels = list[Str](),
     },
   }
   mono.assemble(mono.entry_point, asm.&)?
@@ -5507,7 +5521,7 @@ fun soil(mono: Mono): Result[Soil, Error] {
 fun to_binary(soil: Soil): Slice[Byte] {
   print_status("Assembling binary")
 
-  var bin = SoilBinary { bytes = vec[Byte]() }.&
+  var bin = SoilBinary { bytes = list[Byte]() }.&
 
   | magic bytes
   bin.emit("soil".bytes())
@@ -5619,7 +5633,7 @@ fun to_binary(soil: Soil): Slice[Byte] {
 
   bin.bytes.to_slice()
 }
-struct SoilBinary { bytes: Vec[Byte] }
+struct SoilBinary { bytes: List[Byte] }
 fun emit(bin: &SoilBinary, byte: Byte) { bin.bytes.&.push(byte) }
 fun emit_byte(bin: &SoilBinary, byte: Int) {
   bin.bytes.&.push(byte.lower_byte())
@@ -5673,7 +5687,7 @@ fun to_bits(reg: Reg): Byte {
 | Martinaise supports exploring code by finding sensible inputs for functions
 | through fuzzing.
 
-struct Signature { name: AstStr, args: Vec[Type] }
+struct Signature { name: AstStr, args: List[Type] }
 
 fun parse_position(parser: &Parser): Maybe[CodePosition] {
   var line = parser.parse_digits(10).unwrap() or return none[CodePosition]()
@@ -5687,7 +5701,7 @@ fun parse_signature(parser: &Parser): Result[Signature, Str] {
     or return error[Signature, Str]("Expected a function name.")
   parser.consume_prefix("(")
     or return error[Signature, Str]("Expected an opening parenthesis.")
-  var args = vec[Type]()
+  var args = list[Type]()
   loop {
     args.&.push(parser.parse_type()? or break)
     parser.consume_prefix(",") or break
@@ -5721,7 +5735,7 @@ fun generate_fuzzing_hooks(
 ) {
   print_status("Generating fuzzing hooks")
 
-  var arg_types = vec[Type]()
+  var arg_types = list[Type]()
   for arg in fun_.args do
     arg_types.&.push(arg.type.specialize(type_env).unwrap())
 
@@ -5729,36 +5743,36 @@ fun generate_fuzzing_hooks(
   var opening_paren = "(" @ src
 
   { | struct $Input { arg_0: TypeOfArg0, arg_1: TypeOfArg1, ... }
-    var fields = vec[AstStructField]()
+    var fields = list[AstStructField]()
     for it in arg_types.iter().enumerate() do
       fields.&.push(AstStructField {
         name = "arg_{it.index}" @ src, type = it.item
       })
     ast.types.&.put("$Input", AstType.struct_(AstStruct {
-      name = "$Input" @ src, type_args = vec[AstStr](), fields
+      name = "$Input" @ src, type_args = list[AstStr](), fields
     }))
   }
 
   { | fun run(input: $Input): _ { <fun to fuzz>(input.arg_0, input.arg_1, ...) }
-    var args = vec[AstExpr]()
+    var args = list[AstExpr]()
     for index in 0..arg_types.len do
       args.&.push(AstExpr.name("input" @ src).member("arg_{index}" @ src))
-    ast.funs.&.get_ref_or_put_default("run", vec[AstFun]()).push(AstFun {
+    ast.funs.&.get_ref_or_put_default("run", list[AstFun]()).push(AstFun {
       name = "run" @ src,
       is_fallback = false,
-      type_args = vec[AstStr](),
-      args = vec[AstFunArg](AstFunArg {
+      type_args = list[AstStr](),
+      args = list[AstFunArg](AstFunArg {
         name = "input" @ src, type = type("$Input")
       }),
       returns = type("_"),
-      kind = AstFunKind.body(vec(
+      kind = AstFunKind.body(list(
         AstExpr.name(fun_.name).call(args, opening_paren)
       )),
     })
   }
 
   | fun arg_strs(input: $Input): Slice[Str] {
-  |   var v = vec[Str]()
+  |   var v = list[Str]()
   |   {
   |     var sb = str_builder()
   |     sb.&.write_debug(input.arg_0)
@@ -5768,36 +5782,36 @@ fun generate_fuzzing_hooks(
   |   v
   | }
   {
-    var body = vec[AstExpr]()
+    var body = list[AstExpr]()
     body.&.push(var_("v" @ src,
-      AstExpr.name("vec" @ src).call(
-        some(vec(type("Str"))), vec[AstExpr](), opening_paren
+      AstExpr.name("list" @ src).call(
+        some(list(type("Str"))), list[AstExpr](), opening_paren
       )))
     for index in 0..arg_types.len do {
-      body.&.push(AstExpr.block(vec(
+      body.&.push(AstExpr.block(list(
         var_("sb" @ src,
           AstExpr.name("str_builder" @ src).call(opening_paren)),
         AstExpr.name("sb" @ src).member("&" @ src)
-          .member("write_debug" @ src).call(vec(
+          .member("write_debug" @ src).call(list(
             AstExpr.name("input" @ src).member("arg_{index}" @ src)
           ), opening_paren),
         AstExpr.name("v" @ src).member("&" @ src)
-          .member("push" @ src).call(vec(
+          .member("push" @ src).call(list(
             AstExpr.name("sb" @ src).member("to_str" @ src).call(opening_paren)
           ), opening_paren),
       )))
     }
     body.&.push(AstExpr.name("v" @ src)
       .member("to_slice" @ src).call(opening_paren))
-    ast.funs.&.get_ref_or_put_default("arg_strs", vec[AstFun]())
+    ast.funs.&.get_ref_or_put_default("arg_strs", list[AstFun]())
       .push(AstFun {
         name = "arg_strs" @ src,
         is_fallback = true,
-        type_args = vec[AstStr](),
-        args = vec[AstFunArg](AstFunArg {
+        type_args = list[AstStr](),
+        args = list[AstFunArg](AstFunArg {
           name = "input" @ src, type = type("$Input")
         }),
-        returns = type("Slice", vec(type("Str"))),
+        returns = type("Slice", list(type("Str"))),
         kind = AstFunKind.body(body),
       })
   }
@@ -5810,23 +5824,23 @@ fun generate_fuzzing_hooks(
   |   }
   | }
   {
-    var args = vec(AstExpr.name("static" @ src))
+    var args = list(AstExpr.name("static" @ src))
     for index in 0..arg_types.len do
       args.&.push(AstExpr.name("input" @ src).member("arg_{index}" @ src))
-    ast.funs.&.get_ref_or_put_default("fuzzing_info", vec[AstFun]())
+    ast.funs.&.get_ref_or_put_default("fuzzing_info", list[AstFun]())
       .push(AstFun {
         name = "fuzzing_info" @ src,
         is_fallback = false,
-        type_args = vec[AstStr](),
-        args = vec[AstFunArg](AstFunArg {
-          name = "static" @ src, type = type("Static", vec(type("$Input")))
+        type_args = list[AstStr](),
+        args = list[AstFunArg](AstFunArg {
+          name = "static" @ src, type = type("Static", list(type("$Input")))
         }),
         returns = type("FuzzingInfo"),
-        kind = AstFunKind.body(vec(
+        kind = AstFunKind.body(list(
           AstExpr.make_struct(AstMakeStruct {
             type = type("FuzzingInfo"),
             type_src = src,
-            fields = vec(
+            fields = list(
               AstMakeStructField {
                 name = "has_target_position" @ src,
                 value = AstExpr.name({
@@ -5865,11 +5879,11 @@ fun instrument(
   var new = Asm {
     current_src = src("_not_used", 0..0),
     last_label = "",
-    patches = vec[Patch](),
+    patches = list[Patch](),
     soil = Soil {
       initial_mem = soil.initial_mem, | TODO: make a copy; this is mutated
-      instructions = vec[Instr](),
-      srcs = vec[Src](),
+      instructions = list[Instr](),
+      srcs = list[Src](),
       labels_to_index = map[Str, Int](),
       labels = soil.labels,
     }
@@ -5915,7 +5929,7 @@ fun instrument(
 
   var label = ""
   var cjump_index = 0
-  var to_patch = vec[Int]()
+  var to_patch = list[Int]()
   for it in soil.instructions.iter().enumerate() do {
     var instruction = it.item
     mapping.&.put(it.index, new.soil.instructions.len)
@@ -6059,7 +6073,7 @@ var help_for_fuzz = "
   '<signature>      Fuzzes the function matching the signature.\n
   '<line>:<column>  Tries to find inputs that reach the given position.\n\n
   'Examples:\n
-  'martinaise fuzz test.mar \"push(&Vec[Int], Int)\"\n
+  'martinaise fuzz test.mar \"push(&List[Int], Int)\"\n
   'martinaise fuzz test.mar 2:3"
 var help_for_tooling = "
   'Usage: martinaise tooling <command>\n
@@ -6266,7 +6280,7 @@ fun main(): Never {
     var ast = parse_project(path).unwrap_or_report_and_exit()
 
     print_status("Functions:")
-    var all_names = vec[Str]()
+    var all_names = list[Str]()
     for entry in ast.funs do all_names.&.push(entry.key)
     all_names.to_slice().&.sort()
     for name in all_names do for f in ast.funs.get(name) do
@@ -6288,7 +6302,7 @@ fun main(): Never {
         }
       }
       case fun_(signature)
-        ast.lookup_fun(signature.name, none[Vec[Type]](), signature.args)
+        ast.lookup_fun(signature.name, none[List[Type]](), signature.args)
           .unwrap_or_report_and_exit()
 
     | Generates an $Input struct for the fuzzed function as well as functions:

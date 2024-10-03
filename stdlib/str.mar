@@ -55,7 +55,7 @@ struct Str { data: Address, len: Int }
 
 fun to_str(chars: Slice[Char]): Str { chars.unchecked_cast[Slice[Char], Str]() }
 fun to_str(bytes: Slice[Byte]): Str { bytes.unchecked_cast[Slice[Byte], Str]() }
-fun to_str(chars: Vec[Char]): Str { chars.to_slice().to_str() }
+fun to_str(chars: List[Char]): Str { chars.to_slice().to_str() }
 fun chars(str: Str): Slice[Char] { str.unchecked_cast[Str, Slice[Char]]() }
 fun bytes(str: Str): Slice[Byte] { str.unchecked_cast[Str, Slice[Byte]]() }
 
@@ -219,7 +219,7 @@ fun replace(str: Str, from: Str, to: Str): Str {
   b.to_str()
 }
 fun split(str: Str, separator: Str): Slice[Str] {
-  var parts = vec[Str]()
+  var parts = list[Str]()
   for part in str.iter().split(separator.chars()) do parts.&.push(part.to_str())
   parts.to_slice()
 }
@@ -253,9 +253,9 @@ fun join(items: Slice[Str], separator: Str): Str {
 | To build strings efficiently, we need some sort of growable buffer where we
 | can append more data over time. That's exactly what a StrBuilder is.
 
-struct StrBuilder { bytes: Vec[Byte] }
+struct StrBuilder { bytes: List[Byte] }
 
-fun str_builder(): StrBuilder { StrBuilder { bytes = vec[Byte]() } }
+fun str_builder(): StrBuilder { StrBuilder { bytes = list[Byte]() } }
 fun write_byte(builder: &StrBuilder, byte: Byte) {
   builder.bytes.&.push(byte)
 }

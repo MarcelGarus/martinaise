@@ -90,3 +90,10 @@ Each compiler can be compiled using the previous compiler.
   - Adds builtin functions for fuzzing (`write_debug`, `generate`, `mutate`)
 - Compiler 8
   - Adds fuzz command
+
+# TODO
+
+- catch endless loops during fuzzing
+- mock syscalls during fuzzing
+- check all functions, not just main
+- fuzz all functions automatically (opt-in)

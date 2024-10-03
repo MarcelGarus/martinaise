@@ -3,7 +3,7 @@ import ui.mar
 fun main(): Never {
   var texture = screen_texture()
 
-  var patterns = vec(
+  var patterns = list(
     16#001122,
     16#110022,
     16#112200,

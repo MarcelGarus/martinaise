@@ -3,7 +3,7 @@ import stdlib.mar
 struct Level {
   width: Int,
   height: Int,
-  objs: Vec[ObjAndPoint],
+  objs: List[ObjAndPoint],
 }
 struct ObjAndPoint { obj: Obj, pos: Point }
 enum Obj { word: Word, baba, flag }
@@ -12,11 +12,11 @@ enum Word { baba, is, you, flag, win }
 fun @(obj: Obj, pos: Point): ObjAndPoint { ObjAndPoint { obj, pos } }
 
 fun write[W](writer: W, level: Level) {
-  var map = uninitialized_slice[Slice[Vec[Obj]]](level.height)
+  var map = uninitialized_slice[Slice[List[Obj]]](level.height)
   for y in 0..level.height do {
-    var row = uninitialized_slice[Vec[Obj]](level.width)
+    var row = uninitialized_slice[List[Obj]](level.width)
     for x in 0..level.width do
-      row.get_ref(x).* = vec[Obj]()
+      row.get_ref(x).* = list[Obj]()
     map.get_ref(y).* = row
   }
   for obj in level.objs do
@@ -55,13 +55,13 @@ fun write[W](writer: W, rule: Rule) {
   writer."{rule.what.debug()} is {rule.how.debug()}"
 }
 
-fun find_rules(level: Level): Vec[Rule] {
-  vec(
+fun find_rules(level: Level): List[Rule] {
+  list(
     What.baba => How.you,
     What.flag => How.win,
   )
 }
-fun find_rules(run: Slice[Word]): Vec[Rule] {
+fun find_rules(run: Slice[Word]): List[Rule] {
 }
 
 fun write_ansi_escape_sequence[W](writer: W, sequence: Str) {
@@ -79,7 +79,7 @@ fun main(): Never {
   var level = Level {
     width  = 10,
     height = 10,
-    objs = vec(
+    objs = list(
       Obj.word(Word.baba) @ {0 @ 1},
       Obj.word(Word.is)   @ {1 @ 1},
       Obj.word(Word.you)  @ {2 @ 1},

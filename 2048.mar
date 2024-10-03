@@ -145,7 +145,7 @@ fun move_down(board: Board): Board { board.transpose().move_right().transpose() 
 
 var background_color = color(16#1c1c1e)
 var empty_color = color(16#f2f2f7)
-var number_colors = vec(
+var number_colors = list(
   color(16#eec60a), | 2: yellow
   color(16#ff9f0a), | 4: orange
   color(16#ff5959), | 8: red

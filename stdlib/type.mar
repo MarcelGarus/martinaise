@@ -16,10 +16,10 @@ fun stride_size_of[T](): Int { ... }
 | Makes the name of the type available at runtime.
 fun type[T](): Type { ... }
 
-struct Type { name: Str, args: Vec[Type] }
+struct Type { name: Str, args: List[Type] }
 
 fun type(name: Str): Type { type(name, vec[Type]()) }
-fun type(name: Str, args: Vec[Type]): Type { Type { name, args } }
+fun type(name: Str, args: List[Type]): Type { Type { name, args } }
 fun is_never(type: Type): Bool { type == type("Never") }
 
 fun write[W](writer: W, type: Type) {
@@ -27,8 +27,8 @@ fun write[W](writer: W, type: Type) {
   then writer."&{type.args.get(0)}"
   else writer."{type.name}{type_args(type.args)}"
 }
-fun type_args[T](args: Vec[T]): TypeArgsFormat[T] { TypeArgsFormat { args } }
-struct TypeArgsFormat[T] { args: Vec[T] }
+fun type_args[T](args: List[T]): TypeArgsFormat[T] { TypeArgsFormat { args } }
+struct TypeArgsFormat[T] { args: List[T] }
 fun write[W, T](writer: W, type_args: TypeArgsFormat[T]) {
   if type_args.args.is_not_empty()
   then writer."[{comma_separated(type_args.args)}]"

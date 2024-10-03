@@ -1,0 +1,200 @@
+import stdlib.mar
+
+| List  
+| A growable array where you can efficiently push and pop data to/from the back.
+| This is implemented using a fixed-size slice. Once it fills up, a new slice is
+| allocated and the old items are copied over.
+
+struct List[T] { data: Slice[T], len: Int }
+
+fun uninitialized_list[T](len: Int): List[T] {
+  List {
+    data = uninitialized_slice[T](
+      if len <= 8 then 8 else len.round_up_to_power_of(2)),
+    len
+  }
+}
+
+fun list[T](): List[T] { List { data = empty_slice[T](), len = 0 } }
+| TODO: choose the right size directly
+fun list[T](a: T): List[T] { var list = list[T]().& list.push(a) list.* }
+fun list[T](a: T, b: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.*
+}
+fun list[T](a: T, b: T, c: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.*
+}
+fun list[T](a: T, b: T, c: T, d: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T,
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T,
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T,
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T,
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.push(n) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T, o: T
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.push(n) list.push(o) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T, o: T, p: T
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.push(n) list.push(o) list.push(p)
+  list.*
+}
+
+fun reserve_uninitialized[T](list: &List[T], n: Int): Slice[T] {
+  if list.data.len == 0 then
+    list.data = uninitialized_slice[T](
+      if n <= 8 then 8 else n.round_up_to_power_of(2))
+  if {list.len + n} > list.data.len then {
+    var new_len = {list.len + n}.round_up_to_power_of(2)
+    var new_data = uninitialized_slice[T](2 * new_len)
+    list.data.copy_to(new_data.subslice(0..list.data.len))
+    list.data = new_data
+  }
+  var slice = list.data.subslice(list.len..+n)
+  list.len = list.len + n
+  slice
+}
+fun push[T](list: &List[T], item: T) {
+  list.reserve_uninitialized(1).get_ref_unchecked(0).* = item
+}
+fun push_all[T](list: &List[T], items: Slice[T]) {
+  items.copy_to(list.reserve_uninitialized(items.len))
+}
+fun push_all[T, I](list: &List[T], items: Iter[T, I]) {
+  for item in items do list.push(item)
+}
+fun pop[T](list: &List[T]): T {
+  if list.len == 0 then panic("called pop on empty List")
+  list.len = list.len.dec()
+  list.data.get(list.len)
+}
+fun clear[T](list: &List[T]) { list.len = 0 }
+fun get[T](list: List[T], index: Int): T { list.data.get(index) }
+fun get_maybe[T](list: List[T], index: Int): Maybe[T] {
+  list.data.get_maybe(index)
+}
+fun get_ref[T](list: List[T], index: Int): &T { list.data.get_ref(index) }
+fun get_maybe_ref[T](list: List[T], index: Int): Maybe[&T] {
+  list.data.get_maybe_ref(index)
+}
+fun set[T](list: &List[T], index: Int, value: T) {
+  list.get_ref(index).* = value
+}
+
+fun last_maybe_ref[T](list: &List[T]): Maybe[&T] {
+  list.to_slice().&.last_maybe_ref()
+}
+fun last_maybe[T](list: List[T]): Maybe[T] { list.to_slice().last_maybe() }
+fun last_ref[T](list: &List[T]): &T { list.to_slice().&.last_ref() }
+fun last[T](list: List[T]): T { list.to_slice().last() }
+fun is_empty[T](list: List[T]): Bool { list.len == 0 }
+fun to_slice[T](list: List[T]): Slice[T] { list.data.subslice(0..list.len) }
+
+fun make_space_at[T](list: &List[T], pos: Int, amount: Int, fill: T) {
+  for i in 0..amount do list.reserve_uninitialized(amount)
+  list.to_slice().subslice(pos..{list.len - amount})
+    .copy_to(list.to_slice().subslice({pos + amount}..list.len))
+  list.to_slice().subslice(pos..+amount).&.fill(fill)
+}
+fun insert[T](list: &List[T], index: Int, item: T) {
+  list.make_space_at(0, 1, item)
+}
+fun remove[T](list: &List[T], range: Range[Int]) {
+  var slice = list.to_slice()
+  slice.&.remove(range)
+  list.len = slice.len
+}
+
+fun ==[T](a: List[T], b: List[T]): Bool { a.to_slice() == b.to_slice() }
+fun iter[T](list: List[T]): Iter[T, _] { list.to_slice().iter() }
+fun write[W, T](writer: W, list: List[T]) { writer.write(list.to_slice()) }
+fun write_debug[W, T](writer: W, list: List[T]) {
+  writer.write_debug(list.to_slice())
+}
+
+fun generate[T](
+  static: Static[List[T]], random: &Random, complexity: Int
+): List[T] {
+  var complexities = random.split(complexity)
+  var list = list[T]()
+  for complexity in complexities do
+    list.&.push(static[T]().generate(random, complexity))
+  list
+}
+fun fuzzing_complexity[T](list: List[T]): Float {
+  var complexity = list.len.to_float()
+  for item in list do complexity = complexity + item.fuzzing_complexity()
+  complexity
+}
+fun mutate[T](list: List[T], random: &Random, temperature: Int): List[T] {
+  list.to_slice().mutate(random, temperature).to_list()
+}
+
+fun +[T](a: List[T], b: List[T]): List[T] {
+  var concatenated = uninitialized_list[T](a.len + b.len)
+  a.to_slice().copy_to(concatenated.to_slice().subslice(0..a.len))
+  b.to_slice().copy_to(concatenated.to_slice().subslice(a.len..+b.len))
+  concatenated
+}

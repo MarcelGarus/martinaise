@@ -224,8 +224,8 @@ fun parse_line(line: Str): Result[Line, ParseError] {
 fun write[W](writer: W, unit: Unit) {
   if unit.is_none() then return {}
 
-  var positive = vec[MapEntry[Str, Int]]()
-  var negative = vec[MapEntry[Str, Int]]()
+  var positive = list[MapEntry[Str, Int]]()
+  var negative = list[MapEntry[Str, Int]]()
   for entry in unit.exponents do
     {if entry.value > 0 then positive.& else negative.&}.push(entry)
 
@@ -347,7 +347,7 @@ fun simplify_leaves(term: Term): Result[Term, Str] {
   )
 }
 
-struct EvalError { inputs: Vec[Amount], msg: Str }
+struct EvalError { inputs: List[Amount], msg: Str }
 
 fun eval(term: Term, dict: Dictionary): Result[Amount, EvalError] {
   ok[Amount, EvalError](
@@ -361,7 +361,7 @@ fun eval(term: Term, dict: Dictionary): Result[Amount, EvalError] {
         b = dict.canonicalize(b)
       }
       a.unit == b.unit or return error[Amount, EvalError](EvalError {
-        inputs = vec(a, b),
+        inputs = list(a, b),
         msg = "Plus operands {a} and {b} don't have the same unit."
       })
       Amount {
@@ -376,7 +376,7 @@ fun eval(term: Term, dict: Dictionary): Result[Amount, EvalError] {
         b = dict.canonicalize(b)
       }
       a.unit == b.unit or return error[Amount, EvalError](EvalError {
-        inputs = vec(a, b),
+        inputs = list(a, b),
         msg = "Minus operands {a} and {b} don't have the same unit."
       })
       Amount {
@@ -394,7 +394,7 @@ fun eval(term: Term, dict: Dictionary): Result[Amount, EvalError] {
       var a = ops.left.eval(dict)?
       var b = ops.right.eval(dict)?
       if b.number == 0.0 then return error[Amount, EvalError](EvalError {
-        inputs = vec(b),
+        inputs = list(b),
         msg = "Dividend {b} is zero."
       })
       Amount {

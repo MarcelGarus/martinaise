@@ -1,23 +1,23 @@
 import stdlib.mar
 
 | Stack  
-| Something where you can push and pop items. Essentially just a Vec, but
+| Something where you can push and pop items. Essentially just a List, but
 | sometimes this type expresses the intent more clearly.
 
-struct Stack[T] { vec: Vec[T] }
+struct Stack[T] { list: List[T] }
 
-fun stack[T](): Stack[T] { Stack { vec = vec[T]() } }
-fun len[T](stack: Stack[T]): Int { stack.vec.len }
-fun is_empty[T](stack: Stack[T]): Bool { stack.vec.is_empty() }
-fun push[T](stack: &Stack[T], item: T) { stack.vec.&.push(item) }
-fun pop[T](stack: &Stack[T]): T { stack.vec.&.pop() }
+fun stack[T](): Stack[T] { Stack { list = list[T]() } }
+fun len[T](stack: Stack[T]): Int { stack.list.len }
+fun is_empty[T](stack: Stack[T]): Bool { stack.list.is_empty() }
+fun push[T](stack: &Stack[T], item: T) { stack.list.&.push(item) }
+fun pop[T](stack: &Stack[T]): T { stack.list.&.pop() }
 fun top[T](stack: Stack[T]): T { stack.top(0) }
 fun top[T](stack: Stack[T], n: Int): T {
-  stack.vec.get(stack.vec.len - n - 1)
+  stack.list.get(stack.list.len - n - 1)
 }
 fun top_ref[T](stack: Stack[T]): &T { stack.top_ref(0) }
 fun top_ref[T](stack: Stack[T], n: Int): &T {
-  stack.vec.get_ref(stack.vec.len - n - 1)
+  stack.list.get_ref(stack.list.len - n - 1)
 }
-fun ==[T](a: Stack[T], b: Stack[T]): Bool { a.vec == b.vec }
-fun write[W, T](writer: W, stack: Stack[T]) { writer.write(stack.vec) }
+fun ==[T](a: Stack[T], b: Stack[T]): Bool { a.list == b.list }
+fun write[W, T](writer: W, stack: Stack[T]) { writer.write(stack.list) }

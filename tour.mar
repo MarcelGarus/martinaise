@@ -88,11 +88,11 @@ fun control_flow() {
   println("The {banana.name} is {color_string}.")
 
   | The standard library uses the Maybe[T] enum for optional types.
-  switch vec(1, 2, 3).get_maybe(2)
+  switch list(1, 2, 3).get_maybe(2)
   case some(item) println(item)
   case none println("index out of bounds")
 
-  var number = vec(1, 2, 3).get_maybe(2) or 0
+  var number = list(1, 2, 3).get_maybe(2) or 0
 
   println(true or panic("not evaluated"))
   println(false and panic("not evaluated"))

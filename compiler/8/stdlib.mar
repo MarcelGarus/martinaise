@@ -231,13 +231,13 @@ fun or[O, E](result: Result[O, E]): ControlFlow[O, E] {
 | generates a $Input struct that contains the inputs to the fuzzed function and
 | then calls fuzzer_main[$Input](). The following functions are also generated:
 | - run($Input): _                       | runs the fuzzed function
-| - arg_strings($Input): Vec[Str]        | stringifies the arguments
+| - arg_strings($Input): List[Str]        | stringifies the arguments
 
 fun fuzzer_main[Input](): Never {
   var random = random_number_generator()
   var current_cov = get_coverage()
   var total_cov = coverage(current_cov.len)
-  var schick = vec[FoundInput[Input]]()
+  var schick = list[FoundInput[Input]]()
   var queue = queue[Input]()
 
   for i in 0..100 do {
@@ -555,7 +555,7 @@ fun read_byte(stdin: Stdin): Result[Maybe[Byte], Nothing] {
   )
 }
 fun read_line(stdin: Stdin): Result[Maybe[Str], Nothing] {
-  var content = vec[Byte]()
+  var content = list[Byte]()
   loop {
     var byte = stdin.read_byte()? or {
       if content.is_empty() then return ok[Maybe[Str], Nothing](none[Str]())
@@ -1039,7 +1039,7 @@ fun write_decimals[W](writer: W, value: Int) {
     width.& -= 1
   }
 
-  var buffer = vec[Char]()
+  var buffer = list[Char]()
   loop {
     if width == 0 then break
     buffer.&.push(#0 + {value % 10}.lower_byte())
@@ -1132,10 +1132,10 @@ fun stride_size_of[T](): Int { ... }
 | Makes the name of the type available at runtime.
 fun type[T](): Type { ... }
 
-struct Type { name: Str, args: Vec[Type] }
+struct Type { name: Str, args: List[Type] }
 
-fun type(name: Str): Type { type(name, vec[Type]()) }
-fun type(name: Str, args: Vec[Type]): Type { Type { name, args } }
+fun type(name: Str): Type { type(name, list[Type]()) }
+fun type(name: Str, args: List[Type]): Type { Type { name, args } }
 fun is_never(type: Type): Bool { type == type("Never") }
 
 fun write[W](writer: W, type: Type) {
@@ -1143,8 +1143,8 @@ fun write[W](writer: W, type: Type) {
   then writer."&{type.args.get(0)}"
   else writer."{type.name}{type_args(type.args)}"
 }
-fun type_args[T](args: Vec[T]): TypeArgsFormat[T] { TypeArgsFormat { args } }
-struct TypeArgsFormat[T] { args: Vec[T] }
+fun type_args[T](args: List[T]): TypeArgsFormat[T] { TypeArgsFormat { args } }
+struct TypeArgsFormat[T] { args: List[T] }
 fun write[W, T](writer: W, type_args: TypeArgsFormat[T]) {
   if type_args.args.is_not_empty()
   then writer."[{comma_separated(type_args.args)}]"
@@ -1157,7 +1157,7 @@ fun specialize(type: Type, type_env: Map[Str, Type]): Result[Type, Str] {
         "Type {type.name} is generic, but contains arguments.")
     ok[Type, Str](concrete)
   } else {
-    var args = vec[Type]()
+    var args = list[Type]()
     for arg in type.args do args.&.push(arg.specialize(type_env)?)
     ok[Type, Str](Type { name = type.name, args })
   }
@@ -1637,7 +1637,7 @@ fun to_char(byte: Byte): Char { Char { byte } }
 
 fun to_str(chars: Slice[Char]): Str { chars.unchecked_cast[Slice[Char], Str]() }
 fun to_str(bytes: Slice[Byte]): Str { bytes.unchecked_cast[Slice[Byte], Str]() }
-fun to_str(chars: Vec[Char]): Str { chars.to_slice().to_str() }
+fun to_str(chars: List[Char]): Str { chars.to_slice().to_str() }
 fun chars(str: Str): Slice[Char] { str.unchecked_cast[Str, Slice[Char]]() }
 fun bytes(str: Str): Slice[Byte] { str.unchecked_cast[Str, Slice[Byte]]() }
 
@@ -1666,8 +1666,8 @@ fun +(char: Char, delta: Byte): Char { Char { byte = char.byte + delta } }
 fun -(char: Char, delta: Byte): Char { Char { byte = char.byte - delta } }
 fun -(char: Char, other: Char): Byte { char.byte - other.byte }
 
-fun str_builder(): StringBuilder { StringBuilder { bytes = vec[Byte]() } }
-struct StringBuilder { bytes: Vec[Byte] }
+fun str_builder(): StringBuilder { StringBuilder { bytes = list[Byte]() } }
+struct StringBuilder { bytes: List[Byte] }
 fun write_byte(builder: &StringBuilder, byte: Byte) {
   builder.bytes.&.push(byte)
 }
@@ -1823,7 +1823,7 @@ fun trim(str: Str): Str {
   str.substr(start..end)
 }
 fun split(str: Str, separator: Str): Slice[Str] {
-  var parts = vec[Str]()
+  var parts = list[Str]()
   for part in str.iter().split(separator.chars()) do parts.&.push(part.to_str())
   parts.to_slice()
 }
@@ -2048,7 +2048,7 @@ fun split[T, I](iter: Iter[T, I], separator: Slice[T]): Iter[Slice[T], _] {
 struct SplitIter[T, I] { inner: I, separator: Slice[T] }
 fun next[T, I](iter: &Iter[T, SplitIter[T, I]]): Maybe[Slice[T]] {
   var state = iter.state.&
-  var current = vec[T]()
+  var current = list[T]()
   loop
     switch state.inner.&.next()
     case none
@@ -2064,7 +2064,7 @@ fun next[T, I](iter: &Iter[T, SplitIter[T, I]]): Maybe[Slice[T]] {
 
 | Splits an Iter at the given separator.
 fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
-  iter.split(vec(separator).to_slice())
+  iter.split(list(separator).to_slice())
 }
 
 | fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
@@ -2075,7 +2075,7 @@ fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
 | }
 
 | fun split(str: Str, separator: Str): Slice[Str] {
-|   var parts = vec[Str]()
+|   var parts = list[Str]()
 |   for part in str.iter().iter_split(separator) do parts.&.push(part)
 |   parts.to_slice()
 | }
@@ -2169,7 +2169,7 @@ fun read_byte(file: File): Result[Maybe[Byte], Nothing] {
   )
 }
 fun read_line(file: File): Result[Maybe[Str], Nothing] {
-  var content = vec[Byte]()
+  var content = list[Byte]()
   loop {
     var byte = file.read_byte()? or {
       if content.is_empty() then return ok[Maybe[Str], Nothing](none[Str]())
@@ -2320,164 +2320,174 @@ fun write[W, T](writer: W, point: Point[T]) {
   writer.write(tuple(point.x, point.y))
 }
 
-| Vec  
+| List  
 | A growable array where you can efficiently push and pop data to/from the back.
 | This is implemented using a fixed-size slice. Once it fills up, a new slice is
 | allocated and the old items are copied over.
 
-struct Vec[T] { data: Slice[T], len: Int }
+struct List[T] { data: Slice[T], len: Int }
 
-fun vec[T](): Vec[T] { Vec { data = empty_slice[T](), len = 0 } }
+fun list[T](): List[T] { List { data = empty_slice[T](), len = 0 } }
 | TODO: remove when there are slice literals
-fun vec[T](a: T): Vec[T] { var v = vec[T]().& v.push(a) v.* }
-fun vec[T](a: T, b: T): Vec[T] { var v = vec[T]().& v.push(a) v.push(b) v.* }
-fun vec[T](a: T, b: T, c: T): Vec[T] {
-  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.*
+fun list[T](a: T): List[T] { var list = list[T]().& list.push(a) list.* }
+fun list[T](a: T, b: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.*
 }
-fun vec[T](a: T, b: T, c: T, d: T): Vec[T] {
-  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.*
+fun list[T](a: T, b: T, c: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.*
 }
-fun vec[T](a: T, b: T, c: T, d: T, e: T): Vec[T] {
-  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.*
+fun list[T](a: T, b: T, c: T, d: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.*
 }
-fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T): Vec[T] {
-  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
-  v.*
+fun list[T](a: T, b: T, c: T, d: T, e: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.*
 }
-fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T): Vec[T] {
-  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
-  v.push(g) v.*
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.*
 }
-fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T): Vec[T] {
-  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
-  v.push(g) v.push(h) v.*
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.*
 }
-fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T): Vec[T] {
-  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
-  v.push(g) v.push(h) v.push(i) v.*
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.*
 }
-fun vec[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T): Vec[T] {
-  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
-  v.push(g) v.push(h) v.push(i) v.push(j) v.*
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.*
 }
-fun vec[T](
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T,
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.*
+}
+fun list[T](
   a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T,
-): Vec[T] {
-  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
-  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.*
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.*
 }
-fun vec[T](
+fun list[T](
   a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T,
-): Vec[T] {
-  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
-  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.push(l) v.*
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.*
 }
-fun vec[T](
+fun list[T](
   a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
-): Vec[T] {
-  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
-  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.push(l) v.push(m) v.*
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.*
 }
-fun vec[T](
+fun list[T](
   a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
   n: T,
-): Vec[T] {
-  var v = vec[T]().& v.push(a) v.push(b) v.push(c) v.push(d) v.push(e) v.push(f)
-  v.push(g) v.push(h) v.push(i) v.push(j) v.push(k) v.push(l) v.push(m)
-  v.push(n) v.*
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.push(n) list.*
 }
 
-fun push_n_uninitialized[T](vec: &Vec[T], n: Int): Slice[T] {
-  if vec.data.len == 0 then
-    vec.data = uninitialized_slice[T](
+fun push_n_uninitialized[T](list: &List[T], n: Int): Slice[T] {
+  if list.data.len == 0 then
+    list.data = uninitialized_slice[T](
       if n <= 8 then 8 else n.round_up_to_power_of(2))
-  if {vec.len + n} > vec.data.len then {
-    var new_len = {vec.len + n}.round_up_to_multiple_of(2)
+  if {list.len + n} > list.data.len then {
+    var new_len = {list.len + n}.round_up_to_multiple_of(2)
     var new_data = uninitialized_slice[T](2 * new_len)
-    vec.data.copy_to(new_data.subslice(0..vec.data.len))
-    vec.data = new_data
+    list.data.copy_to(new_data.subslice(0..list.data.len))
+    list.data = new_data
   }
-  var slice = vec.data.subslice(vec.len..+n)
-  vec.len = vec.len + n
+  var slice = list.data.subslice(list.len..+n)
+  list.len = list.len + n
   slice
 }
-fun push[T](vec: &Vec[T], item: T) {
-  vec.push_n_uninitialized(1).get_ref_unchecked(0).* = item
+fun push[T](list: &List[T], item: T) {
+  list.push_n_uninitialized(1).get_ref_unchecked(0).* = item
 }
-fun push_all[T](vec: &Vec[T], items: Slice[T]) {
-  items.copy_to(vec.push_n_uninitialized(items.len))
+fun push_all[T](list: &List[T], items: Slice[T]) {
+  items.copy_to(list.push_n_uninitialized(items.len))
 }
-fun pop[T](vec: &Vec[T]): T {
-  if vec.len == 0 then panic("called pop on empty Vec")
-  vec.len = vec.len.dec()
-  vec.data.get(vec.len)
+fun pop[T](list: &List[T]): T {
+  if list.len == 0 then panic("called pop on empty List")
+  list.len = list.len.dec()
+  list.data.get(list.len)
 }
-fun clear[T](vec: &Vec[T]) { vec.len = 0 }
-fun get[T](vec: Vec[T], index: Int): T { vec.data.get(index) }
-fun get_maybe[T](vec: Vec[T], index: Int): Maybe[T] {
-  vec.data.get_maybe(index)
+fun clear[T](list: &List[T]) { list.len = 0 }
+fun get[T](list: List[T], index: Int): T { list.data.get(index) }
+fun get_maybe[T](list: List[T], index: Int): Maybe[T] {
+  list.data.get_maybe(index)
 }
-fun get_ref[T](vec: Vec[T], index: Int): &T { vec.data.get_ref(index) }
-fun get_maybe_ref[T](vec: Vec[T], index: Int): Maybe[&T] {
-  vec.data.get_maybe_ref(index)
+fun get_ref[T](list: List[T], index: Int): &T { list.data.get_ref(index) }
+fun get_maybe_ref[T](list: List[T], index: Int): Maybe[&T] {
+  list.data.get_maybe_ref(index)
 }
-fun last_maybe[T](vec: Vec[T]): Maybe[T] {
-  if vec.is_empty() then none[T]() else some(vec.data.get(vec.len - 1))
+fun last_maybe[T](list: List[T]): Maybe[T] {
+  if list.is_empty() then none[T]() else some(list.data.get(list.len - 1))
 }
-fun is_empty[T](vec: Vec[T]): Bool { vec.len == 0 }
-fun to_slice[T](vec: Vec[T]): Slice[T] { vec.data.subslice(0..vec.len) }
+fun is_empty[T](list: List[T]): Bool { list.len == 0 }
+fun to_slice[T](list: List[T]): Slice[T] { list.data.subslice(0..list.len) }
 
-fun make_space_at[T](vec: &Vec[T], pos: Int, amount: Int, fill: T) {
-  for i in 0..amount do vec.push(fill)
-  vec.to_slice().subslice(pos..{vec.len - amount})
-    .copy_to(vec.to_slice().subslice({pos + amount}..vec.len))
+fun make_space_at[T](list: &List[T], pos: Int, amount: Int, fill: T) {
+  for i in 0..amount do list.push(fill)
+  list.to_slice().subslice(pos..{list.len - amount})
+    .copy_to(list.to_slice().subslice({pos + amount}..list.len))
 }
-fun remove[T](vec: &Vec[T], range: Range[Int]) {
-  var slice = vec.to_slice()
+fun remove[T](list: &List[T], range: Range[Int]) {
+  var slice = list.to_slice()
   slice.&.remove(range)
-  vec.len = slice.len
+  list.len = slice.len
 }
 
-fun ==[T](a: Vec[T], b: Vec[T]): Bool { a.to_slice() == b.to_slice() }
-fun iter[T](vec: Vec[T]): Iter[T, _] { vec.to_slice().iter() }
-fun write[W, T](writer: W, vec: Vec[T]) { writer.write(vec.to_slice()) }
-fun write_debug[W, T](writer: W, vec: Vec[T]) {
-  writer.write_debug(vec.to_slice())
+fun ==[T](a: List[T], b: List[T]): Bool { a.to_slice() == b.to_slice() }
+fun iter[T](list: List[T]): Iter[T, _] { list.to_slice().iter() }
+fun write[W, T](writer: W, list: List[T]) { writer.write(list.to_slice()) }
+fun write_debug[W, T](writer: W, list: List[T]) {
+  writer.write_debug(list.to_slice())
 }
 
 fun generate[T](
-  static: Static[Vec[T]], random: &Random, complexity: Int
-): Vec[T] {
+  static: Static[List[T]], random: &Random, complexity: Int
+): List[T] {
   var complexities = random.split(complexity)
-  var vec = vec[T]()
+  var list = list[T]()
   for complexity in complexities do
-    vec.&.push(static[T]().generate(random, complexity))
-  vec
+    list.&.push(static[T]().generate(random, complexity))
+  list
 }
-fun mutate[T](vec: Vec[T], random: &Random, temperature: Int): Vec[T] {
-  vec.to_slice().mutate(random, temperature).to_vec()
+fun mutate[T](list: List[T], random: &Random, temperature: Int): List[T] {
+  list.to_slice().mutate(random, temperature).to_vec()
 }
 
 | Stack  
-| Something where you can push and pop items. Essentially just a Vec, but
+| Something where you can push and pop items. Essentially just a List, but
 | sometimes this type expresses the intent more clearly.
 
-struct Stack[T] { vec: Vec[T] }
-fun stack[T](): Stack[T] { Stack { vec = vec[T]() } }
-fun len[T](stack: Stack[T]): Int { stack.vec.len }
-fun is_empty[T](stack: Stack[T]): Bool { stack.vec.is_empty() }
-fun push[T](stack: &Stack[T], item: T) { stack.vec.&.push(item) }
-fun pop[T](stack: &Stack[T]): T { stack.vec.&.pop() }
+struct Stack[T] { list: List[T] }
+fun stack[T](): Stack[T] { Stack { list = list[T]() } }
+fun len[T](stack: Stack[T]): Int { stack.list.len }
+fun is_empty[T](stack: Stack[T]): Bool { stack.list.is_empty() }
+fun push[T](stack: &Stack[T], item: T) { stack.list.&.push(item) }
+fun pop[T](stack: &Stack[T]): T { stack.list.&.pop() }
 fun top[T](stack: Stack[T]): T { stack.top(0) }
 fun top[T](stack: Stack[T], n: Int): T {
-  stack.vec.get(stack.vec.len - n - 1)
+  stack.list.get(stack.list.len - n - 1)
 }
 fun top_ref[T](stack: Stack[T]): &T { stack.top_ref(0) }
 fun top_ref[T](stack: Stack[T], n: Int): &T {
-  stack.vec.get_ref(stack.vec.len - n - 1)
+  stack.list.get_ref(stack.list.len - n - 1)
 }
-fun ==[T](a: Stack[T], b: Stack[T]): Bool { a.vec == b.vec }
-fun write[W, T](writer: W, stack: Stack[T]) { writer.write(stack.vec) }
+fun ==[T](a: Stack[T], b: Stack[T]): Bool { a.list == b.list }
+fun write[W, T](writer: W, stack: Stack[T]) { writer.write(stack.list) }
 
 | Queue  
 | A growable array-like structure where you can push and pop from both ends.
@@ -2757,9 +2767,9 @@ fun next[K, V](
 struct Set[T] { map: Map[T, Nothing] }
 
 fun set[T](): Set[T] { Set[T] { map = map[T, Nothing]() } }
-fun to_set[T](vec: Vec[T]): Set[T] {
+fun to_set[T](list: List[T]): Set[T] {
   var set = set[T]()
-  for item in vec do set.&.put(item)
+  for item in list do set.&.put(item)
   set
 }
 
@@ -2815,7 +2825,7 @@ enum Json {
   bool: Bool,
   int: Int, | TODO: Floats instead of ints
   string: Str,
-  array: Vec[Json],
+  array: List[Json],
   map: Map[Str, Json],
 }
 
@@ -2834,7 +2844,7 @@ fun write[W](writer: W, json: Json) {
     }
     writer."\""
   }
-  case array(vec) writer."[{comma_separated(vec)}]"
+  case array(list) writer."[{comma_separated(list)}]"
   case map(map) {
     writer."\{"
     var first = true
@@ -2897,7 +2907,7 @@ fun parse_int(parser: &JsonParser): Result[Maybe[Int], Nothing] {
 }
 fun parse_string(parser: &JsonParser): Result[Maybe[Str], Nothing] {
   parser.consume(#") or return ok[Maybe[Str], Nothing](none[Str]())
-  var chars = vec[Char]()
+  var chars = list[Char]()
   loop {
     if parser.is_done() then
       return error[Maybe[Str], Nothing]({}) | string doesn't end
@@ -2918,15 +2928,15 @@ fun parse_string(parser: &JsonParser): Result[Maybe[Str], Nothing] {
     }
   }
 }
-fun parse_array(parser: &JsonParser): Result[Maybe[Vec[Json]], Nothing] {
-  parser.consume(#[) or return ok[Maybe[Vec[Json]], Nothing](none[Vec[Json]]())
-  var array = vec[Json]()
+fun parse_array(parser: &JsonParser): Result[Maybe[List[Json]], Nothing] {
+  parser.consume(#[) or return ok[Maybe[List[Json]], Nothing](none[List[Json]]())
+  var array = list[Json]()
   loop if parser.current() == #] then break else {
     array.&.push(parser.parse()?)
     parser.consume(#,) or break
   }
-  parser.consume(#]) or return error[Maybe[Vec[Json]], Nothing]({})
-  ok[Maybe[Vec[Json]], Nothing](some(array))
+  parser.consume(#]) or return error[Maybe[List[Json]], Nothing]({})
+  ok[Maybe[List[Json]], Nothing](some(array))
 }
 fun parse_map(parser: &JsonParser): Result[Maybe[Map[Str, Json]], Nothing] {
   parser.consume(#{) or

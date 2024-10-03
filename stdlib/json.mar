@@ -13,7 +13,7 @@ enum Json {
   bool: Bool,
   int: Int, | TODO: Floats instead of ints
   string: Str,
-  array: Vec[Json],
+  array: List[Json],
   map: Map[Str, Json],
 }
 
@@ -32,7 +32,7 @@ fun write[W](writer: W, json: Json) {
     }
     writer."\""
   }
-  case array(vec) writer."[{comma_separated(vec)}]"
+  case array(list) writer."[{comma_separated(list)}]"
   case map(map) {
     writer."\{"
     var first = true
@@ -95,7 +95,7 @@ fun parse_int(parser: &JsonParser): Result[Maybe[Int], Nothing] {
 }
 fun parse_string(parser: &JsonParser): Result[Maybe[Str], Nothing] {
   parser.consume(#") or return ok[Maybe[Str], Nothing](none[Str]())
-  var chars = vec[Char]()
+  var chars = list[Char]()
   loop {
     if parser.is_done() then
       return error[Maybe[Str], Nothing]({}) | string doesn't end
@@ -116,15 +116,15 @@ fun parse_string(parser: &JsonParser): Result[Maybe[Str], Nothing] {
     }
   }
 }
-fun parse_array(parser: &JsonParser): Result[Maybe[Vec[Json]], Nothing] {
-  parser.consume(#[) or return ok[Maybe[Vec[Json]], Nothing](none[Vec[Json]]())
-  var array = vec[Json]()
+fun parse_array(parser: &JsonParser): Result[Maybe[List[Json]], Nothing] {
+  parser.consume(#[) or return ok[Maybe[List[Json]], Nothing](none[List[Json]]())
+  var array = list[Json]()
   loop if parser.current() == #] then break else {
     array.&.push(parser.parse()?)
     parser.consume(#,) or break
   }
-  parser.consume(#]) or return error[Maybe[Vec[Json]], Nothing]({})
-  ok[Maybe[Vec[Json]], Nothing](some(array))
+  parser.consume(#]) or return error[Maybe[List[Json]], Nothing]({})
+  ok[Maybe[List[Json]], Nothing](some(array))
 }
 fun parse_map(parser: &JsonParser): Result[Maybe[Map[Str, Json]], Nothing] {
   parser.consume(#{) or
