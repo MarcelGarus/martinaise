@@ -1,0 +1,8057 @@
+Welcome to Martinaise 8.
+[1A[KReading hello.mar
+[1A[KParsing hello.mar
+[1A[KReading stdlib.mar
+[1A[KParsing stdlib.mar
+[1A[KReading stdlib/stdlib.mar
+[1A[KParsing stdlib/stdlib.mar
+[1A[KReading stdlib/asm.mar
+[1A[KParsing stdlib/asm.mar
+[1A[KReading stdlib/bool.mar
+[1A[KParsing stdlib/bool.mar
+[1A[KReading stdlib/byte.mar
+[1A[KParsing stdlib/byte.mar
+[1A[KReading stdlib/core.mar
+[1A[KParsing stdlib/core.mar
+[1A[KReading stdlib/float.mar
+[1A[KParsing stdlib/float.mar
+[1A[KReading stdlib/fuzzing.mar
+[1A[KParsing stdlib/fuzzing.mar
+[1A[KReading stdlib/hashing.mar
+[1A[KParsing stdlib/hashing.mar
+[1A[KReading stdlib/int.mar
+[1A[KParsing stdlib/int.mar
+[1A[KReading stdlib/io.mar
+[1A[KParsing stdlib/io.mar
+[1A[KReading stdlib/iter.mar
+[1A[KParsing stdlib/iter.mar
+[1A[KReading stdlib/json.mar
+[1A[KParsing stdlib/json.mar
+[1A[KReading stdlib/list.mar
+[1A[KParsing stdlib/list.mar
+[1A[KReading stdlib/map.mar
+[1A[KParsing stdlib/map.mar
+[1A[KReading stdlib/matrix.mar
+[1A[KParsing stdlib/matrix.mar
+[1A[KReading stdlib/maybe.mar
+[1A[KParsing stdlib/maybe.mar
+[1A[KReading stdlib/mem.mar
+[1A[KParsing stdlib/mem.mar
+[1A[KReading stdlib/ops.mar
+[1A[KParsing stdlib/ops.mar
+[1A[KReading stdlib/ordering.mar
+[1A[KParsing stdlib/ordering.mar
+[1A[KReading stdlib/point.mar
+[1A[KParsing stdlib/point.mar
+[1A[KReading stdlib/process.mar
+[1A[KParsing stdlib/process.mar
+[1A[KReading stdlib/queue.mar
+[1A[KParsing stdlib/queue.mar
+[1A[KReading stdlib/random.mar
+[1A[KParsing stdlib/random.mar
+[1A[KReading stdlib/range.mar
+[1A[KParsing stdlib/range.mar
+[1A[KReading stdlib/rectangle.mar
+[1A[KParsing stdlib/rectangle.mar
+[1A[KReading stdlib/result.mar
+[1A[KParsing stdlib/result.mar
+[1A[KReading stdlib/set.mar
+[1A[KParsing stdlib/set.mar
+[1A[KReading stdlib/stack.mar
+[1A[KParsing stdlib/stack.mar
+[1A[KReading stdlib/string.mar
+[1A[KParsing stdlib/string.mar
+[1A[KReading stdlib/tuples.mar
+[1A[KParsing stdlib/tuples.mar
+[1A[KReading stdlib/type.mar
+[1A[KParsing stdlib/type.mar
+[1A[KReading stdlib/units.mar
+[1A[KParsing stdlib/units.mar
+[1A[Kopaque Float = 8 bytes big, 8 bytes aligned
+struct TypeArgsFormat[T] {
+  args: List[T],
+}
+struct TakeIter[T, I] {
+  inner: I,
+  amount: Int,
+}
+enum Json {
+}  null: Nothing,
+  bool: Bool,
+  int: Int,
+  string: String,
+  array: List[Json],
+  map: Map[String, Json],
+}
+struct SetIter[T] {
+  buckets: Slice[MapBucket[T, Nothing]],
+  index: Int,
+}
+opaque File = 8 bytes big, 8 bytes aligned
+struct JsonParser {
+  input: String,
+  cursor: Int,
+}
+struct Static[T] {}
+struct ZipIter[IA, IB] {
+  a: IA,
+  b: IB,
+}
+struct Range[T] {
+  start: T,
+  end: T,
+}
+opaque Byte = 1 byte big, 1 byte aligned
+struct Iter[T, S] {
+  state: S,
+}
+struct Rectangle {
+  left: Int,
+  top: Int,
+  right: Int,
+  bottom: Int,
+}
+enum DirEntryKind {
+}  file: Nothing,
+  directory: Nothing,
+  other: Nothing,
+}
+struct String {
+  data: Address,
+  len: Int,
+}
+struct FuzzingInfo {
+  has_target_position: Bool,
+  fun_line: Int,
+  fun_name: String,
+}
+enum Ordering {
+}  less: Nothing,
+  equal: Nothing,
+  greater: Nothing,
+}
+struct Hasher {
+  state: Int,
+}
+struct Tuple2[A, B] {
+  a: A,
+  b: B,
+}
+enum Result[O, E] {
+}  ok: O,
+  error: E,
+}
+enum Never {}
+struct RangeIter[T] {
+  rest: Range[T],
+}
+struct Length {
+  meters: Float,
+}
+struct WithFittingSiSuffix {
+  a: Float,
+}
+struct OpenRange[T] {
+  start: T,
+}
+struct Queue[T] {
+  data: Slice[T],
+  start: Int,
+  end: Int,
+}
+struct HeapCheckpoint {
+  heap_head: Address,
+}
+struct Enumerated[T] {
+  index: Int,
+  item: T,
+}
+struct Coverage {
+  bitset: Address,
+  len: Int,
+}
+struct Print {}
+struct StrIter {
+  string: String,
+  index: Int,
+}
+struct CommaSeparatedFormat[I] {
+  iter: I,
+}
+struct Slice[T] {
+  data: Address,
+  len: Int,
+}
+struct SliceRevIter[T] {
+  slice: Slice[T],
+  index: Int,
+}
+struct Speed {
+  meters_per_second: Float,
+}
+struct OpenRangeIter[T] {
+  rest: OpenRange[T],
+}
+struct Matrix[T] {
+  data: Slice[T],
+  width: Int,
+  height: Int,
+}
+struct Stack[T] {
+  list: List[T],
+}
+struct FuzzFront {
+  coverage: Coverage,
+  crashes: Bool,
+}
+struct Area {
+  square_meters: Float,
+}
+enum ControlFlow[T, A] {
+}  short_circuit: T,
+  evaluate_alternative: A,
+}
+struct List[T] {
+  data: Slice[T],
+  len: Int,
+}
+enum MapBucket[K, V] {
+}  empty: Nothing,
+  filled: MapEntry[K, V],
+}
+struct EnumeratedIter[S] {
+  inner: S,
+  index: Int,
+}
+struct Char {
+  byte: Byte,
+}
+struct BufferedWriter[W] {
+  buffer: Slice[Byte],
+  len: Int,
+  inner: W,
+}
+struct Random {
+  a: Int,
+  b: Int,
+  c: Int,
+  d: Int,
+}
+struct InputThatRan[Input] {
+  input: Input,
+  arg_strings: Slice[String],
+  coverage: Coverage,
+  result: Result[String, Nothing],
+}
+struct Stdin {}
+struct SliceIter[T] {
+  slice: Slice[T],
+  index: Int,
+}
+opaque Address = 8 bytes big, 8 bytes aligned
+struct Debug[T] {
+  value: T,
+}
+struct &[T] {
+  *: T,
+}
+struct Point {
+  x: Int,
+  y: Int,
+}
+opaque Int = 8 bytes big, 8 bytes aligned
+struct MapEntry[K, V] {
+  key: K,
+  value: V,
+}
+struct Nothing {}
+struct Volume {
+  cubic_meters: Float,
+}
+struct Tuple3[A, B, C] {
+  a: A,
+  b: B,
+  c: C,
+}
+struct Map[K, V] {
+  buckets: Slice[MapBucket[K, V]],
+  size: Int,
+}
+struct StringBuilder {
+  bytes: List[Byte],
+}
+struct SplitIter[T, I] {
+  inner: I,
+  separator: Slice[T],
+}
+struct RadixFormat {
+  radix: Int,
+  int: Int,
+}
+struct Log {}
+struct Type {
+  name: String,
+  args: List[Type],
+}
+struct Duration {
+  seconds: Float,
+}
+struct Acceleration {
+  meters_per_square_second: Float,
+}
+struct SkipIter[T, I] {
+  inner: I,
+  amount: Int,
+}
+struct Set[T] {
+  map: Map[T, Nothing],
+}
+enum Bool {
+}  false: Nothing,
+  true: Nothing,
+}
+enum Maybe[T] {
+}  some: T,
+  none: Nothing,
+}
+struct Infinity {}
+struct DirEntry {
+  name: String,
+  kind: DirEntryKind,
+}
+struct MapIter[K, V] {
+  buckets: Slice[MapBucket[K, V]],
+  index: Int,
+}
+var tab = 9.lower_byte().to_char()
+var uppercase_chars = ..=(Char {
+  byte = 65.lower_byte(),
+}, Char {
+  byte = 90.lower_byte(),
+})
+var null = 0.to_address()
+var inf = 9218868437227405312.cast[Int, Float]()
+var nan = 9221120237041090560.cast[Int, Float]()
+var carriage_return = 13.lower_byte().to_char()
+var true = Bool.true({})
+var digit_chars = ..=(Char {
+  byte = 48.lower_byte(),
+}, Char {
+  byte = 57.lower_byte(),
+})
+var stdin = Stdin {}
+var stdout = Print {}
+var infinity = Infinity {}
+var false = Bool.false({})
+var space = Char {
+  byte = 32.lower_byte(),
+}
+var min_int = -(0, 9223372036854775806)
+var heap_head = end_of_initial_memory()
+var max_int = 9223372036854775807
+var newline = 10.lower_byte().to_char()
+var stderr = Log {}
+var lowercase_chars = ..=(Char {
+  byte = 97.lower_byte(),
+}, Char {
+  byte = 122.lower_byte(),
+})
+fun <=[T](a: T, b: T): Bool {
+  not(switch <=>(a, b)
+  case greater {
+    true
+  }
+  default {
+    false
+  })
+}
+fun +[T](a: List[T], b: List[T]): List[T] {
+  var concatenated = uninitialized_list[T](+(a.len, b.len))
+  a.to_slice().copy_to(concatenated.to_slice().subslice(..(0, a.len)))
+  b.to_slice().copy_to(concatenated.to_slice().subslice(..+(a.len, b.len)))
+  concatenated
+}
+fun +(a: Address, offset: Int): Address {
+  {
+    +(a.to_int(), offset)
+  }.to_address()
+}
+fun +(a: Duration, b: Duration): Duration {
+  Duration {
+    seconds = +(a.seconds, b.seconds),
+  }
+}
+fun +(a: Length, b: Length): Length {
+  Length {
+    meters = +(a.meters, b.meters),
+  }
+}
+fun +(a: Area, b: Area): Area {
+  Area {
+    square_meters = +(a.square_meters, b.square_meters),
+  }
+}
+fun +(a: Volume, b: Volume): Volume {
+  Volume {
+    cubic_meters = +(a.cubic_meters, b.cubic_meters),
+  }
+}
+fun +(a: Speed, b: Speed): Speed {
+  Speed {
+    meters_per_second = +(a.meters_per_second, b.meters_per_second),
+  }
+}
+fun +(a: Acceleration, b: Acceleration): Acceleration {
+  Acceleration {
+    meters_per_square_second = +(a.meters_per_square_second, b.meters_per_square_second),
+  }
+}
+fun +(left: Byte, right: Byte): Byte asm {
+  moveib a 8
+  add a sp
+  loadb a a
+  moveib b 9
+  add b sp
+  loadb b b
+  load c sp
+  add a b
+  storeb c a
+  ret
+}
+fun +(left: Float, right: Float): Float asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  load c sp
+  fadd a b
+  store c a
+  ret
+}
+fun +(char: Char, delta: Byte): Char {
+  Char {
+    byte = +(char.byte, delta),
+  }
+}
+fun +(a: Point, b: Point): Point {
+  Point {
+    x = +(a.x, b.x),
+    y = +(a.y, b.y),
+  }
+}
+fun +(left: Int, right: Int): Int asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  load c sp
+  add a b
+  store c a
+  ret
+}
+fun set[T](list: &List[T], index: Int, value: T): Nothing {
+  list.get_ref(index).* = value
+}
+fun set[T](slice: &Slice[T], index: Int, value: T): Nothing {
+  slice.get_ref(index).* = value
+}
+fun set[T](): Set[T] {
+  Set[T] {
+    map = map[T, Nothing](),
+  }
+}
+fun set[T](matrix: &Matrix[T], point: Point, value: T): Nothing {
+  matrix.get_ref(point).* = value
+}
+fun complexity[Input](input: InputThatRan[Input]): Int {
+  var sum = 0
+  {
+    var $iter = input.arg_strings.iter().&
+    loop {
+      var arg = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      sum = +(sum, arg.len)
+    }
+  }
+  sum
+}
+fun seconds(seconds: Float): Duration {
+  Duration {
+    seconds = seconds,
+  }
+}
+fun parse_string(parser: &JsonParser): Result[Maybe[String], Nothing] {
+  switch parser.consume(Char {
+    byte = 34.lower_byte(),
+  }).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return ok[Maybe[String], Nothing](none[String]())
+  }
+  var chars = list[Char]()
+  loop {
+    switch parser.is_done()
+    case true {
+      return error[Maybe[String], Nothing]({})
+    }
+    default {
+      {}
+    }
+    switch ==(parser.current(), Char {
+      byte = 34.lower_byte(),
+    })
+    case true {
+      {
+        parser.advance()
+        return ok[Maybe[String], Nothing](some(chars.to_str()))
+      }
+    }
+    default {
+      {}
+    }
+    switch ==(parser.current(), Char {
+      byte = 92.lower_byte(),
+    })
+    case true {
+      {
+        parser.advance()
+        switch ==(parser.current(), Char {
+          byte = 92.lower_byte(),
+        })
+        case true {
+          chars.&.push(Char {
+            byte = 92.lower_byte(),
+          })
+        }
+        default {
+          switch ==(parser.current(), Char {
+            byte = 34.lower_byte(),
+          })
+          case true {
+            chars.&.push(Char {
+              byte = 34.lower_byte(),
+            })
+          }
+          default {
+            switch ==(parser.current(), Char {
+              byte = 110.lower_byte(),
+            })
+            case true {
+              chars.&.push(newline)
+            }
+            default {
+              return error[Maybe[String], Nothing]({})
+            }
+          }
+        }
+        parser.advance()
+      }
+    }
+    default {
+      {
+        chars.&.push(parser.current())
+        parser.advance()
+      }
+    }
+  }
+}
+fun zip[A, B, IA, IB](a: Iter[A, IA], b: Iter[B, IB]): Iter[Tuple2[A, B], _] {
+  Iter[Tuple2[A, B], ZipIter[IA, IB]] {
+    state = ZipIter[IA, IB] {
+      a = a.state,
+      b = b.state,
+    },
+  }
+}
+fun is_never(type: Type): Bool {
+  ==(type, type("Never"))
+}
+fun size[T](matrix: Matrix[T]): Point {
+  @(matrix.width, matrix.height)
+}
+fun read_line(file: File): Result[Maybe[String], Nothing] {
+  var content = vec[Byte]()
+  loop {
+    var byte = switch file.read_byte()?.or()
+case short_circuit($primary) {
+  $primary
+}
+case evaluate_alternative {
+  {
+    switch content.is_empty()
+    case true {
+      return ok[Maybe[String], Nothing](none[String]())
+    }
+    default {
+      {}
+    }
+    break(Nothing {})
+  }
+}
+    switch ==(byte, newline.byte)
+    case true {
+      break(Nothing {})
+    }
+    default {
+      {}
+    }
+    content.&.push(byte)
+  }
+  ok[Maybe[String], Nothing](some(content.to_slice().to_str()))
+}
+fun read_line(stdin: Stdin): Result[Maybe[String], Nothing] {
+  var content = vec[Byte]()
+  loop {
+    var byte = switch stdin.read_byte()?.or()
+case short_circuit($primary) {
+  $primary
+}
+case evaluate_alternative {
+  {
+    switch content.is_empty()
+    case true {
+      return ok[Maybe[String], Nothing](none[String]())
+    }
+    default {
+      {}
+    }
+    break(Nothing {})
+  }
+}
+    switch ==(byte, newline.byte)
+    case true {
+      break(Nothing {})
+    }
+    default {
+      {}
+    }
+    content.&.push(byte)
+  }
+  ok[Maybe[String], Nothing](some(content.to_slice().to_str()))
+}
+fun ignore[T](value: T): Nothing {}
+fun heap_checkpoint(): HeapCheckpoint {
+  heap_head
+  heap_checkpoint_impl()
+}
+fun ends_with[T](slice: Slice[T], suffix: Slice[T]): Bool {
+  switch <=(suffix.len, slice.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return false
+  }
+  ==(slice.last(suffix.len), suffix)
+}
+fun ends_with(string: String, suffix: String): Bool {
+  switch >=(string.len, suffix.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return false
+  }
+  switch memcompare(+(string.data, {
+    -(string.len, suffix.len)
+  }), suffix.data, suffix.len)
+  case equal {
+    true
+  }
+  default {
+    false
+  }
+}
+fun main(): Never {
+  println("Hello, world!")
+  exit(0)
+}
+fun dec(a: Byte): Byte {
+  -(a, 1.lower_byte())
+}
+fun dec(char: Char): Char {
+  Char {
+    byte = char.byte.dec(),
+  }
+}
+fun dec(a: Int): Int {
+  -(a, 1)
+}
+fun get_maybe[T](list: List[T], index: Int): Maybe[T] {
+  list.data.get_maybe(index)
+}
+fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
+  var i = %(key.hash(), map.buckets.len)
+  loop {
+    var bucket = map.buckets.get_unchecked(i)
+    switch bucket
+    case empty {
+      return none[V]()
+    }
+    case filled(entry) {
+      switch ==(entry.key, key)
+      case true {
+        return some(entry.value)
+      }
+      default {
+        i = %(+(i, 1), map.buckets.len)
+      }
+    }
+  }
+}
+fun get_maybe[T](slice: Slice[T], index: Int): Maybe[T] {
+  switch slice.get_maybe_ref(index)
+  case some(item) {
+    some(item.*)
+  }
+  case none {
+    none[T]()
+  }
+}
+fun get_maybe[T, I](iter: &Iter[T, I], index: Int): Maybe[T] {
+  iter.skip(index).&.next()
+}
+fun get_maybe(string: String, index: Int): Maybe[Char] {
+  switch string.get_maybe_ref(index)
+  case some(c) {
+    some(c.*)
+  }
+  case none {
+    none[Char]()
+  }
+}
+fun get_maybe[T](matrix: Matrix[T], point: Point): Maybe[T] {
+  switch matrix.&.get_maybe_ref(point)
+  case some(item) {
+    some(item.*)
+  }
+  case none {
+    none[T]()
+  }
+}
+fun read_byte(file: File): Result[Maybe[Byte], Nothing] {
+  var char = 0.lower_byte()
+  ok[Maybe[Byte], Nothing](switch ==(file.read(Slice[Byte] {
+    data = char.&.to_address(),
+    len = 1,
+  })?, 0)
+  case true {
+    none[Byte]()
+  }
+  default {
+    some(char)
+  })
+}
+fun read_byte(stdin: Stdin): Result[Maybe[Byte], Nothing] {
+  var char = 0.lower_byte()
+  ok[Maybe[Byte], Nothing](switch ==(stdin.read(Slice[Byte] {
+    data = char.&.to_address(),
+    len = 1,
+  })?, 0)
+  case true {
+    none[Byte]()
+  }
+  default {
+    some(char)
+  })
+}
+fun trim_suffix[T](slice: &Slice[T], suffix: Slice[T]): Bool {
+  var matches = slice.ends_with(suffix)
+  switch matches
+  case true {
+    slice.* = slice.without_last(suffix.len)
+  }
+  default {
+    {}
+  }
+  matches
+}
+fun trim_suffix(string: &String, suffix: String): Nothing {
+  string.* = string.without_suffix(suffix)
+}
+fun reached_target(coverage: Coverage): Bool {
+  coverage.is_marked(-(coverage.len, 1))
+}
+fun get_ref_or_put_default[K, V](map: &Map[K, V], key: K, default_: V): &V {
+  switch not(map.contains(key))
+  case true {
+    map.put(key, default_)
+  }
+  default {
+    {}
+  }
+  map.get_maybe_ref(key).unwrap()
+}
+fun exit(status: Int): Never asm {
+  moveib a 8
+  add a sp
+  load a a
+  syscall 0
+}
+fun write_byte_safely(file: File, byte: Byte): Result[Nothing, Nothing] {
+  file.write_bytes_safely(Slice {
+    data = byte.&,
+    len = 1,
+  })
+}
+fun without_last[T](slice: Slice[T]): Slice[T] {
+  slice.without_last(1)
+}
+fun without_last[T](slice: Slice[T], amount: Int): Slice[T] {
+  switch <=(amount, slice.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("without_last amount too big")
+  }
+  slice.subslice(..(0, {
+    -(slice.len, amount)
+  }))
+}
+fun without_last(string: String, amount: Int): String {
+  switch <=(amount, string.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("without_last amount too big")
+  }
+  string.substr(..(0, {
+    -(string.len, amount)
+  }))
+}
+fun kilo(a: Float): Float {
+  *(a, 1000)
+}
+fun push_back[T](queue: &Queue[T], item: T): Nothing {
+  queue.reserve(+(queue.len(), 1))
+  queue.data.get_ref(queue.end).* = item
+  queue.end = %(+(queue.end, 1), queue.data.len)
+}
+fun **(a: Int, b: Int): Int {
+  var res = 1
+  {
+    var $iter = ..(0, b).iter().&
+    loop {
+      var i = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      res = *(res, a)
+    }
+  }
+  res
+}
+fun sum(slice: Slice[Int]): Int {
+  var sum = 0
+  {
+    var $iter = slice.iter().&
+    loop {
+      var item = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      sum = +(sum, item)
+    }
+  }
+  sum
+}
+fun sum(matrix: Matrix[Int]): Int {
+  matrix.data.sum()
+}
+fun amount_free[W](self: BufferedWriter[W]): Int {
+  -(self.buffer.len, self.len)
+}
+fun giga(a: Float): Float {
+  *(a, 1e9)
+}
+fun ==[T](a: List[T], b: List[T]): Bool {
+  ==(a.to_slice(), b.to_slice())
+}
+fun ==[K, V](a: Map[K, V], b: Map[K, V]): Bool {
+  switch ==(a.size, b.size).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return false
+  }
+  {
+    var $iter = a.iter().&
+    loop {
+      var a = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      switch ==(a.value, {
+        switch b.get_maybe(a.key).or()
+        case short_circuit($primary) {
+          $primary
+        }
+        case evaluate_alternative {
+          return false
+        }
+      }).or()
+      case short_circuit($primary) {
+        $primary
+      }
+      case evaluate_alternative {
+        return false
+      }
+    }
+  }
+  true
+}
+fun ==(a: Address, b: Address): Bool {
+  ==(a.to_int(), b.to_int())
+}
+fun ==[T](a: Slice[T], b: Slice[T]): Bool {
+  switch ==(a.len, b.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return false
+  }
+  {
+    var $iter = ..(0, a.len).iter().&
+    loop {
+      var i = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      switch ==(a.get_unchecked(i), b.get_unchecked(i)).or()
+      case short_circuit($primary) {
+        $primary
+      }
+      case evaluate_alternative {
+        return false
+      }
+    }
+  }
+  true
+}
+fun ==[T](a: Queue[T], b: Queue[T]): Bool {
+  switch ==(a.len(), b.len()).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return false
+  }
+  {
+    var $iter = ..(0, a.len()).iter().&
+    loop {
+      var i = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      switch ==(a.get(i), b.get(i)).or()
+      case short_circuit($primary) {
+        $primary
+      }
+      case evaluate_alternative {
+        return false
+      }
+    }
+  }
+  true
+}
+fun ==[T](a: Maybe[T], b: Maybe[T]): Bool {
+  switch a
+  case some(aa) {
+    {
+      switch b
+      case some(bb) {
+        ==(aa, bb)
+      }
+      case none {
+        false
+      }
+    }
+  }
+  case none {
+    switch b
+    case none {
+      true
+    }
+    default {
+      false
+    }
+  }
+}
+fun ==(a: Byte, b: Byte): Bool {
+  switch <=>(a, b)
+  case equal {
+    true
+  }
+  default {
+    false
+  }
+}
+fun ==(a: Float, b: Float): Bool {
+  switch <=>(a, b)
+  case equal {
+    true
+  }
+  default {
+    false
+  }
+}
+fun ==[T](a: Stack[T], b: Stack[T]): Bool {
+  ==(a.list, b.list)
+}
+fun ==(a: Char, b: Char): Bool {
+  ==(a.byte, b.byte)
+}
+fun ==(a: String, b: String): Bool {
+  switch ==(a.len, b.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return false
+  }
+  switch memcompare(a.data, b.data, a.len)
+  case equal {
+    true
+  }
+  default {
+    false
+  }
+}
+fun ==(a: Ordering, b: Ordering): Bool {
+  switch a
+  case less {
+    b.is_less()
+  }
+  case equal {
+    b.is_equal()
+  }
+  case greater {
+    b.is_greater()
+  }
+}
+fun ==[O, E](a: Result[O, E], b: Result[O, E]): Bool {
+  switch a
+  case ok(ao) {
+    {
+      switch b
+      case ok(bo) {
+        ==(ao, bo)
+      }
+      case error {
+        false
+      }
+    }
+  }
+  case error(ae) {
+    {
+      switch b
+      case error(be) {
+        ==(ae, be)
+      }
+      case ok {
+        false
+      }
+    }
+  }
+}
+fun ==(a: Type, b: Type): Bool {
+  switch ==(a.name, b.name).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return false
+  }
+  switch ==(a.args.len, b.args.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return false
+  }
+  {
+    var $iter = zip(a.args.iter(), b.args.iter()).iter().&
+    loop {
+      var zip = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      switch ==(zip.a, zip.b).or()
+      case short_circuit($primary) {
+        $primary
+      }
+      case evaluate_alternative {
+        return false
+      }
+    }
+  }
+  true
+}
+fun ==(a: Nothing, b: Nothing): Bool {
+  true
+}
+fun ==(a: Point, b: Point): Bool {
+  switch ==(a.x, b.x).and()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    ==(a.y, b.y)
+  }
+}
+fun ==(a: Int, b: Int): Bool asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  load c sp
+  cmp a b
+  isequal
+  storeb c st
+  ret
+}
+fun ==(a: Bool, b: Bool): Bool {
+  switch a
+  case true {
+    b
+  }
+  default {
+    not(b)
+  }
+}
+fun ==[T](a: Matrix[T], b: Matrix[T]): Bool {
+  switch ==(a.width, b.width).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return false
+  }
+  switch ==(a.height, b.height).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return false
+  }
+  {
+    var $iter = ..(0, a.height).iter().&
+    loop {
+      var y = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        var $iter = ..(0, a.width).iter().&
+        loop {
+          var x = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+          switch ==(a.get(@(x, y)), b.get(@(x, y))).or()
+          case short_circuit($primary) {
+            $primary
+          }
+          case evaluate_alternative {
+            return false
+          }
+        }
+      }
+    }
+  }
+  true
+}
+fun <[T](a: T, b: T): Bool {
+  switch <=>(a, b)
+  case less {
+    true
+  }
+  default {
+    false
+  }
+}
+fun writeln[W](writer: W): Nothing {
+  writer.write(newline)
+}
+fun writeln[W, T](writer: W, value: T): Nothing {
+  writer.write(value)
+  writer.writeln()
+}
+fun truncate_to_len(builder: &StringBuilder, len: Int): Nothing {
+  switch <=(len, builder.bytes.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("new len is too big")
+  }
+  builder.bytes.len = len
+}
+fun fill[T](slice: &Slice[T], item: T): Nothing {
+  {
+    var $iter = ..(0, slice.len).iter().&
+    loop {
+      var i = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      slice.get_ref(i).* = item
+    }
+  }
+}
+fun binary_search_leftmost_greater_equal(slice: Slice[Int], item: Int): Int {
+  var left = 0
+  var right = slice.len
+  loop switch >=(left, right)
+  case true {
+    break(Nothing {})
+  }
+  default {
+    {
+      var mid = /({
+  +(left, right)
+}, 2)
+      switch <(slice.get(mid), item)
+      case true {
+        left = +(mid, 1)
+      }
+      default {
+        right = mid
+      }
+    }
+  }
+  left
+}
+fun split(random: &Random, complexity: Int, n: Int): Slice[Int] {
+  switch ==(n, 0)
+  case true {
+    return empty_slice[Int]()
+  }
+  default {
+    {}
+  }
+  filled_slice(n, /(complexity, n))
+}
+fun split(random: &Random, complexity: Int): Slice[Int] {
+  var len = random.next_int(..=(0, {
+  /(complexity, 10)
+}))
+  random.split(complexity, len)
+}
+fun split[T, I](iter: Iter[T, I], separator: Slice[T]): Iter[Slice[T], _] {
+  Iter[Slice[T], SplitIter[T, I]] {
+    state = SplitIter {
+      inner = iter.state,
+      separator = separator,
+    },
+  }
+}
+fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
+  iter.split(vec(separator).to_slice())
+}
+fun split(string: String, separator: String): Slice[String] {
+  var parts = list[String]()
+  {
+    var $iter = string.iter().split(separator.chars()).iter().&
+    loop {
+      var part = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      parts.&.push(part.to_string())
+    }
+  }
+  parts.to_slice()
+}
+fun meters(meters: Float): Length {
+  Length {
+    meters = meters,
+  }
+}
+fun alignment_of[T](): Int { ... }
+fun uninitialized[T](): &T {
+  malloc(size_of[T](), alignment_of[T]()).to_reference[T]()
+}
+fun fuzzing_complexity[T](list: List[T]): Float {
+  var complexity = list.len.to_float()
+  {
+    var $iter = list.iter().&
+    loop {
+      var item = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      complexity = +(complexity, item.fuzzing_complexity())
+    }
+  }
+  complexity
+}
+fun fuzzing_complexity[K, V](map: Map[K, V]): Float {
+  var complexity = map.size.to_float()
+  {
+    var $iter = map.iter().&
+    loop {
+      var entry = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      complexity = +(+(complexity, entry.key.fuzzing_complexity()), entry.value.fuzzing_complexity())
+    }
+  }
+  complexity
+}
+fun fuzzing_complexity[T](slice: Slice[T]): Float {
+  var complexity = slice.len.to_float()
+  {
+    var $iter = slice.iter().&
+    loop {
+      var item = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      complexity = +(complexity, item.fuzzing_complexity())
+    }
+  }
+  complexity
+}
+fallback fun fuzzing_complexity[T](value: T): Float { ... }
+fun fuzzing_complexity(byte: Byte): Float {
+  byte.to_int().abs().inc().log_2().to_float()
+}
+fun fuzzing_complexity(float: Float): Float {
+  var extra = switch ==(float.to_int().to_float(), float)
+case true {
+  0
+}
+default {
+  10
+}
+  +(float.abs().to_int().log_2().to_float(), extra)
+}
+fun fuzzing_complexity(string: String): Float {
+  var complexity = string.len.to_float()
+  {
+    var $iter = string.chars().iter().&
+    loop {
+      var char = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      complexity = +(complexity, char.byte.fuzzing_complexity())
+    }
+  }
+  complexity
+}
+fun fuzzing_complexity(int: Int): Float {
+  int.abs().inc().log_2().to_float()
+}
+fun swap[T](a: &T, b: &T): Nothing {
+  var tmp = a.*
+  a.* = b.*
+  b.* = tmp
+}
+fun replace(string: String, from: String, to: String): String {
+  var b = string_builder().&
+  var cursor = 0
+  loop switch ==(cursor, string.len)
+  case true {
+    break(Nothing {})
+  }
+  default {
+    {
+      switch string.without_first(cursor).starts_with(from)
+      case true {
+        {
+          {
+            var $str = b
+            $str.write(to)
+          }
+          cursor = +(cursor, from.len)
+        }
+      }
+      default {
+        {
+          {
+            var $str = b
+            $str.write(string.chars().get(cursor))
+          }
+          cursor = +(cursor, 1)
+        }
+      }
+    }
+  }
+  b.to_string()
+}
+fun to_vec[T](slice: Slice[T]): Vec[T] {
+  var vec = uninitialized_vec[T](slice.len)
+  slice.copy_to(vec.to_slice())
+  vec
+}
+fun enumerate[T, I](iter: Iter[T, I]): Iter[Enumerated[T], _] {
+  Iter[Enumerated[T], EnumeratedIter[I]] {
+    state = EnumeratedIter[I] {
+      inner = iter.state,
+      index = 0,
+    },
+  }
+}
+fun max[T](a: T, b: T): T {
+  switch >(a, b)
+  case true {
+    a
+  }
+  default {
+    b
+  }
+}
+fun max[A](tuple: Tuple2[A, A]): A {
+  max(tuple.a, tuple.b)
+}
+fun center_left(rect: Rectangle): Point {
+  @(rect.left, rect.center_y())
+}
+fun -(a: Duration, b: Duration): Duration {
+  Duration {
+    seconds = +(a.seconds, b.seconds),
+  }
+}
+fun -(a: Length, b: Length): Length {
+  Length {
+    meters = +(a.meters, b.meters),
+  }
+}
+fun -(a: Area, b: Area): Area {
+  Area {
+    square_meters = +(a.square_meters, b.square_meters),
+  }
+}
+fun -(a: Volume, b: Volume): Volume {
+  Volume {
+    cubic_meters = +(a.cubic_meters, b.cubic_meters),
+  }
+}
+fun -(a: Speed, b: Speed): Speed {
+  Speed {
+    meters_per_second = +(a.meters_per_second, b.meters_per_second),
+  }
+}
+fun -(a: Acceleration, b: Acceleration): Acceleration {
+  Acceleration {
+    meters_per_square_second = +(a.meters_per_square_second, b.meters_per_square_second),
+  }
+}
+fun -(left: Byte, right: Byte): Byte asm {
+  moveib a 8
+  add a sp
+  loadb a a
+  moveib b 9
+  add b sp
+  loadb b b
+  load c sp
+  sub a b
+  storeb c a
+  ret
+}
+fun -(left: Float, right: Float): Float asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  load c sp
+  fsub a b
+  store c a
+  ret
+}
+fun -(char: Char, delta: Byte): Char {
+  Char {
+    byte = -(char.byte, delta),
+  }
+}
+fun -(char: Char, other: Char): Byte {
+  -(char.byte, other.byte)
+}
+fun -(a: Point, b: Point): Point {
+  Point {
+    x = -(a.x, b.x),
+    y = -(a.y, b.y),
+  }
+}
+fun -(left: Int, right: Int): Int asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  load c sp
+  sub a b
+  store c a
+  ret
+}
+fun put[K, V](map: &Map[K, V], entry: MapEntry[K, V]): Nothing {
+  map.put(entry.key, entry.value)
+}
+fun put[K, V](map: &Map[K, V], key: K, value: V): Nothing {
+  var fill_percentage = /(*(100, map.size), map.buckets.len)
+  switch >=(fill_percentage, 60)
+  case true {
+    {
+      var old_buckets = map.buckets
+      map.* = Map {
+        buckets = filled_slice(*(map.buckets.len, 2), MapBucket[K, V].empty({})),
+        size = 0,
+      }
+      {
+        var $iter = old_buckets.iter().&
+        loop {
+          var bucket = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+          switch bucket
+          case filled(entry) {
+            map.raw_insert(entry.key, entry.value)
+          }
+          default {
+            {}
+          }
+        }
+      }
+    }
+  }
+  default {
+    {}
+  }
+  map.raw_insert(key, value)
+}
+fun put[T](set: &Set[T], value: T): Nothing {
+  set.map.&.put(value, {})
+}
+fun memcopy(from: Address, to: Address, amount: Int): Nothing asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  moveib c 24
+  add c sp
+  load c c
+  moveib e 1
+  cmp a b
+  isless
+  cjump .right_to_left
+  .left_to_right:
+  ..loop:
+  move st c
+  isequal
+  cjump .done
+  loadb d a
+  storeb b d
+  add a e
+  add b e
+  sub c e
+  jump ..loop
+  .right_to_left:
+  add a c
+  add b c
+  sub a e
+  sub b e
+  ..loop:
+  move st c
+  isequal
+  cjump .done
+  loadb d a
+  storeb b d
+  sub a e
+  sub b e
+  sub c e
+  jump ..loop
+  .done:
+  ret
+}
+fun to_maybe_int(float: Float): Maybe[Int] {
+  switch switch float.is_nan().or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    switch float.is_inf().or()
+    case short_circuit($primary) {
+      $primary
+    }
+    case evaluate_alternative {
+      not({
+        ..(min_int.to_float(), max_int.to_float())
+      }.contains(float))
+    }
+  }
+  case true {
+    none[Int]()
+  }
+  default {
+    some(float.to_int())
+  }
+}
+fun empty_slice[T](): Slice[T] {
+  Slice[T] {
+    data = null,
+    len = 0,
+  }
+}
+fun pop_back[T](queue: &Queue[T]): T {
+  switch queue.pop_back_maybe().or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("called pop_back on empty queue")
+  }
+}
+fun square_meters(square_meters: Float): Area {
+  Area {
+    square_meters = square_meters,
+  }
+}
+fun choose[T](rand: &Random, slice: Slice[T]): T {
+  slice.get_unchecked(rand.next_int(..(0, slice.len)))
+}
+fun decimeters(val: Float): Length {
+  Length {
+    meters = /(val, 10),
+  }
+}
+fun get_process_args(): Slice[String] {
+  var argc = get_argc()
+  var args = uninitialized_slice[String](argc)
+  {
+    var $iter = ..(0, argc).iter().&
+    loop {
+      var i = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      args.get_ref(i).* = read_argv(i)
+    }
+  }
+  args
+}
+fun is_letter(char: Char): Bool {
+  switch char.is_lower().or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    char.is_upper()
+  }
+}
+fun write_decimals[W](writer: W, value: Int): Nothing {
+  var width = 9
+  loop {
+    switch ==(width, 0)
+    case true {
+      break(Nothing {})
+    }
+    default {
+      {}
+    }
+    switch !=(%(value, 10), 0)
+    case true {
+      break(Nothing {})
+    }
+    default {
+      {}
+    }
+    /=(value.&, 10)
+    -=(width.&, 1)
+  }
+  var buffer = vec[Char]()
+  loop {
+    switch ==(width, 0)
+    case true {
+      break(Nothing {})
+    }
+    default {
+      {}
+    }
+    buffer.&.push(+(Char {
+      byte = 48.lower_byte(),
+    }, {
+      %(value, 10)
+    }.lower_byte()))
+    -=(width.&, 1)
+    /=(value.&, 10)
+  }
+  buffer.&.push(Char {
+    byte = 46.lower_byte(),
+  })
+  {
+    var $iter = buffer.to_slice().rev_iter().iter().&
+    loop {
+      var char = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      writer.write(char)
+    }
+  }
+}
+fun top_ref[T](stack: Stack[T]): &T {
+  stack.top_ref(0)
+}
+fun top_ref[T](stack: Stack[T], n: Int): &T {
+  stack.list.get_ref(-(-(stack.list.len, n), 1))
+}
+fun pad_right(string: String, len: Int, char: Char): String {
+  var string = string_builder().&
+  string.write(string)
+  loop switch <(string.len(), len)
+  case true {
+    string.write(char)
+  }
+  default {
+    break(Nothing {})
+  }
+  string.to_string()
+}
+fun pad_right(string: String, len: Int): String {
+  string.pad_right(len, space)
+}
+fun uninitialized_list[T](len: Int): List[T] {
+  List {
+    data = uninitialized_slice[T](switch <=(len, 8)
+    case true {
+      8
+    }
+    default {
+      len.round_up_to_power_of(2)
+    }),
+    len = len,
+  }
+}
+fun in_decimeters(length: Length): Float {
+  *(length.meters, 10)
+}
+fun >=[T](a: T, b: T): Bool {
+  not(switch <=>(a, b)
+  case less {
+    true
+  }
+  default {
+    false
+  })
+}
+fun hash_all[I](hasher: &Hasher, iter: I): Nothing {
+  {
+    var $iter = iter.iter().&
+    loop {
+      var item = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      hasher.hash(item)
+    }
+  }
+}
+fun or(address: Address): ControlFlow[Address] {
+  switch ==(address, null)
+  case true {
+    ControlFlow[Address].evaluate_alternative({})
+  }
+  default {
+    ControlFlow[Address].short_circuit(address)
+  }
+}
+fun or[T](maybe: Maybe[T]): ControlFlow[T, Nothing] {
+  switch maybe
+  case some(t) {
+    ControlFlow[T, Nothing].short_circuit(t)
+  }
+  default {
+    ControlFlow[T, Nothing].evaluate_alternative({})
+  }
+}
+fun or(left: Byte, right: Byte): Byte asm {
+  moveib a 8
+  add a sp
+  loadb a a
+  moveib b 9
+  add b sp
+  loadb b b
+  load c sp
+  or a b
+  storeb c a
+  ret
+}
+fun or[O, E](result: Result[O, E]): ControlFlow[O, E] {
+  switch result
+  case ok(o) {
+    ControlFlow[O, E].short_circuit(o)
+  }
+  case error(e) {
+    ControlFlow[O, E].evaluate_alternative(e)
+  }
+}
+fun or(left: Int, right: Int): Int asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  load c sp
+  or a b
+  store c a
+  ret
+}
+fun or(bool: Bool): ControlFlow[Bool, Nothing] {
+  switch bool
+  case true {
+    ControlFlow[Bool, Nothing].short_circuit(true)
+  }
+  default {
+    ControlFlow[Bool, Nothing].evaluate_alternative({})
+  }
+}
+fun write_file(name: String, content: Slice[Byte]): Result[Nothing, Nothing] {
+  var file = switch open_file_for_writing(name).or()
+case short_circuit($primary) {
+  $primary
+}
+case evaluate_alternative {
+  {
+    println("Couldn't open file")
+    return error[Nothing, Nothing]({})
+  }
+}
+  switch file.write_bytes_safely(content).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    {
+      println({
+        var $str = string_builder().&
+        $str.write("Writing ")
+        $str.write(content.len)
+        $str.write(" bytes failed")
+        $str.to_string()
+      })
+      return error[Nothing, Nothing]({})
+    }
+  }
+  file.close()
+  ok[Nothing, Nothing]({})
+}
+fun end_of_initial_memory(): Address asm {
+  load a sp
+  movei b _end_of_initial_memory
+  store a b
+  ret
+}
+fun clamp[T](a: T, range: Range[T]): T {
+  max(range.start, min(range.end.dec(), a))
+}
+fun round_up_to_multiple_of(number: Int, factor: Int): Int {
+  *(/({
+    +(number, factor.dec())
+  }, factor), factor)
+}
+fun random_number_generator(): Random {
+  Random {
+    a = 1,
+    b = 2,
+    c = 3,
+    d = 4,
+  }
+}
+fun random_number_generator(seed: Int): Random {
+  Random {
+    a = seed,
+    b = 2,
+    c = 3,
+    d = 4,
+  }
+}
+fun last[T](list: List[T]): T {
+  list.to_slice().last()
+}
+fun last[T](slice: Slice[T]): T {
+  switch slice.is_not_empty().or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("last only works on non-empty slices")
+  }
+  slice.get_unchecked(-(slice.len, 1))
+}
+fun last[T](slice: Slice[T], amount: Int): Slice[T] {
+  switch <=(amount, slice.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("last amount too big")
+  }
+  slice.subslice(..({
+    -(slice.len, amount)
+  }, slice.len))
+}
+fun last(string: String): T {
+  switch string.is_not_empty().or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("last only works on non-empty strs")
+  }
+  string.get(string.len.dec())
+}
+fun last(string: String, amount: Int): String {
+  switch <=(amount, string.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("last amount too big")
+  }
+  string.substr(..({
+    -(string.len, amount)
+  }, string.len))
+}
+fun heap_checkpoint_impl(): HeapCheckpoint asm {
+  movei a heap_head
+  load a a
+  load b sp
+  store b a
+  ret
+}
+fun stack[T](): Stack[T] {
+  Stack {
+    list = list[T](),
+  }
+}
+fun in_centimeters(length: Length): Float {
+  *(length.meters, 100)
+}
+fun in_minutes(duration: Duration): Float {
+  /(duration.seconds, 60)
+}
+fun list[T](): List[T] {
+  List {
+    data = empty_slice[T](),
+    len = 0,
+  }
+}
+fun list[T](a: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.*
+}
+fun list[T](a: T, b: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.push(b)
+  list.*
+}
+fun list[T](a: T, b: T, c: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.push(b)
+  list.push(c)
+  list.*
+}
+fun list[T](a: T, b: T, c: T, d: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.push(b)
+  list.push(c)
+  list.push(d)
+  list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.push(b)
+  list.push(c)
+  list.push(d)
+  list.push(e)
+  list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.push(b)
+  list.push(c)
+  list.push(d)
+  list.push(e)
+  list.push(f)
+  list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.push(b)
+  list.push(c)
+  list.push(d)
+  list.push(e)
+  list.push(f)
+  list.push(g)
+  list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.push(b)
+  list.push(c)
+  list.push(d)
+  list.push(e)
+  list.push(f)
+  list.push(g)
+  list.push(h)
+  list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.push(b)
+  list.push(c)
+  list.push(d)
+  list.push(e)
+  list.push(f)
+  list.push(g)
+  list.push(h)
+  list.push(i)
+  list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.push(b)
+  list.push(c)
+  list.push(d)
+  list.push(e)
+  list.push(f)
+  list.push(g)
+  list.push(h)
+  list.push(i)
+  list.push(j)
+  list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.push(b)
+  list.push(c)
+  list.push(d)
+  list.push(e)
+  list.push(f)
+  list.push(g)
+  list.push(h)
+  list.push(i)
+  list.push(j)
+  list.push(k)
+  list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.push(b)
+  list.push(c)
+  list.push(d)
+  list.push(e)
+  list.push(f)
+  list.push(g)
+  list.push(h)
+  list.push(i)
+  list.push(j)
+  list.push(k)
+  list.push(l)
+  list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.push(b)
+  list.push(c)
+  list.push(d)
+  list.push(e)
+  list.push(f)
+  list.push(g)
+  list.push(h)
+  list.push(i)
+  list.push(j)
+  list.push(k)
+  list.push(l)
+  list.push(m)
+  list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.push(b)
+  list.push(c)
+  list.push(d)
+  list.push(e)
+  list.push(f)
+  list.push(g)
+  list.push(h)
+  list.push(i)
+  list.push(j)
+  list.push(k)
+  list.push(l)
+  list.push(m)
+  list.push(n)
+  list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.push(b)
+  list.push(c)
+  list.push(d)
+  list.push(e)
+  list.push(f)
+  list.push(g)
+  list.push(h)
+  list.push(i)
+  list.push(j)
+  list.push(k)
+  list.push(l)
+  list.push(m)
+  list.push(n)
+  list.push(o)
+  list.*
+}
+fun list[T](a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T): List[T] {
+  var list = list[T]().&
+  list.push(a)
+  list.push(b)
+  list.push(c)
+  list.push(d)
+  list.push(e)
+  list.push(f)
+  list.push(g)
+  list.push(h)
+  list.push(i)
+  list.push(j)
+  list.push(k)
+  list.push(l)
+  list.push(m)
+  list.push(n)
+  list.push(o)
+  list.push(p)
+  list.*
+}
+fun make_space_at[T](list: &List[T], pos: Int, amount: Int, fill: T): Nothing {
+  {
+    var $iter = ..(0, amount).iter().&
+    loop {
+      var i = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      list.reserve_uninitialized(amount)
+    }
+  }
+  list.to_slice().subslice(..(pos, {
+    -(list.len, amount)
+  })).copy_to(list.to_slice().subslice(..({
+    +(pos, amount)
+  }, list.len)))
+  list.to_slice().subslice(..+(pos, amount)).&.fill(fill)
+}
+fun trim(string: String): String {
+  var start = 0
+  var end = string.len
+  loop switch switch <(start, string.len).and()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    string.get(start).is_whitespace()
+  }
+  case true {
+    start = +(start, 1)
+  }
+  default {
+    break(Nothing {})
+  }
+  loop switch switch >(end, 0).and()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    switch string.get(-(end, 1)).is_whitespace().and()
+    case short_circuit($primary) {
+      $primary
+    }
+    case evaluate_alternative {
+      not(==(start, end))
+    }
+  }
+  case true {
+    end = -(end, 1)
+  }
+  default {
+    break(Nothing {})
+  }
+  string.substr(..(start, end))
+}
+fun >[T](a: T, b: T): Bool {
+  switch <=>(a, b)
+  case greater {
+    true
+  }
+  default {
+    false
+  }
+}
+fun top_left(rect: Rectangle): Point {
+  @(rect.left, rect.top)
+}
+fun get_unchecked[T](slice: Slice[T], index: Int): T {
+  slice.get_ref_unchecked(index).*
+}
+fun get_unchecked(string: String, index: Int): Char asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 24
+  add b sp
+  load b b
+  add a b
+  load a a
+  load c sp
+  store c a
+  ret
+}
+fun get_unchecked[T](matrix: Matrix[T], point: Point): T {
+  matrix.get_ref_unchecked(point).*
+}
+fun sqrt(x: Float): Float {
+  switch <(x, 0)
+  case true {
+    panic("cannot take sqrt of a negative value")
+  }
+  default {
+    {}
+  }
+  switch ==(x, 0)
+  case true {
+    return 0
+  }
+  default {
+    {}
+  }
+  switch <(x, 1)
+  case true {
+    return /(1, sqrt(x))
+  }
+  default {
+    {}
+  }
+  var low = 0
+  var high = x
+  var guess = /(x, 2)
+  loop {
+    switch <=>(*(guess, guess), x)
+    case less {
+      low = guess
+    }
+    case greater {
+      high = guess
+    }
+    case equal {
+      break(Nothing {})
+    }
+    var new_guess = /({
+  +(high, low)
+}, 2)
+    switch ==(new_guess, guess)
+    case true {
+      break(Nothing {})
+    }
+    default {
+      {}
+    }
+    guess = new_guess
+  }
+  guess
+}
+fun sqrt(num: Int): Int {
+  switch >=(num, 0).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("you can't take the sqrt of a negative number")
+  }
+  var a = 1
+  loop {
+    switch >(*(a, a), num)
+    case true {
+      break(Nothing {})
+    }
+    default {
+      {}
+    }
+    a = +(a, 1)
+  }
+  -(a, 1)
+}
+fun in_cubic_meters(volume: Volume): Float {
+  volume.cubic_meters
+}
+fun read_dir_impl(path: String, buffer: Slice[Byte]): Int asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  moveib c 24
+  add c sp
+  load c c
+  moveib d 32
+  add d sp
+  load d d
+  syscall 17
+  load b sp
+  store b a
+  ret
+}
+fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] {
+  switch maybe.or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    none[T]()
+  }
+}
+fun chars(string: String): Slice[Char] {
+  string.unchecked_cast[String, Slice[Char]]()
+}
+fun unchecked_cast[A, B](a: A): B {
+  a.&.to_address().to_reference[B]().*
+}
+fun deci(a: Float): Float {
+  /(a, 10)
+}
+fun in_square_meters(area: Area): Float {
+  area.square_meters
+}
+fun in_meters_per_square_second(acceleration: Acceleration): Float {
+  acceleration.meters_per_square_second
+}
+fun parse_array(parser: &JsonParser): Result[Maybe[List[Json]], Nothing] {
+  switch parser.consume(Char {
+    byte = 91.lower_byte(),
+  }).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return ok[Maybe[List[Json]], Nothing](none[List[Json]]())
+  }
+  var array = list[Json]()
+  loop switch ==(parser.current(), Char {
+    byte = 93.lower_byte(),
+  })
+  case true {
+    break(Nothing {})
+  }
+  default {
+    {
+      array.&.push(parser.parse()?)
+      switch parser.consume(Char {
+        byte = 44.lower_byte(),
+      }).or()
+      case short_circuit($primary) {
+        $primary
+      }
+      case evaluate_alternative {
+        break(Nothing {})
+      }
+    }
+  }
+  switch parser.consume(Char {
+    byte = 93.lower_byte(),
+  }).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return error[Maybe[List[Json]], Nothing]({})
+  }
+  ok[Maybe[List[Json]], Nothing](some(array))
+}
+fun nanoseconds(val: Float): Duration {
+  Duration {
+    seconds = /(val, 1e9),
+  }
+}
+fun >>(left: Int, by: Int): Int {
+  {
+    var $iter = ..(0, by).iter().&
+    loop {
+      var i = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      left = /(left, 2)
+    }
+  }
+  left
+}
+fun ^(left: Byte, right: Byte): Byte asm {
+  moveib a 8
+  add a sp
+  loadb a a
+  moveib b 9
+  add b sp
+  loadb b b
+  load c sp
+  xor a b
+  storeb c a
+  ret
+}
+fun ^(left: Int, right: Int): Int asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  load c sp
+  xor a b
+  store c a
+  ret
+}
+fun ^(a: Bool, b: Bool): Bool {
+  switch a
+  case true {
+    not(b)
+  }
+  default {
+    b
+  }
+}
+fun filled_slice[T](len: Int, fill: T): Slice[T] {
+  var slice = uninitialized_slice[T](len)
+  slice.&.fill(fill)
+  slice
+}
+fun in_microseconds(duration: Duration): Float {
+  *(1000000, duration.seconds)
+}
+fun log[T](value: T): Nothing {
+  eprint(value)
+  eprintln()
+}
+fun type[T](): Type { ... }
+fun type(name: String): Type {
+  type(name, vec[Type]())
+}
+fun type(name: String, args: List[Type]): Type {
+  Type {
+    name = name,
+    args = args,
+  }
+}
+fun min[T](slice: Set[T]): Maybe[T] {
+  var candidate = none[T]()
+  {
+    var $iter = slice.iter().&
+    loop {
+      var item = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      switch candidate
+      case some(c) {
+        candidate = some(min(c, item))
+      }
+      case none {
+        candidate = some(item)
+      }
+    }
+  }
+  return candidate
+}
+fun min[T](a: T, b: T): T {
+  switch <(a, b)
+  case true {
+    a
+  }
+  default {
+    b
+  }
+}
+fun min[A](tuple: Tuple2[A, A]): A {
+  min(tuple.a, tuple.b)
+}
+fun minutes(minutes: Float): Duration {
+  Duration {
+    seconds = *(minutes, 60),
+  }
+}
+fun first[T](slice: Slice[T]): T {
+  switch slice.is_not_empty().or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("first only works on non-empty slices")
+  }
+  slice.get(0)
+}
+fun first[T](slice: Slice[T], amount: Int): Slice[T] {
+  switch <=(amount, slice.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("first amount too big")
+  }
+  slice.subslice(..(0, amount))
+}
+fun first(string: String): Char {
+  switch string.is_not_empty().or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("first only works on non-empty strs")
+  }
+  string.get(0)
+}
+fun first(string: String, amount: Int): String {
+  switch <=(amount, string.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("first amount too big")
+  }
+  string.substr(..(0, amount))
+}
+fun /(a: Duration, b: Float): Duration {
+  Duration {
+    seconds = /(a.seconds, b),
+  }
+}
+fun /(a: Length, b: Float): Length {
+  Length {
+    meters = /(a.meters, b),
+  }
+}
+fun /(a: Length, b: Duration): Speed {
+  Speed {
+    meters_per_second = /(a.meters, b.seconds),
+  }
+}
+fun /(a: Area, b: Float): Area {
+  Area {
+    square_meters = /(a.square_meters, b),
+  }
+}
+fun /(a: Volume, b: Float): Volume {
+  Volume {
+    cubic_meters = /(a.cubic_meters, b),
+  }
+}
+fun /(a: Speed, b: Float): Speed {
+  Speed {
+    meters_per_second = /(a.meters_per_second, b),
+  }
+}
+fun /(a: Speed, b: Duration): Acceleration {
+  Acceleration {
+    meters_per_square_second = /(a.meters_per_second, b.seconds),
+  }
+}
+fun /(a: Acceleration, b: Float): Acceleration {
+  Acceleration {
+    meters_per_second = /(a.meters_per_second, b),
+  }
+}
+fun /(left: Byte, right: Byte): Byte asm {
+  moveib a 8
+  add a sp
+  loadb a a
+  moveib b 9
+  add b sp
+  loadb b b
+  load c sp
+  div a b
+  storeb c a
+  ret
+}
+fun /(left: Float, right: Float): Float asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  load c sp
+  fdiv a b
+  store c a
+  ret
+}
+fun /(a: Point, f: Int): Point {
+  Point {
+    x = /(a.x, f),
+    y = /(a.y, f),
+  }
+}
+fun /(left: Int, right: Int): Int asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  load c sp
+  div a b
+  store c a
+  ret
+}
+fun /(a: Bool, b: Bool): Bool {
+  switch a
+  case true {
+    true
+  }
+  default {
+    b
+  }
+}
+fun micro(a: Float): Float {
+  /(a, 1000000)
+}
+fun is_done(parser: JsonParser): Bool {
+  parser.rest().is_empty()
+}
+fun println(): Nothing {
+  print(newline)
+}
+fun println[T](value: T): Nothing {
+  print(value)
+  println()
+}
+fun to_address[T](ref: &T): Address asm {
+  moveib a 8
+  add a sp
+  load a a
+  load b sp
+  store b a
+  ret
+}
+fun to_address(number: Int): Address asm {
+  moveib a 8
+  add a sp
+  load a a
+  load b sp
+  store b a
+  ret
+}
+fun uninitialized_slice[T](len: Int): Slice[T] {
+  switch ==(len, 0)
+  case true {
+    return empty_slice[T]()
+  }
+  default {
+    {}
+  }
+  Slice[T] {
+    data = malloc(*(len, stride_size_of[T]()), alignment_of[T]()),
+    len = len,
+  }
+}
+fun static[T](): Static[T] {
+  Static[T] {}
+}
+fun *=[A, B](left: &A, right: B): Nothing {
+  left.* = *(left.*, right)
+}
+fun is_marked(coverage: Coverage, index: Int): Bool {
+  coverage.get_ref(index).*
+}
+fun eprint[T](value: T): Nothing {
+  stderr.write(value)
+}
+fun square_millimeters(val: Float): Area {
+  Area {
+    square_meters = /(val, 1000000),
+  }
+}
+fun to_string(chars: Slice[Char]): String {
+  chars.unchecked_cast[Slice[Char], String]()
+}
+fun to_string(bytes: Slice[Byte]): String {
+  bytes.unchecked_cast[Slice[Byte], String]()
+}
+fun to_string(chars: List[Char]): String {
+  chars.to_slice().to_string()
+}
+fun to_string(builder: StringBuilder): String {
+  builder.bytes.to_slice().to_string()
+}
+fun is_upper(char: Char): Bool {
+  uppercase_chars.contains(char)
+}
+fun push_front[T](queue: &Queue[T], item: T): Nothing {
+  queue.reserve(+(queue.len(), 1))
+  queue.start = switch ==(queue.start, 0)
+  case true {
+    -(queue.data.len, 1)
+  }
+  default {
+    -(queue.start, 1)
+  }
+  queue.data.get_ref(queue.start).* = item
+}
+fun specialize(type: Type, type_env: Map[String, Type]): Result[Type, String] {
+  switch type_env.get_maybe(type.name)
+  case some(concrete) {
+    {
+      switch type.args.is_empty().or()
+      case short_circuit($primary) {
+        $primary
+      }
+      case evaluate_alternative {
+        return error[Type, String]({
+          var $str = string_builder().&
+          $str.write("Type ")
+          $str.write(type.name)
+          $str.write(" is generic, but contains arguments.")
+          $str.to_string()
+        })
+      }
+      ok[Type, String](concrete)
+    }
+  }
+  default {
+    {
+      var args = vec[Type]()
+      {
+        var $iter = type.args.iter().&
+        loop {
+          var arg = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+          args.&.push(arg.specialize(type_env)?)
+        }
+      }
+      ok[Type, String](Type {
+        name = type.name,
+        args = args,
+      })
+    }
+  }
+}
+fun pop[T](list: &List[T]): T {
+  switch ==(list.len, 0)
+  case true {
+    panic("called pop on empty List")
+  }
+  default {
+    {}
+  }
+  list.len = list.len.dec()
+  list.data.get(list.len)
+}
+fun pop[T](stack: &Stack[T]): T {
+  stack.list.&.pop()
+}
+fun join(items: Slice[String], separator: String): String {
+  var b = string_builder().&
+  var is_first = true
+  {
+    var $iter = items.iter().&
+    loop {
+      var item = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        switch is_first
+        case true {
+          is_first = false
+        }
+        default {
+          {
+            var $str = b
+            $str.write(separator)
+          }
+        }
+        {
+          var $str = b
+          $str.write(item)
+        }
+      }
+    }
+  }
+  b.to_string()
+}
+fun not(a: Bool): Bool {
+  switch a
+  case true {
+    false
+  }
+  default {
+    true
+  }
+}
+fun split_2(random: &Random, complexity: Int): Tuple2[Int, Int] {
+  var complexities = random.split(complexity, 2)
+  tuple(complexities.get(0), complexities.get(1))
+}
+fun write_byte(file: File, byte: Byte): Nothing {
+  switch file.write_byte_safely(byte).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("couldn't write byte")
+  }
+}
+fun write_byte(print: Print, byte: Byte): Nothing asm {
+  moveib a 8
+  add a sp
+  moveib b 1
+  syscall 1
+  ret
+}
+fun write_byte(log: Log, byte: Byte): Nothing asm {
+  moveib a 8
+  add a sp
+  moveib b 1
+  syscall 2
+  ret
+}
+fun write_byte(builder: &StringBuilder, byte: Byte): Nothing {
+  builder.bytes.&.push(byte)
+}
+fun write_byte[W](self: &BufferedWriter[W], byte: Byte): Nothing {
+  switch ==(self.amount_free(), 0)
+  case true {
+    self.flush()
+  }
+  default {
+    {}
+  }
+  self.buffer.get_ref(self.len).* = byte
+  self.len = self.len.inc()
+}
+fun free_everything_allocated_after(checkpoint: HeapCheckpoint): Nothing asm {
+  moveib a 8
+  add a sp
+  load a a
+  movei b heap_head
+  load b b
+  cmp a b
+  isgreaterequal
+  cjump .done
+  movei b heap_head
+  store b a
+  .done:
+  ret
+}
+fun buffered_writer[W](writer: W, capacity: Int): BufferedWriter[W] {
+  switch >(capacity, 0).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("The capacity of a BufferedWriter must be positive.")
+  }
+  BufferedWriter {
+    buffer = filled_slice(capacity, 0.lower_byte()),
+    len = 0,
+    inner = writer,
+  }
+}
+fun @(x: Int, y: Int): Point {
+  Point {
+    x = x,
+    y = y,
+  }
+}
+fun @(a: Point, b: Point): Rectangle {
+  Rectangle {
+    left = min(a.x, b.x),
+    top = min(a.y, b.y),
+    right = max(a.x, b.x),
+    bottom = max(a.y, b.y),
+  }
+}
+fun kilometers_per_hour(val: Float): Speed {
+  Speed {
+    meters_per_second = /(*(val, 1000), 360),
+  }
+}
+fun flush[W](self: &BufferedWriter[W]): Nothing {
+  self.inner.write_bytes(self.buffer.first(self.len))
+  self.len = 0
+}
+fun is_lower(char: Char): Bool {
+  lowercase_chars.contains(char)
+}
+fun in_days(duration: Duration): Float {
+  /(/(/(duration.seconds, 60), 60), 24)
+}
+fun panic(message: String): Never asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  syscall 2
+  panic
+}
+fun panic(): Never asm {
+  panic
+}
+fun digit_to_char(digit: Byte): Char {
+  switch >(digit.to_int(), 9)
+  case true {
+    {
+      +(-(digit, 10.lower_byte()), Char {
+        byte = 97.lower_byte(),
+      }.byte)
+    }.to_char()
+  }
+  default {
+    {
+      +(digit, Char {
+        byte = 48.lower_byte(),
+      }.byte)
+    }.to_char()
+  }
+}
+fun normalize(value: Float): Tuple2[Int, Float] {
+  var positive_exp_threshold = 10000000.to_float()
+  var negative_exp_threshold = /(1.to_float(), 100000.to_float())
+  var exponent = 0
+  var float1e0 = 1.to_float()
+  var float1e1 = 10.to_float()
+  var float1e2 = 100.to_float()
+  var float1e4 = 10000.to_float()
+  var float1e8 = 100000000.to_float()
+  var float1e16 = *(float1e8, float1e8)
+  var float1e32 = *(float1e16, float1e16)
+  var float1e64 = *(float1e32, float1e32)
+  var float1e128 = *(float1e64, float1e64)
+  var float1e256 = *(float1e128, float1e128)
+  var float1eminus1 = /(1.to_float(), 1.to_float())
+  var float1eminus3 = /(1.to_float(), 1000.to_float())
+  var float1eminus7 = /(1.to_float(), 10000000.to_float())
+  var float1eminus15 = /(1.to_float(), 1000000000000000.to_float())
+  var float1eminus31 = /(10.to_float(), float1e32)
+  var float1eminus63 = /(10.to_float(), float1e64)
+  var float1eminus127 = /(10.to_float(), float1e128)
+  var float1eminus255 = /(10.to_float(), float1e256)
+  switch >=(value, positive_exp_threshold)
+  case true {
+    {
+      switch >=(value, float1e256)
+      case true {
+        {
+          /=(value.&, float1e256)
+          +=(exponent.&, 256)
+        }
+      }
+      default {
+        {}
+      }
+      switch >=(value, float1e128)
+      case true {
+        {
+          /=(value.&, float1e128)
+          +=(exponent.&, 128)
+        }
+      }
+      default {
+        {}
+      }
+      switch >=(value, float1e64)
+      case true {
+        {
+          /=(value.&, float1e64)
+          +=(exponent.&, 64)
+        }
+      }
+      default {
+        {}
+      }
+      switch >=(value, float1e32)
+      case true {
+        {
+          /=(value.&, float1e32)
+          +=(exponent.&, 32)
+        }
+      }
+      default {
+        {}
+      }
+      switch >=(value, float1e16)
+      case true {
+        {
+          /=(value.&, float1e16)
+          +=(exponent.&, 16)
+        }
+      }
+      default {
+        {}
+      }
+      switch >=(value, float1e8)
+      case true {
+        {
+          /=(value.&, float1e8)
+          +=(exponent.&, 8)
+        }
+      }
+      default {
+        {}
+      }
+      switch >=(value, float1e4)
+      case true {
+        {
+          /=(value.&, float1e4)
+          +=(exponent.&, 4)
+        }
+      }
+      default {
+        {}
+      }
+      switch >=(value, float1e2)
+      case true {
+        {
+          /=(value.&, float1e2)
+          +=(exponent.&, 2)
+        }
+      }
+      default {
+        {}
+      }
+      switch >=(value, float1e1)
+      case true {
+        {
+          /=(value.&, float1e1)
+          +=(exponent.&, 1)
+        }
+      }
+      default {
+        {}
+      }
+    }
+  }
+  default {
+    {}
+  }
+  switch switch >(value, 0.to_float()).and()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    <=(value, negative_exp_threshold)
+  }
+  case true {
+    {
+      switch <(value, float1eminus255)
+      case true {
+        {
+          *=(value.&, float1e256)
+          -=(exponent.&, 256)
+        }
+      }
+      default {
+        {}
+      }
+      switch <(value, float1eminus127)
+      case true {
+        {
+          *=(value.&, float1e128)
+          -=(exponent.&, 128)
+        }
+      }
+      default {
+        {}
+      }
+      switch <(value, float1eminus63)
+      case true {
+        {
+          *=(value.&, float1e64)
+          -=(exponent.&, 64)
+        }
+      }
+      default {
+        {}
+      }
+      switch <(value, float1eminus31)
+      case true {
+        {
+          *=(value.&, float1e32)
+          -=(exponent.&, 32)
+        }
+      }
+      default {
+        {}
+      }
+      switch <(value, float1eminus15)
+      case true {
+        {
+          *=(value.&, float1e16)
+          -=(exponent.&, 16)
+        }
+      }
+      default {
+        {}
+      }
+      switch <(value, float1eminus7)
+      case true {
+        {
+          *=(value.&, float1e8)
+          -=(exponent.&, 8)
+        }
+      }
+      default {
+        {}
+      }
+      switch <(value, float1eminus3)
+      case true {
+        {
+          *=(value.&, float1e4)
+          -=(exponent.&, 4)
+        }
+      }
+      default {
+        {}
+      }
+      switch <(value, float1eminus1)
+      case true {
+        {
+          *=(value.&, float1e2)
+          -=(exponent.&, 2)
+        }
+      }
+      default {
+        {}
+      }
+      switch <(value, float1e0)
+      case true {
+        {
+          *=(value.&, float1e1)
+          -=(exponent.&, 1)
+        }
+      }
+      default {
+        {}
+      }
+    }
+  }
+  default {
+    {}
+  }
+  tuple(exponent, value)
+}
+fun open_file_for_reading(filename: String): Result[File, Nothing] asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  syscall 4
+  load b sp
+  move st a
+  isequal
+  cjump .ret_error
+  .ret_ok:
+  store b a
+  moveib c 8
+  add b c
+  moveib c 0
+  storeb b c
+  ret
+  .ret_error:
+  moveib c 8
+  add b c
+  moveib c 1
+  storeb b c
+  ret
+}
+fun skip[T, I](iter: Iter[T, I], amount: Int): Iter[T, _] {
+  Iter[T, SkipIter[T, I]] {
+    state = SkipIter[T, I] {
+      inner = iter.state,
+      amount = amount,
+    },
+  }
+}
+fun +-[T](mid: T, distance: T): Range[T] {
+  Range {
+    start = -(mid, distance),
+    end = {
+      +(mid, distance)
+    }.inc(),
+  }
+}
+fun memhash(address: Address, amount: Int): Int asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  movei c 5381
+  moveib e 33
+  moveib f 1
+  .loop:
+  move st b
+  isequal
+  cjump .done
+  loadb d a
+  mul c e
+  add c d
+  sub b f
+  add a f
+  jump .loop
+  .done:
+  mul c e
+  load a sp
+  store a c
+  ret
+}
+fun milliseconds(val: Float): Duration {
+  Duration {
+    seconds = /(val, 1000),
+  }
+}
+fun in_hours(duration: Duration): Float {
+  /(/(duration.seconds, 60), 60)
+}
+fun in_meters(length: Length): Float {
+  length.meters
+}
+fun +=[A, B](left: &A, right: B): Nothing {
+  left.* = +(left.*, right)
+}
+fun is_digit(char: Char): Bool {
+  digit_chars.contains(char)
+}
+fun top_right(rect: Rectangle): Point {
+  @(rect.right, rect.top)
+}
+fun abs(float: Float): Float {
+  switch >=(float, 0)
+  case true {
+    float
+  }
+  default {
+    -(0, float)
+  }
+}
+fun abs(value: Int): Int {
+  switch >=(value, 0)
+  case true {
+    value
+  }
+  default {
+    -(0, value)
+  }
+}
+fun subslice[T](slice: Slice[T], range: Range[Int]): Slice[T] {
+  switch <=(range.end, slice.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic({
+      var $str = string_builder().&
+      $str.write("tried to take subslice ")
+      $str.write(range)
+      $str.write(" from slice of length ")
+      $str.write(slice.len)
+      $str.to_string()
+    })
+  }
+  Slice[T] {
+    data = +(slice.data, {
+      *(stride_size_of[T](), range.start)
+    }),
+    len = range.len(),
+  }
+}
+fun by(a: Point, size: Point): Rectangle {
+  Rectangle {
+    left = a.x,
+    top = a.y,
+    right = +(a.x, size.x),
+    bottom = +(a.y, size.y),
+  }
+}
+fun contains[K, V](map: Map[K, V], key: K): Bool {
+  switch map.get_maybe(key)
+  case some {
+    true
+  }
+  default {
+    false
+  }
+}
+fun contains[T](set: Set[T], value: T): Bool {
+  set.map.contains(value)
+}
+fun contains[T, I](iter: &Iter[T, I], item: T): Bool {
+  {
+    var $iter = iter.iter().&
+    loop {
+      var it = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      switch ==(it, item)
+      case true {
+        return true
+      }
+      default {
+        {}
+      }
+    }
+  }
+  return false
+}
+fun contains[T](range: Range[T], value: T): Bool {
+  switch >=(value, range.start).and()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    <(value, range.end)
+  }
+}
+fun contains[T](range: OpenRange[T], value: T): Bool {
+  >=(value, range.start)
+}
+fun contains(rect: Rectangle, point: Point): Bool {
+  switch {
+    ..(rect.left, rect.right)
+  }.contains(point.x).and()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    {
+      ..(rect.top, rect.bottom)
+    }.contains(point.y)
+  }
+}
+fun to_int(address: Address): Int asm {
+  moveib a 8
+  add a sp
+  load a a
+  load b sp
+  store b a
+  ret
+}
+fun to_int(n: Byte): Int asm {
+  moveib a 8
+  add a sp
+  loadb a a
+  load b sp
+  store b a
+  ret
+}
+fun to_int(float: Float): Int asm {
+  moveib a 8
+  add a sp
+  load a a
+  load b sp
+  floattoint a
+  store b a
+  ret
+}
+fun !=[T](a: T, b: T): Bool {
+  not(==(a, b))
+}
+fun crashes[Input](input: InputThatRan[Input]): Bool {
+  switch input.result
+  case ok {
+    false
+  }
+  case error {
+    true
+  }
+}
+fun parse_digit(char: Char): Byte {
+  switch char.is_numeric()
+  case true {
+    return -(char.byte, Char {
+      byte = 48.lower_byte(),
+    }.byte)
+  }
+  default {
+    {}
+  }
+  switch char.is_lower()
+  case true {
+    return +(-(char.byte, Char {
+      byte = 97.lower_byte(),
+    }.byte), 16.lower_byte())
+  }
+  default {
+    {}
+  }
+  switch char.is_upper()
+  case true {
+    return +(-(char.byte, Char {
+      byte = 65.lower_byte(),
+    }.byte), 16.lower_byte())
+  }
+  default {
+    {}
+  }
+  panic("not a digit")
+}
+fun coverage(len: Int): Coverage {
+  var coverage = Coverage {
+  bitset = malloc(len, 1),
+  len = len,
+}
+  coverage.reset()
+  coverage
+}
+fun flip(ord: Ordering): Ordering {
+  switch ord
+  case less {
+    Ordering.greater({})
+  }
+  case greater {
+    Ordering.less({})
+  }
+  case equal {
+    Ordering.equal({})
+  }
+}
+fun write_debug[W, T](writer: W, list: List[T]): Nothing {
+  writer.write_debug(list.to_slice())
+}
+fun write_debug[W, K, V](writer: W, map: Map[K, V]): Nothing {
+  {
+    var $str = writer
+    $str.write("{")
+  }
+  var first = true
+  {
+    var $iter = map.iter().&
+    loop {
+      var entry = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        switch first
+        case true {
+          first = false
+        }
+        default {
+          {
+            var $str = writer
+            $str.write(", ")
+          }
+        }
+        {
+          var $str = writer
+          $str.write(debug(entry.key))
+          $str.write(": ")
+          $str.write(debug(entry.value))
+        }
+      }
+    }
+  }
+  {
+    var $str = writer
+    $str.write("}")
+  }
+}
+fun write_debug[W, T](writer: W, ref: &T): Nothing {
+  writer.write("&")
+  writer.write_debug(ref.*)
+}
+fun write_debug[W, T](writer: W, slice: Slice[T]): Nothing {
+  {
+    var $str = writer
+    $str.write("[")
+  }
+  var first = true
+  {
+    var $iter = slice.iter().&
+    loop {
+      var item = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        switch first
+        case true {
+          first = false
+        }
+        default {
+          {
+            var $str = writer
+            $str.write(", ")
+          }
+        }
+        writer.write_debug(item)
+      }
+    }
+  }
+  {
+    var $str = writer
+    $str.write("]")
+  }
+}
+fun write_debug[W](writer: W, byte: Byte): Nothing {
+  {
+    var $str = writer
+    $str.write(byte)
+  }
+}
+fun write_debug[W](writer: W, float: Float): Nothing {
+  {
+    var $str = writer
+    $str.write(float)
+  }
+}
+fun write_debug[W](writer: W, char: Char): Nothing {
+  {
+    var $str = writer
+    $str.write("#")
+    $str.write(char)
+  }
+}
+fun write_debug[W](writer: W, string: String): Nothing {
+  {
+    var $str = writer
+    $str.write(""")
+  }
+  {
+    var $iter = string.iter().&
+    loop {
+      var char = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      switch ==(char, Char {
+        byte = 34.lower_byte(),
+      })
+      case true {
+        {
+          var $str = writer
+          $str.write("\"")
+        }
+      }
+      default {
+        switch ==(char, Char {
+          byte = 92.lower_byte(),
+        })
+        case true {
+          {
+            var $str = writer
+            $str.write("\\")
+          }
+        }
+        default {
+          switch ==(char, newline)
+          case true {
+            {
+              var $str = writer
+              $str.write("\n")
+            }
+          }
+          default {
+            {
+              var $str = writer
+              $str.write(char)
+            }
+          }
+        }
+      }
+    }
+  }
+  {
+    var $str = writer
+    $str.write(""")
+  }
+}
+fallback fun write_debug[W, T](writer: W, value: T): Nothing { ... }
+fun write_debug[W](writer: W, nothing: Nothing): Nothing {
+  {
+    var $str = writer
+    $str.write("nothing")
+  }
+}
+fun write_debug[W](writer: W, int: Int): Nothing {
+  {
+    var $str = writer
+    $str.write(int)
+  }
+}
+fun write_debug[W, T](writer: W, range: Range[T]): Nothing {
+  {
+    var $str = writer
+    $str.write(debug(range.start))
+    $str.write("..")
+    $str.write(debug(range.end))
+  }
+}
+fun write_debug[W, T](writer: W, range: OpenRange[T]): Nothing {
+  {
+    var $str = writer
+    $str.write(debug(range.start))
+    $str.write("..infinity")
+  }
+}
+fun write_debug[W, T](writer: W, matrix: Matrix[T]): Nothing {
+  {
+    var $str = writer
+    $str.write("[")
+  }
+  var first_row = true
+  {
+    var $iter = ..(0, matrix.height).iter().&
+    loop {
+      var y = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        switch first_row
+        case true {
+          first_row = false
+        }
+        default {
+          {
+            var $str = writer
+            $str.write(", ")
+          }
+        }
+        {
+          var $str = writer
+          $str.write("[")
+        }
+        var first_col = true
+        {
+          var $iter = ..(0, matrix.width).iter().&
+          loop {
+            var x = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+            {
+              switch first_col
+              case true {
+                first_col = false
+              }
+              default {
+                {
+                  var $str = writer
+                  $str.write(", ")
+                }
+              }
+              {
+                var $str = writer
+                $str.write(matrix.get(@(x, y)).debug())
+              }
+            }
+          }
+        }
+        {
+          var $str = writer
+          $str.write("]")
+        }
+      }
+    }
+  }
+  {
+    var $str = writer
+    $str.write("]")
+  }
+}
+fun days(days: Float): Duration {
+  Duration {
+    seconds = *(*(*(days, 60), 60), 24),
+  }
+}
+fun center_bottom(rect: Rectangle): Point {
+  @(rect.center_x(), rect.bottom)
+}
+fun milli(a: Float): Float {
+  /(a, 1000)
+}
+fun push_all[T](list: &List[T], items: Slice[T]): Nothing {
+  items.copy_to(list.reserve_uninitialized(items.len))
+}
+fun push_all[T, I](list: &List[T], items: Iter[T, I]): Nothing {
+  {
+    var $iter = items.iter().&
+    loop {
+      var item = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      list.push(item)
+    }
+  }
+}
+fun get_ref[T](list: List[T], index: Int): &T {
+  list.data.get_ref(index)
+}
+fun get_ref[K, V](map: &Map[K, V], key: K): &V {
+  switch map.get_maybe_ref(key).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic({
+      var $str = string_builder().&
+      $str.write("Key ")
+      $str.write(debug(key))
+      $str.write(" is not in the map.")
+      $str.to_string()
+    })
+  }
+}
+fun get_ref[T](slice: Slice[T], index: Int): &T {
+  switch slice.get_maybe_ref(index).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic({
+      var $str = string_builder().&
+      $str.write("index out of bounds: ")
+      $str.write(index)
+      $str.write(" is not in ")
+      $str.write(..(0, slice.len))
+      $str.to_string()
+    })
+  }
+}
+fun get_ref(coverage: Coverage, index: Int): &Bool {
+  {
+    +(coverage.bitset, index)
+  }.to_reference[Bool]()
+}
+fun get_ref(string: String, index: Int): &Char {
+  switch string.get_maybe_ref(index).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("index out of bounds")
+  }
+}
+fun get_ref[T](matrix: &Matrix[T], point: Point): &T {
+  switch matrix.get_maybe_ref(point).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic({
+      var $str = string_builder().&
+      $str.write("point out of bounds: tried to get ")
+      $str.write(point)
+      $str.write(" from matrix of size ")
+      $str.write(matrix.width)
+      $str.write("x")
+      $str.write(matrix.height)
+      $str.to_string()
+    })
+  }
+}
+fun starts_with[T](slice: Slice[T], prefix: Slice[T]): Bool {
+  switch <=(prefix.len, slice.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return false
+  }
+  ==(slice.first(prefix.len), prefix)
+}
+fun starts_with(string: String, prefix: String): Bool {
+  switch >=(string.len, prefix.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return false
+  }
+  switch memcompare(string.data, prefix.data, prefix.len)
+  case equal {
+    true
+  }
+  default {
+    false
+  }
+}
+fun in_millimeters(length: Length): Float {
+  *(length.meters, 1000)
+}
+fun ..+[T, D](start: T, len: D): Range[T] {
+  Range {
+    start = start,
+    end = +(start, len),
+  }
+}
+fun center_top(rect: Rectangle): Point {
+  @(rect.center_x(), rect.top)
+}
+fun parse_json(json: String): Result[Json, Nothing] {
+  var parser = JsonParser {
+  input = json,
+  cursor = 0,
+}
+  var object = parser.&.parse()?
+  switch parser.rest().is_empty().or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return error[Json, Nothing]({})
+  }
+  ok[Json, Nothing](object)
+}
+fun todo(): Never {
+  panic("todo")
+}
+fun open_file_for_writing(filename: String): Result[File, Nothing] asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  syscall 5
+  load b sp
+  move st a
+  isequal
+  cjump .ret_error
+  .ret_ok:
+  store b a
+  moveib c 8
+  add b c
+  moveib c 0
+  storeb b c
+  ret
+  .ret_error:
+  moveib c 8
+  add b c
+  moveib c 1
+  storeb b c
+  ret
+}
+fun lines(string: String): Slice[String] {
+  string.split({
+    var $str = string_builder().&
+    $str.write(newline)
+    $str.to_string()
+  })
+}
+fun is_not_empty[T](container: T): Bool {
+  not(container.is_empty())
+}
+fun next[K, V](iter: &Iter[MapEntry[K, V], MapIter[K, V]]): Maybe[MapEntry[K, V]] {
+  var state = iter.state.&
+  loop {
+    switch >=(state.index, state.buckets.len)
+    case true {
+      return none[MapEntry[K, V]]()
+    }
+    default {
+      {}
+    }
+    state.index = +(state.index, 1)
+    switch state.buckets.get(-(state.index, 1))
+    case filled(entry) {
+      return some(entry)
+    }
+    default {
+      {}
+    }
+  }
+}
+fun next[T](iter: &Iter[T, SliceIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  switch <(state.index, state.slice.len)
+  case true {
+    {
+      var item = state.slice.get(state.index)
+      state.index = +(state.index, 1)
+      some(item)
+    }
+  }
+  default {
+    none[T]()
+  }
+}
+fun next[T](iter: &Iter[T, SliceRevIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  switch >(state.index, 0)
+  case true {
+    {
+      state.index = -(state.index, 1)
+      some[T](state.slice.get(state.index))
+    }
+  }
+  default {
+    none[T]()
+  }
+}
+fun next[T](iter: &Iter[T, SetIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  loop {
+    switch >=(state.index, state.buckets.len)
+    case true {
+      return none[T]()
+    }
+    default {
+      {}
+    }
+    state.index = +(state.index, 1)
+    switch state.buckets.get(-(state.index, 1))
+    case filled(entry) {
+      return some(entry.key)
+    }
+    default {
+      {}
+    }
+  }
+}
+fun next[T, I](iter: &Iter[T, SkipIter[T, I]]): Maybe[T] {
+  var state = iter.state.&
+  {
+    var $iter = ..(0, state.amount).iter().&
+    loop {
+      var i = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      switch state.inner.&.next_from_iter_state[T, I]().or()
+      case short_circuit($primary) {
+        $primary
+      }
+      case evaluate_alternative {
+        return none[T]()
+      }
+    }
+  }
+  state.amount = 0
+  state.inner.&.next_from_iter_state[T, I]()
+}
+fun next[T, I](iter: &Iter[T, TakeIter[I]]): Maybe[T] {
+  var state = iter.state.&
+  switch <(state.amount, 0)
+  case true {
+    none[T]()
+  }
+  default {
+    {
+      state.amount = state.amount.dec()
+      state.inner.&.next_from_iter_state[T, I]()
+    }
+  }
+}
+fun next[A, B, IA, IB](iter: &Iter[Tuple2[A, B], ZipIter[IA, IB]]): Maybe[Tuple2[A, B]] {
+  switch iter.state.a.&.next_from_iter_state[A, IA]()
+  case some(a) {
+    {
+      switch iter.state.b.&.next_from_iter_state[B, IB]()
+      case none {
+        panic("zip iters have unequal length")
+      }
+      case some(b) {
+        some(tuple(a, b))
+      }
+    }
+  }
+  case none {
+    {
+      switch iter.state.b.&.next_from_iter_state[B, IB]()
+      case some {
+        panic("zip iters have unequal length")
+      }
+      case none {
+        none[Tuple2[A, B]]()
+      }
+    }
+  }
+}
+fun next[T, I](iter: &Iter[Enumerated[T], EnumeratedIter[I]]): Maybe[Enumerated[T]] {
+  var state = iter.state.&
+  switch state.inner.&.next_from_iter_state[T, I]()
+  case some(item) {
+    {
+      var index = state.index
+      state.index = state.index.inc()
+      some(Enumerated {
+        index = index,
+        item = item,
+      })
+    }
+  }
+  case none {
+    none[Enumerated[T]]()
+  }
+}
+fun next[T, I](iter: &Iter[Slice[T], SplitIter[T, I]]): Maybe[Slice[T]] {
+  var state = iter.state.&
+  var current = vec[T]()
+  loop switch state.inner.&.next_from_iter_state[T, I]()
+  case none {
+    switch >(current.len, 0)
+    case true {
+      return some(current.to_slice())
+    }
+    default {
+      return none[Slice[T]]()
+    }
+  }
+  case some(item) {
+    {
+      current.&.push(item)
+      switch current.to_slice().ends_with(state.separator)
+      case true {
+        return some(current.to_slice().without_last(state.separator.len))
+      }
+      default {
+        {}
+      }
+    }
+  }
+}
+fun next(iter: &Iter[Char, StrIter]): Maybe[Char] {
+  var state = iter.state.&
+  switch >=(state.index, state.string.len)
+  case true {
+    none[Char]()
+  }
+  default {
+    {
+      var char = state.string.chars().get(state.index)
+      state.index = state.index.inc()
+      some(char)
+    }
+  }
+}
+fun next[T](iter: &Iter[T, RangeIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  switch state.rest.is_empty()
+  case true {
+    none[T]()
+  }
+  default {
+    {
+      var current = state.rest.start
+      state.rest.start = current.inc()
+      some(current)
+    }
+  }
+}
+fun next[T](iter: &Iter[T, OpenRangeIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  var current = state.rest.start
+  state.rest.start = current.inc()
+  some(current)
+}
+fun get[T](list: List[T], index: Int): T {
+  list.data.get(index)
+}
+fun get[K, V](map: Map[K, V], key: K): V {
+  switch map.get_maybe(key).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic({
+      var $str = string_builder().&
+      $str.write("Key ")
+      $str.write(debug(key))
+      $str.write(" is not in the map.")
+      $str.to_string()
+    })
+  }
+}
+fun get[T](slice: Slice[T], index: Int): T {
+  slice.get_ref(index).*
+}
+fun get[T](queue: Queue[T], index: Int): T {
+  queue.get_ref(index).*
+}
+fun get[T, I](iter: &Iter[T, I], index: Int): T {
+  switch iter.get_maybe(index).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic({
+      var $str = string_builder().&
+      $str.write("index ")
+      $str.write(index)
+      $str.write(" is out of bounds")
+      $str.to_string()
+    })
+  }
+}
+fun get(string: String, index: Int): Char {
+  string.get_ref(index).*
+}
+fun get[T](matrix: Matrix[T], point: Point): T {
+  matrix.&.get_ref(point).*
+}
+fun last_maybe[T](list: List[T]): Maybe[T] {
+  list.to_slice().last_maybe()
+}
+fun last_maybe[T](slice: Slice[T]): Maybe[T] {
+  slice.data.get_maybe(-(slice.len, 1))
+}
+fun rotl(x: Int, k: Int): Int {
+  {
+    <<(x, k)
+  }.or(>>(x, {
+    -(64, k)
+  }))
+}
+fun centimeters(val: Float): Length {
+  Length {
+    meters = /(val, 100),
+  }
+}
+fun substr(string: String, range: Range[Int]): String {
+  switch <=(range.end, string.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("substr needs to be inside original string")
+  }
+  string.chars().subslice(range).to_string()
+}
+fun without_prefix(string: String, prefix: String): String {
+  switch string.starts_with(prefix).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic({
+      var $str = string_builder().&
+      $str.write("without_prefix doesn't match prefix ")
+      $str.write(prefix.debug())
+      $str.to_string()
+    })
+  }
+  string.without_first(prefix.len)
+}
+fun memcompare(left: Address, right: Address, amount: Int): Ordering asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  moveib c 24
+  add c sp
+  load c c
+  moveib d 1
+  .loop:
+  move st c
+  isequal
+  cjump .equal
+  loadb e a
+  loadb f b
+  cmp e f
+  isless
+  cjump .less
+  cmp e f
+  isgreater
+  cjump .greater
+  add a d
+  add b d
+  sub c d
+  jump .loop
+  .equal:
+  load a sp
+  moveib b 1
+  storeb a b
+  ret
+  .less:
+  load a sp
+  moveib b 0
+  storeb a b
+  ret
+  .greater:
+  load a sp
+  moveib b 2
+  storeb a b
+  ret
+}
+fun bottom_left(rect: Rectangle): Point {
+  @(rect.left, rect.bottom)
+}
+fun pop_back_maybe[T](queue: &Queue[T]): Maybe[T] {
+  switch queue.is_empty()
+  case true {
+    return none[T]()
+  }
+  default {
+    {}
+  }
+  queue.end = switch ==(queue.end, 0)
+  case true {
+    queue.data.len
+  }
+  default {
+    queue.end.dec()
+  }
+  some(queue.data.get(queue.end))
+}
+fun to_slice[T](list: List[T]): Slice[T] {
+  list.data.subslice(..(0, list.len))
+}
+fun create_file(filename: String, mode: Int): Result[File, Nothing] asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  moveib c 24
+  add c sp
+  load c c
+  syscall 3
+  load b sp
+  move st a
+  isequal
+  cjump .ret_error
+  .ret_ok:
+  store b a
+  moveib c 8
+  add b c
+  moveib c 0
+  storeb b c
+  ret
+  .ret_error:
+  moveib c 8
+  add b c
+  moveib c 1
+  storeb b c
+  ret
+}
+fun mega(a: Float): Float {
+  *(a, 1000000)
+}
+fun inc(a: Byte): Byte {
+  +(a, 1.lower_byte())
+}
+fun inc(char: Char): Char {
+  Char {
+    byte = char.byte.inc(),
+  }
+}
+fun inc(a: Int): Int {
+  +(a, 1)
+}
+fun reserve[T](queue: &Queue[T], size: Int): Nothing {
+  switch ==(size, 0)
+  case true {
+    return {}
+  }
+  default {
+    {}
+  }
+  switch >(queue.data.len, size)
+  case true {
+    return {}
+  }
+  default {
+    {}
+  }
+  var slices = queue.to_slices()
+  var len = queue.len()
+  queue.data = uninitialized_slice[T]({
+    +(size, 1)
+  }.round_up_to_power_of(2))
+  slices.a.copy_to(queue.data.subslice(..(0, slices.a.len)))
+  slices.b.copy_to(queue.data.subslice(..(slices.a.len, {
+    +(slices.a.len, slices.b.len)
+  })))
+  queue.start = 0
+  queue.end = len
+}
+fun to_slices[T](queue: Queue[T]): Tuple2[Slice[T], Slice[T]] {
+  switch >=(queue.end, queue.start)
+  case true {
+    tuple(queue.data.subslice(..(queue.start, queue.end)), empty_slice[T]())
+  }
+  default {
+    tuple(queue.data.subslice(..(queue.start, queue.data.len)), queue.data.subslice(..(0, queue.start)))
+  }
+}
+fun generate[T](static: Static[List[T]], random: &Random, complexity: Int): List[T] {
+  var complexities = random.split(complexity)
+  var list = list[T]()
+  {
+    var $iter = complexities.iter().&
+    loop {
+      var complexity = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      list.&.push(static[T]().generate(random, complexity))
+    }
+  }
+  list
+}
+fun generate[K, V](s: Static[Map[K, V]], random: &Random, complexity: Int): Map[K, V] {
+  var complexities = random.split(complexity)
+  var map = map[K, V]()
+  {
+    var $iter = complexities.iter().&
+    loop {
+      var complexity = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        var complexities = random.split_2(complexity)
+        var key = static[K]().generate(random, complexities.a)
+        var value = static[V]().generate(random, complexities.b)
+        map.&.put(key, value)
+      }
+    }
+  }
+  map
+}
+fun generate[T](s: Static[Slice[T]], random: &Random, complexity: Int): Slice[T] {
+  var complexities = random.split(complexity)
+  var slice = uninitialized_slice[T](complexities.len)
+  {
+    var $iter = complexities.iter().enumerate().iter().&
+    loop {
+      var it = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      slice.get_ref(it.index).* = static[T]().generate(random, it.item)
+    }
+  }
+  slice
+}
+fallback fun generate[T](s: Static[T], random: &Random, complexity: Int): T { ... }
+fun generate[T](s: Static[&T], random: &Random, complexity: Int): &T {
+  static[T]().generate(random, complexity).put_on_heap()
+}
+fun generate(s: Static[Byte], random: &Random, complexity: Int): Byte {
+  random.next_int().lower_byte()
+}
+fun generate(s: Static[Float], random: &Random, complexity: Int): Float {
+  static[Int]().generate(random, complexity).to_float()
+}
+fun generate(s: Static[Char], random: &Random, complexity: Int): Char {
+  var visible_ascii = ..(32, 127)
+  random.next_int(visible_ascii).lower_byte().to_char()
+}
+fun generate(s: Static[String], random: &Random, complexity: Int): String {
+  var len = random.next_int(..=(0, complexity))
+  var slice = uninitialized_slice[Char](len)
+  {
+    var $iter = ..(0, len).iter().&
+    loop {
+      var i = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      slice.get_ref(i).* = static[Char]().generate(random, 1)
+    }
+  }
+  String {
+    data = slice.data,
+    len = len,
+  }
+}
+fun generate(s: Static[Int], random: &Random, complexity: Int): Int {
+  random.next_int(switch <(complexity, 50)
+  case true {
+    +-(0, 10)
+  }
+  default {
+    {
+      +-(0, complexity)
+    }
+  })
+}
+fun generate[T](s: Static[Range[T]], random: &Random, complexity: Int): Range[T] {
+  var complexities = random.split_2(complexity)
+  var a = static[T]().generate(random, complexities.a)
+  var b = static[T]().generate(random, complexities.b)
+  ..(min(a, b), max(a, b))
+}
+fun generate[T](s: Static[OpenRange[T]], random: &Random, complexity: Int): Range[T] {
+  var complexities = random.split_2(complexity)
+  var a = static[T]().generate(random, complexities.a)
+  ..(a, infinity)
+}
+fun generate[T](s: Static[Matrix[T]], random: &Random, complexity: Int): Matrix[T] {
+  var sqrt = sqrt(complexity)
+  var width = random.next_int(..(0, sqrt))
+  var height = random.next_int(..(0, sqrt))
+  var complexities = random.split(complexity, *(width, height))
+  var matrix = uninitialized_matrix[T](@(width, height))
+  {
+    var $iter = complexities.iter().enumerate().iter().&
+    loop {
+      var it = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      matrix.data.get_ref(it.index).* = static[T]().generate(random, it.item)
+    }
+  }
+  matrix
+}
+fun reserve_uninitialized[T](list: &List[T], n: Int): Slice[T] {
+  switch ==(list.data.len, 0)
+  case true {
+    list.data = uninitialized_slice[T](switch <=(n, 8)
+    case true {
+      8
+    }
+    default {
+      n.round_up_to_power_of(2)
+    })
+  }
+  default {
+    {}
+  }
+  switch >({
+    +(list.len, n)
+  }, list.data.len)
+  case true {
+    {
+      var new_len = {
+  +(list.len, n)
+}.round_up_to_power_of(2)
+      var new_data = uninitialized_slice[T](*(2, new_len))
+      list.data.copy_to(new_data.subslice(..(0, list.data.len)))
+      list.data = new_data
+    }
+  }
+  default {
+    {}
+  }
+  var slice = list.data.subslice(..+(list.len, n))
+  list.len = +(list.len, n)
+  slice
+}
+fun some[T](value: T): Maybe[T] {
+  Maybe.some(value)
+}
+fun in_kilometers_per_hour(speed: Speed): Float {
+  *(/(speed.meters_per_second, 1000), 360)
+}
+fun center_x(rect: Rectangle): Int {
+  /(+(rect.left, rect.right), 2)
+}
+fun center(rect: Rectangle): Point {
+  @(rect.center_x(), rect.center_y())
+}
+fun next_from_iter_state[T, I](state: &I): Maybe[T] {
+  var iter = Iter[T, I] {
+  state = state.*,
+}
+  var item = iter.&.next()
+  state.* = iter.state
+  item
+}
+fun -=[A, B](left: &A, right: B): Nothing {
+  left.* = -(left.*, right)
+}
+fun and(bool: Bool): ControlFlow[Bool, Nothing] {
+  switch bool
+  case true {
+    ControlFlow[Bool, Nothing].evaluate_alternative({})
+  }
+  default {
+    ControlFlow[Bool, Nothing].short_circuit(false)
+  }
+}
+fun to_float(int: Int): Float asm {
+  moveib a 8
+  add a sp
+  load a a
+  load b sp
+  inttofloat a
+  store b a
+  ret
+}
+fun copy[T](slice: Slice[T]): Nothing {
+  var copy = uninitialized_slice[T](slice.len)
+  {
+    var $iter = slice.iter().enumerate().iter().&
+    loop {
+      var item = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      copy.get_ref(i).* = item.copy()
+    }
+  }
+}
+fallback fun copy[T](value: T): T { ... }
+fun copy[T](value: &T): &T {
+  value.*.copy().put_on_heap()
+}
+fun copy(byte: Byte): Nothing {
+  byte
+}
+fun copy(float: Float): Nothing {
+  float
+}
+fun copy(a: Int): Int {
+  a
+}
+fun copy[T](matrix: Matrix[T]): Matrix[T] {
+  var new = uninitialized_matrix[T](matrix.size())
+  {
+    var $iter = ..(0, matrix.height).iter().&
+    loop {
+      var y = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        var $iter = ..(0, matrix.width).iter().&
+        loop {
+          var x = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+          new.&.get_ref(@(x, y)).* = matrix.get(@(x, y))
+        }
+      }
+    }
+  }
+  new
+}
+fun last_maybe_ref[T](list: &List[T]): Maybe[&T] {
+  list.to_slice().&.last_maybe_ref()
+}
+fun last_maybe_ref[T](slice: &Slice[T]): Maybe[&T] {
+  slice.data.get_maybe_ref(-(slice.len, 1))
+}
+fun raw_insert[K, V](map: &Map[K, V], key: K, value: V): Nothing {
+  var i = %(key.hash(), map.buckets.len)
+  loop {
+    var bucket = map.buckets.get_ref_unchecked(i)
+    switch bucket.*
+    case empty {
+      {
+        bucket.* = MapBucket.filled(MapEntry {
+          key = key,
+          value = value,
+        })
+        map.size = map.size.inc()
+        break(Nothing {})
+      }
+    }
+    case filled(entry) {
+      switch ==(entry.key, key)
+      case true {
+        {
+          bucket.* = MapBucket.filled(MapEntry {
+            key = key,
+            value = value,
+          })
+          break(Nothing {})
+        }
+      }
+      default {
+        i = %(+(i, 1), map.buckets.len)
+      }
+    }
+  }
+}
+fun copy_to[T](from: Slice[T], to: Slice[T]): Nothing {
+  switch ==(from.len, to.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic({
+      var $str = string_builder().&
+      $str.write("copy_to slice lens don't match (")
+      $str.write(from.len)
+      $str.write(" and ")
+      $str.write(to.len)
+      $str.write(")")
+      $str.to_string()
+    })
+  }
+  memcopy(from.data, to.data, *(from.len, stride_size_of[T]()))
+}
+fun push[T](list: &List[T], item: T): Nothing {
+  list.reserve_uninitialized(1).get_ref_unchecked(0).* = item
+}
+fun push[T](stack: &Stack[T], item: T): Nothing {
+  stack.list.&.push(item)
+}
+fun meters_per_square_second(meters_per_square_second: Float): Acceleration {
+  Acceleration {
+    meters_per_square_second = meters_per_square_second,
+  }
+}
+fun string_builder(): StringBuilder {
+  StringBuilder {
+    bytes = list[Byte](),
+  }
+}
+fun filled_matrix[T](size: Point, fill: T): Matrix[T] {
+  var matrix = uninitialized_matrix[T](size)
+  {
+    var $iter = ..(0, matrix.height).iter().&
+    loop {
+      var y = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        var $iter = ..(0, matrix.width).iter().&
+        loop {
+          var x = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+          matrix.&.get_ref(@(x, y)).* = fill
+        }
+      }
+    }
+  }
+  matrix
+}
+fun parse_bool(parser: &JsonParser): Maybe[Bool] {
+  switch parser.consume("true")
+  case true {
+    return some(true)
+  }
+  default {
+    {}
+  }
+  switch parser.consume("false")
+  case true {
+    return some(false)
+  }
+  default {
+    {}
+  }
+  none[Bool]()
+}
+fun debug[T](value: T): Debug[T] {
+  Debug {
+    value = value,
+  }
+}
+fun is_whitespace(char: Char): Bool {
+  switch ==(char, space).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    switch ==(char, newline).or()
+    case short_circuit($primary) {
+      $primary
+    }
+    case evaluate_alternative {
+      ==(char, tab)
+    }
+  }
+}
+fun format[T](value: T): String {
+  {
+    var $str = string_builder().&
+    $str.write(value)
+    $str.to_string()
+  }
+}
+fun write_bytes_safely(file: File, buffer: Slice[Byte]): Result[Nothing, Nothing] asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  moveib c 24
+  add c sp
+  load c c
+  syscall 7
+  load b sp
+  cmp a c
+  isequal
+  cjump .ret_ok
+  .ret_error:
+  moveib c 1
+  storeb b c
+  ret
+  .ret_ok:
+  moveib c 0
+  storeb b c
+  ret
+}
+fun improves_upon[Input](a: InputThatRan[Input], b: InputThatRan[Input]): Bool {
+  switch switch a.crashes().and()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    b.crashes().not()
+  }.or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    a.coverage.improves_upon(b.coverage)
+  }
+}
+fun improves_upon[Input](input: InputThatRan[Input], front: FuzzFront): Bool {
+  switch switch input.crashes().and()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    front.crashes.not()
+  }.or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    input.coverage.improves_upon(front.coverage)
+  }
+}
+fun improves_upon(new: Coverage, original: Coverage): Bool {
+  {
+    var $iter = ..(0, new.len).iter().&
+    loop {
+      var i = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      switch switch new.is_marked(i).and()
+      case short_circuit($primary) {
+        $primary
+      }
+      case evaluate_alternative {
+        not(original.is_marked(i))
+      }
+      case true {
+        return true
+      }
+      default {
+        {}
+      }
+    }
+  }
+  return false
+}
+fun ..=[T](start: T, end: T): Range[T] {
+  Range {
+    start = start,
+    end = end.inc(),
+  }
+}
+fun center_y(rect: Rectangle): Int {
+  /(+(rect.top, rect.bottom), 2)
+}
+fun writer[W, A, B, C](writer: W, tuple: Tuple3[A, B, C]): Nothing {
+  {
+    var $str = writer
+    $str.write("(")
+    $str.write(tuple.a)
+    $str.write(", ")
+    $str.write(tuple.b)
+    $str.write(", ")
+    $str.write(tuple.c)
+    $str.write(")")
+  }
+}
+fun map[K, V](): Map[K, V] {
+  Map {
+    buckets = filled_slice(8, MapBucket[K, V].empty({})),
+    size = 0,
+  }
+}
+fun map[K, V](a: MapEntry[K, V]): Map[K, V] {
+  var m = map[K, V]().&
+  m.put(a)
+  m.*
+}
+fun map[K, V](a: MapEntry[K, V], b: MapEntry[K, V]): Map[K, V] {
+  var m = map[K, V]().&
+  m.put(a)
+  m.put(b)
+  m.*
+}
+fun map[K, V](a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V]): Map[K, V] {
+  var m = map[K, V]().&
+  m.put(a)
+  m.put(b)
+  m.put(c)
+  m.*
+}
+fun map[K, V](a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V], d: MapEntry[K, V]): Map[K, V] {
+  var m = map[K, V]().&
+  m.put(a)
+  m.put(b)
+  m.put(c)
+  m.put(d)
+  m.*
+}
+fun map[K, V](a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V], d: MapEntry[K, V], e: MapEntry[K, V]): Map[K, V] {
+  var m = map[K, V]().&
+  m.put(a)
+  m.put(b)
+  m.put(c)
+  m.put(d)
+  m.put(e)
+  m.*
+}
+fun map[K, V](a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V], d: MapEntry[K, V], e: MapEntry[K, V], f: MapEntry[K, V]): Map[K, V] {
+  var m = map[K, V]().&
+  m.put(a)
+  m.put(b)
+  m.put(c)
+  m.put(d)
+  m.put(e)
+  m.put(f)
+  m.*
+}
+fun %(left: Byte, right: Byte): Byte asm {
+  moveib a 8
+  add a sp
+  loadb a a
+  moveib b 9
+  add b sp
+  loadb b b
+  load c sp
+  rem a b
+  storeb c a
+  ret
+}
+fun %(left: Int, right: Int): Int asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  load c sp
+  rem a b
+  moveib d 0
+  cmp a d
+  isgreaterequal
+  cjump .done
+  .make_positive:
+  add a b
+  .done:
+  store c a
+  ret
+}
+fun get_maybe_ref[T](list: List[T], index: Int): Maybe[&T] {
+  list.data.get_maybe_ref(index)
+}
+fun get_maybe_ref[K, V](map: &Map[K, V], key: K): Maybe[&V] {
+  var i = %(key.hash(), map.buckets.len)
+  loop {
+    var bucket = map.buckets.get_unchecked(i)
+    switch bucket
+    case empty {
+      return none[&V]()
+    }
+    case filled(entry) {
+      switch ==(entry.key, key)
+      case true {
+        return some(map.buckets.get_ref_unchecked(i).cast[&MapBucket[K, V], &MapEntry[K, V]]().value.&)
+      }
+      default {
+        i = %(+(i, 1), map.buckets.len)
+      }
+    }
+  }
+}
+fun get_maybe_ref[T](slice: Slice[T], index: Int): Maybe[&T] {
+  switch {
+    ..(0, slice.len)
+  }.contains(index)
+  case true {
+    some(slice.get_ref_unchecked(index))
+  }
+  default {
+    none[&T]()
+  }
+}
+fun get_maybe_ref[T](queue: Queue[T], index: Int): Maybe[&T] {
+  switch {
+    ..(0, queue.len())
+  }.contains(index).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return none[&T]()
+  }
+  queue.data.get_ref(%(+(queue.start, index), queue.data.len))
+}
+fun get_maybe_ref[T](queue: Queue[T], index: Int): &T {
+  switch queue.get_maybe_ref(index).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("index out of bounds")
+  }
+}
+fun get_maybe_ref(string: String, index: Int): Maybe[&Char] {
+  string.chars().get_maybe_ref(index)
+}
+fun get_maybe_ref[T](matrix: &Matrix[T], point: Point): Maybe[&T] {
+  switch switch {
+    ..(0, matrix.width)
+  }.contains(point.x).and()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    {
+      ..(0, matrix.height)
+    }.contains(point.y)
+  }
+  case true {
+    some(matrix.get_ref_unchecked(point))
+  }
+  default {
+    none[&T]()
+  }
+}
+fun ->[K, V](key: K, value: V): MapEntry[K, V] {
+  MapEntry {
+    key = key,
+    value = value,
+  }
+}
+fun liters(val: Float): Volume {
+  Volume {
+    cubic_meters = /(val, 1000),
+  }
+}
+fun lower_byte(n: Int): Byte asm {
+  moveib a 8
+  add a sp
+  load a a
+  load b sp
+  storeb b a
+  ret
+}
+fun rest(parser: JsonParser): String {
+  parser.input.without_first(parser.cursor)
+}
+fun rev_iter[T](slice: Slice[T]): Iter[T, _] {
+  Iter[T, SliceRevIter[T]] {
+    state = SliceRevIter {
+      slice = slice,
+      index = slice.len,
+    },
+  }
+}
+fun trim_prefix[T](slice: &Slice[T], prefix: Slice[T]): Bool {
+  var matches = slice.starts_with(prefix)
+  switch matches
+  case true {
+    slice.* = slice.without_first(prefix.len)
+  }
+  default {
+    {}
+  }
+  matches
+}
+fun trim_prefix(string: &String, prefix: String): Nothing {
+  string.* = string.without_prefix(prefix)
+}
+fun tera(a: Float): Float {
+  *(a, 1e12)
+}
+fun last_ref[T](list: &List[T]): &T {
+  list.to_slice().&.last_ref()
+}
+fun last_ref[T](slice: &Slice[T]): &T {
+  slice.get_ref(-(slice.len, 1))
+}
+fun advance(parser: &JsonParser, n: Int): Nothing {
+  parser.cursor = +(parser.cursor, n)
+}
+fun advance(parser: &JsonParser): Char {
+  var char = parser.current()
+  parser.advance(1)
+  char
+}
+fun iter[T](list: List[T]): Iter[T, _] {
+  list.to_slice().iter()
+}
+fun iter[K, V](map: Map[K, V]): Iter[MapEntry[K, V], _] {
+  Iter[MapEntry[K, V], MapIter[K, V]] {
+    state = MapIter {
+      buckets = map.buckets,
+      index = 0,
+    },
+  }
+}
+fun iter[T](slice: Slice[T]): Iter[T, _] {
+  Iter[T, SliceIter[T]] {
+    state = SliceIter {
+      slice = slice,
+      index = 0,
+    },
+  }
+}
+fun iter[T](set: Set[T]): Iter[T, _] {
+  Iter[T, SetIter[T]] {
+    state = SetIter {
+      buckets = set.map.buckets,
+      index = 0,
+    },
+  }
+}
+fun iter[T, I](iter: Iter[T, I]): Iter[T, I] {
+  iter
+}
+fun iter(string: String): Iter[Char, _] {
+  Iter[Char, StrIter] {
+    state = StrIter {
+      string = string,
+      index = 0,
+    },
+  }
+}
+fun iter[T](range: Range[T]): Iter[T, _] {
+  Iter[T, RangeIter[T]] {
+    state = RangeIter {
+      rest = range,
+    },
+  }
+}
+fun iter[T](range: OpenRange[T]): Iter[T, _] {
+  Iter[T, OpenRangeIter[T]] {
+    state = OpenRangeIter {
+      rest = range,
+    },
+  }
+}
+fun malloc(size: Int, alignment: Int): Address {
+  heap_head
+  malloc_impl(size, alignment)
+}
+fun current(parser: JsonParser): Char {
+  parser.input.chars().get(parser.cursor)
+}
+fun reset(coverage: Coverage): Nothing asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  moveib c 0
+  moveib d 0
+  moveib e 1
+  .loop:
+  cmp c b
+  isequal
+  cjump .done
+  storeb a d
+  add a e
+  add c e
+  jump .loop
+  .done:
+  ret
+}
+fun &(left: Byte, right: Byte): Byte asm {
+  moveib a 8
+  add a sp
+  loadb a a
+  moveib b 9
+  add b sp
+  loadb b b
+  load c sp
+  and a b
+  storeb c a
+  ret
+}
+fun &(left: Int, right: Int): Int asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  load c sp
+  and a b
+  store c a
+  ret
+}
+fun &(a: Bool, b: Bool): Bool {
+  switch a
+  case true {
+    b
+  }
+  default {
+    false
+  }
+}
+fun clear[T](list: &List[T]): Nothing {
+  list.len = 0
+}
+fun mol(a: Float): Float {
+  *(*(*(*(a, 6.02214076), {
+    **(10, 1000000000)
+  }), {
+    **(10, 1000000000)
+  }), {
+    **(10, 100000)
+  })
+}
+fun next_point(random: &Random, size: Point): Point {
+  @(random.next_int(..(0, size.x)), random.next_int(..(0, size.y)))
+}
+fun is_empty[T](list: List[T]): Bool {
+  ==(list.len, 0)
+}
+fun is_empty[K, V](map: Map[K, V]): Bool {
+  ==(map.size, 0)
+}
+fun is_empty[T](slice: Slice[T]): Bool {
+  ==(slice.len, 0)
+}
+fun is_empty[T](queue: Queue[T]): Bool {
+  ==(queue.len(), 0)
+}
+fun is_empty[T](set: Set[T]): Bool {
+  ==(set.map.size, 0)
+}
+fun is_empty[T, I](iter: &Iter[T, I]): Bool {
+  switch iter.next()
+  case none {
+    true
+  }
+  default {
+    false
+  }
+}
+fun is_empty[T](stack: Stack[T]): Bool {
+  stack.list.is_empty()
+}
+fun is_empty(string: String): Bool {
+  ==(string.len, 0)
+}
+fun is_empty[T](range: Range[T]): Bool {
+  >=(range.start, range.end)
+}
+fun mark(coverage: Coverage, index: Int): Nothing {
+  coverage.get_ref(index).* = true
+}
+fun implies(a: Bool, b: Bool): Bool {
+  switch a
+  case true {
+    b
+  }
+  default {
+    true
+  }
+}
+fun without_first[T](slice: Slice[T]): Slice[T] {
+  slice.without_first(1)
+}
+fun without_first[T](slice: Slice[T], amount: Int): Slice[T] {
+  switch <=(amount, slice.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("without_first amount too big")
+  }
+  slice.subslice(..(amount, slice.len))
+}
+fun without_first(string: String, amount: Int): String {
+  switch <=(amount, string.len).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("without_first amount too big")
+  }
+  string.substr(..(amount, string.len))
+}
+fun ..[T](start: T, end: T): Range[T] {
+  Range {
+    start = start,
+    end = end,
+  }
+}
+fun ..[T](start: T, end: Infinity): OpenRange[T] {
+  OpenRange {
+    start = start,
+  }
+}
+fun to_char(byte: Byte): Char {
+  Char {
+    byte = byte,
+  }
+}
+fun child(rand: &Random): Random {
+  random_number_generator(rand.next_int())
+}
+fun pop_front_maybe[T](queue: &Queue[T]): Maybe[T] {
+  switch queue.is_empty()
+  case true {
+    return none[T]()
+  }
+  default {
+    {}
+  }
+  var item = queue.data.get(queue.start)
+  queue.start = %(+(queue.start, 1), queue.data.len)
+  some(item)
+}
+fun ..+=[T, D](start: T, len: D): Range[T] {
+  Range {
+    start = start,
+    end = +(start, len.inc()),
+  }
+}
+fun nano(a: Float): Float {
+  /(a, 1e9)
+}
+fun write_bytes(file: File, buffer: Slice[Byte]): Nothing {
+  switch file.write_bytes_safely(buffer).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("couldn't write byte")
+  }
+}
+fun write_bytes(print: Print, bytes: Slice[Byte]): Nothing asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  syscall 1
+  ret
+}
+fun write_bytes(log: Log, bytes: Slice[Byte]): Nothing asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  syscall 2
+  ret
+}
+fun write_bytes(builder: &StringBuilder, bytes: Slice[Byte]): Nothing {
+  builder.bytes.&.push_all(bytes)
+}
+fun write_bytes[W](self: &BufferedWriter[W], bytes: Slice[Byte]): Nothing {
+  switch <=(bytes.len, self.amount_free())
+  case true {
+    {
+      var $iter = bytes.iter().&
+      loop {
+        var byte = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+        self.write_byte(byte)
+      }
+    }
+  }
+  default {
+    {
+      self.flush()
+      switch <=(bytes.len, self.amount_free())
+      case true {
+        {
+          var $iter = bytes.iter().&
+          loop {
+            var byte = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+            self.write_byte(byte)
+          }
+        }
+      }
+      default {
+        self.inner.write_bytes(bytes)
+      }
+    }
+  }
+}
+fun bottom_right(rect: Rectangle): Point {
+  @(rect.right, rect.bottom)
+}
+fun consume(parser: &JsonParser, char: Char): Bool {
+  parser.consume_whitespace()
+  switch ==(parser.current(), char)
+  case true {
+    {
+      parser.advance()
+      true
+    }
+  }
+  default {
+    false
+  }
+}
+fun consume(parser: &JsonParser, prefix: String): Bool {
+  parser.consume_whitespace()
+  switch parser.rest().starts_with(prefix)
+  case true {
+    {
+      parser.advance(prefix.len)
+      true
+    }
+  }
+  default {
+    false
+  }
+}
+fun ok[O, E](o: O): Result[O, E] {
+  Result[O, E].ok(o)
+}
+fun center_right(rect: Rectangle): Point {
+  @(rect.right, rect.center_y())
+}
+fun len[T](queue: Queue[T]): Int {
+  switch >=(queue.end, queue.start)
+  case true {
+    -(queue.end, queue.start)
+  }
+  default {
+    +(-(queue.data.len, queue.start), queue.end)
+  }
+}
+fun len[T](stack: Stack[T]): Int {
+  stack.list.len
+}
+fun len(builder: StringBuilder): Int {
+  builder.bytes.len
+}
+fun len[T](range: Range[T]): Int {
+  -(range.end, range.start)
+}
+fun integrate[Input](front: &FuzzFront, input: InputThatRan[Input]): Nothing {
+  front.coverage.integrate(input.coverage)
+  switch input.result
+  case error {
+    front.crashes = true
+  }
+  default {
+    {}
+  }
+}
+fun integrate(total: Coverage, other: Coverage): Nothing {
+  {
+    var $iter = ..(0, other.len).iter().&
+    loop {
+      var i = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      switch other.is_marked(i)
+      case true {
+        total.mark(i)
+      }
+      default {
+        {}
+      }
+    }
+  }
+}
+fun in_square_kilometers(area: Area): Float {
+  /(area.square_meters, 1000000)
+}
+fun take[T, I](iter: Iter[T, I]): Iter[T, _] {
+  Iter[T, _] {
+    state = TakeIter[I] {
+      inner = iter.state,
+      amount = amount,
+    },
+  }
+}
+fun millimeters(val: Float): Length {
+  Length {
+    meters = /(val, 1000),
+  }
+}
+fun get_coverage(): Coverage asm {
+  load a sp
+  movei b _coverage_bitset
+  store a b
+  moveib b 8
+  add a b
+  movei b _coverage_len
+  load b b
+  store a b
+  ret
+}
+fun /=[A, B](left: &A, right: B): Nothing {
+  left.* = /(left.*, right)
+}
+fun to_reference[T](address: Address): &T asm {
+  moveib a 8
+  add a sp
+  load a a
+  load b sp
+  store b a
+  ret
+}
+fun put_on_heap[T](value: T): &T {
+  var ref = uninitialized[T]()
+  ref.* = value
+  ref
+}
+fun is_alphanumeric(char: Char): Bool {
+  switch char.is_letter().or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    char.is_digit()
+  }
+}
+fun is_nan(float: Float): Bool {
+  var nan_mask = 9221120237041090560
+  var nan_value = nan_mask
+  ==(&(float.cast[Float, Int](), nan_mask), nan_value)
+}
+fun read_dir(path: String): Result[Slice[DirEntry], Nothing] {
+  var all_free_memory = Slice[Byte] {
+  data = heap_head,
+  len = -(get_stack_pointer().to_int(), heap_head.to_int()),
+}
+  var len = path.read_dir_impl(all_free_memory)
+  switch <(len, 0)
+  case true {
+    return error[Slice[DirEntry], Nothing]({})
+  }
+  default {
+    {}
+  }
+  heap_head = +(heap_head, len)
+  var buffer = all_free_memory.subslice(..(0, len))
+  var cursor = 0
+  var entries = vec[DirEntry]()
+  loop {
+    switch >=(cursor, buffer.len)
+    case true {
+      break(Nothing {})
+    }
+    default {
+      {}
+    }
+    var kind = buffer.get(cursor).to_int()
+    cursor = +(cursor, 1)
+    var kind = switch ==(kind, 1)
+case true {
+  DirEntryKind.file({})
+}
+default {
+  switch ==(kind, 2)
+  case true {
+    DirEntryKind.directory({})
+  }
+  default {
+    DirEntryKind.other({})
+  }
+}
+    var len = buffer.get_ref(cursor).to_address().to_reference[Int]().*
+    cursor = +(cursor, 8)
+    var name = buffer.subslice(..+(cursor, len)).to_str()
+    cursor = +(cursor, len)
+    entries.&.push(DirEntry {
+      name = name,
+      kind = kind,
+    })
+  }
+  ok[Slice[DirEntry], Nothing](entries.to_slice())
+}
+fun in_milliseconds(duration: Duration): Float {
+  *(1000, duration.seconds)
+}
+fun find[T, I](iter: &Iter[T, I], needle: T): Maybe[Int] {
+  {
+    var $iter = iter.enumerate().iter().&
+    loop {
+      var en = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      switch ==(en.item, needle)
+      case true {
+        return some(en.index)
+      }
+      default {
+        {}
+      }
+    }
+  }
+  none[Int]()
+}
+fun in_meters_per_second(speed: Speed): Float {
+  speed.meters_per_second
+}
+fun next_bool(rand: &Random): Bool {
+  ==(%(rand.next_int().abs(), 2), 0)
+}
+fun cast[A, B](a: A): B {
+  switch ==(size_of[A](), size_of[B]()).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic({
+      var $str = string_builder().&
+      $str.write("Tried to cast ")
+      $str.write(type[A]())
+      $str.write(" to ")
+      $str.write(type[B]())
+      $str.write(", although both types have different sizes (")
+      $str.write(size_of[A]())
+      $str.write(" bytes and ")
+      $str.write(size_of[B]())
+      $str.write(" bytes).")
+      $str.to_string()
+    })
+  }
+  a.unchecked_cast[A, B]()
+}
+fun fuzzer_main[Input](): Never {
+  var info = static[Input]().fuzzing_info()
+  var random = random_number_generator()
+  var front = FuzzFront {
+  coverage = coverage(get_coverage().len),
+  crashes = false,
+}
+  var inputs = vec[InputThatRan[Input]]()
+  {
+    var $iter = ..(0, 200).iter().&
+    loop {
+      var i = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        var checkpoint = heap_checkpoint()
+        var input = static[Input]().generate(random.&, 100)
+        var input = input.run_sandboxed()
+        switch input.improves_upon(front)
+        case true {
+          {
+            front.&.integrate(input)
+            inputs.&.push(input)
+            report(input)
+          }
+        }
+        default {
+          free_everything_allocated_after(checkpoint)
+        }
+      }
+    }
+  }
+  {
+    var $iter = ..(0, infinity).iter().&
+    loop {
+      var i = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        switch <=(inputs.len, i)
+        case true {
+          break(Nothing {})
+        }
+        default {
+          {}
+        }
+        var j = 0
+        loop {
+          switch ==(j, 200)
+          case true {
+            break(Nothing {})
+          }
+          default {
+            {}
+          }
+          j = +(j, 1)
+          var checkpoint = heap_checkpoint()
+          var original = inputs.get(i)
+          var temperature = /(/(100000, {
+  +(j, 1)
+}), {
+  +(j, 1)
+})
+          var mutated = original.input.mutate(random.&, 10000).run_sandboxed()
+          switch switch <(mutated.fuzzing_complexity(), original.fuzzing_complexity()).and()
+          case short_circuit($primary) {
+            $primary
+          }
+          case evaluate_alternative {
+            not(original.improves_upon(mutated))
+          }
+          case true {
+            {
+              inputs.get_ref(i).* = mutated
+              report(mutated)
+              j = 0
+            }
+          }
+          default {
+            switch mutated.improves_upon(front)
+            case true {
+              {
+                front.&.integrate(mutated)
+                inputs.&.push(mutated)
+                report(mutated)
+              }
+            }
+            default {
+              free_everything_allocated_after(checkpoint)
+            }
+          }
+        }
+      }
+    }
+  }
+  exit(0)
+}
+fun hours(hours: Float): Duration {
+  Duration {
+    seconds = *(*(hours, 60), 60),
+  }
+}
+fun radix(int: Byte, radix: Int): RadixFormat {
+  radix(int.to_int(), radix)
+}
+fun radix(int: Int, radix: Int): RadixFormat {
+  RadixFormat {
+    radix = radix,
+    int = int,
+  }
+}
+fun stride_size_of[T](): Int { ... }
+fun %=[A, B](left: &A, right: B): Nothing {
+  left.* = %(left.*, right)
+}
+fun hash[T](hasher: &Hasher, slice: Slice[T]): Nothing {
+  hasher.hash_all(slice)
+}
+fun hash[T](hasher: &Hasher, value: Maybe[T]): Nothing {
+  switch value
+  case some(inner) {
+    {
+      hasher.hash(Char {
+        byte = 115.lower_byte(),
+      })
+      hasher.hash(inner)
+    }
+  }
+  case none {
+    hasher.hash(Char {
+      byte = 110.lower_byte(),
+    })
+  }
+}
+fun hash(hasher: &Hasher, byte: Byte): Nothing {
+  hasher.hash(byte.to_int())
+}
+fun hash(hasher: &Hasher, float: Float): Nothing {
+  hasher.hash(memhash(float.&.to_address(), 8))
+}
+fun hash(hasher: &Hasher, char: Char): Nothing {
+  hasher.hash(char.byte)
+}
+fun hash(hasher: &Hasher, string: String): Nothing {
+  hasher.hash(memhash(string.data, string.len))
+}
+fun hash(hasher: &Hasher, ord: Ordering): Nothing {
+  hasher.hash(switch ord
+  case less {
+    Char {
+      byte = 108.lower_byte(),
+    }
+  }
+  case equal {
+    Char {
+      byte = 101.lower_byte(),
+    }
+  }
+  case greater {
+    Char {
+      byte = 103.lower_byte(),
+    }
+  })
+}
+fun hash[O, E](hasher: &Hasher, result: Result[O, E]): Nothing {
+  switch result
+  case ok(o) {
+    {
+      hasher.hash(Char {
+        byte = 111.lower_byte(),
+      })
+      hasher.hash(o)
+    }
+  }
+  case error(e) {
+    {
+      hasher.hash(Char {
+        byte = 101.lower_byte(),
+      })
+      hasher.hash(e)
+    }
+  }
+}
+fun hash[T](value: T): Int {
+  var hasher = Hasher {
+  state = 5381,
+}
+  hasher.&.hash(value)
+  *(hasher.state, 33)
+}
+fun hash(hasher: &Hasher, val: Int): Nothing {
+  hasher.state = +(*(hasher.state, 33), val)
+}
+fun hash(hasher: &Hasher, type: Type): Nothing {
+  hasher.hash(type.name)
+  hasher.hash_all(type.args)
+}
+fun hash(hasher: &Hasher, value: Bool): Nothing {
+  hasher.hash(switch value
+  case true {
+    0
+  }
+  default {
+    1
+  })
+}
+fun hash[T](hasher: &Hasher, matrix: Matrix[T]): Nothing {
+  {
+    var $iter = ..(0, height).iter().&
+    loop {
+      var y = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        var $iter = ..(0, width).iter().&
+        loop {
+          var x = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+          hasher.hash(matrix.get(@(x, y)))
+        }
+      }
+    }
+  }
+}
+fun queue[T](): Queue[T] {
+  Queue {
+    data = uninitialized_slice[T](8),
+    start = 0,
+    end = 0,
+  }
+}
+fun malloc_impl(size: Int, alignment: Int): Address asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  movei c heap_head
+  load c c
+  moveib d 1
+  cmp b d
+  isequal
+  cjump .bump_head
+  moveib d 2
+  cmp b d
+  isequal
+  cjump .align
+  moveib d 4
+  cmp b d
+  isequal
+  cjump .align
+  moveib d 8
+  cmp b d
+  isequal
+  cjump .align
+  .align:
+  moveib d 1
+  sub b d
+  add c b
+  negate b
+  and c b
+  .bump_head:
+  move b c
+  add b a
+  move a c
+  movei c heap_head
+  store c b
+  .check_oom:
+  cmp b sp
+  isgreaterequal
+  cjump .oom
+  load b sp
+  store b a
+  ret
+  .bad_alignment:
+  movei a bad alignment
+  moveib b 13
+  syscall 2
+  panic
+  .oom:
+  movei a out of memory
+  moveib b 13
+  syscall 2
+  panic
+}
+fun in_square_millimeters(area: Area): Float {
+  *(area.square_meters, 1000000)
+}
+fun to_set[T](list: List[T]): Set[T] {
+  var set = set[T]()
+  {
+    var $iter = list.iter().&
+    loop {
+      var item = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      set.&.put(item)
+    }
+  }
+  set
+}
+fun top[T](stack: Stack[T]): T {
+  stack.top(0)
+}
+fun top[T](stack: Stack[T], n: Int): T {
+  stack.list.get(-(-(stack.list.len, n), 1))
+}
+fun insert[T](list: &List[T], index: Int, item: T): Nothing {
+  list.make_space_at(0, 1, item)
+}
+fun cubic_meters(cubic_meters: Float): Volume {
+  Volume {
+    cubic_meters = cubic_meters,
+  }
+}
+fun close(file: File): Nothing asm {
+  moveib a 8
+  add a sp
+  load a a
+  syscall 8
+  ret
+}
+fun get_argc(): Int asm {
+  load b sp
+  syscall 9
+  store b a
+  ret
+}
+fun comma_separated[I](iter: I): CommaSeparatedFormat[I] {
+  CommaSeparatedFormat {
+    iter = iter,
+  }
+}
+fun microseconds(val: Float): Duration {
+  Duration {
+    seconds = /(val, 1000000),
+  }
+}
+fun read_argv(index: Int): String {
+  var cap = 32
+  loop {
+    var buffer = uninitialized_slice[Byte](cap)
+    var read = read_argv(index, buffer)
+    switch <(read, cap)
+    case true {
+      return buffer.subslice(..(0, read)).to_str()
+    }
+    default {
+      {}
+    }
+    cap = *(cap, 2)
+  }
+}
+fun read_argv(index: Int, buffer: Slice[Byte]): Int asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  moveib c 24
+  add c sp
+  load c c
+  syscall 10
+  load d sp
+  store d a
+  ret
+}
+fun run_sandboxed[Input](input: Input): InputThatRan[Input] {
+  var arg_strings = input.arg_strings()
+  eprint({
+    var $str = string_builder().&
+    $str.write("Running ")
+    $str.write(comma_separated(arg_strings))
+    $str.write(" -> ")
+    $str.to_string()
+  })
+  var current_cov = get_coverage()
+  current_cov.reset()
+  var input_copy = input.copy()
+  var res = try input_copy.run()
+  var coverage = coverage(current_cov.len)
+  coverage.integrate(current_cov)
+  var result = switch res
+case ok(res) {
+  ok[String, Nothing]({
+    var $str = string_builder().&
+    $str.write(res.debug())
+    $str.to_string()
+  })
+}
+case error {
+  error[String, Nothing]({})
+}
+  eprint(switch result.or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    "<panicked>"
+  })
+  eprintln({
+    var $str = string_builder().&
+    $str.write(" (complexity ")
+    $str.write(input.fuzzing_complexity())
+    $str.write(")")
+    $str.to_string()
+  })
+  InputThatRan {
+    input = input,
+    arg_strings = arg_strings,
+    coverage = coverage,
+    result = result,
+  }
+}
+fun remove[T](list: &List[T], range: Range[Int]): Nothing {
+  var slice = list.to_slice()
+  slice.&.remove(range)
+  list.len = slice.len
+}
+fun remove[T](slice: &Slice[T], range: Range[Int]): Nothing {
+  slice.subslice(..(range.end, slice.len)).copy_to(slice.subslice(..(range.start, {
+    -(slice.len, range.len())
+  })))
+  slice.len = -(slice.len, range.len())
+}
+fun none[T](): Maybe[T] {
+  Maybe[T].none({})
+}
+fun log_2(value: Int): Int {
+  switch >(value, 0).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("log 2 only works for positive values")
+  }
+  var i = 0
+  loop {
+    switch ==(value, 1)
+    case true {
+      break(Nothing {})
+    }
+    default {
+      {}
+    }
+    i = +(i, 1)
+    value = /(value, 2)
+  }
+  i
+}
+fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
+  var i = 0
+  loop {
+    switch switch ==(i, a.len).and()
+    case short_circuit($primary) {
+      $primary
+    }
+    case evaluate_alternative {
+      ==(i, b.len)
+    }
+    case true {
+      return Ordering.equal({})
+    }
+    default {
+      {}
+    }
+    switch ==(i, a.len)
+    case true {
+      return Ordering.less({})
+    }
+    default {
+      {}
+    }
+    switch ==(i, b.len)
+    case true {
+      return Ordering.greater({})
+    }
+    default {
+      {}
+    }
+    var ord = <=>(a.get(i), b.get(i))
+    switch switch ord
+    case equal {
+      true
+    }
+    default {
+      false
+    }.or()
+    case short_circuit($primary) {
+      $primary
+    }
+    case evaluate_alternative {
+      return ord
+    }
+    i = +(i, 1)
+  }
+}
+fun <=>(left: Byte, right: Byte): Ordering asm {
+  moveib a 8
+  add a sp
+  loadb a a
+  moveib b 9
+  add b sp
+  loadb b b
+  load c sp
+  sub a b
+  move st a
+  isless
+  cjump .less
+  move st a
+  isgreater
+  cjump .greater
+  .equal:
+  moveib b 1
+  storeb c b
+  ret
+  .less:
+  moveib b 0
+  storeb c b
+  ret
+  .greater:
+  moveib b 2
+  storeb c b
+  ret
+}
+fun <=>(left: Float, right: Float): Ordering asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  load c sp
+  fsub a b
+  move st a
+  fisless
+  cjump .less
+  move st a
+  fisgreater
+  cjump .greater
+  move st a
+  fisequal
+  cjump .equal
+  panic
+  .equal:
+  moveib b 1
+  storeb c b
+  ret
+  .less:
+  moveib b 0
+  storeb c b
+  ret
+  .greater:
+  moveib b 2
+  storeb c b
+  ret
+}
+fun <=>(a: Char, b: Char): Ordering {
+  <=>(a.byte, b.byte)
+}
+fun <=>(a: String, b: String): Ordering {
+  switch memcompare(a.data, b.data, min(a.len, b.len))
+  case less {
+    Ordering.less({})
+  }
+  case greater {
+    Ordering.greater({})
+  }
+  case equal {
+    switch <(a.len, b.len)
+    case true {
+      Ordering.less({})
+    }
+    default {
+      Ordering.greater({})
+    }
+  }
+}
+fun <=>(left: Int, right: Int): Ordering asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  load c sp
+  cmp a b
+  isless
+  cjump .less
+  cmp a b
+  isgreater
+  cjump .greater
+  .equal:
+  moveib b 1
+  storeb c b
+  ret
+  .less:
+  moveib b 0
+  storeb c b
+  ret
+  .greater:
+  moveib b 2
+  storeb c b
+  ret
+}
+fun pop_front[T](queue: &Queue[T]): T {
+  switch queue.pop_front_maybe().or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic("called pop_front on empty queue")
+  }
+}
+fun add_stride_offset[T](ref: &T, index: Int): &T {
+  {
+    +(ref.to_address(), {
+      *(stride_size_of[T](), index)
+    })
+  }.to_reference[T]()
+}
+fun is_inf(float: Float): Bool {
+  var inf_mask = 9223372036854775807
+  var inf_value = 9218868437227405312
+  ==(&(float.cast[Float, Int](), inf_mask), inf_value)
+}
+fun unwrap[T](maybe: Maybe[T], message: String): T {
+  switch maybe.or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic(message)
+  }
+}
+fun unwrap[T](maybe: Maybe[T]): T {
+  maybe.unwrap("called none.unwrap")
+}
+fun unwrap[O, E](result: Result[O, E], message: String): O {
+  switch result
+  case ok(o) {
+    o
+  }
+  case error {
+    panic(message)
+  }
+}
+fun unwrap[O, E](result: Result[O, E]): O {
+  switch result
+  case ok(o) {
+    o
+  }
+  case error(e) {
+    panic({
+      var $str = string_builder().&
+      $str.write("called error.unwrap: ")
+      $str.write(e)
+      $str.to_string()
+    })
+  }
+}
+fun kilometers(val: Float): Length {
+  Length {
+    meters = *(val, 1000),
+  }
+}
+fun parse_int(parser: &JsonParser): Result[Maybe[Int], Nothing] {
+  var start = parser.cursor
+  var num = 0
+  loop switch parser.is_done()
+  case true {
+    break(Nothing {})
+  }
+  default {
+    switch {
+      ..=(Char {
+        byte = 48.lower_byte(),
+      }, Char {
+        byte = 57.lower_byte(),
+      })
+    }.contains(parser.current())
+    case true {
+      num = +(*(num, 10), {
+        -(parser.advance(), Char {
+          byte = 48.lower_byte(),
+        })
+      }.to_int())
+    }
+    default {
+      break(Nothing {})
+    }
+  }
+  switch ==(parser.cursor, start)
+  case true {
+    return ok[Maybe[Int], Nothing](none[Int]())
+  }
+  default {
+    {}
+  }
+  ok[Maybe[Int], Nothing](some(num))
+}
+fun parse_int(string: String): Maybe[Int] {
+  var num = 0
+  {
+    var $iter = string.iter().&
+    loop {
+      var char = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        switch not({
+          ..=(Char {
+            byte = 48.lower_byte(),
+          }, Char {
+            byte = 57.lower_byte(),
+          })
+        }.contains(char))
+        case true {
+          return none[Int]()
+        }
+        default {
+          {}
+        }
+        num = +(*(num, 10), {
+          -(char, Char {
+            byte = 48.lower_byte(),
+          })
+        }.to_int())
+      }
+    }
+  }
+  some(num)
+}
+fun bytes(string: String): Slice[Byte] {
+  string.unchecked_cast[String, Slice[Byte]]()
+}
+fun without_suffix(string: String, suffix: String): String {
+  switch string.ends_with(suffix).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    panic({
+      var $str = string_builder().&
+      $str.write("without_suffix doesn't match suffix ")
+      $str.write(suffix.debug())
+      $str.to_string()
+    })
+  }
+  string.without_last(suffix.len)
+}
+fun write[W](writer: W, json: Json): Nothing {
+  switch json
+  case null {
+    {
+      var $str = writer
+      $str.write("null")
+    }
+  }
+  case bool(bool) {
+    {
+      var $str = writer
+      $str.write(bool)
+    }
+  }
+  case int(int) {
+    {
+      var $str = writer
+      $str.write(int)
+    }
+  }
+  case string(string) {
+    {
+      {
+        var $str = writer
+        $str.write(""")
+      }
+      {
+        var $iter = string.iter().&
+        loop {
+          var char = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+          {
+            switch ==(char, newline)
+            case true {
+              {
+                var $str = writer
+                $str.write("\n")
+              }
+            }
+            default {
+              switch ==(char, Char {
+                byte = 92.lower_byte(),
+              })
+              case true {
+                {
+                  var $str = writer
+                  $str.write("\\")
+                }
+              }
+              default {
+                switch ==(char, Char {
+                  byte = 34.lower_byte(),
+                })
+                case true {
+                  {
+                    var $str = writer
+                    $str.write("\"")
+                  }
+                }
+                default {
+                  {
+                    var $str = writer
+                    $str.write(char)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      {
+        var $str = writer
+        $str.write(""")
+      }
+    }
+  }
+  case array(list) {
+    {
+      var $str = writer
+      $str.write("[")
+      $str.write(comma_separated(list))
+      $str.write("]")
+    }
+  }
+  case map(map) {
+    {
+      {
+        var $str = writer
+        $str.write("{")
+      }
+      var first = true
+      {
+        var $iter = map.iter().&
+        loop {
+          var entry = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+          {
+            switch first
+            case true {
+              first = false
+            }
+            default {
+              {
+                var $str = writer
+                $str.write(", ")
+              }
+            }
+            {
+              var $str = writer
+              $str.write(""")
+              $str.write(entry.key)
+              $str.write("": ")
+              $str.write(entry.value)
+            }
+          }
+        }
+      }
+      {
+        var $str = writer
+        $str.write("}")
+      }
+    }
+  }
+}
+fun write[W, T](writer: W, list: List[T]): Nothing {
+  writer.write(list.to_slice())
+}
+fun write[W, K, V](writer: W, entry: MapEntry[K, V]): Nothing {
+  {
+    var $str = writer
+    $str.write(entry.key)
+    $str.write(": ")
+    $str.write(entry.value)
+  }
+}
+fun write[W, K, V](writer: W, map: Map[K, V]): Nothing {
+  {
+    var $str = writer
+    $str.write("{")
+    $str.write(comma_separated(map.iter()))
+    $str.write("}")
+  }
+}
+fun write[W](writer: W, address: Address): Nothing {
+  var divisor = 1152921504606846976
+  var address = address.to_int()
+  {
+    var $str = writer
+    $str.write("0x")
+  }
+  loop {
+    writer.write({
+      %(/(address, divisor), 16)
+    }.lower_byte().digit_to_char())
+    switch ==(divisor, 1)
+    case true {
+      break(Nothing {})
+    }
+    default {
+      {}
+    }
+    divisor = /(divisor, 16)
+  }
+}
+fun write[W, T](writer: W, slice: Slice[T]): Nothing {
+  writer.write({
+    var $str = string_builder().&
+    $str.write("[")
+    $str.write(comma_separated(slice))
+    $str.write("]")
+    $str.to_string()
+  })
+}
+fun write[W, T](writer: W, set: Set[T]): Nothing {
+  writer.write(Char {
+    byte = 123.lower_byte(),
+  })
+  var first = true
+  {
+    var $iter = set.iter().&
+    loop {
+      var item = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        switch first
+        case true {
+          first = false
+        }
+        default {
+          writer.write(", ")
+        }
+        writer.write(item)
+      }
+    }
+  }
+  writer.write(Char {
+    byte = 125.lower_byte(),
+  })
+}
+fun write[W](writer: W, coverage: Coverage): Nothing {
+  {
+    var $iter = ..(0, coverage.len).iter().&
+    loop {
+      var i = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        var byte = {
+  +(coverage.bitset, i)
+}.to_reference[Byte]().*.to_int()
+        {
+          var $str = writer
+          $str.write(switch ==(byte, 0)
+          case true {
+            "."
+          }
+          default {
+            switch ==(byte, 1)
+            case true {
+              "X"
+            }
+            default {
+              "?"
+            }
+          })
+        }
+      }
+    }
+  }
+}
+fun write[W, T](writer: W, maybe: Maybe[T]): Nothing {
+  switch maybe
+  case some(val) {
+    {
+      var $str = writer
+      $str.write("some(")
+      $str.write(val)
+      $str.write(")")
+    }
+  }
+  case none {
+    {
+      var $str = writer
+      $str.write("none")
+    }
+  }
+}
+fun write[W](writer: W, suffixed: WithFittingSiSuffix): Nothing {
+  switch >(suffixed.a, 1e12)
+  case true {
+    {
+      {
+        var $str = writer
+        $str.write(/(suffixed.a, 1e12))
+        $str.write(" T")
+      }
+      return {}
+    }
+  }
+  default {
+    {}
+  }
+  switch >(suffixed.a, 1e9)
+  case true {
+    {
+      {
+        var $str = writer
+        $str.write(/(suffixed.a, 1e9))
+        $str.write(" G")
+      }
+      return {}
+    }
+  }
+  default {
+    {}
+  }
+  switch >(suffixed.a, 1000000)
+  case true {
+    {
+      {
+        var $str = writer
+        $str.write(/(suffixed.a, 1000000))
+        $str.write(" M")
+      }
+      return {}
+    }
+  }
+  default {
+    {}
+  }
+  switch >(suffixed.a, 1000)
+  case true {
+    {
+      {
+        var $str = writer
+        $str.write(/(suffixed.a, 1000))
+        $str.write(" K")
+      }
+      return {}
+    }
+  }
+  default {
+    {}
+  }
+  switch <(suffixed.a, 10e-10)
+  case true {
+    {
+      {
+        var $str = writer
+        $str.write(*(suffixed.a, 1e9))
+        $str.write(" n")
+      }
+      return {}
+    }
+  }
+  default {
+    {}
+  }
+  switch <(suffixed.a, 1e-6)
+  case true {
+    {
+      {
+        var $str = writer
+        $str.write(*(suffixed.a, 1000000))
+        $str.write(" u")
+      }
+      return {}
+    }
+  }
+  default {
+    {}
+  }
+  switch <(suffixed.a, 0.001)
+  case true {
+    {
+      {
+        var $str = writer
+        $str.write(*(suffixed.a, 1000))
+        $str.write(" m")
+      }
+      return {}
+    }
+  }
+  default {
+    {}
+  }
+  {
+    var $str = writer
+    $str.write(suffixed.a)
+    $str.write(" ")
+  }
+}
+fun write[W](writer: W, duration: Duration): Nothing {
+  {
+    var $str = writer
+    $str.write(duration.seconds.with_fitting_si_suffix())
+    $str.write("s")
+  }
+}
+fun write[W](writer: W, length: Length): Nothing {
+  {
+    var $str = writer
+    $str.write(length.seconds.with_fitting_si_suffix())
+    $str.write("m")
+  }
+}
+fun write[W](writer: W, area: Area): Nothing {
+  {
+    var $str = writer
+    $str.write(area.square_meters)
+    $str.write(" m²")
+  }
+}
+fun write[W](writer: W, volume: Volume): Nothing {
+  {
+    var $str = writer
+    $str.write(volume.cubic_meters)
+    $str.write(" m³")
+  }
+}
+fun write[W](writer: W, speed: Speed): Nothing {
+  {
+    var $str = writer
+    $str.write(speed.meters_per_second.with_fitting_si_suffix())
+    $str.write("m/s")
+  }
+}
+fun write[W](writer: W, acceleration: Acceleration): Nothing {
+  {
+    var $str = writer
+    $str.write(acceleration.meters_per_square_second)
+    $str.write(" m/s²")
+  }
+}
+fun write[W](writer: W, int: Byte): Nothing {
+  writer.write(radix(int, 10))
+}
+fun write[W, T](writer: W, enumerated: Enumerated[T]): Nothing {
+  {
+    var $str = writer
+    $str.write("(")
+    $str.write(enumerated.index)
+    $str.write(": ")
+    $str.write(enumerated.item)
+    $str.write(")")
+  }
+}
+fun write[W](writer: W, float: Float): Nothing {
+  switch float.is_nan()
+  case true {
+    {
+      {
+        var $str = writer
+        $str.write("nan")
+      }
+      return {}
+    }
+  }
+  default {
+    {}
+  }
+  switch <(float, 0.to_float())
+  case true {
+    {
+      {
+        var $str = writer
+        $str.write("-")
+      }
+      float = -(0.to_float(), float)
+    }
+  }
+  default {
+    {}
+  }
+  switch float.is_inf()
+  case true {
+    {
+      {
+        var $str = writer
+        $str.write("inf")
+      }
+      return {}
+    }
+  }
+  default {
+    {}
+  }
+  var split = float.split_into_integer_decimal_and_exponent()
+  var integral_part = split.a
+  var decimal_part = split.b
+  var exponent = split.c
+  {
+    var $str = writer
+    $str.write(integral_part)
+  }
+  switch !=(decimal_part, 0)
+  case true {
+    writer.write_decimals(decimal_part)
+  }
+  default {
+    {}
+  }
+  switch <(exponent, 0)
+  case true {
+    {
+      var $str = writer
+      $str.write("e-")
+      $str.write(-(0, exponent))
+    }
+  }
+  default {
+    {}
+  }
+  switch >(exponent, 0)
+  case true {
+    {
+      var $str = writer
+      $str.write("e")
+      $str.write(exponent)
+    }
+  }
+  default {
+    {}
+  }
+}
+fun write[W, T](writer: W, stack: Stack[T]): Nothing {
+  writer.write(stack.list)
+}
+fun write[W](writer: W, char: Char): Nothing {
+  writer.write_byte(char.byte)
+}
+fun write[W](writer: W, string: String): Nothing {
+  writer.write_bytes(string.bytes())
+}
+fun write[W](writer: W, sb: StringBuilder): Nothing {
+  writer.write_bytes(sb.bytes.to_slice())
+}
+fun write[W, T](writer: W, value: &T): Nothing {
+  writer.write(value.*)
+}
+fun write[W, T](writer: W, format: CommaSeparatedFormat[T]): Nothing {
+  var first = true
+  {
+    var $iter = format.iter.iter().&
+    loop {
+      var item = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        switch first
+        case true {
+          first = false
+        }
+        default {
+          writer.write(", ")
+        }
+        writer.write(item)
+      }
+    }
+  }
+}
+fun write[W, T](writer: W, debug: Debug[T]): Nothing {
+  writer.write_debug(debug.value)
+}
+fun write[W](writer: W, ord: Ordering): Nothing {
+  writer.write(switch ord
+  case less {
+    "less"
+  }
+  case equal {
+    "equal"
+  }
+  case greater {
+    "greater"
+  })
+}
+fun write[W, A, B](writer: W, tuple: Tuple2[A, B]): Nothing {
+  {
+    var $str = writer
+    $str.write("(")
+    $str.write(tuple.a)
+    $str.write(", ")
+    $str.write(tuple.b)
+    $str.write(")")
+  }
+}
+fun write[W, O, E](writer: W, result: Result[O, E]): Nothing {
+  switch result
+  case ok(o) {
+    {
+      var $str = writer
+      $str.write("ok(")
+      $str.write(o)
+      $str.write(")")
+    }
+  }
+  case error(e) {
+    {
+      var $str = writer
+      $str.write("error(")
+      $str.write(e)
+      $str.write(")")
+    }
+  }
+}
+fun write[W](writer: W, type: Type): Nothing {
+  switch ==(type.name, "&")
+  case true {
+    {
+      var $str = writer
+      $str.write("&")
+      $str.write(type.args.get(0))
+    }
+  }
+  default {
+    {
+      var $str = writer
+      $str.write(type.name)
+      $str.write(type_args(type.args))
+    }
+  }
+}
+fun write[W, T](writer: W, type_args: TypeArgsFormat[T]): Nothing {
+  switch type_args.args.is_not_empty()
+  case true {
+    {
+      var $str = writer
+      $str.write("[")
+      $str.write(comma_separated(type_args.args))
+      $str.write("]")
+    }
+  }
+  default {
+    {}
+  }
+}
+fun write[W](writer: W, nothing: Nothing): Nothing {
+  {
+    var $str = writer
+    $str.write("nothing")
+  }
+}
+fun write[W](writer: W, point: Point): Nothing {
+  writer.write(tuple(point.x, point.y))
+}
+fun write[W](writer: W, int: Int): Nothing {
+  switch <(int, 0)
+  case true {
+    {
+      var $str = writer
+      $str.write("-")
+      $str.write({
+        -(0, int)
+      }.radix(10))
+    }
+  }
+  default {
+    {
+      var $str = writer
+      $str.write(int.radix(10))
+    }
+  }
+}
+fun write[W](writer: W, format: RadixFormat): Nothing {
+  var divisor = 1
+  loop {
+    switch <(/(format.int, divisor), format.radix)
+    case true {
+      break(Nothing {})
+    }
+    default {
+      {}
+    }
+    divisor = *(divisor, format.radix)
+  }
+  loop {
+    writer.write({
+      %(/(format.int, divisor), format.radix)
+    }.lower_byte().digit_to_char())
+    switch ==(divisor, 1)
+    case true {
+      break(Nothing {})
+    }
+    default {
+      {}
+    }
+    divisor = /(divisor, format.radix)
+  }
+}
+fun write[W](writer: W, b: Bool): Nothing {
+  writer.write(switch b
+  case true {
+    "true"
+  }
+  default {
+    "false"
+  })
+}
+fun write[W, T](writer: W, range: Range[T]): Nothing {
+  {
+    var $str = writer
+    $str.write(range.start)
+    $str.write("..")
+    $str.write(range.end)
+  }
+}
+fun write[W, T](writer: W, range: OpenRange[T]): Nothing {
+  {
+    var $str = writer
+    $str.write(range.start)
+    $str.write("..infinity")
+  }
+}
+fun write[W, T](writer: W, matrix: Matrix[T]): Nothing {
+  {
+    var $str = writer
+    $str.write("[")
+  }
+  var first_row = true
+  {
+    var $iter = ..(0, height).iter().&
+    loop {
+      var y = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      {
+        switch first_row
+        case true {
+          first_row = false
+        }
+        default {
+          {
+            var $str = writer
+            $str.write(", ")
+          }
+        }
+        {
+          var $str = writer
+          $str.write("[")
+        }
+        var first_col = true
+        {
+          var $iter = ..(0, width).iter().&
+          loop {
+            var x = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+            {
+              switch first_col
+              case true {
+                first_col = false
+              }
+              default {
+                {
+                  var $str = writer
+                  $str.write(", ")
+                }
+              }
+              {
+                var $str = writer
+                $str.write(martix.get(@(x, y)))
+              }
+            }
+          }
+        }
+        {
+          var $str = writer
+          $str.write("]")
+        }
+      }
+    }
+  }
+  {
+    var $str = writer
+    $str.write("]")
+  }
+}
+fun in_kilometers(length: Length): Float {
+  /(length.meters, 1000)
+}
+fun parse_map(parser: &JsonParser): Result[Maybe[Map[String, Json]], Nothing] {
+  switch parser.consume(Char {
+    byte = 123.lower_byte(),
+  }).or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    return ok[Maybe[Map[String, Json]], Nothing](none[Map[String, Json]]())
+  }
+  var map = map[String, Json]()
+  loop switch parser.consume(Char {
+    byte = 125.lower_byte(),
+  })
+  case true {
+    break(Nothing {})
+  }
+  default {
+    {
+      var key = switch parser.parse_string()?.or()
+case short_circuit($primary) {
+  $primary
+}
+case evaluate_alternative {
+  return error[Maybe[Map[String, Json]], Nothing]({})
+}
+      switch parser.consume(Char {
+        byte = 58.lower_byte(),
+      }).or()
+      case short_circuit($primary) {
+        $primary
+      }
+      case evaluate_alternative {
+        return error[Maybe[Map[String, Json]], Nothing]({})
+      }
+      var value = parser.parse()?
+      map.&.put(key, value)
+      parser.consume(Char {
+        byte = 44.lower_byte(),
+      })
+    }
+  }
+  ok[Maybe[Map[String, Json]], Nothing](some(map))
+}
+fun read_file(name: String): Result[Slice[Byte], Nothing] {
+  var file = open_file_for_reading(name)?
+  var all_free_memory = Slice[Byte] {
+  data = heap_head,
+  len = -(get_stack_pointer().to_int(), heap_head.to_int()),
+}
+  var len = file.read(all_free_memory)?
+  switch ==(len, all_free_memory.len)
+  case true {
+    panic("out of memory")
+  }
+  default {
+    {}
+  }
+  file.close()
+  var content = all_free_memory.subslice(..(0, len))
+  heap_head = +(heap_head, len)
+  ok[Slice[Byte], Nothing](content)
+}
+fun report[Input](input: InputThatRan[Input]): Nothing {
+  var info = static[Input]().fuzzing_info()
+  switch switch info.has_target_position.and()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    not(input.coverage.reached_target())
+  }
+  case true {
+    return {}
+  }
+  default {
+    {}
+  }
+  var json_args = vec[Json]()
+  {
+    var $iter = input.arg_strings.iter().&
+    loop {
+      var arg = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      json_args.&.push(Json.string(arg))
+    }
+  }
+  println(Json.map(map(->("type", Json.string("example")), ->("inputs", Json.array(json_args)), ->("result", Json.map(map(->("status", Json.string("returned")), ->("value", Json.string(switch input.result.or()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    "<panicked>"
+  }))))), ->("fun_start_line", Json.int(info.fun_line)), ->("fun_name", Json.string(info.fun_name)))))
+}
+fun with_fitting_si_suffix(a: Float): WithFittingSiSuffix {
+  WithFittingSiSuffix {
+    a = a,
+  }
+}
+fun in_liters(volume: Volume): Float {
+  *(volume.cubic_meters, 1000)
+}
+fun tuple[A, B](a: A, b: B): Tuple2[A, B] {
+  Tuple2 {
+    a = a,
+    b = b,
+  }
+}
+fun tuple[A, B, C](a: A, b: B, c: C): Tuple3[A, B, C] {
+  Tuple3 {
+    a = a,
+    b = b,
+    c = c,
+  }
+}
+fun uninitialized_matrix[T](size: Point): Matrix[T] {
+  Matrix {
+    data = uninitialized_slice[T](*(size.x, size.y)),
+    width = size.x,
+    height = size.y,
+  }
+}
+fun type_args[T](args: List[T]): TypeArgsFormat[T] {
+  TypeArgsFormat {
+    args = args,
+  }
+}
+fun square_kilometers(val: Float): Area {
+  Area {
+    square_meters = *(val, 1000000),
+  }
+}
+fun mutate[T](list: List[T], random: &Random, temperature: Int): List[T] {
+  list.to_slice().mutate(random, temperature).to_list()
+}
+fun mutate[K, V](map: Map[K, V], random: &Random, temperature: Int): Map[K, V] {
+  switch ==(temperature, 0)
+  case true {
+    return map
+  }
+  default {
+    {}
+  }
+  var copy = map[K, V]()
+  switch switch map.is_not_empty().and()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    <(random.next_int(..(0, temperature)), 50)
+  }
+  case true {
+    {
+      var mutated_entry = random.next_int(..(0, map.size))
+      var entry_index = 0
+      {
+        var $iter = map.iter().&
+        loop {
+          var entry = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+          {
+            switch ==(entry_index, mutated_entry)
+            case true {
+              {
+                switch random.next_bool()
+                case true {
+                  copy.&.put(entry.key.mutate(random, temperature).value)
+                }
+                default {
+                  copy.&.put(entry.key, entry.value.mutate(random, temperature))
+                }
+              }
+            }
+            default {
+              copy.&.put(entry)
+            }
+            entry_index = +(entry_index, 1)
+          }
+        }
+      }
+    }
+  }
+  default {
+    {
+      switch switch map.is_not_empty().and()
+      case short_circuit($primary) {
+        $primary
+      }
+      case evaluate_alternative {
+        random.next_bool()
+      }
+      case true {
+        {
+          var removed_entry = random.next_int(..(0, map.size))
+          var entry_index = 0
+          {
+            var $iter = map.iter().&
+            loop {
+              var entry = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+              {
+                switch !=(entry_index, removed_entry)
+                case true {
+                  copy.&.put(entry)
+                }
+                default {
+                  {}
+                }
+                entry_index = +(entry_index, 1)
+              }
+            }
+          }
+        }
+      }
+      default {
+        {
+          {
+            var $iter = map.iter().&
+            loop {
+              var entry = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+              copy.&.put(entry)
+            }
+          }
+          copy.&.put(static[MapEntry[K, V]]().generate(random, 100))
+        }
+      }
+    }
+  }
+}
+fun mutate[T](slice: Slice[T], random: &Random, temperature: Int): Slice[T] {
+  switch ==(temperature, 0)
+  case true {
+    return slice
+  }
+  default {
+    {}
+  }
+  var copy = uninitialized_vec[T](slice.len)
+  slice.copy_to(copy.to_slice())
+  var rand = random.next_int(..(0, temperature))
+  switch switch slice.is_not_empty().and()
+  case short_circuit($primary) {
+    $primary
+  }
+  case evaluate_alternative {
+    <(rand, 50)
+  }
+  case true {
+    {
+      var temperature = /(*(temperature, 12), 10)
+      var index = random.next_int(..(0, slice.len))
+      copy.&.get_ref(index).* = copy.get(index).mutate(random, temperature)
+    }
+  }
+  default {
+    {
+      switch switch slice.is_not_empty().and()
+      case short_circuit($primary) {
+        $primary
+      }
+      case evaluate_alternative {
+        random.next_bool()
+      }
+      case true {
+        copy.&.remove(..+(random.next_int(..(0, slice.len)), 1))
+      }
+      default {
+        copy.&.insert(random.next_int(..=(0, slice.len)), static[T]().generate(random, 100))
+      }
+    }
+  }
+  copy.to_slice()
+}
+fallback fun mutate[T](value: T, random: &Random, temperature: Int): T { ... }
+fun mutate[T](value: &T, random: &Random, temperature: Int): &T {
+  value.*.mutate(random, temperature).put_on_heap()
+}
+fun mutate(byte: Byte, random: &Random, temperature: Int): Byte {
+  +(byte, random.next_int(..=({
+    -(0, temperature)
+  }, temperature)).lower_byte())
+}
+fun mutate(value: Float, random: &Random, temperature: Int): Float {
+  value.to_int().mutate(random, temperature).to_float()
+}
+fun mutate(char: Char, random: &Random, temperature: Int): Char {
+  var visible_ascii = ..(32.lower_byte(), 127.lower_byte())
+  {
+    +(char.byte.to_int(), random.next_int(..=({
+      -(0, temperature)
+    }, temperature)))
+  }.lower_byte().clamp(visible_ascii).to_char()
+}
+fun mutate(string: String, random: &Random, temperature: Int): String {
+  switch ==(temperature, 0)
+  case true {
+    return string
+  }
+  default {
+    {}
+  }
+  string.chars().mutate(random, temperature).to_string()
+}
+fun mutate(int: Int, random: &Random, temperature: Int): Int {
+  +(int, random.next_int(..=({
+    -(0, temperature)
+  }, temperature)))
+}
+fun mutate[T](range: Range[T], random: &Random, temperature: Int): Range[T] {
+  var bounds = switch random.next_bool()
+case true {
+  tuple(range.start, range.end.mutate(random, temperature))
+}
+default {
+  tuple(range.start.mutate(random, temperature), range.end)
+}
+  ..(bounds.min(), bounds.max())
+}
+fun mutate[T](range: OpenRange[T], random: &Random, temperature: Int): OpenRange[T] {
+  ..(range.start.mutate(random, temperature), infinity)
+}
+fun mutate[T](matrix: Matrix[T], random: &Random, temperature: Int): Matrix[T] {
+  switch ==(temperature, 0)
+  case true {
+    return matrix
+  }
+  default {
+    {}
+  }
+  var matrix = matrix.copy()
+  var x = random.next_int(..(0, matrix.width))
+  var y = random.next_int(..(0, matrix.height))
+  matrix.&.get_ref(@(x, y)).mutate(random, temperature)
+  matrix
+}
+fun get_stack_pointer(): Address asm {
+  load a sp
+  store a sp
+  ret
+}
+fun <<(left: Int, by: Int): Int {
+  {
+    var $iter = ..(0, by).iter().&
+    loop {
+      var i = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      left = *(left, 2)
+    }
+  }
+  left
+}
+fun unreachable(): Never {
+  panic("unreachable")
+}
+fun parse(parser: &JsonParser): Result[Json, Nothing] {
+  parser.consume_whitespace()
+  switch parser.parse_null()
+  case some {
+    return ok[Json, Nothing](Json.null({}))
+  }
+  default {
+    {}
+  }
+  switch parser.parse_bool()
+  case some(b) {
+    return ok[Json, Nothing](Json.bool(b))
+  }
+  default {
+    {}
+  }
+  switch parser.parse_int()?
+  case some(i) {
+    return ok[Json, Nothing](Json.int(i))
+  }
+  default {
+    {}
+  }
+  switch parser.parse_string()?
+  case some(s) {
+    return ok[Json, Nothing](Json.string(s))
+  }
+  default {
+    {}
+  }
+  switch parser.parse_array()?
+  case some(a) {
+    return ok[Json, Nothing](Json.array(a))
+  }
+  default {
+    {}
+  }
+  switch parser.parse_map()?
+  case some(m) {
+    return ok[Json, Nothing](Json.map(m))
+  }
+  default {
+    {}
+  }
+  error[Json, Nothing]({})
+}
+fun read(file: File, buffer: Slice[Byte]): Result[Int, Nothing] asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  moveib c 24
+  add c sp
+  load c c
+  syscall 6
+  load b sp
+  move st a
+  isless
+  cjump .ret_error
+  .ret_ok:
+  store b a
+  moveib c 8
+  add b c
+  moveib c 0
+  storeb b c
+  ret
+  .ret_error:
+  moveib c 8
+  add b c
+  moveib c 1
+  storeb b c
+  ret
+}
+fun read(stdin: Stdin, buffer: Slice[Byte]): Result[Int, Nothing] asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  syscall 11
+  load b sp
+  move st a
+  isless
+  cjump .ret_error
+  .ret_ok:
+  store b a
+  moveib c 8
+  add b c
+  moveib c 0
+  storeb b c
+  ret
+  .ret_error:
+  moveib c 8
+  add b c
+  moveib c 1
+  storeb b c
+  ret
+}
+fun pad_left(string: String, len: Int, char: Char): String {
+  var string = string_builder().&
+  loop switch <(+(string.len(), string.len), len)
+  case true {
+    string.write(char)
+  }
+  default {
+    break(Nothing {})
+  }
+  string.write(string)
+  string.to_string()
+}
+fun pad_left(string: String, len: Int): String {
+  string.pad_left(len, space)
+}
+fun get_ref_unchecked[T](slice: Slice[T], index: Int): &T {
+  {
+    +(slice.data, {
+      *(index, stride_size_of[T]())
+    })
+  }.to_reference[T]()
+}
+fun get_ref_unchecked[T](matrix: &Matrix[T], point: Point): &T {
+  matrix.data.get_ref_unchecked(+(*(point.y, matrix.width), point.x))
+}
+fun next_int(rand: &Random): Int {
+  var res = +({
+  +(rand.a, rand.d)
+}.rotl(23), rand.a)
+  var t = <<(rand.b, 17)
+  rand.c = ^(rand.c, rand.a)
+  rand.d = ^(rand.d, rand.b)
+  rand.b = ^(rand.b, rand.c)
+  rand.a = ^(rand.a, rand.d)
+  rand.c = ^(rand.b, t)
+  rand.d = rand.d.rotl(45)
+  res
+}
+fun next_int(rand: &Random, range: Range[Int]): Int {
+  +(%(rand.next_int().abs(), range.len()), range.start)
+}
+fun *(a: Float, b: Duration): Duration {
+  Duration {
+    seconds = *(a, b.seconds),
+  }
+}
+fun *(a: Float, b: Length): Length {
+  Length {
+    meters = *(a, b.meters),
+  }
+}
+fun *(a: Float, b: Area): Area {
+  Area {
+    square_meters = *(a, b.square_meters),
+  }
+}
+fun *(a: Float, b: Volume): Volume {
+  Volume {
+    cubic_meters = *(a, b.cubic_meters),
+  }
+}
+fun *(a: Float, b: Speed): Speed {
+  Speed {
+    meters_per_second = *(a, b.meters_per_second),
+  }
+}
+fun *(a: Float, b: Acceleration): Acceleration {
+  Acceleration {
+    meters_per_square_second = *(a, b.meters_per_square_second),
+  }
+}
+fun *(a: Duration, b: Float): Duration {
+  Duration {
+    seconds = *(a.seconds, b),
+  }
+}
+fun *(a: Length, b: Float): Length {
+  Length {
+    meters = *(a.meters, b),
+  }
+}
+fun *(a: Length, b: Length): Area {
+  Area {
+    square_meters = *(a.meters, b.meters),
+  }
+}
+fun *(a: Length, b: Area): Volume {
+  Volume {
+    cubic_meters = *(a.meters, b.square_meters),
+  }
+}
+fun *(a: Area, b: Float): Area {
+  Area {
+    square_meters = *(a.square_meters, b),
+  }
+}
+fun *(a: Area, b: Length): Volume {
+  Volume {
+    cubic_meters = *(a.square_meters, b.meters),
+  }
+}
+fun *(a: Volume, b: Float): Volume {
+  Volume {
+    cubic_meters = *(a.cubic_meters, b),
+  }
+}
+fun *(a: Speed, b: Float): Speed {
+  Speed {
+    meters_per_second = *(a.meters_per_second, b),
+  }
+}
+fun *(a: Speed, b: Duration): Length {
+  Length {
+    meters = *(a.meters_per_second, b.seconds),
+  }
+}
+fun *(a: Acceleration, b: Float): Acceleration {
+  Acceleration {
+    meters_per_square_second = *(a.meters_per_square_second, b),
+  }
+}
+fun *(a: Acceleration, b: Duration): Speed {
+  Speed {
+    meters_per_second = *(a.meters_per_square_second, b.seconds),
+  }
+}
+fun *(left: Byte, right: Byte): Byte asm {
+  moveib a 8
+  add a sp
+  loadb a a
+  moveib b 9
+  add b sp
+  loadb b b
+  load c sp
+  mul a b
+  storeb c a
+  ret
+}
+fun *(left: Float, right: Float): Float asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  load c sp
+  fmul a b
+  store c a
+  ret
+}
+fun *(a: Point, f: Int): Point {
+  Point {
+    x = *(a.x, f),
+    y = *(a.y, f),
+  }
+}
+fun *(f: Int, a: Point): Point {
+  Point {
+    x = *(a.x, f),
+    y = *(a.y, f),
+  }
+}
+fun *(left: Int, right: Int): Int asm {
+  moveib a 8
+  add a sp
+  load a a
+  moveib b 16
+  add b sp
+  load b b
+  load c sp
+  mul a b
+  store c a
+  ret
+}
+fun eprintln(): Nothing {
+  eprint(newline)
+}
+fun eprintln[T](value: T): Nothing {
+  eprint(value)
+  eprintln()
+}
+fun print[T](value: T): Nothing {
+  stdout.write(value)
+}
+fun in_nanoseconds(duration: Duration): Float {
+  *(1e9, duration.seconds)
+}
+fun meters_per_second(meters_per_second: Float): Speed {
+  Speed {
+    meters_per_second = meters_per_second,
+  }
+}
+fun centi(a: Float): Float {
+  /(a, 100)
+}
+fun parse_null(parser: &JsonParser): Maybe[Nothing] {
+  switch parser.consume("null")
+  case true {
+    some({})
+  }
+  default {
+    none[Nothing]()
+  }
+}
+fun split_into_integer_decimal_and_exponent(value: Float): Tuple3[Int, Int, Int] {
+  var normalized = value.normalize()
+  var exponent = normalized.a
+  value = normalized.b
+  var integral_part = value.to_int()
+  var remainder = -(value, integral_part.to_float())
+  remainder = *(remainder, 1000000000.to_float())
+  var decimal_part = remainder.to_int()
+  remainder = -(remainder, decimal_part.to_float())
+  switch >=(remainder, {
+    /(1.to_float(), 2.to_float())
+  })
+  case true {
+    {
+      decimal_part = +(decimal_part, 1)
+      switch >(decimal_part, 1000000000)
+      case true {
+        {
+          decimal_part = 0
+          integral_part = +(integral_part, 1)
+          switch switch !=(exponent, 0).and()
+          case short_circuit($primary) {
+            $primary
+          }
+          case evaluate_alternative {
+            >=(integral_part, 10)
+          }
+          case true {
+            {
+              exponent = +(exponent, 1)
+              integral_part = 1
+            }
+          }
+          default {
+            {}
+          }
+        }
+      }
+      default {
+        {}
+      }
+    }
+  }
+  default {
+    {}
+  }
+  tuple(integral_part, decimal_part, exponent)
+}
+fun in_seconds(duration: Duration): Float {
+  duration.seconds
+}
+fun consume_whitespace(parser: &JsonParser): Nothing {
+  loop switch parser.current().is_whitespace()
+  case true {
+    parser.advance(1)
+  }
+  default {
+    break(Nothing {})
+  }
+}
+fun sort[T](slice: &Slice[T]): Nothing {
+  switch <=(slice.len, 1)
+  case true {
+    return {}
+  }
+  default {
+    {}
+  }
+  var pivot = slice.get(slice.len.dec())
+  var i = 0
+  {
+    var $iter = ..(0, slice.len).iter().&
+    loop {
+      var j = switch $iter.next()
+case some(a) {
+  a
+}
+case none {
+  break(Nothing {})
+}
+      switch <(slice.get(j), pivot)
+      case true {
+        {
+          i = i.inc()
+          swap(slice.get_ref(i.dec()), slice.get_ref(j))
+        }
+      }
+      default {
+        {}
+      }
+    }
+  }
+  swap(slice.get_ref(i), slice.get_ref(slice.len.dec()))
+  sort(slice.subslice(..(0, i)).&)
+  sort(slice.subslice(..(min(i.inc(), slice.len.dec()), slice.len)).&)
+}
+fun error[O, E](e: E): Result[O, E] {
+  Result[O, E].error(e)
+}
+fun round_up_to_power_of(number: Int, factor: Int): Int {
+  var power = 1
+  loop switch >=(power, number)
+  case true {
+    break(power)
+  }
+  default {
+    power = *(power, factor)
+  }
+}
+fun size_of[T](): Int { ... }
+

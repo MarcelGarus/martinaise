@@ -4,7 +4,7 @@ import stdlib.mar
 
 opaque File = 8 bytes big, 8 bytes aligned
 
-fun create_file(filename: Str, mode: Int): Result[File, Nothing] asm {
+fun create_file(filename: String, mode: Int): Result[File, Nothing] asm {
   moveib a 8  add a sp load a a | filename.data
   moveib b 16 add b sp load b b | filename.len
   moveib c 24 add c sp load c c | mode
@@ -14,7 +14,7 @@ fun create_file(filename: Str, mode: Int): Result[File, Nothing] asm {
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
 }
-fun open_file_for_reading(filename: Str): Result[File, Nothing] asm {
+fun open_file_for_reading(filename: String): Result[File, Nothing] asm {
   moveib a 8  add a sp load a a | filename.data
   moveib b 16 add b sp load b b | filename.len
   syscall 4
@@ -23,7 +23,7 @@ fun open_file_for_reading(filename: Str): Result[File, Nothing] asm {
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
 }
-fun open_file_for_writing(filename: Str): Result[File, Nothing] asm {
+fun open_file_for_writing(filename: String): Result[File, Nothing] asm {
   moveib a 8  add a sp load a a | filename.data
   moveib b 16 add b sp load b b | filename.len
   syscall 5
@@ -51,17 +51,17 @@ fun read_byte(file: File): Result[Maybe[Byte], Nothing] {
     else some(char)
   )
 }
-fun read_line(file: File): Result[Maybe[Str], Nothing] {
+fun read_line(file: File): Result[Maybe[String], Nothing] {
   var content = vec[Byte]()
   loop {
     var byte = file.read_byte()? or {
-      if content.is_empty() then return ok[Maybe[Str], Nothing](none[Str]())
+      if content.is_empty() then return ok[Maybe[String], Nothing](none[String]())
       break
     }
     if byte == newline.byte then break
     content.&.push(byte)
   }
-  ok[Maybe[Str], Nothing](some(content.to_slice().to_str()))
+  ok[Maybe[String], Nothing](some(content.to_slice().to_str()))
 }
 
 fun write_bytes_safely(
@@ -91,7 +91,7 @@ fun close(file: File) asm {
   syscall 8 ret
 }
 
-fun read_file(name: Str): Result[Slice[Byte], Nothing] {
+fun read_file(name: String): Result[Slice[Byte], Nothing] {
   var file = open_file_for_reading(name)?
   var all_free_memory = Slice[Byte] {
     data = heap_head, len = get_stack_pointer().to_int() - heap_head.to_int()
@@ -103,7 +103,7 @@ fun read_file(name: Str): Result[Slice[Byte], Nothing] {
   heap_head = heap_head + len
   ok[Slice[Byte], Nothing](content)
 }
-fun write_file(name: Str, content: Slice[Byte]): Result[Nothing, Nothing] {
+fun write_file(name: String, content: Slice[Byte]): Result[Nothing, Nothing] {
   var file = open_file_for_writing(name) or {
     println("Couldn't open file")
     return error[Nothing, Nothing]({})
@@ -116,9 +116,9 @@ fun write_file(name: Str, content: Slice[Byte]): Result[Nothing, Nothing] {
   ok[Nothing, Nothing]({})
 }
 
-struct DirEntry { name: Str, kind: DirEntryKind }
+struct DirEntry { name: String, kind: DirEntryKind }
 enum DirEntryKind { file, directory, other }
-fun read_dir(path: Str): Result[Slice[DirEntry], Nothing] {
+fun read_dir(path: String): Result[Slice[DirEntry], Nothing] {
   var all_free_memory = Slice[Byte] {
     data = heap_head, len = get_stack_pointer().to_int() - heap_head.to_int()
   }
@@ -145,7 +145,7 @@ fun read_dir(path: Str): Result[Slice[DirEntry], Nothing] {
   }
   ok[Slice[DirEntry], Nothing](entries.to_slice())
 }
-fun read_dir_impl(path: Str, buffer: Slice[Byte]): Int asm {
+fun read_dir_impl(path: String, buffer: Slice[Byte]): Int asm {
   moveib a 8  add a sp load a a | path.data
   moveib b 16 add b sp load b b | path.len
   moveib c 24 add c sp load c c | buffer.data
@@ -209,15 +209,15 @@ fun read_byte(stdin: Stdin): Result[Maybe[Byte], Nothing] {
     else some(char)
   )
 }
-fun read_line(stdin: Stdin): Result[Maybe[Str], Nothing] {
+fun read_line(stdin: Stdin): Result[Maybe[String], Nothing] {
   var content = vec[Byte]()
   loop {
     var byte = stdin.read_byte()? or {
-      if content.is_empty() then return ok[Maybe[Str], Nothing](none[Str]())
+      if content.is_empty() then return ok[Maybe[String], Nothing](none[String]())
       break
     }
     if byte == newline.byte then break
     content.&.push(byte)
   }
-  ok[Maybe[Str], Nothing](some(content.to_slice().to_str()))
+  ok[Maybe[String], Nothing](some(content.to_slice().to_str()))
 }

@@ -47,51 +47,63 @@ fun -(char: Char, delta: Byte): Char { Char { byte = char.byte - delta } }
 fun -(char: Char, other: Char): Byte { char.byte - other.byte }
 
 | Strings  
-| A Str (short for String) is just a wrapper around a Slice[Byte] and it's what
+| A String (short for String) is just a wrapper around a Slice[Byte] and it's what
 | what you get from string literals such as "blub". Try printing it! It gets
 | formatted nicely.
 
-struct Str { data: Address, len: Int }
+struct String { data: Address, len: Int }
 
-fun to_str(chars: Slice[Char]): Str { chars.unchecked_cast[Slice[Char], Str]() }
-fun to_str(bytes: Slice[Byte]): Str { bytes.unchecked_cast[Slice[Byte], Str]() }
-fun to_str(chars: List[Char]): Str { chars.to_slice().to_str() }
-fun chars(str: Str): Slice[Char] { str.unchecked_cast[Str, Slice[Char]]() }
-fun bytes(str: Str): Slice[Byte] { str.unchecked_cast[Str, Slice[Byte]]() }
+fun to_string(chars: Slice[Char]): String {
+  chars.unchecked_cast[Slice[Char], String]()
+}
+fun to_string(bytes: Slice[Byte]): String {
+  bytes.unchecked_cast[Slice[Byte], String]()
+}
+fun to_string(chars: List[Char]): String { chars.to_slice().to_string() }
+fun chars(string: String): Slice[Char] {
+  string.unchecked_cast[String, Slice[Char]]()
+}
+fun bytes(string: String): Slice[Byte] {
+  string.unchecked_cast[String, Slice[Byte]]()
+}
 
-fun is_empty(str: Str): Bool { str.len == 0 }
-fun get_maybe_ref(str: Str, index: Int): Maybe[&Char] {
-  str.chars().get_maybe_ref(index)
+fun is_empty(string: String): Bool { string.len == 0 }
+fun get_maybe_ref(string: String, index: Int): Maybe[&Char] {
+  string.chars().get_maybe_ref(index)
 }
-fun get_ref(str: Str, index: Int): &Char {
-  str.get_maybe_ref(index) or panic("index out of bounds")
+fun get_ref(string: String, index: Int): &Char {
+  string.get_maybe_ref(index) or panic("index out of bounds")
 }
-fun get_maybe(str: Str, index: Int): Maybe[Char] {
-  switch str.get_maybe_ref(index) case some(c) some(c.*) case none none[Char]()
+fun get_maybe(string: String, index: Int): Maybe[Char] {
+  switch string.get_maybe_ref(index)
+  case some(c) some(c.*)
+  case none none[Char]()
 }
-fun get(str: Str, index: Int): Char { str.get_ref(index).* }
-fun get_unchecked(str: Str, index: Int): Char asm {
-  moveib a 8  add a sp load a a | str.data
+fun get(string: String, index: Int): Char { string.get_ref(index).* }
+fun get_unchecked(string: String, index: Int): Char asm {
+  moveib a 8  add a sp load a a | string.data
   moveib b 24 add b sp load b b | index
   add a b load a a | char
   load c sp store c a ret
 }
 
-fun <=>(a: Str, b: Str): Ordering {
+fun <=>(a: String, b: String): Ordering {
   switch memcompare(a.data, b.data, min(a.len, b.len))
   case less Ordering.less
   case greater Ordering.greater
   case equal if a.len < b.len then Ordering.less else Ordering.greater
 }
-fun ==(a: Str, b: Str): Bool {
+fun ==(a: String, b: String): Bool {
   a.len == b.len or return false
   memcompare(a.data, b.data, a.len) is equal
 }
-fun hash(hasher: &Hasher, str: Str) { hasher.hash(memhash(str.data, str.len)) }
-fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }
-fun write_debug[W](writer: W, str: Str) {
+fun hash(hasher: &Hasher, string: String) {
+  hasher.hash(memhash(string.data, string.len))
+}
+fun write[W](writer: W, string: String) { writer.write_bytes(string.bytes()) }
+fun write_debug[W](writer: W, string: String) {
   writer."\""
-  for char in str do
+  for char in string do
     if char == #" then writer."\\\""
     else if char == #\ then writer."\\\\"
     else if char == newline then writer."\\n"
@@ -110,174 +122,177 @@ fun mutate(char: Char, random: &Random, temperature: Int): Char {
     .clamp(visible_ascii)
     .to_char()
 }
-fun fuzzing_complexity(str: Str): Float {
-  var complexity = str.len.to_float()
-  for char in str.chars() do
+fun fuzzing_complexity(string: String): Float {
+  var complexity = string.len.to_float()
+  for char in string.chars() do
     complexity = complexity + char.byte.fuzzing_complexity()
   complexity
 }
-fun generate(s: Static[Str], random: &Random, complexity: Int): Str {
+fun generate(s: Static[String], random: &Random, complexity: Int): String {
   var len = random.next_int(0..=complexity)
   var slice = uninitialized_slice[Char](len)
   for i in 0..len do slice.get_ref(i).* = static[Char]().generate(random, 1)
-  Str { data = slice.data, len }
+  String { data = slice.data, len }
 }
-fun mutate(str: Str, random: &Random, temperature: Int): Str {
-  if temperature == 0 then return str
-  str.chars().mutate(random, temperature).to_str()
+fun mutate(string: String, random: &Random, temperature: Int): String {
+  if temperature == 0 then return string
+  string.chars().mutate(random, temperature).to_string()
 }
 
-fun iter(str: Str): Iter[Char, _] {
-  Iter[Char, StrIter] { state = StrIter { str, index = 0 } }
+fun iter(string: String): Iter[Char, _] {
+  Iter[Char, StrIter] { state = StrIter { string, index = 0 } }
 }
-struct StrIter { str: Str, index: Int }
+struct StrIter { string: String, index: Int }
 fun next(iter: &Iter[Char, StrIter]): Maybe[Char] {
   var state = iter.state.&
-  if state.index >= state.str.len then none[Char]() else {
-    var char = state.str.chars().get(state.index)
+  if state.index >= state.string.len then none[Char]() else {
+    var char = state.string.chars().get(state.index)
     state.index = state.index.inc()
     some(char)
   }
 }
 
-fun substr(str: Str, range: Range[Int]): Str {
-  range.end <= str.len or panic("substr needs to be inside original str")
-  str.chars().subslice(range).to_str()
+fun substr(string: String, range: Range[Int]): String {
+  range.end <= string.len or panic("substr needs to be inside original string")
+  string.chars().subslice(range).to_string()
 }
-fun first(str: Str): Char {
-  str.is_not_empty() or panic("first only works on non-empty strs")
-  str.get(0)
+fun first(string: String): Char {
+  string.is_not_empty() or panic("first only works on non-empty strs")
+  string.get(0)
 }
-fun first(str: Str, amount: Int): Str {
-  amount <= str.len or panic("first amount too big")
-  str.substr(0..amount)
+fun first(string: String, amount: Int): String {
+  amount <= string.len or panic("first amount too big")
+  string.substr(0..amount)
 }
-fun last(str: Str): T {
-  str.is_not_empty() or panic("last only works on non-empty strs")
-  str.get(str.len.dec())
+fun last(string: String): T {
+  string.is_not_empty() or panic("last only works on non-empty strs")
+  string.get(string.len.dec())
 }
-fun last(str: Str, amount: Int): Str {
-  amount <= str.len or panic("last amount too big")
-  str.substr({str.len - amount}..str.len)
+fun last(string: String, amount: Int): String {
+  amount <= string.len or panic("last amount too big")
+  string.substr({string.len - amount}..string.len)
 }
-fun without_first(str: Str, amount: Int): Str {
-  amount <= str.len or panic("without_first amount too big")
-  str.substr(amount..str.len)
+fun without_first(string: String, amount: Int): String {
+  amount <= string.len or panic("without_first amount too big")
+  string.substr(amount..string.len)
 }
-fun without_last(str: Str, amount: Int): Str {
-  amount <= str.len or panic("without_last amount too big")
-  str.substr(0..{str.len - amount})
+fun without_last(string: String, amount: Int): String {
+  amount <= string.len or panic("without_last amount too big")
+  string.substr(0..{string.len - amount})
 }
-fun starts_with(str: Str, prefix: Str): Bool {
-  str.len >= prefix.len or return false
-  memcompare(str.data, prefix.data, prefix.len) is equal
+fun starts_with(string: String, prefix: String): Bool {
+  string.len >= prefix.len or return false
+  memcompare(string.data, prefix.data, prefix.len) is equal
 }
-fun ends_with(str: Str, suffix: Str): Bool {
-  str.len >= suffix.len or return false
-  memcompare(str.data + {str.len - suffix.len}, suffix.data, suffix.len)
+fun ends_with(string: String, suffix: String): Bool {
+  string.len >= suffix.len or return false
+  memcompare(string.data + {string.len - suffix.len}, suffix.data, suffix.len)
     is equal
 }
-fun without_prefix(str: Str, prefix: Str): Str {
-  str.starts_with(prefix)
+fun without_prefix(string: String, prefix: String): String {
+  string.starts_with(prefix)
     or panic("without_prefix doesn't match prefix {prefix.debug()}")
-  str.without_first(prefix.len)
+  string.without_first(prefix.len)
 }
-fun without_suffix(str: Str, suffix: Str): Str {
-  str.ends_with(suffix)
+fun without_suffix(string: String, suffix: String): String {
+  string.ends_with(suffix)
     or panic("without_suffix doesn't match suffix {suffix.debug()}")
-  str.without_last(suffix.len)
+  string.without_last(suffix.len)
 }
-fun trim_prefix(str: &Str, prefix: Str) {
-  str.* = str.without_prefix(prefix)
+fun trim_prefix(string: &String, prefix: String) {
+  string.* = string.without_prefix(prefix)
 }
-fun trim_suffix(str: &Str, suffix: Str) {
-  str.* = str.without_suffix(suffix)
+fun trim_suffix(string: &String, suffix: String) {
+  string.* = string.without_suffix(suffix)
 }
-fun trim(str: Str): Str {
+fun trim(string: String): String {
   var start = 0
-  var end = str.len
-  loop if start < str.len and str.get(start).is_whitespace()
+  var end = string.len
+  loop if start < string.len and string.get(start).is_whitespace()
     then start = start + 1
     else break
-  loop if end > 0 and str.get(end - 1).is_whitespace() and not(start == end)
+  loop if end > 0 and string.get(end - 1).is_whitespace() and not(start == end)
     then end = end - 1
     else break
-  str.substr(start..end)
+  string.substr(start..end)
 }
-fun replace(str: Str, from: Str, to: Str): Str {
-  var b = str_builder().&
+fun replace(string: String, from: String, to: String): String {
+  var b = string_builder().&
   var cursor = 0
-  loop if cursor == str.len then break else {
-    if str.without_first(cursor).starts_with(from) then {
+  loop if cursor == string.len then break else {
+    if string.without_first(cursor).starts_with(from) then {
       b."{to}"
       cursor = cursor + from.len
     } else {
-      b."{str.chars().get(cursor)}"
+      b."{string.chars().get(cursor)}"
       cursor = cursor + 1
     }
   }
-  b.to_str()
+  b.to_string()
 }
-fun split(str: Str, separator: Str): Slice[Str] {
-  var parts = list[Str]()
-  for part in str.iter().split(separator.chars()) do parts.&.push(part.to_str())
+fun split(string: String, separator: String): Slice[String] {
+  var parts = list[String]()
+  for part in string.iter().split(separator.chars()) do
+    parts.&.push(part.to_string())
   parts.to_slice()
 }
-fun lines(str: Str): Slice[Str] { str.split("{newline}") }
-fun pad_right(str: Str, len: Int, char: Char): Str {
-  var string = str_builder().&
-  string.write(str)
+fun lines(string: String): Slice[String] { string.split("{newline}") }
+fun pad_right(string: String, len: Int, char: Char): String {
+  var string = string_builder().&
+  string.write(string)
   loop if string.len() < len then string.write(char) else break
-  string.to_str()
+  string.to_string()
 }
-fun pad_right(str: Str, len: Int): Str { str.pad_right(len, space) }
-fun pad_left(str: Str, len: Int, char: Char): Str {
-  var string = str_builder().&
-  loop if string.len() + str.len < len then string.write(char) else break
-  string.write(str)
-  string.to_str()
+fun pad_right(string: String, len: Int): String { string.pad_right(len, space) }
+fun pad_left(string: String, len: Int, char: Char): String {
+  var string = string_builder().&
+  loop if string.len() + string.len < len then string.write(char) else break
+  string.write(string)
+  string.to_string()
 }
-fun pad_left(str: Str, len: Int): Str { str.pad_left(len, space) }
+fun pad_left(string: String, len: Int): String { string.pad_left(len, space) }
 
-fun join(items: Slice[Str], separator: Str): Str {
-  var b = str_builder().&
+fun join(items: Slice[String], separator: String): String {
+  var b = string_builder().&
   var is_first = true
   for item in items do {
     if is_first then is_first = false else b."{separator}"
     b."{item}"
   }
-  b.to_str()
+  b.to_string()
 }
 
 | String Building  
 | To build strings efficiently, we need some sort of growable buffer where we
-| can append more data over time. That's exactly what a StrBuilder is.
+| can append more data over time. That's exactly what a StringBuilder is.
 
-struct StrBuilder { bytes: List[Byte] }
+struct StringBuilder { bytes: List[Byte] }
 
-fun str_builder(): StrBuilder { StrBuilder { bytes = list[Byte]() } }
-fun write_byte(builder: &StrBuilder, byte: Byte) {
+fun string_builder(): StringBuilder { StringBuilder { bytes = list[Byte]() } }
+fun write_byte(builder: &StringBuilder, byte: Byte) {
   builder.bytes.&.push(byte)
 }
-fun write_bytes(builder: &StrBuilder, bytes: Slice[Byte]) {
+fun write_bytes(builder: &StringBuilder, bytes: Slice[Byte]) {
   builder.bytes.&.push_all(bytes)
 }
-fun len(builder: StrBuilder): Int { builder.bytes.len }
-fun truncate_to_len(builder: &StrBuilder, len: Int) {
+fun len(builder: StringBuilder): Int { builder.bytes.len }
+fun truncate_to_len(builder: &StringBuilder, len: Int) {
   len <= builder.bytes.len or panic("new len is too big")
   builder.bytes.len = len
 }
-fun write[W](writer: W, sb: StrBuilder) {
+fun write[W](writer: W, sb: StringBuilder) {
   writer.write_bytes(sb.bytes.to_slice())
 }
-fun to_str(builder: StrBuilder): Str { builder.bytes.to_slice().to_str() }
+fun to_string(builder: StringBuilder): String {
+  builder.bytes.to_slice().to_string()
+}
 
 | Formatting  
 | You should implement a write[Writer](Writer, T) function for types that can be
 | printed. Writers are anything that has a write_byte(Writer, Byte) function and
 | a write_bytes(Writer, Slice[Byte]) function.
 
-fun format[T](value: T): Str { "{value}" }
+fun format[T](value: T): String { "{value}" }
 
 fun writeln[W](writer: W) { writer.write(newline) }
 fun writeln[W, T](writer: W, value: T) { writer.write(value) writer.writeln() }

@@ -7,7 +7,7 @@ enum Result[O, E] { ok: O, error: E }
 fun ok[O, E](o: O): Result[O, E] { Result[O, E].ok(o) }
 fun error[O, E](e: E): Result[O, E] { Result[O, E].error(e) }
 
-fun unwrap[O, E](result: Result[O, E], message: Str): O {
+fun unwrap[O, E](result: Result[O, E], message: String): O {
   switch result case ok(o) o case error panic(message)
 }
 fun unwrap[O, E](result: Result[O, E]): O {

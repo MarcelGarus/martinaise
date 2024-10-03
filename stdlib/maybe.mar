@@ -9,7 +9,7 @@ enum Maybe[T] { some: T, none }
 fun some[T](value: T): Maybe[T] { Maybe.some(value) }
 fun none[T](): Maybe[T] { Maybe[T].none }
 
-fun unwrap[T](maybe: Maybe[T], message: Str): T { maybe or panic(message) }
+fun unwrap[T](maybe: Maybe[T], message: String): T { maybe or panic(message) }
 fun unwrap[T](maybe: Maybe[T]): T { maybe.unwrap("called none.unwrap") }
 fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { maybe or none[T]() }
 

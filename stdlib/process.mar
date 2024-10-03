@@ -6,7 +6,7 @@ fun exit(status: Int): Never asm {
   moveib a 8 add a sp load a a | status
   syscall 0
 }
-fun panic(message: Str): Never asm {
+fun panic(message: String): Never asm {
   moveib a 8  add a sp load a a | message.data
   moveib b 16 add b sp load b b | message.len
   syscall 2
@@ -18,9 +18,9 @@ fun todo(): Never { panic("todo") }
 
 | Process Arguments  
 
-fun get_process_args(): Slice[Str] {
+fun get_process_args(): Slice[String] {
   var argc = get_argc()
-  var args = uninitialized_slice[Str](argc)
+  var args = uninitialized_slice[String](argc)
   for i in 0..argc do args.get_ref(i).* = read_argv(i)
   args
 }
@@ -29,7 +29,7 @@ fun get_argc(): Int asm {
   syscall 9
   store b a ret
 }
-fun read_argv(index: Int): Str {
+fun read_argv(index: Int): String {
   var cap = 32
   loop {
     var buffer = uninitialized_slice[Byte](cap)

@@ -1023,14 +1023,14 @@ fun parse_str(parser: &Parser): Result[Maybe[AstExpr], Str] {
   }
   var block = vec[AstExpr]()
   block.&.push(var_("$str" @ src,
-    AstExpr.name("str_builder" @ src)
+    AstExpr.name("string_builder" @ src)
       .call(none[Vec[Type]](), vec[AstExpr](), "(" @ src)
       .member("&" @ src)))
   for part in parts do
     block.&.push(AstExpr.name("$str" @ src).member("write" @ src)
       .call(vec(part), "(" @ src))
   block.&.push(AstExpr.name("$str" @ src)
-    .member("to_str" @ src).call("(" @ src))
+    .member("to_string" @ src).call("(" @ src))
   parsed(AstExpr.block(block))
 }
 | Parses a string literal, potentially with interpolation, into expressions.
@@ -2670,7 +2670,7 @@ fun int(body: &MonoBodyBuilder, value: Int): MonoExpr {
   body.add_slot(type("Int"), MonoSlotValue.int(value))
 }
 fun str(body: &MonoBodyBuilder, value: Str): MonoExpr {
-  body.add_slot(type("Str"), MonoSlotValue.str(value))
+  body.add_slot(type("String"), MonoSlotValue.str(value))
 }
 fun untyped_slot(body: &MonoBodyBuilder): MonoSlotRef {
   var ref = MonoSlotRef { index = body.slots.len }
@@ -3152,7 +3152,7 @@ fun compile_in_current_scope(
       body.int(int)
     }
     case str(str) {
-      type("Str").compile(ast, mono)?
+      type("String").compile(ast, mono)?
       body.str(str)
     }
     case name(name) {
@@ -4183,7 +4183,7 @@ fun compile_type_fun_rec(
   }
 
   var type = body.uninitialized(type("Type"))
-  body.assign(type.member("name", type("Str")), name, src)
+  body.assign(type.member("name", type("String")), name, src)
   body.assign(type.member("args", type("Vec", vec(type("Type")))), vec, src)
 
   ok[MonoExpr, Error](type)
@@ -4194,7 +4194,7 @@ fun compile_write_debug_fun(
 ): Result[MonoFunBody, Error] {
   arg_types.len == 2 or return error[MonoFunBody, Error](make_error(
     src, "write_debug should take exactly two arguments."))
-  type("Str").compile(body.ast, body.mono)?
+  type("String").compile(body.ast, body.mono)?
 
   var writer = body.arg(arg_types.get(0), 0)
   var value = body.arg(arg_types.get(1), 1)
@@ -5497,7 +5497,7 @@ fun generate_fuzzing_hooks(
     var body = vec[AstExpr]()
     body.&.push(var_("v" @ src,
       AstExpr.name("vec" @ src).call(
-        some(vec(type("Str"))), vec[AstExpr](), opening_paren
+        some(vec(type("String"))), vec[AstExpr](), opening_paren
       )))
     for index in 0..arg_types.len do {
       body.&.push(AstExpr.block(vec(

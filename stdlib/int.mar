@@ -128,9 +128,9 @@ fun ==(a: Int, b: Int): Bool asm {
 }
 fun copy(a: Int): Int { a }
 
-fun parse_int(str: Str): Maybe[Int] {
+fun parse_int(string: String): Maybe[Int] {
   var num = 0
-  for char in str do {
+  for char in string do {
     if not({#0..=#9}.contains(char))
     then return none[Int]()
     num = num * 10 + {char - #0}.to_int()

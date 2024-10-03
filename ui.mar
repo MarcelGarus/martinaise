@@ -222,8 +222,10 @@ fun draw(texture: &Texture, char: Char, where: Point, size: Int, color: Color) {
     }
 }
 
-fun draw(texture: &Texture, str: Str, where: Point, size: Int, color: Color) {
-  for it in str.iter().enumerate() do
+fun draw(
+  texture: &Texture, string: String, where: Point, size: Int, color: Color
+) {
+  for it in string.iter().enumerate() do
     texture.draw(it.item, where + {6 * it.index * size @ 0}, size, color)
 }
 

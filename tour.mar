@@ -14,13 +14,13 @@ import stdlib.mar
 | function is chosen based on the name and the types of arguments. Writing
 | a.foo(b) is an alternative way of writing foo(a, b).
 
-fun print_title(header: Str) {
+fun print_title(header: String) {
   println()
   println("# {header}")
 }
 
 fun size(integer: Int): Int { integer }
-fun size(string: Str): Int { string.len }
+fun size(string: String): Int { string.len }
 
 fun functions() {
   print_title("Functions")
@@ -53,8 +53,8 @@ fun variables() {
 | Structs and Enums  
 | Structs contain each of their fields. Enums only contain one variant.
 
-struct Fruit { name: Str, color: Color }
-enum Color { red, green, other: Str }
+struct Fruit { name: String, color: Color }
+enum Color { red, green, other: String }
 
 | Constants
 var banana = Fruit { name = "banana", color = Color.other("yellow") }
@@ -66,7 +66,7 @@ fun structs_and_enums() {
   println(watermelon.name)
 }
 
-| If, Switch, Orelse, For, Loop, Break, Continue  
+| If, Switch, And, Or, For, Loop, Break, Continue  
 | There are several control flow structures you can use. None of them require
 | curly braces. You can start "bodies" with curly braces, grouping multiple
 | expressions together. Bodies evaluate to their last inner expression.

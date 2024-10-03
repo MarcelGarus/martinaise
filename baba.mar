@@ -64,7 +64,7 @@ fun find_rules(level: Level): List[Rule] {
 fun find_rules(run: Slice[Word]): List[Rule] {
 }
 
-fun write_ansi_escape_sequence[W](writer: W, sequence: Str) {
+fun write_ansi_escape_sequence[W](writer: W, sequence: String) {
   writer.write(27.lower_byte().to_char())
   writer.write(sequence)
 }

@@ -2,7 +2,7 @@ import stdlib.mar
 
 | JSON  
 | Ugh, terminology. Technically, the JavaScript Object Notation is only a
-| notation, so only a Str. If a JSON string is parsed, it's no longer a
+| notation, so only a String. If a JSON string is parsed, it's no longer a
 | notation, so no longer JSON. I considered using something like JSOM
 | (JavaScript Object Model?) for the parsed data, but that would confuse
 | everyone reading the code, including myself. So, sadly, the parsed structure
@@ -12,9 +12,9 @@ enum Json {
   null,
   bool: Bool,
   int: Int, | TODO: Floats instead of ints
-  string: Str,
+  string: String,
   array: List[Json],
-  map: Map[Str, Json],
+  map: Map[String, Json],
 }
 
 fun write[W](writer: W, json: Json) {
@@ -22,9 +22,9 @@ fun write[W](writer: W, json: Json) {
   case null writer."null"
   case bool(bool) writer."{bool}"
   case int(int) writer."{int}"
-  case string(str) {
+  case string(string) {
     writer."\""
-    for char in str do {
+    for char in string do {
       if char == newline then writer."\\n"
       else if char == #\ then writer."\\\\"
       else if char == #" then writer."\\\""
@@ -43,17 +43,17 @@ fun write[W](writer: W, json: Json) {
     writer."}"
   }
 }
-fun parse_json(json: Str): Result[Json, Nothing] {
+fun parse_json(json: String): Result[Json, Nothing] {
   var parser = JsonParser { input = json, cursor = 0 }
   var object = parser.&.parse()?
   parser.rest().is_empty() or return error[Json, Nothing]({})
   ok[Json, Nothing](object)
 }
-struct JsonParser { input: Str, cursor: Int }
+struct JsonParser { input: String, cursor: Int }
 fun current(parser: JsonParser): Char {
   parser.input.chars().get(parser.cursor)
 }
-fun rest(parser: JsonParser): Str { parser.input.without_first(parser.cursor) }
+fun rest(parser: JsonParser): String { parser.input.without_first(parser.cursor) }
 fun is_done(parser: JsonParser): Bool { parser.rest().is_empty() }
 fun advance(parser: &JsonParser, n: Int) { parser.cursor = parser.cursor + n }
 fun advance(parser: &JsonParser): Char {
@@ -68,7 +68,7 @@ fun consume(parser: &JsonParser, char: Char): Bool {
   parser.consume_whitespace()
   if parser.current() == char then { parser.advance() true } else false
 }
-fun consume(parser: &JsonParser, prefix: Str): Bool {
+fun consume(parser: &JsonParser, prefix: String): Bool {
   parser.consume_whitespace()
   if parser.rest().starts_with(prefix)
   then { parser.advance(prefix.len) true }
@@ -93,22 +93,22 @@ fun parse_int(parser: &JsonParser): Result[Maybe[Int], Nothing] {
   if parser.cursor == start then return ok[Maybe[Int], Nothing](none[Int]())
   ok[Maybe[Int], Nothing](some(num))
 }
-fun parse_string(parser: &JsonParser): Result[Maybe[Str], Nothing] {
-  parser.consume(#") or return ok[Maybe[Str], Nothing](none[Str]())
+fun parse_string(parser: &JsonParser): Result[Maybe[String], Nothing] {
+  parser.consume(#") or return ok[Maybe[String], Nothing](none[String]())
   var chars = list[Char]()
   loop {
     if parser.is_done() then
-      return error[Maybe[Str], Nothing]({}) | string doesn't end
+      return error[Maybe[String], Nothing]({}) | string doesn't end
     if parser.current() == #" then {
       parser.advance()
-      return ok[Maybe[Str], Nothing](some(chars.to_str()))
+      return ok[Maybe[String], Nothing](some(chars.to_str()))
     }
     if parser.current() == #\ then {
       parser.advance()
       if parser.current() == #\ then chars.&.push(#\)
       else if parser.current() == #" then chars.&.push(#")
       else if parser.current() == #n then chars.&.push(newline)
-      else return error[Maybe[Str], Nothing]({}) | invalid escape
+      else return error[Maybe[String], Nothing]({}) | invalid escape
       parser.advance()
     } else {
       chars.&.push(parser.current())
@@ -126,18 +126,18 @@ fun parse_array(parser: &JsonParser): Result[Maybe[List[Json]], Nothing] {
   parser.consume(#]) or return error[Maybe[List[Json]], Nothing]({})
   ok[Maybe[List[Json]], Nothing](some(array))
 }
-fun parse_map(parser: &JsonParser): Result[Maybe[Map[Str, Json]], Nothing] {
+fun parse_map(parser: &JsonParser): Result[Maybe[Map[String, Json]], Nothing] {
   parser.consume(#{) or
-    return ok[Maybe[Map[Str, Json]], Nothing](none[Map[Str, Json]]())
-  var map = map[Str, Json]()
+    return ok[Maybe[Map[String, Json]], Nothing](none[Map[String, Json]]())
+  var map = map[String, Json]()
   loop if parser.consume(#}) then break else {
-    var key = parser.parse_string()? or return error[Maybe[Map[Str, Json]], Nothing]({})
-    parser.consume(#:) or return error[Maybe[Map[Str, Json]], Nothing]({})
+    var key = parser.parse_string()? or return error[Maybe[Map[String, Json]], Nothing]({})
+    parser.consume(#:) or return error[Maybe[Map[String, Json]], Nothing]({})
     var value = parser.parse()?
     map.&.put(key, value)
     parser.consume(#,)
   }
-  ok[Maybe[Map[Str, Json]], Nothing](some(map))
+  ok[Maybe[Map[String, Json]], Nothing](some(map))
 }
 fun parse(parser: &JsonParser): Result[Json, Nothing] {
   parser.consume_whitespace()

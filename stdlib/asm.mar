@@ -30,8 +30,8 @@ import stdlib.mar
 |   value: U32,
 |   flup: CType,
 |   foo: &Foo,
-|   baz: Maybe[Maybe[Str]],
-|   blub: Map[Str, Int],
+|   baz: Maybe[Maybe[String]],
+|   blub: Map[String, Int],
 | }
 |
 | ▏0      ▏8      ▏16     ▏24     ▏32     ▏40     ▏48     ▏56     ▏64
@@ -39,13 +39,13 @@ import stdlib.mar
 | Foo
 | foo     blub                    baz                 val…flup
 | ▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓..▓▓▓▓░░░░░░░░░
-| &Foo    Map[Str, Int]           Maybe[Maybe[Str]…│  U32 CType   │
+| &Foo    Map[String, Int]        Maybe[Maybe[Stri…│  U32 CType   │
 |         buckets         size    some─────────────┤      char────┤
 |         ░░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░│      ░.......│
 |         Slice[MapBucket…Int     Maybe[Str]      ││      …       │
 |         data    len             some────────────┤│      short───┤
 |         ░░░░░░░░▓▓▓▓▓▓▓▓        ░░░░░░░░░░░░░░░░││      ░░......│
-|         &MapBuc…Int             Str             ││      I…      │
+|         &MapBuc…Int             String          ││      I…      │
 |                                 chars           ││      int─────┤
 |                                 ░░░░░░░░░░░░░░░░││      ░░░░....│
 |                                 Slice[Char]     ││      I32     │

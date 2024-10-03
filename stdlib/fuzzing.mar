@@ -5,12 +5,12 @@ import stdlib.mar
 | generates a $Input struct that contains the inputs to the fuzzed function and
 | then calls fuzzer_main[$Input](). The following functions are also generated:
 | - run($Input): _                       | runs the fuzzed function
-| - arg_strings($Input): Vec[Str]        | stringifies the arguments
+| - arg_strings($Input): Vec[String]        | stringifies the arguments
 
 struct FuzzingInfo {
   has_target_position: Bool,
   fun_line: Int,
-  fun_name: Str,
+  fun_name: String,
 }
 
 fun fuzzer_main[Input](): Never {
@@ -77,14 +77,14 @@ fun fuzzer_main[Input](): Never {
 struct FuzzFront { coverage: Coverage, crashes: Bool }
 struct InputThatRan[Input] {
   input: Input,
-  arg_strs: Slice[Str],
+  arg_strings: Slice[String],
   coverage: Coverage,
-  result: Result[Str, Nothing],
+  result: Result[String, Nothing],
 }
 
 fun run_sandboxed[Input](input: Input): InputThatRan[Input] {
-  var arg_strs = input.arg_strs()
-  eprint("Running {comma_separated(arg_strs)} -> ")
+  var arg_strings = input.arg_strings()
+  eprint("Running {comma_separated(arg_strings)} -> ")
 
   var current_cov = get_coverage()
   current_cov.reset()
@@ -97,16 +97,16 @@ fun run_sandboxed[Input](input: Input): InputThatRan[Input] {
 
   var result =
     switch res
-    case ok(res) ok[Str, Nothing]("{res.debug()}")
-    case error error[Str, Nothing]({})
+    case ok(res) ok[String, Nothing]("{res.debug()}")
+    case error error[String, Nothing]({})
   eprint(result or "<panicked>")
   eprintln(" (complexity {input.fuzzing_complexity()})")
 
-  InputThatRan { input, arg_strs, coverage, result }
+  InputThatRan { input, arg_strings, coverage, result }
 }
 fun complexity[Input](input: InputThatRan[Input]): Int {
   var sum = 0
-  for arg in input.arg_strs do sum = sum + arg.len
+  for arg in input.arg_strings do sum = sum + arg.len
   sum
 }
 fun crashes[Input](input: InputThatRan[Input]): Bool {
@@ -129,7 +129,7 @@ fun report[Input](input: InputThatRan[Input]) {
     return {}
 
   var json_args = vec[Json]()
-  for arg in input.arg_strs do json_args.&.push(Json.string(arg))
+  for arg in input.arg_strings do json_args.&.push(Json.string(arg))
   println(Json.map(map(
     "type" -> Json.string("example"),
     "inputs" -> Json.array(json_args),
@@ -146,7 +146,7 @@ fun report[Input](input: InputThatRan[Input]) {
 | To fuzz functions, we need to be able to generate random inputs of any type.
 
 | This type allows dispatching based on type. For example, if you implement a
-| foo(s: Static[Int]), foo(s: Static[Str]), etc. then you can do
+| foo(s: Static[Int]), foo(s: Static[String]), etc. then you can do
 | static[T]().foo() in generic functions even if you don't have a T at hand.
 struct Static[T] {}
 

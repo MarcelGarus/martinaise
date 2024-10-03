@@ -128,7 +128,7 @@ enum Maybe[T] { some: T, none }
 fun some[T](value: T): Maybe[T] { Maybe.some(value) }
 fun none[T](): Maybe[T] { Maybe[T].none }
 
-fun unwrap[T](maybe: Maybe[T], message: Str): T { maybe or panic(message) }
+fun unwrap[T](maybe: Maybe[T], message: String): T { maybe or panic(message) }
 fun unwrap[T](maybe: Maybe[T]): T { maybe.unwrap("called none.unwrap") }
 fun flatten[T](maybe: Maybe[Maybe[T]]): Maybe[T] { maybe or none[T]() }
 
@@ -158,7 +158,7 @@ enum Result[O, E] { ok: O, error: E }
 fun ok[O, E](o: O): Result[O, E] { Result[O, E].ok(o) }
 fun error[O, E](e: E): Result[O, E] { Result[O, E].error(e) }
 
-fun unwrap[O, E](result: Result[O, E], message: Str): O {
+fun unwrap[O, E](result: Result[O, E], message: String): O {
   switch result case ok(o) o case error panic(message)
 }
 fun unwrap[O, E](result: Result[O, E]): O {
@@ -231,7 +231,7 @@ fun or[O, E](result: Result[O, E]): ControlFlow[O, E] {
 | generates a $Input struct that contains the inputs to the fuzzed function and
 | then calls fuzzer_main[$Input](). The following functions are also generated:
 | - run($Input): _                       | runs the fuzzed function
-| - arg_strings($Input): List[Str]        | stringifies the arguments
+| - arg_strings($Input): List[String]        | stringifies the arguments
 
 fun fuzzer_main[Input](): Never {
   var random = random_number_generator()
@@ -289,13 +289,13 @@ fun fuzzer_main[Input](): Never {
 
   exit(0)
 }
-struct FoundInput[Input] { input: Input, in_str: Str, out_str: Str }
+struct FoundInput[Input] { input: Input, in_str: String, out_str: String }
 
 | Generating and mutating values  
 | To fuzz functions, we need to be able to generate random inputs of any type.
 
 | This type allows dispatching based on type. For example, if you implement a
-| foo(s: Static[Int]), foo(s: Static[Str]), etc. then you can do
+| foo(s: Static[Int]), foo(s: Static[String]), etc. then you can do
 | static[T]().foo() in generic functions even if you don't have a T at hand.
 struct Static[T] {}
 
@@ -421,8 +421,8 @@ fun write[W](writer: W, coverage: Coverage) {
 |   value: U32,
 |   flup: CType,
 |   foo: &Foo,
-|   baz: Maybe[Maybe[Str]],
-|   blub: Map[Str, Int],
+|   baz: Maybe[Maybe[String]],
+|   blub: Map[String, Int],
 | }
 |
 | ▏0      ▏8      ▏16     ▏24     ▏32     ▏40     ▏48     ▏56     ▏64
@@ -430,13 +430,13 @@ fun write[W](writer: W, coverage: Coverage) {
 | Foo
 | foo     blub                    baz                 val…flup
 | ▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓..▓▓▓▓░░░░░░░░░
-| &Foo    Map[Str, Int]           Maybe[Maybe[Str]…│  U32 CType   │
+| &Foo    Map[String, Int]        Maybe[Maybe[Stri…│  U32 CType   │
 |         buckets         size    some─────────────┤      char────┤
 |         ░░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░│      ░.......│
-|         Slice[MapBucket…Int     Maybe[Str]      ││      …       │
+|         Slice[MapBucket…Int     Maybe[String]   ││      …       │
 |         data    len             some────────────┤│      short───┤
 |         ░░░░░░░░▓▓▓▓▓▓▓▓        ░░░░░░░░░░░░░░░░││      ░░......│
-|         &MapBuc…Int             Str             ││      I…      │
+|         &MapBuc…Int             String          ││      I…      │
 |                                 chars           ││      int─────┤
 |                                 ░░░░░░░░░░░░░░░░││      ░░░░....│
 |                                 Slice[Char]     ││      I32     │
@@ -554,17 +554,18 @@ fun read_byte(stdin: Stdin): Result[Maybe[Byte], Nothing] {
     else some(char)
   )
 }
-fun read_line(stdin: Stdin): Result[Maybe[Str], Nothing] {
+fun read_line(stdin: Stdin): Result[Maybe[String], Nothing] {
   var content = list[Byte]()
   loop {
     var byte = stdin.read_byte()? or {
-      if content.is_empty() then return ok[Maybe[Str], Nothing](none[Str]())
+      if content.is_empty() then
+        return ok[Maybe[String], Nothing](none[String]())
       break
     }
     if byte == newline.byte then break
     content.&.push(byte)
   }
-  ok[Maybe[Str], Nothing](some(content.to_slice().to_str()))
+  ok[Maybe[String], Nothing](some(content.to_slice().to_string()))
 }
 
 | Debug printing  
@@ -585,7 +586,7 @@ fun exit(status: Int): Never asm {
   moveib a 8 add a sp load a a | status
   syscall 0
 }
-fun panic(message: Str): Never asm {
+fun panic(message: String): Never asm {
   moveib a 8  add a sp load a a | message.data
   moveib b 16 add b sp load b b | message.len
   syscall 2
@@ -593,10 +594,10 @@ fun panic(message: Str): Never asm {
 }
 fun panic(): Never asm { panic }
 fun unreachable(): Never { panic("unreachable") }
-fun unreachable(reason: Str): Never { panic("unreachable: {reason}") }
+fun unreachable(reason: String): Never { panic("unreachable: {reason}") }
 fun todo(): Never { panic("todo") }
 fun assert(condition: Bool) { assert(condition, "assert failed") }
-fun assert(condition: Bool, message: Str) {
+fun assert(condition: Bool, message: String) {
   if not(condition) then panic(message)
 }
 
@@ -711,9 +712,9 @@ fun ==(a: Int, b: Int): Bool asm {
   storeb c st ret
 }
 
-fun parse_int(str: Str): Int {
+fun parse_int(string: String): Int {
   var num = 0
-  for char in str do {
+  for char in string do {
     if not({#0..=#9}.contains(char))
     then panic("non-digit in supposed number")
     num = num * 10 + {char - #0}.to_int()
@@ -848,17 +849,24 @@ fun mutate(byte: Byte, random: &Random, temperature: Int): Byte {
 
 opaque Float = 8 bytes big, 8 bytes aligned
 
-var nan = 2#0111111111111000000000000000000000000000000000000000000000000000.cast[Int, Float]()
-var inf = 2#0111111111110000000000000000000000000000000000000000000000000000.cast[Int, Float]()
+var nan =
+  2#0111111111111000000000000000000000000000000000000000000000000000
+    .cast[Int, Float]()
+var inf =
+  2#0111111111110000000000000000000000000000000000000000000000000000
+    .cast[Int, Float]()
 
 fun is_nan(float: Float): Bool {
-  var nan_mask = 2#0111111111111000000000000000000000000000000000000000000000000000
+  var nan_mask =
+    2#0111111111111000000000000000000000000000000000000000000000000000
   var nan_value = nan_mask
   float.cast[Float, Int]() & nan_mask == nan_value
  }
 fun is_inf(float: Float): Bool {
-  var inf_mask  = 2#0111111111111111111111111111111111111111111111111111111111111111
-  var inf_value = 2#0111111111110000000000000000000000000000000000000000000000000000
+  var inf_mask =
+    2#0111111111111111111111111111111111111111111111111111111111111111
+  var inf_value =
+    2#0111111111110000000000000000000000000000000000000000000000000000
   float.cast[Float, Int]() & inf_mask == inf_value
 }
 
@@ -950,7 +958,9 @@ fun write[W](writer: W, float: Float) {
   if exponent < 0 then writer."e-{0 - exponent}"
   if exponent > 0 then writer."e{exponent}"
 }
-fun split_into_integer_decimal_and_exponent(value: Float): Tuple3[Int, Int, Int] {
+fun split_into_integer_decimal_and_exponent(
+  value: Float
+): Tuple3[Int, Int, Int] {
   var normalized = value.normalize()
   var exponent = normalized.a
   value = normalized.b
@@ -1132,10 +1142,10 @@ fun stride_size_of[T](): Int { ... }
 | Makes the name of the type available at runtime.
 fun type[T](): Type { ... }
 
-struct Type { name: Str, args: List[Type] }
+struct Type { name: String, args: List[Type] }
 
-fun type(name: Str): Type { type(name, list[Type]()) }
-fun type(name: Str, args: List[Type]): Type { Type { name, args } }
+fun type(name: String): Type { type(name, list[Type]()) }
+fun type(name: String, args: List[Type]): Type { Type { name, args } }
 fun is_never(type: Type): Bool { type == type("Never") }
 
 fun write[W](writer: W, type: Type) {
@@ -1150,16 +1160,16 @@ fun write[W, T](writer: W, type_args: TypeArgsFormat[T]) {
   then writer."[{comma_separated(type_args.args)}]"
 }
 
-fun specialize(type: Type, type_env: Map[Str, Type]): Result[Type, Str] {
+fun specialize(type: Type, type_env: Map[String, Type]): Result[Type, String] {
   if type_env.get_maybe(type.name) is some(concrete) then {
     type.args.is_empty()
-      or return error[Type, Str](
+      or return error[Type, String](
         "Type {type.name} is generic, but contains arguments.")
-    ok[Type, Str](concrete)
+    ok[Type, String](concrete)
   } else {
     var args = list[Type]()
     for arg in type.args do args.&.push(arg.specialize(type_env)?)
-    ok[Type, Str](Type { name = type.name, args })
+    ok[Type, String](Type { name = type.name, args })
   }
 }
 
@@ -1618,12 +1628,12 @@ fun binary_search_leftmost_greater_equal(slice: Slice[Int], item: Int): Int {
 | the Char with a Unicode code point, grapheme cluster, or anything like that.
 | This is as much a "character" as the C char. But who are we to judge?
 | Character is a heavily overloaded term anyways.
-| Similarly, a Str (short for String) is just a wrapper around a Slice[Byte] and
-| it's what you get from string literals such as "blub". Try printing it! It
+| Similarly, a String (short for String) is just a wrapper around a Slice[Byte]
+| and it's what you get from string literals such as "blub". Try printing it! It
 | gets formatted nicely.
 
 struct Char { byte: Byte }
-struct Str { data: Address, len: Int }
+struct String { data: Address, len: Int }
 
 var space = # 
 var newline = 10.lower_byte().to_char()
@@ -1635,11 +1645,19 @@ var digit_chars = #0..=#9
 
 fun to_char(byte: Byte): Char { Char { byte } }
 
-fun to_str(chars: Slice[Char]): Str { chars.unchecked_cast[Slice[Char], Str]() }
-fun to_str(bytes: Slice[Byte]): Str { bytes.unchecked_cast[Slice[Byte], Str]() }
-fun to_str(chars: List[Char]): Str { chars.to_slice().to_str() }
-fun chars(str: Str): Slice[Char] { str.unchecked_cast[Str, Slice[Char]]() }
-fun bytes(str: Str): Slice[Byte] { str.unchecked_cast[Str, Slice[Byte]]() }
+fun to_string(chars: Slice[Char]): String {
+  chars.unchecked_cast[Slice[Char], String]()
+}
+fun to_string(bytes: Slice[Byte]): String {
+  bytes.unchecked_cast[Slice[Byte], String]()
+}
+fun to_string(chars: List[Char]): String { chars.to_slice().to_string() }
+fun chars(string: String): Slice[Char] {
+  string.unchecked_cast[String, Slice[Char]]()
+}
+fun bytes(string: String): Slice[Byte] {
+  string.unchecked_cast[String, Slice[Byte]]()
+}
 
 fun is_lower(char: Char): Bool { lowercase_chars.contains(char) }
 fun is_upper(char: Char): Bool { uppercase_chars.contains(char) }
@@ -1666,7 +1684,7 @@ fun +(char: Char, delta: Byte): Char { Char { byte = char.byte + delta } }
 fun -(char: Char, delta: Byte): Char { Char { byte = char.byte - delta } }
 fun -(char: Char, other: Char): Byte { char.byte - other.byte }
 
-fun str_builder(): StringBuilder { StringBuilder { bytes = list[Byte]() } }
+fun string_builder(): StringBuilder { StringBuilder { bytes = list[Byte]() } }
 struct StringBuilder { bytes: List[Byte] }
 fun write_byte(builder: &StringBuilder, byte: Byte) {
   builder.bytes.&.push(byte)
@@ -1679,43 +1697,51 @@ fun truncate_to_len(builder: &StringBuilder, len: Int) {
   len <= builder.bytes.len or panic("new len is too big")
   builder.bytes.len = len
 }
-fun write[W](writer: W, sb: StringBuilder) { writer.write_bytes(sb.bytes) }
-fun to_str(builder: StringBuilder): Str { builder.bytes.to_slice().to_str() }
+fun write[W](writer: W, sb: StringBuilder) {
+  writer.write_bytes(sb.bytes.to_slice())
+}
+fun to_string(builder: StringBuilder): String {
+  builder.bytes.to_slice().to_string()
+}
 
-fun is_empty(str: Str): Bool { str.len == 0 }
-fun get_maybe_ref(str: Str, index: Int): Maybe[&Char] {
-  str.chars().get_maybe_ref(index)
+fun is_empty(string: String): Bool { string.len == 0 }
+fun get_maybe_ref(string: String, index: Int): Maybe[&Char] {
+  string.chars().get_maybe_ref(index)
 }
-fun get_ref(str: Str, index: Int): &Char {
-  str.get_maybe_ref(index) or panic("index out of bounds")
+fun get_ref(string: String, index: Int): &Char {
+  string.get_maybe_ref(index) or panic("index out of bounds")
 }
-fun get_maybe(str: Str, index: Int): Maybe[Char] {
-  switch str.get_maybe_ref(index) case some(c) some(c.*) case none none[Char]()
+fun get_maybe(string: String, index: Int): Maybe[Char] {
+  switch string.get_maybe_ref(index)
+  case some(c) some(c.*)
+  case none none[Char]()
 }
-fun get(str: Str, index: Int): Char { str.get_ref(index).* }
-fun get_unchecked(str: Str, index: Int): Char asm {
-  moveib a 8  add a sp load a a | str.data
+fun get(string: String, index: Int): Char { string.get_ref(index).* }
+fun get_unchecked(string: String, index: Int): Char asm {
+  moveib a 8  add a sp load a a | string.data
   moveib b 24 add b sp load b b | index
   add a b load a a | char
   load c sp store c a ret
 }
 
-fun <=>(a: Str, b: Str): Ordering {
+fun <=>(a: String, b: String): Ordering {
   switch memcompare(a.data, b.data, min(a.len, b.len))
   case less Ordering.less
   case greater Ordering.greater
   case equal if a.len < b.len then Ordering.less else Ordering.greater
 }
-fun ==(a: Str, b: Str): Bool {
+fun ==(a: String, b: String): Bool {
   a.len == b.len or return false
   memcompare(a.data, b.data, a.len) is equal
 }
-| fun hash(hasher: &Hasher, str: Str) { hasher.hash(str.chars()) }
-fun hash(hasher: &Hasher, str: Str) { hasher.hash(memhash(str.data, str.len)) }
-fun write[W](writer: W, str: Str) { writer.write_bytes(str.bytes()) }
-fun write_debug[W](writer: W, str: Str) {
+| fun hash(hasher: &Hasher, string: String) { hasher.hash(string.chars()) }
+fun hash(hasher: &Hasher, string: String) {
+  hasher.hash(memhash(string.data, string.len))
+}
+fun write[W](writer: W, string: String) { writer.write_bytes(string.bytes()) }
+fun write_debug[W](writer: W, string: String) {
   writer."\""
-  for char in str do
+  for char in string do
     if char == #" then writer."\\\""
     else if char == #\ then writer."\\\\"
     else if char == newline then writer."\\n"
@@ -1733,115 +1759,116 @@ fun mutate(char: Char, random: &Random, temperature: Int): Char {
     .clamp(visible_ascii)
     .to_char()
 }
-fun generate(s: Static[Str], random: &Random, complexity: Int): Str {
+fun generate(s: Static[String], random: &Random, complexity: Int): String {
   var len = random.next_int(0..=complexity)
   var slice = uninitialized_slice[Char](len)
   for i in 0..len do slice.get_ref(i).* = static[Char]().generate(random, 1)
-  Str { data = slice.data, len }
+  String { data = slice.data, len }
 }
-fun mutate(str: Str, random: &Random, temperature: Int): Str {
+fun mutate(string: String, random: &Random, temperature: Int): String {
   if temperature == 0 then return slice
-  str.chars().mutate(random, temperature).to_str()
+  string.chars().mutate(random, temperature).to_string()
 }
 
-fun iter(str: Str): Iter[Char, _] {
-  Iter[Char, StrIter] { state = StrIter { str, index = 0 } }
+fun iter(string: String): Iter[Char, _] {
+  Iter[Char, StrIter] { state = StrIter { string, index = 0 } }
 }
-struct StrIter { str: Str, index: Int }
+struct StrIter { string: String, index: Int }
 fun next(iter: &Iter[Char, StrIter]): Maybe[Char] {
   var state = iter.state.&
-  if state.index >= state.str.len then none[Char]() else {
-    var char = state.str.chars().get(state.index)
+  if state.index >= state.string.len then none[Char]() else {
+    var char = state.string.chars().get(state.index)
     state.index = state.index.inc()
     some(char)
   }
 }
 
-fun substr(str: Str, range: Range[Int]): Str {
-  range.end <= str.len or panic("substr needs to be inside original str")
-  str.substr_unchecked(range)
+fun substr(string: String, range: Range[Int]): String {
+  range.end <= string.len or panic("substr needs to be inside original string")
+  string.substr_unchecked(range)
 }
-fun substr_unchecked(str: Str, range: Range[Int]): Str {
-  str.chars().subslice(range).to_str()
+fun substr_unchecked(string: String, range: Range[Int]): String {
+  string.chars().subslice(range).to_string()
 }
-fun first(str: Str): Char {
-  str.is_not_empty() or panic("first only works on non-empty strs")
-  str.get(0)
+fun first(string: String): Char {
+  string.is_not_empty() or panic("first only works on non-empty strs")
+  string.get(0)
 }
-fun first(str: Str, amount: Int): Str {
-  amount <= str.len or panic("first amount too big")
-  str.substr(0..amount)
+fun first(string: String, amount: Int): String {
+  amount <= string.len or panic("first amount too big")
+  string.substr(0..amount)
 }
-fun last(str: Str): T {
-  str.is_not_empty() or panic("last only works on non-empty strs")
-  str.get(str.len.dec())
+fun last(string: String): T {
+  string.is_not_empty() or panic("last only works on non-empty strs")
+  string.get(string.len.dec())
 }
-fun last(str: Str, amount: Int): Str {
-  amount <= str.len or panic("last amount too big")
-  str.substr({str.len - amount}..str.len)
+fun last(string: String, amount: Int): String {
+  amount <= string.len or panic("last amount too big")
+  string.substr({string.len - amount}..string.len)
 }
-fun without_first(str: Str, amount: Int): Str {
-  amount <= str.len or panic("without_first amount too big")
-  str.substr_unchecked(amount..str.len)
+fun without_first(string: String, amount: Int): String {
+  amount <= string.len or panic("without_first amount too big")
+  string.substr_unchecked(amount..string.len)
 }
-fun without_last(str: Str, amount: Int): Str {
-  amount <= str.len or panic("without_last amount too big")
-  str.substr_unchecked(0..{str.len - amount})
+fun without_last(string: String, amount: Int): String {
+  amount <= string.len or panic("without_last amount too big")
+  string.substr_unchecked(0..{string.len - amount})
 }
-fun starts_with(str: Str, prefix: Str): Bool {
-  str.len >= prefix.len or return false
-  str.starts_with_unchecked(prefix)
+fun starts_with(string: String, prefix: String): Bool {
+  string.len >= prefix.len or return false
+  string.starts_with_unchecked(prefix)
 }
-fun starts_with_unchecked(str: Str, prefix: Str): Bool {
-  memcompare(str.data, prefix.data, prefix.len) is equal
+fun starts_with_unchecked(string: String, prefix: String): Bool {
+  memcompare(string.data, prefix.data, prefix.len) is equal
 }
-fun ends_with(str: Str, suffix: Str): Bool {
-  str.len >= suffix.len or return false
-  str.ends_with_unchecked(suffix)
+fun ends_with(string: String, suffix: String): Bool {
+  string.len >= suffix.len or return false
+  string.ends_with_unchecked(suffix)
 }
-fun ends_with_unchecked(str: Str, suffix: Str): Bool {
-  memcompare(str.data + {str.len - suffix.len}, suffix.data, suffix.len)
+fun ends_with_unchecked(string: String, suffix: String): Bool {
+  memcompare(string.data + {string.len - suffix.len}, suffix.data, suffix.len)
     is equal
 }
-fun trim_prefix(str: &Str, prefix: Str) {
-  str.starts_with(prefix) or panic("trim_prefix doesn't match prefix")
-  str.* = str.without_first(prefix.len)
+fun trim_prefix(string: &String, prefix: String) {
+  string.starts_with(prefix) or panic("trim_prefix doesn't match prefix")
+  string.* = string.without_first(prefix.len)
 }
-fun trim_suffix(str: &Str, suffix: Str) {
-  str.ends_with(suffix) or panic("trim_suffix doesn't match suffix")
-  str.* = str.without_last(suffix.len)
+fun trim_suffix(string: &String, suffix: String) {
+  string.ends_with(suffix) or panic("trim_suffix doesn't match suffix")
+  string.* = string.without_last(suffix.len)
 }
-fun trim(str: Str): Str {
+fun trim(string: String): String {
   var start = 0
-  var end = str.len
-  loop if start < str.len and str.get(start).is_whitespace()
+  var end = string.len
+  loop if start < string.len and string.get(start).is_whitespace()
     then start = start + 1
     else break
-  loop if end > 0 and str.get(end - 1).is_whitespace() and not(start == end)
+  loop if end > 0 and string.get(end - 1).is_whitespace() and not(start == end)
     then end = end - 1
     else break
-  str.substr(start..end)
+  string.substr(start..end)
 }
-fun split(str: Str, separator: Str): Slice[Str] {
-  var parts = list[Str]()
-  for part in str.iter().split(separator.chars()) do parts.&.push(part.to_str())
+fun split(string: String, separator: String): Slice[String] {
+  var parts = list[String]()
+  for part in string.iter().split(separator.chars()) do
+    parts.&.push(part.to_string())
   parts.to_slice()
 }
-fun lines(slice: Str): Slice[Str] { slice.split("{newline}") }
-fun pad_right(str: Str, len: Int, char: Char): Str {
-  var string = str_builder().&
-  string.write(str)
-  loop if string.len() < len then string.write(char) else break
-  string.to_str()
+fun lines(slice: String): Slice[String] { slice.split("{newline}") }
+fun pad_right(string: String, len: Int, char: Char): String {
+  var b = string_builder().&
+  b.write(string)
+  loop if b.len() < len then b.write(char) else break
+  b.to_string()
 }
-fun pad_right(str: Str, len: Int): Str { str.pad_right(len, space) }
-fun pad_left(str: Str, len: Int, char: Char): Str {
-  var string = str_builder().&
-  loop if string.len() + str.len < len then string.write(char) else break
-  string.write(str)
-  string.to_str()
+fun pad_right(string: String, len: Int): String { string.pad_right(len, space) }
+fun pad_left(string: String, len: Int, char: Char): String {
+  var b = string_builder().&
+  loop if b.len() + string.len < len then b.write(char) else break
+  b.write(string)
+  b.to_string()
 }
-fun pad_left(str: Str, len: Int): Str { str.pad_left(len, space) }
+fun pad_left(string: String, len: Int): String { string.pad_left(len, space) }
 
 | Range  
 | Ranges have an inclusive start and exclusive end value.
@@ -2074,23 +2101,23 @@ fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
 |   true
 | }
 
-| fun split(str: Str, separator: Str): Slice[Str] {
-|   var parts = list[Str]()
-|   for part in str.iter().iter_split(separator) do parts.&.push(part)
+| fun split(string: String, separator: String): Slice[String] {
+|   var parts = list[String]()
+|   for part in string.iter().iter_split(separator) do parts.&.push(part)
 |   parts.to_slice()
 | }
-| fun lines(slice: Str): Slice[Str] { slice.split("
+| fun lines(slice: String): Slice[String] { slice.split("
 | ") }
-| fun trim_prefix(str: &Str, prefix: Str) {
-|   str.starts_with(prefix) or panic("str doesn't start with prefix")
-|   str.* = str.substr(prefix.len)
+| fun trim_prefix(string: &String, prefix: String) {
+|   string.starts_with(prefix) or panic("string doesn't start with prefix")
+|   string.* = string.substr(prefix.len)
 | }
 
 | Process Arguments  
 
-fun get_process_args(): Slice[Str] {
+fun get_process_args(): Slice[String] {
   var argc = get_argc()
-  var args = uninitialized_slice[Str](argc)
+  var args = uninitialized_slice[String](argc)
   for i in 0..argc do args.get_ref(i).* = read_argv(i)
   args
 }
@@ -2099,12 +2126,12 @@ fun get_argc(): Int asm {
   syscall 9
   store b a ret
 }
-fun read_argv(index: Int): Str {
+fun read_argv(index: Int): String {
   var cap = 32
   loop {
     var buffer = uninitialized_slice[Byte](cap)
     var read = read_argv(index, buffer)
-    if read < cap then return buffer.subslice(0..read).to_str()
+    if read < cap then return buffer.subslice(0..read).to_string()
     cap = cap * 2
   }
 }
@@ -2121,7 +2148,7 @@ fun read_argv(index: Int, buffer: Slice[Byte]): Int asm {
 
 opaque File = 8 bytes big, 8 bytes aligned
 
-fun create_file(filename: Str, mode: Int): Result[File, Nothing] asm {
+fun create_file(filename: String, mode: Int): Result[File, Nothing] asm {
   moveib a 8  add a sp load a a | filename.data
   moveib b 16 add b sp load b b | filename.len
   moveib c 24 add c sp load c c | mode
@@ -2131,7 +2158,7 @@ fun create_file(filename: Str, mode: Int): Result[File, Nothing] asm {
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
 }
-fun open_file_for_reading(filename: Str): Result[File, Nothing] asm {
+fun open_file_for_reading(filename: String): Result[File, Nothing] asm {
   moveib a 8  add a sp load a a | filename.data
   moveib b 16 add b sp load b b | filename.len
   syscall 4
@@ -2140,7 +2167,7 @@ fun open_file_for_reading(filename: Str): Result[File, Nothing] asm {
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
   .ret_error:        moveib c 8 add b c moveib c 1 storeb b c ret
 }
-fun open_file_for_writing(filename: Str): Result[File, Nothing] asm {
+fun open_file_for_writing(filename: String): Result[File, Nothing] asm {
   moveib a 8  add a sp load a a | filename.data
   moveib b 16 add b sp load b b | filename.len
   syscall 5
@@ -2168,17 +2195,18 @@ fun read_byte(file: File): Result[Maybe[Byte], Nothing] {
     else some(char)
   )
 }
-fun read_line(file: File): Result[Maybe[Str], Nothing] {
+fun read_line(file: File): Result[Maybe[String], Nothing] {
   var content = list[Byte]()
   loop {
     var byte = file.read_byte()? or {
-      if content.is_empty() then return ok[Maybe[Str], Nothing](none[Str]())
+      if content.is_empty() then
+        return ok[Maybe[String], Nothing](none[String]())
       break
     }
     if byte == newline.byte then break
     content.&.push(byte)
   }
-  ok[Maybe[Str], Nothing](some(content.to_slice().to_str()))
+  ok[Maybe[String], Nothing](some(content.to_slice().to_string()))
 }
 
 fun write_bytes_safely(
@@ -2208,10 +2236,11 @@ fun close(file: File) asm {
   syscall 8 ret
 }
 
-fun read_file(name: Str): Result[Slice[Byte], Nothing] {
+fun read_file(name: String): Result[Slice[Byte], Nothing] {
   var file = open_file_for_reading(name)?
   var all_free_memory = Slice[Byte] {
-    data = heap_head, len = get_stack_pointer().to_int() - heap_head.to_int() - 100
+    data = heap_head,
+    len = get_stack_pointer().to_int() - heap_head.to_int() - 100
   }
   var len = file.read(all_free_memory)?
   if len == all_free_memory.len then panic("out of memory")
@@ -2220,7 +2249,7 @@ fun read_file(name: Str): Result[Slice[Byte], Nothing] {
   heap_head = heap_head + len
   ok[Slice[Byte], Nothing](content)
 }
-fun write_file(name: Str, content: Slice[Byte]): Result[Nothing, Nothing] {
+fun write_file(name: String, content: Slice[Byte]): Result[Nothing, Nothing] {
   var file = open_file_for_writing(name)?
   file.write_bytes_safely(content)?
   file.close()
@@ -2232,7 +2261,7 @@ fun write_file(name: Str, content: Slice[Byte]): Result[Nothing, Nothing] {
 | printed. Writers are anything that has a write_byte(Writer, Byte) function and
 | a write_bytes(Writer, Slice[Byte]) function.
 
-fun format[T](value: T): Str { "{value}" }
+fun format[T](value: T): String { "{value}" }
 
 fun writeln[W](writer: W) { writer.write(newline) }
 fun writeln[W, T](writer: W, value: T) { writer.write(value) writer.writeln() }
@@ -2814,7 +2843,7 @@ fun min[T](slice: Set[T]): Maybe[T] {
 
 | JSON  
 | Ugh, terminology. Technically, the JavaScript Object Notation is only a
-| notation, so only a Str. If a JSON string is parsed, it's no longer a
+| notation, so only a String. If a JSON string is parsed, it's no longer a
 | notation, so no longer JSON. I considered using something like JSOM
 | (JavaScript Object Model?) for the parsed data, but that would confuse
 | everyone reading the code, including myself. So, sadly, the parsed structure
@@ -2824,9 +2853,9 @@ enum Json {
   null,
   bool: Bool,
   int: Int, | TODO: Floats instead of ints
-  string: Str,
+  string: String,
   array: List[Json],
-  map: Map[Str, Json],
+  map: Map[String, Json],
 }
 
 fun write[W](writer: W, json: Json) {
@@ -2834,9 +2863,9 @@ fun write[W](writer: W, json: Json) {
   case null writer."null"
   case bool(bool) writer."{bool}"
   case int(int) writer."{int}"
-  case string(str) {
+  case string(string) {
     writer."\""
-    for char in str do {
+    for char in string do {
       if char == newline then writer."\\n"
       else if char == #\ then writer."\\\\"
       else if char == #" then writer."\\\""
@@ -2855,17 +2884,19 @@ fun write[W](writer: W, json: Json) {
     writer."}"
   }
 }
-fun parse_json(json: Str): Result[Json, Nothing] {
+fun parse_json(json: String): Result[Json, Nothing] {
   var parser = JsonParser { input = json, cursor = 0 }
   var object = parser.&.parse()?
   parser.rest().is_empty() or return error[Json, Nothing]({})
   ok[Json, Nothing](object)
 }
-struct JsonParser { input: Str, cursor: Int }
+struct JsonParser { input: String, cursor: Int }
 fun current(parser: JsonParser): Char {
   parser.input.chars().get(parser.cursor)
 }
-fun rest(parser: JsonParser): Str { parser.input.without_first(parser.cursor) }
+fun rest(parser: JsonParser): String {
+  parser.input.without_first(parser.cursor)
+}
 fun is_done(parser: JsonParser): Bool { parser.rest().is_empty() }
 fun advance(parser: &JsonParser, n: Int) { parser.cursor = parser.cursor + n }
 fun advance(parser: &JsonParser): Char {
@@ -2880,7 +2911,7 @@ fun consume(parser: &JsonParser, char: Char): Bool {
   parser.consume_whitespace()
   if parser.current() == char then { parser.advance() true } else false
 }
-fun consume(parser: &JsonParser, prefix: Str): Bool {
+fun consume(parser: &JsonParser, prefix: String): Bool {
   parser.consume_whitespace()
   if parser.rest().starts_with(prefix)
   then { parser.advance(prefix.len) true }
@@ -2905,22 +2936,22 @@ fun parse_int(parser: &JsonParser): Result[Maybe[Int], Nothing] {
   if parser.cursor == start then return ok[Maybe[Int], Nothing](none[Int]())
   ok[Maybe[Int], Nothing](some(num))
 }
-fun parse_string(parser: &JsonParser): Result[Maybe[Str], Nothing] {
-  parser.consume(#") or return ok[Maybe[Str], Nothing](none[Str]())
+fun parse_string(parser: &JsonParser): Result[Maybe[String], Nothing] {
+  parser.consume(#") or return ok[Maybe[String], Nothing](none[String]())
   var chars = list[Char]()
   loop {
     if parser.is_done() then
-      return error[Maybe[Str], Nothing]({}) | string doesn't end
+      return error[Maybe[String], Nothing]({}) | string doesn't end
     if parser.current() == #" then {
       parser.advance()
-      return ok[Maybe[Str], Nothing](some(chars.to_str()))
+      return ok[Maybe[String], Nothing](some(chars.to_string()))
     }
     if parser.current() == #\ then {
       parser.advance()
       if parser.current() == #\ then chars.&.push(#\)
       else if parser.current() == #" then chars.&.push(#")
       else if parser.current() == #n then chars.&.push(newline)
-      else return error[Maybe[Str], Nothing]({}) | invalid escape
+      else return error[Maybe[String], Nothing]({}) | invalid escape
       parser.advance()
     } else {
       chars.&.push(parser.current())
@@ -2929,7 +2960,8 @@ fun parse_string(parser: &JsonParser): Result[Maybe[Str], Nothing] {
   }
 }
 fun parse_array(parser: &JsonParser): Result[Maybe[List[Json]], Nothing] {
-  parser.consume(#[) or return ok[Maybe[List[Json]], Nothing](none[List[Json]]())
+  parser.consume(#[) or
+    return ok[Maybe[List[Json]], Nothing](none[List[Json]]())
   var array = list[Json]()
   loop if parser.current() == #] then break else {
     array.&.push(parser.parse()?)
@@ -2938,18 +2970,19 @@ fun parse_array(parser: &JsonParser): Result[Maybe[List[Json]], Nothing] {
   parser.consume(#]) or return error[Maybe[List[Json]], Nothing]({})
   ok[Maybe[List[Json]], Nothing](some(array))
 }
-fun parse_map(parser: &JsonParser): Result[Maybe[Map[Str, Json]], Nothing] {
+fun parse_map(parser: &JsonParser): Result[Maybe[Map[String, Json]], Nothing] {
   parser.consume(#{) or
-    return ok[Maybe[Map[Str, Json]], Nothing](none[Map[Str, Json]]())
-  var map = map[Str, Json]()
+    return ok[Maybe[Map[String, Json]], Nothing](none[Map[String, Json]]())
+  var map = map[String, Json]()
   loop if parser.consume(#}) then break else {
-    var key = parser.parse_string()? or return error[Maybe[Map[Str, Json]], Nothing]({})
-    parser.consume(#:) or return error[Maybe[Map[Str, Json]], Nothing]({})
+    var key = parser.parse_string()? or
+      return error[Maybe[Map[String, Json]], Nothing]({})
+    parser.consume(#:) or return error[Maybe[Map[String, Json]], Nothing]({})
     var value = parser.parse()?
     map.&.put(key, value)
     parser.consume(#,)
   }
-  ok[Maybe[Map[Str, Json]], Nothing](some(map))
+  ok[Maybe[Map[String, Json]], Nothing](some(map))
 }
 fun parse(parser: &JsonParser): Result[Json, Nothing] {
   parser.consume_whitespace()
