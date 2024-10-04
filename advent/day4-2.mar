@@ -1,14 +1,16 @@
-fun card_matches(card: Slice[U8]): U64 {
+import ../stdlib.mar
+
+fun card_matches(card: Slice[Char]): Int {
   var prefix_and_turns = card.split(": ")
   var all_numbers = prefix_and_turns.get(1).split(" | ")
 
   | TODO: use hash set when implemented
-  var winning_numbers = vec[U64]()
+  var winning_numbers = list[Int]()
   for num in all_numbers.get(0).split(" ") do
-    if not(num.is_empty()) then winning_numbers.&.push(num.parse_U64())
-  var my_numbers = vec[U64]()
+    if not(num.is_empty()) then winning_numbers.&.push(num.parse_Int())
+  var my_numbers = list[Int]()
   for num in all_numbers.get(1).split(" ") do
-    if not(num.is_empty()) then my_numbers.&.push(num.parse_U64())
+    if not(num.is_empty()) then my_numbers.&.push(num.parse_Int())
   println(winning_numbers)
 
   var matches = 0
@@ -23,9 +25,9 @@ fun card_matches(card: Slice[U8]): U64 {
 }
 
 fun main(): Never {
-  var input = read_file("advent/day4.big")
+  var input = read_file("advent/day4.big").unwrap().to_string()
 
-  var num_cards = vec[U64]()
+  var num_cards = list[Int]()
   for i in 0.to(input.lines().len) do num_cards.&.push(1)
 
   var i = 0
@@ -43,5 +45,5 @@ fun main(): Never {
   for amount in num_cards do total = total.add(amount)
   println(num_cards)
   println(total)
-  exit(0:U8)
+  exit(0)
 }

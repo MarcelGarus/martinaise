@@ -34,7 +34,7 @@ fun read_argv(index: Int): String {
   loop {
     var buffer = uninitialized_slice[Byte](cap)
     var read = read_argv(index, buffer)
-    if read < cap then return buffer.subslice(0..read).to_str()
+    if read < cap then return buffer.subslice(0..read).to_string()
     cap = cap * 2
   }
 }

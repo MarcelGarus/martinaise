@@ -1,7 +1,7 @@
 import ../stdlib.mar
 
 fun main(): Never {
-  var lines = read_file("advent/day5.big").unwrap().to_str().lines().iter().&
+  var lines = read_file("advent/day5.big").unwrap().to_string().lines().iter().&
 
   var ids = set[Int]()
   {

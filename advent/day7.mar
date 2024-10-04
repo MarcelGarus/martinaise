@@ -1,6 +1,6 @@
 import ../stdlib.mar
 
-struct Hand { score: Int, hand: Str, bid: Int }
+struct Hand { score: Int, hand: String, bid: Int }
 
 fun <=>(a: Hand, b: Hand): Ordering {
   switch a.score <=> b.score
@@ -15,30 +15,30 @@ fun <=>(a: Hand, b: Hand): Ordering {
   }
   Ordering.equal
 }
-fun hand_score(hand: Str): Int {
+fun hand_score(hand: String): Int {
   var card_to_amount = map[Char, Int]()
   for card in hand do
     if card_to_amount.contains(card)
     then card_to_amount.&.put(card, card_to_amount.get(card) + 1)
     else card_to_amount.&.put(card, 1)
 
-  var amounts = vec[Int]()
+  var amounts = list[Int]()
   for card_and_amount in card_to_amount do
     amounts.&.push(card_and_amount.value)
   amounts.to_slice().&.sort()
 
-  if amounts == vec(5) then return 6 | five of a kind
-  if amounts == vec(1, 4) then return 5 | four of a kind
-  if amounts == vec(2, 3) then return 4 | full house
-  if amounts == vec(1, 1, 3) then return 3 | three of a kind
-  if amounts == vec(1, 2, 2) then return 2 | two pair
-  if amounts == vec(1, 1, 1, 2) then return 1 | one pair
+  if amounts == list(5) then return 6 | five of a kind
+  if amounts == list(1, 4) then return 5 | four of a kind
+  if amounts == list(2, 3) then return 4 | full house
+  if amounts == list(1, 1, 3) then return 3 | three of a kind
+  if amounts == list(1, 2, 2) then return 2 | two pair
+  if amounts == list(1, 1, 1, 2) then return 1 | one pair
   0
 }
 
 fun main(): Never {
-  var hands = vec[Hand]()
-  for line in read_file("advent/day7.big").unwrap().to_str().lines() do {
+  var hands = list[Hand]()
+  for line in read_file("advent/day7.big").unwrap().to_string().lines() do {
     var parts = line.split(" ")
     var hand = parts.get(0)
     var bid = parts.get(1).parse_int()

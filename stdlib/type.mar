@@ -18,7 +18,7 @@ fun type[T](): Type { ... }
 
 struct Type { name: String, args: List[Type] }
 
-fun type(name: String): Type { type(name, vec[Type]()) }
+fun type(name: String): Type { type(name, list[Type]()) }
 fun type(name: String, args: List[Type]): Type { Type { name, args } }
 fun is_never(type: Type): Bool { type == type("Never") }
 
@@ -41,7 +41,7 @@ fun specialize(type: Type, type_env: Map[String, Type]): Result[Type, String] {
         "Type {type.name} is generic, but contains arguments.")
     ok[Type, String](concrete)
   } else {
-    var args = vec[Type]()
+    var args = list[Type]()
     for arg in type.args do args.&.push(arg.specialize(type_env)?)
     ok[Type, String](Type { name = type.name, args })
   }

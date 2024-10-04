@@ -30,7 +30,7 @@ fun fuzzer_main[Input](): Never {
   var front = FuzzFront {
     coverage = coverage(get_coverage().len), crashes = false
   }
-  var inputs = vec[InputThatRan[Input]]()
+  var inputs = list[InputThatRan[Input]]()
 
   for i in 0..200 do {
     var checkpoint = heap_checkpoint()
@@ -128,7 +128,7 @@ fun report[Input](input: InputThatRan[Input]) {
   if info.has_target_position and not(input.coverage.reached_target()) then
     return {}
 
-  var json_args = vec[Json]()
+  var json_args = list[Json]()
   for arg in input.arg_strings do json_args.&.push(Json.string(arg))
   println(Json.map(map(
     "type" -> Json.string("example"),

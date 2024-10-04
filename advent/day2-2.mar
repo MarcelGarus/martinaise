@@ -1,7 +1,7 @@
 import ../stdlib.mar
 
 | returns the game id if it's possible, 0 otherwise
-fun game_score(game: Str): Int {
+fun game_score(game: String): Int {
   var prefix_and_turns = game.split(": ")
   var prefix = prefix_and_turns.get(0)
   var turns = prefix_and_turns.get(1)
@@ -28,7 +28,7 @@ fun game_score(game: Str): Int {
 
 fun main(): Never {
   var sum = 0
-  for line in read_file("advent/day2.big").unwrap().to_str().lines() do
+  for line in read_file("advent/day2.big").unwrap().to_string().lines() do
     sum = sum + line.game_score()
   println(sum)
   exit(0)

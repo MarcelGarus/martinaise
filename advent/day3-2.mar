@@ -1,38 +1,38 @@
 import ../stdlib.mar
 
-fun width(grid: Slice[Slice[U8]]): Int { grid.get(0).len }
-fun height(grid: Slice[Slice[U8]]): Int { grid.len }
-fun get(grid: Slice[Slice[U8]], x: I64, y: I64): U8 {
+fun width(grid: Slice[Slice[Char]]): Int { grid.get(0).len }
+fun height(grid: Slice[Slice[Char]]): Int { grid.len }
+fun get(grid: Slice[Slice[Char]], x: Int, y: Int): Char {
   if x < 0 or x >= grid.width() or y < 0 or y >= grid.height() then return #.
   grid.get(y).get(x)
 }
-fun is_digit(char: U8): Bool { '0.until('9).contains(char) }
-fun is_gear(char: U8): Bool { char.equals('*) }
+fun is_digit(char: Char): Bool { #0.until(#9).contains(char) }
+fun is_gear(char: Char): Bool { char.equals(#*) }
 
 fun main(): Never {
-  var grid = read_file("advent/day3.big").lines()
-  printsln("hi")
+  var grid = read_file("advent/day3.big").unwrap().to_string().lines()
+  println("hi")
   println(grid.width())
   println(grid.height())
 
-  var maybe_gears = vec[Vec[Vec[Int]]]()
+  var maybe_gears = list[Vec[Vec[Int]]]()
   for y in 0.to(grid.height()) do {
-    var row = vec[Vec[Int]]()
-    for x in 0.to(grid.width()) do row.&.push(vec[Int]())
+    var row = list[Vec[Int]]()
+    for x in 0.to(grid.width()) do row.&.push(list[Int]())
     maybe_gears.&.push(row)
   }
 
-  for y in 0_I64.to(grid.height().to_I64()) do
-    for x in 0_I64.to(grid.width().to_I64()) do {
+  for y in 0..grid.height() do
+    for x in 0..grid.width() do {
       var char = grid.get(x, y)
-      if char.is_digit().and(not(grid.get(x.subtract(1_I64), y).is_digit()))
+      if char.is_digit().and(not(grid.get(x - 1, y).is_digit()))
       then {
         var end = x
         loop if grid.get(end, y).is_digit() then end = end.inc() else break
         var num = grid.get(y.to_Int()).subslice(x.to_Int(), end.to_Int())
           .parse_Int()
 
-        var adjacent = vec[Point[I64]]()
+        var adjacent = list[Point[Int]]()
         for xx in x.dec().until(end) do {
           adjacent.&.push(Point { x = xx, y = y.dec() })
           adjacent.&.push(Point { x = xx, y = y.inc() })
@@ -63,5 +63,5 @@ fun main(): Never {
     }
   println(sum)
 
-  exit(0:U8)
+  exit(0)
 }

@@ -7,7 +7,7 @@ fun compare_to(a: Hand, b: Hand): Ordering {
   switch a.score.compare_to(b.score)
   case less return Ordering.less
   case greater return Ordering.greater
-  case equal for  in &0.to(5) do {
+  case equal for i in 0..5 do {
     var values = "J23456789TQKA"
     var a_index = values.find(a.hand.get(i)).unwrap()
     var b_index = values.find(b.hand.get(i)).unwrap()
@@ -16,36 +16,36 @@ fun compare_to(a: Hand, b: Hand): Ordering {
   }
   return Ordering.equal
 }
-fun hand_score(hand: Slice[U8]): U8 {
-  var max_score = 0:U8
+fun hand_score(hand: Slice[Char]): Int {
+  var max_score = 0
   for joker in "J23456789TQKA" do {
-    var card_to_amount = map[U8, U8]()
+    var card_to_amount = map[Char, Int]()
     for card in hand do {
-      if card.equals('J) then card = joker
+      if card.equals(#J) then card = joker
       if card_to_amount.contains(card)
       then card_to_amount.&.insert(card, card_to_amount.get(card).unwrap().inc())
-      else card_to_amount.&.insert(card, 1:U8)
+      else card_to_amount.&.insert(card, 1)
     }
 
-    var amounts = vec[U8]()
+    var amounts = list[Int]()
     for card_and_amount in card_to_amount do
       amounts.&.push(card_and_amount.value)
     amounts.to_slice().&.sort()
 
-    var score = 0:U8
-    if amounts.equals(vec[U8](5:U8)) then score = 6:U8 | five of a kind
-    if amounts.equals(vec[U8](1:U8, 4:U8)) then score = 5:U8 | four of a kind
-    if amounts.equals(vec[U8](2:U8, 3:U8)) then score = 4:U8 | full house
-    if amounts.equals(vec[U8](1:U8, 1:U8, 3:U8)) then score = 3:U8 | three of a kind
-    if amounts.equals(vec[U8](1:U8, 2:U8, 2:U8)) then score = 2:U8 | two pair
-    if amounts.equals(vec[U8](1:U8, 1:U8, 1:U8, 2:U8)) then score = 1:U8 | one pair
+    var score = 0
+    if amounts.equals(list(5)) then score = 6 | five of a kind
+    if amounts.equals(list(1, 4)) then score = 5 | four of a kind
+    if amounts.equals(list(2, 3)) then score = 4 | full house
+    if amounts.equals(list(1, 1, 3)) then score = 3 | three of a kind
+    if amounts.equals(list(1, 2, 2)) then score = 2 | two pair
+    if amounts.equals(list(1, 1, 1, 2)) then score = 1 | one pair
     max_score = max(max_score, score)
   }
   max_score
 }
 
 fun main(): Never {
-  var hands = vec[Hand]()
+  var hands = list[Hand]()
   for line in read_file("advent/day7.big").lines() do {
     var parts = line.split(" ")
     var hand = parts.get(0)
@@ -67,5 +67,5 @@ fun main(): Never {
   }
   println(total)
 
-  exit(0:U8)
+  exit(0)
 }

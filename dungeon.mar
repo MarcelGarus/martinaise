@@ -66,7 +66,7 @@ fun generate_level(random: &Random): Level {
       if level.get(pos) is wall then continue
       if reachable.get(pos) then continue
       reachable.&.set(pos, true)
-      for direction in vec(0 @ 1, 0 @ {0-1}, 1 @ 0, {0-1} @ 0) do
+      for direction in list(0 @ 1, 0 @ {0-1}, 1 @ 0, {0-1} @ 0) do
         queue.&.push_back(pos + direction)
     }
 
@@ -89,7 +89,7 @@ fun generate_level(random: &Random): Level {
       if not({0 @ 0}.by(level.tiles.size()).contains(point)) then continue
       if distance.get(point) <= dist then continue
       distance.&.set(point, dist)
-      for direction in vec(0 @ 1, 0 @ {0-1}, 1 @ 0, {0-1} @ 0) do
+      for direction in list(0 @ 1, 0 @ {0-1}, 1 @ 0, {0-1} @ 0) do
         queue.&.push_back(tuple(point + direction, dist + 1))
     }
 

@@ -218,7 +218,7 @@ fun write_decimals[W](writer: W, value: Int) {
     width.& -= 1
   }
 
-  var buffer = vec[Char]()
+  var buffer = list[Char]()
   loop {
     if width == 0 then break
     buffer.&.push(#0 + {value % 10}.lower_byte())

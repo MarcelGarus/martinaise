@@ -11,7 +11,7 @@ fun is_digit(char: Char): Bool { {#0..=#9}.contains(char) }
 fun is_symbol(char: Char): Bool { not(char.is_digit()) and char != #. }
 
 fun main(): Never {
-  var lines = read_file("advent/day3.big").unwrap().to_str().lines()
+  var lines = read_file("advent/day3.big").unwrap().to_string().lines()
   var grid = uninitialized_slice[Slice[Char]](lines.len)
   for it in lines.iter().enumerate() do grid.get_ref(it.index).* = it.item.chars()
   println(grid.width())
@@ -27,7 +27,7 @@ fun main(): Never {
         loop if grid.get(end, y).is_digit() then end = end + 1 else break
         var num = grid.get(y).subslice(x..end).parse_int()
 
-        var adjacent = vec[Point[Int]]()
+        var adjacent = list[Point[Int]]()
         for xx in {x - 1}..=end do {
           adjacent.&.push(Point { x = xx, y = y - 1 })
           adjacent.&.push(Point { x = xx, y = y + 1 })

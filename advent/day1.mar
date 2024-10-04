@@ -7,7 +7,7 @@ fun find_first_digit[I](iter: &Iter[Char, I]): Int {
   panic("iter doesn't contain a digit")
 }
 
-fun line_score(line: Str): Int {
+fun line_score(line: String): Int {
   var first_digit = line.chars().iter().&.find_first_digit()
   var last_digit = line.chars().rev_iter().&.find_first_digit()
   var score = 10 * first_digit + last_digit
@@ -17,7 +17,7 @@ fun line_score(line: Str): Int {
   score
 }
 
-fun solve(input: Str): Int {
+fun solve(input: String): Int {
   var sum = 0
   for line in input.lines() do
     sum = sum + line.line_score()
@@ -25,7 +25,7 @@ fun solve(input: Str): Int {
 }
 
 fun main(): Never {
-  var sum = read_file("advent/day1.smol").unwrap().to_str().solve()
+  var sum = read_file("advent/day1.smol").unwrap().to_string().solve()
   println(sum)
   exit(0)
 }

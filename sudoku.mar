@@ -25,7 +25,7 @@ fun write[W](writer: W, sudoku: Sudoku) {
 
 var masks = calculate_masks()
 fun calculate_masks(): Slice[Slice[Bool]] {
-  var masks = vec[Slice[Bool]]()
+  var masks = list[Slice[Bool]]()
   for row in 0..9 do {
     var mask = filled_slice(81, false)
     for x in 0..9 do mask.&.set(9 * row + x, true)
@@ -85,7 +85,7 @@ fun main(): Never {
 
   var sudoku = empty_sudoku()
   var y = 0
-  for line in input.to_str().lines() do {
+  for line in input.to_string().lines() do {
     if line.is_empty() then continue
     if y == 9 then {
       eprintln("Too many rows")

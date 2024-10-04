@@ -312,7 +312,7 @@ fun fuzzing_complexity[T](slice: Slice[T]): Float {
 }
 fun mutate[T](slice: Slice[T], random: &Random, temperature: Int): Slice[T] {
   if temperature == 0 then return slice
-  var copy = uninitialized_vec[T](slice.len)
+  var copy = uninitialized_list[T](slice.len)
   slice.copy_to(copy.to_slice())
   var rand = random.next_int(0..temperature)
   if slice.is_not_empty() and rand < 50 then {
@@ -331,10 +331,10 @@ fun mutate[T](slice: Slice[T], random: &Random, temperature: Int): Slice[T] {
   copy.to_slice()
 }
 
-fun to_vec[T](slice: Slice[T]): Vec[T] {
-  var vec = uninitialized_vec[T](slice.len)
-  slice.copy_to(vec.to_slice())
-  vec
+fun to_list[T](slice: Slice[T]): Vec[T] {
+  var list = uninitialized_list[T](slice.len)
+  slice.copy_to(list.to_slice())
+  list
 }
 
 fun iter[T](slice: Slice[T]): Iter[T, _] {

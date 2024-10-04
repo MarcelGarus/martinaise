@@ -1,14 +1,14 @@
 import ../stdlib.mar
 
-fun card_score(card: Str): Int {
+fun card_score(card: String): Int {
   var prefix_and_turns = card.split(": ")
   var all_numbers = prefix_and_turns.get(1).split(" | ")
 
   | TODO: use hash set when implemented
-  var winning_numbers = vec[Int]()
+  var winning_numbers = list[Int]()
   for num in all_numbers.get(0).split(" ") do
     if not(num.is_empty()) then winning_numbers.&.push(num.parse_int())
-  var my_numbers = vec[Int]()
+  var my_numbers = list[Int]()
   for num in all_numbers.get(1).split(" ") do
     if not(num.is_empty()) then my_numbers.&.push(num.parse_int())
   println(winning_numbers)
@@ -25,7 +25,7 @@ fun card_score(card: Str): Int {
 
 fun main(): Never {
   var sum = 0
-  for line in read_file("advent/day4.big").unwrap().to_str().lines() do
+  for line in read_file("advent/day4.big").unwrap().to_string().lines() do
     sum = sum + line.card_score()
   println(sum)
   exit(0)

@@ -22,7 +22,7 @@ fun next(iter: &RevWindows): Maybe[Slice[Char]] {
   else none[Slice[Char]]()
 }
 
-fun find_first_digit[I](iter: I, digit_names: Vec[Slice[Char]]): Int {
+fun find_first_digit[I](iter: I, digit_names: List[Slice[Char]]): Int {
   loop {
     var part = iter.next() orelse empty_slice[U8]()
     if {#0..=#9}.contains(part.get(0)) then break(part.get(0) - #0)
@@ -36,7 +36,7 @@ fun find_first_digit[I](iter: I, digit_names: Vec[Slice[Char]]): Int {
 }
 
 fun main(): Never {
-  var digit_names = vec[Str]()
+  var digit_names = list[Str]()
   digit_names.&.push("one")
   digit_names.&.push("two")
   digit_names.&.push("three")
@@ -48,7 +48,7 @@ fun main(): Never {
   digit_names.&.push("nine")
 
   var sum = 0
-  for line in read_file("advent/day1-2.smol").unwrap().to_str().lines() do {
+  for line in read_file("advent/day1-2.smol").unwrap().to_string().lines() do {
     var first_digit = line.chars().windows().&.find_first_digit(digit_names)
     var last_digit = line.chars().rev_windows().&.find_first_digit(digit_names)
     sum = sum.add(first_digit.to_U64().multiply(10).add(last_digit.to_U64()))

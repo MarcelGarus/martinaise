@@ -3,12 +3,12 @@ fun main(): Never {
   var lines = read_file("advent/day8.big").lines()
   var directions = lines.get_ref(0)
 
-  var name_to_index = map[Slice[U8], U64]()
-  var names = vec[Slice[U8]]()
-  var lefts = vec[U16]()
-  var rights = vec[U16]()
-  var is_initial = vec[Bool]()
-  var is_final = vec[Bool]()
+  var name_to_index = map[Str, Int]()
+  var names = list[String]()
+  var lefts = list[Int]()
+  var rights = list[Int]()
+  var is_initial = list[Bool]()
+  var is_final = list[Bool]()
 
   for line in lines.subslice(2) do {
     var name = line.subslice(0, 3)
@@ -20,12 +20,12 @@ fun main(): Never {
   for line in lines.subslice(2) do {
     var left = line.subslice(7, 10)
     var right = line.subslice(12, 15)
-    lefts.&.push(name_to_index.get(left).unwrap().to_U16())
-    rights.&.push(name_to_index.get(right).unwrap().to_U16())
+    lefts.&.push(name_to_index.get(left).unwrap().to_int())
+    rights.&.push(name_to_index.get(right).unwrap().to_int())
   }
 
   var step = 0
-  var initials = vec[U64]()
+  var initials = list[Int]()
   for node in 0.to(names.len) do
     if is_initial.get(node) then initials.&.push(node)
 
@@ -34,7 +34,7 @@ fun main(): Never {
     println()
 
     var current = initial
-    var finals = vec[U64]()
+    var finals = list[Int]()
     loop {
       if is_final.get(current) then {
         finals.&.push(current)
@@ -42,8 +42,8 @@ fun main(): Never {
       }
 
       var direction = directions.get(step.modulo(directions.len))
-      if direction.equals('L) then current = lefts.get(current).to_U64()
-      if direction.equals('R) then current = rights.get(current).to_U64()
+      if direction.equals(#L) then current = lefts.get(current).to_int()
+      if direction.equals(#R) then current = rights.get(current).to_int()
 
       step = step.inc()
 
@@ -54,5 +54,5 @@ fun main(): Never {
   }
   println()
 
-  exit(0:U8)
+  exit(0)
 }

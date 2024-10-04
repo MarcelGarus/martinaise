@@ -61,7 +61,7 @@ fun read_line(file: File): Result[Maybe[String], Nothing] {
     if byte == newline.byte then break
     content.&.push(byte)
   }
-  ok[Maybe[String], Nothing](some(content.to_slice().to_str()))
+  ok[Maybe[String], Nothing](some(content.to_slice().to_string()))
 }
 
 fun write_bytes_safely(
@@ -139,7 +139,7 @@ fun read_dir(path: String): Result[Slice[DirEntry], Nothing] {
       else DirEntryKind.other
     var len = buffer.get_ref(cursor).to_address().to_reference[Int]().*
     cursor = cursor + 8
-    var name = buffer.subslice(cursor ..+ len).to_str()
+    var name = buffer.subslice(cursor ..+ len).to_string()
     cursor = cursor + len
     entries.&.push(DirEntry { name, kind })
   }
@@ -219,5 +219,5 @@ fun read_line(stdin: Stdin): Result[Maybe[String], Nothing] {
     if byte == newline.byte then break
     content.&.push(byte)
   }
-  ok[Maybe[String], Nothing](some(content.to_slice().to_str()))
+  ok[Maybe[String], Nothing](some(content.to_slice().to_string()))
 }

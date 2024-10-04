@@ -150,7 +150,7 @@ fun split[T, I](iter: Iter[T, I], separator: Slice[T]): Iter[Slice[T], _] {
 struct SplitIter[T, I] { inner: I, separator: Slice[T] }
 fun next[T, I](iter: &Iter[Slice[T], SplitIter[T, I]]): Maybe[Slice[T]] {
   var state = iter.state.&
-  var current = vec[T]()
+  var current = list[T]()
   loop
     switch state.inner.&.next_from_iter_state[T, I]()
     case none
@@ -166,5 +166,5 @@ fun next[T, I](iter: &Iter[Slice[T], SplitIter[T, I]]): Maybe[Slice[T]] {
 
 | Splits an Iter at the given separator.
 fun split[T, I](iter: Iter[T, I], separator: T): Iter[Slice[T], _] {
-  iter.split(vec(separator).to_slice())
+  iter.split(list(separator).to_slice())
 }

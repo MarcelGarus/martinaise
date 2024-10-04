@@ -1,15 +1,15 @@
 import ../stdlib.mar
 
 fun main(): Never {
-  var lines = read_file("advent/day6-2.big").unwrap().to_str().lines()
+  var lines = read_file("advent/day6-2.big").unwrap().to_string().lines()
   println(lines)
   lines.get_ref(0).trim_prefix("Time:")
   lines.get_ref(1).trim_prefix("Distance:")
 
   println(lines)
 
-  var times = vec[Int]()
-  var distances = vec[Int]()
+  var times = list[Int]()
+  var distances = list[Int]()
   for time in lines.get(0).split(" ") do
     if not(time.is_empty()) then times.&.push(time.parse_int())
   for dist in lines.get(1).split(" ") do
@@ -18,7 +18,7 @@ fun main(): Never {
   println(times)
   println(distances)
 
-  var wins = vec[Int]()
+  var wins = list[Int]()
   var i = 0
   loop {
     if i == times.len then break

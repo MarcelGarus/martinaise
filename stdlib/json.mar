@@ -101,7 +101,7 @@ fun parse_string(parser: &JsonParser): Result[Maybe[String], Nothing] {
       return error[Maybe[String], Nothing]({}) | string doesn't end
     if parser.current() == #" then {
       parser.advance()
-      return ok[Maybe[String], Nothing](some(chars.to_str()))
+      return ok[Maybe[String], Nothing](some(chars.to_string()))
     }
     if parser.current() == #\ then {
       parser.advance()

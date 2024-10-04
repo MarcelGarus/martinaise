@@ -1,11 +1,11 @@
 import ../stdlib.mar
 
-struct Node { left: Str, right: Str }
+struct Node { left: String, right: String }
 
 fun main(): Never {
-  var lines = read_file("advent/day8.big").unwrap().to_str().lines()
+  var lines = read_file("advent/day8.big").unwrap().to_string().lines()
   var directions = lines.get_ref(0)
-  var nodes = map[Str, Node]()
+  var nodes = map[String, Node]()
 
   for line in lines.subslice(2..lines.len) do {
     var name = line.substr(0..3)
