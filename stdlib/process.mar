@@ -14,7 +14,8 @@ fun panic(message: String): Never asm {
 }
 fun panic(): Never asm { panic }
 fun unreachable(): Never { panic("unreachable") }
-fun todo(): Never { panic("todo") }
+fun todo(): Never { panic("Todo") }
+fun todo(task: String): Never { panic("Todo: {task}") }
 
 | Process Arguments  
 
