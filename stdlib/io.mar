@@ -52,7 +52,7 @@ fun read_byte(file: File): Result[Maybe[Byte], Nothing] {
   )
 }
 fun read_line(file: File): Result[Maybe[String], Nothing] {
-  var content = vec[Byte]()
+  var content = list[Byte]()
   loop {
     var byte = file.read_byte()? or {
       if content.is_empty() then return ok[Maybe[String], Nothing](none[String]())
@@ -128,7 +128,7 @@ fun read_dir(path: String): Result[Slice[DirEntry], Nothing] {
 
   var buffer = all_free_memory.subslice(0..len)
   var cursor = 0
-  var entries = vec[DirEntry]()
+  var entries = list[DirEntry]()
   loop {
     if cursor >= buffer.len then break
     var kind = buffer.get(cursor).to_int()
@@ -210,7 +210,7 @@ fun read_byte(stdin: Stdin): Result[Maybe[Byte], Nothing] {
   )
 }
 fun read_line(stdin: Stdin): Result[Maybe[String], Nothing] {
-  var content = vec[Byte]()
+  var content = list[Byte]()
   loop {
     var byte = stdin.read_byte()? or {
       if content.is_empty() then return ok[Maybe[String], Nothing](none[String]())
