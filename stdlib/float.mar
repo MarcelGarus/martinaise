@@ -58,8 +58,10 @@ fun *(left: Float, right: Float): Float asm {
 fun /(left: Float, right: Float): Float asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
+  moveib c 0 cmp b c isequal cjump .div_by_zero
   load c sp | return value address
   fdiv a b store c a ret
+  .div_by_zero: panic
 }
 fun abs(float: Float): Float { if float >= 0.0 then float else 0.0 - float }
 fun <=>(left: Float, right: Float): Ordering asm { | TODO: remove?

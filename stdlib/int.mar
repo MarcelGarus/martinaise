@@ -29,8 +29,10 @@ fun *(left: Int, right: Int): Int asm {
 fun /(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
+  moveib c 0 cmp b c isequal cjump .div_by_zero
   load c sp | return value address
   div a b store c a ret
+  .div_by_zero: panic
 }
 | TODO: Think about remainder vs modulo. Do I want to change the instruction? Do
 | I want to provide both? For now, please only use this with positive left.
