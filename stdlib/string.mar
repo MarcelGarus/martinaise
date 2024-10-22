@@ -238,17 +238,17 @@ fun split(string: String, separator: String): Slice[String] {
 }
 fun lines(string: String): Slice[String] { string.split("{newline}") }
 fun pad_right(string: String, len: Int, char: Char): String {
-  var string = string_builder().&
-  string.write(string)
-  loop if string.len() < len then string.write(char) else break
-  string.to_string()
+  var b = string_builder().&
+  b.write(string)
+  loop if b.len() < len then b.write(char) else break
+  b.to_string()
 }
 fun pad_right(string: String, len: Int): String { string.pad_right(len, space) }
 fun pad_left(string: String, len: Int, char: Char): String {
-  var string = string_builder().&
-  loop if string.len() + string.len < len then string.write(char) else break
-  string.write(string)
-  string.to_string()
+  var b = string_builder().&
+  loop if b.len() + string.len < len then b.write(char) else break
+  b.write(string)
+  b.to_string()
 }
 fun pad_left(string: String, len: Int): String { string.pad_left(len, space) }
 
