@@ -1,19 +1,16 @@
 import ../stdlib.mar
 
-fun find_first_digit[I](iter: &Iter[Char, I]): Int {
-  for char in iter do
-    if {#0..=#9}.contains(char)
-    then return {char.byte - #0.byte}.to_int()
+fun find_first_digit(string: String): Int {
+  for char in string.chars() do
+    if {#0 ..= #9}.contains(char) then
+      return {char.byte - #0.byte}.to_int()
   panic("iter doesn't contain a digit")
 }
 
 fun line_score(line: String): Int {
-  var first_digit = line.chars().iter().&.find_first_digit()
-  var last_digit = line.chars().rev_iter().&.find_first_digit()
+  var first_digit = line.find_first_digit()
+  var last_digit = line.reverse().find_first_digit()
   var score = 10 * first_digit + last_digit
-  if score < 30 then {
-    true
-  }
   score
 }
 
