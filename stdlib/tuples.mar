@@ -15,5 +15,9 @@ fun writer[W, A, B, C](writer: W, tuple: Tuple3[A, B, C]) {
   writer."({tuple.a}, {tuple.b}, {tuple.c})"
 }
 
+fun ==[A, B](a: Tuple2[A, B], b: Tuple2[A, B]): Bool {
+  a.a == b.a and a.b == b.b
+}
+
 fun min[A](tuple: Tuple2[A, A]): A { min(tuple.a, tuple.b) }
 fun max[A](tuple: Tuple2[A, A]): A { max(tuple.a, tuple.b) }
