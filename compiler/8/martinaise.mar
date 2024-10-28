@@ -5790,7 +5790,7 @@ fun generate_fuzzing_hooks(
     })
   }
 
-  | fun arg_strs(input: $Input): Slice[String] {
+  | fun arg_strings(input: $Input): Slice[String] {
   |   var v = list[String]()
   |   {
   |     var sb = string_builder()
@@ -5822,9 +5822,9 @@ fun generate_fuzzing_hooks(
     }
     body.&.push(AstExpr.name("v" @ src)
       .member("to_slice" @ src).call(opening_paren))
-    ast.funs.&.get_ref_or_put_default("arg_strs", list[AstFun]())
+    ast.funs.&.get_ref_or_put_default("arg_strings", list[AstFun]())
       .push(AstFun {
-        name = "arg_strs" @ src,
+        name = "arg_strings" @ src,
         is_fallback = true,
         type_args = list[AstString](),
         args = list[AstFunArg](AstFunArg {
