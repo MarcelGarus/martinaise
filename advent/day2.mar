@@ -7,17 +7,17 @@ fun game_score(game: String): Int {
   var turns = prefix_and_turns.get(1)
 
   prefix.&.trim_prefix("Game ")
-  var id = prefix.parse_number()
+  var id = prefix.parse_int().unwrap()
 
   for turn in turns.split("; ") do
     for cubes in turn.split(", ") do {
       var parts = cubes.split(" ")
-      var num = parts.get(0).parse_digit()
+      var num = parts.get(0).parse_int().unwrap()
       var color = parts.get(1)
 
-      var is_possible = color.equals("red").and(num.is_at_most(12))
-        .or(color.equals("green").and(num.is_at_most(13)))
-        .or(color.equals("blue").and(num.is_at_most(14)))
+      var is_possible = color == "red" and num <= 12
+        or color == "green" and num <= 13
+        or color == "blue" and num <= 14
       if not(is_possible) then return 0
     }
 

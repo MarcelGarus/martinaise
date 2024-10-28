@@ -41,7 +41,7 @@ fun main(): Never {
   for line in read_file("advent/day7.big").unwrap().to_string().lines() do {
     var parts = line.split(" ")
     var hand = parts.get(0)
-    var bid = parts.get(1).parse_int()
+    var bid = parts.get(1).parse_int().unwrap()
     hands.&.push(Hand { score = hand_score(hand), hand, bid })
   }
   hands.to_slice().&.sort()

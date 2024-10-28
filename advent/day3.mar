@@ -1,17 +1,10 @@
 import ../stdlib.mar
 
-fun width(grid: Slice[Slice[Char]]): Int { grid.get(0).len }
-fun height(grid: Slice[Slice[Char]]): Int { grid.len }
-fun get(grid: Slice[Slice[Char]], x: Int, y: Int): Char {
-  if x < 0 or x >= grid.width() or y < 0 or y >= grid.height()
-  then return #.
-  grid.get(y).get(x)
-}
 fun is_digit(char: Char): Bool { {#0..=#9}.contains(char) }
 fun is_symbol(char: Char): Bool { not(char.is_digit()) and char != #. }
 
 fun main(): Never {
-  var lines = read_file("advent/day3.big").unwrap().to_string().lines()
+  var grid = read_file("advent/day3.big").unwrap().to_string().into_grid()
   var grid = uninitialized_slice[Slice[Char]](lines.len)
   for it in lines.iter().enumerate() do grid.get_ref(it.index).* = it.item.chars()
   println(grid.width())
@@ -53,4 +46,25 @@ fun main(): Never {
   println(sum)
 
   exit(0)
+}
+
+fun into_grid(input: String): Grid {
+  var lines = input.lines()
+  var width = lines.get(0).len
+  var height = lines.len
+  var cells = uninitialized_matrix[Char](width @ lines.len)
+
+  for it in lines.iter().enumerate() do
+    cells.get_ref(it.index).* = it.item.chars()
+  Grid { cells }
+}
+
+struct Grid { cells: Matrix[Char] }
+
+fun width(grid: Slice[Slice[Char]]): Int { grid.get(0).len }
+fun height(grid: Slice[Slice[Char]]): Int { grid.len }
+fun get(grid: Slice[Slice[Char]], x: Int, y: Int): Char {
+  if x < 0 or x >= grid.width() or y < 0 or y >= grid.height()
+  then return #.
+  grid.get(y).get(x)
 }

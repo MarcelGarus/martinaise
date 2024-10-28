@@ -7,10 +7,10 @@ fun card_score(card: String): Int {
   | TODO: use hash set when implemented
   var winning_numbers = list[Int]()
   for num in all_numbers.get(0).split(" ") do
-    if not(num.is_empty()) then winning_numbers.&.push(num.parse_int())
+    if not(num.is_empty()) then winning_numbers.&.push(num.parse_int().unwrap())
   var my_numbers = list[Int]()
   for num in all_numbers.get(1).split(" ") do
-    if not(num.is_empty()) then my_numbers.&.push(num.parse_int())
+    if not(num.is_empty()) then my_numbers.&.push(num.parse_int().unwrap())
   println(winning_numbers)
 
   var score = 0
