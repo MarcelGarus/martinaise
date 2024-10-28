@@ -173,6 +173,11 @@ fun write[W, T](writer: W, list: List[T]) { writer.write(list.to_slice()) }
 fun write_debug[W, T](writer: W, list: List[T]) {
   writer.write_debug(list.to_slice())
 }
+fun copy[T](list: List[T]): List[T] {
+  var copy = list[T]()
+  for item in list do copy.&.push(item.copy())
+  copy
+}
 
 fun generate[T](
   static: Static[List[T]], random: &Random, complexity: Int

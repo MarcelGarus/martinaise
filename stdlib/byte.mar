@@ -76,7 +76,7 @@ fun dec(a: Byte): Byte { a - 1.lower_byte() }
 
 fun ==(a: Byte, b: Byte): Bool { a <=> b is equal }
 fun hash(hasher: &Hasher, byte: Byte)  { hasher.hash(byte.to_int()) }
-fun copy(byte: Byte) { byte }
+fun copy(byte: Byte): Byte { byte }
 
 fun write[W](writer: W, int: Byte) { writer.write(radix(int, 10)) }
 fun radix(int: Byte, radix: Int): RadixFormat { radix(int.to_int(), radix) }

@@ -110,6 +110,9 @@ fun write_debug[W](writer: W, string: String) {
     else writer."{char}"
   writer."\""
 }
+fun copy(string: String): String {
+  string.bytes().copy().to_string()
+}
 
 fun generate(s: Static[Char], random: &Random, complexity: Int): Char {
   var visible_ascii = 32..127

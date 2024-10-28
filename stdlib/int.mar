@@ -128,7 +128,7 @@ fun ==(a: Int, b: Int): Bool asm {
   cmp a b isequal
   storeb c st ret
 }
-fun copy(a: Int): Int { a }
+fun copy(int: Int): Int { int }
 
 fun parse_int(string: String): Maybe[Int] {
   var num = 0

@@ -83,7 +83,7 @@ fun hash(hasher: &Hasher, float: Float) {
   | TODO: is this correct?
   hasher.hash(memhash(float.&.to_address(), 8))
 }
-fun copy(float: Float) { float }
+fun copy(float: Float): Float { float }
 
 fun sqrt(x: Float): Float {
   if x < 0.0 then panic("cannot take sqrt of a negative value")

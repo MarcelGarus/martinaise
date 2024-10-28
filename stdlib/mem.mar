@@ -291,9 +291,11 @@ fun write_debug[W, T](writer: W, slice: Slice[T]) {
   }
   writer."]"
 }
-fun copy[T](slice: Slice[T]) {
+fun copy[T](slice: Slice[T]): Slice[T] {
   var copy = uninitialized_slice[T](slice.len)
-  for item in slice.iter().enumerate() do copy.get_ref(i).* = item.copy()
+  for item in slice.iter().enumerate() do
+    copy.get_ref(item.index).* = item.item.copy()
+  copy
 }
 
 fun generate[T](

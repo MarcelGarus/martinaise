@@ -137,6 +137,11 @@ fun write_debug[W, K, V](writer: W, map: Map[K, V]) {
   }
   writer."}"
 }
+fun copy[K, V](map: Map[K, V]): Map[K, V] {
+  var copy = map[K, V]()
+  for entry in map do copy.&.push(entry.copy())
+  copy
+}
 
 fun generate[K, V](
   s: Static[Map[K, V]], random: &Random, complexity: Int
