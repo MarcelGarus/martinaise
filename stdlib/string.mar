@@ -219,6 +219,15 @@ fun trim(string: String): String {
     else break
   string.substr(start..end)
 }
+fun contains(string: String, needle: Char): Bool {
+  string.chars().iter().&.contains(needle)
+}
+fun contains(string: String, needle: String): Bool {
+  if needle.len > string.len then return false
+  for i in 0..{string.len - needle.len} do
+    if string.substr(i..+needle.len) == needle then return true
+  false
+}
 fun replace(string: String, from: String, to: String): String {
   var b = string_builder().&
   var cursor = 0
