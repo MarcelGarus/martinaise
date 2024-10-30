@@ -144,19 +144,20 @@ fun find[T, I](iter: &Iter[T, I], needle: T): Maybe[Int] {
 | Splits an Iter at the given items forming a separator.
 fun split[T, I](iter: Iter[T, I], separator: Slice[T]): Iter[Slice[T], _] {
   Iter[Slice[T], SplitIter[T, I]] {
-    state = SplitIter { inner = iter.state, separator }
+    state = SplitIter { inner = iter.state, separator, is_done = false }
   }
 }
-struct SplitIter[T, I] { inner: I, separator: Slice[T] }
+struct SplitIter[T, I] { inner: I, separator: Slice[T], is_done: Bool }
 fun next[T, I](iter: &Iter[Slice[T], SplitIter[T, I]]): Maybe[Slice[T]] {
   var state = iter.state.&
+  if state.is_done then return none[Slice[T]]()
   var current = list[T]()
   loop
     switch state.inner.&.next_from_iter_state[T, I]()
-    case none
-      if current.len > 0
-      then return some(current.to_slice())
-      else return none[Slice[T]]()
+    case none {
+      state.is_done = true
+      return some(current.to_slice())
+    }
     case some(item) {
       current.&.push(item)
       if current.to_slice().ends_with(state.separator) then
