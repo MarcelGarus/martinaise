@@ -4091,7 +4091,7 @@ fun write[W](writer: W, shade: MemShade) {
 }
 | Adjacent fields should have different shades, inner fields want to start with
 | the same shading as the parent.
-fun choose_shade(previous: MemShade, preffered: MemShade) {
+fun choose_shade(previous: MemShade, preffered: MemShade): MemShade {
   switch preffered
   case padding unreachable()
   case a if previous is a then MemShade.b else MemShade.a
@@ -4206,7 +4206,7 @@ fun write(
     var start_line = line
     var line = line + 2
     for variant in variants.iter().enumerate() do {
-      var is_last = variant.index == variants.len - 1
+      var is_last = variant.index == {variants.len - 1}
       var variant = variant.item
       var padding = layout.size - variant.layout.size - 1
       writer.line(line)
@@ -4235,7 +4235,7 @@ fun fit_to_size(string: String, size: Int, padding: String): String {
 
   var string = string_builder().&
   string.write(string)
-  for i in string.len..size do string.write(padding)
+  for i in string.bytes.len..size do string.write(padding)
   string.to_string()
 }
 fun write_n[W](writer: W, n: Int, string: String) {
@@ -5027,11 +5027,6 @@ fun define_label(asm: &Asm, label: String) {
   asm.soil.labels.&.push(label)
   asm.soil.labels_to_index.&.put(label, asm.soil.instructions.len)
   asm.last_label = label
-}
-fun define_disambiguated_label(asm: &Asm, prefix: String): String {
-  var label = "{prefix}.{asm.bytes.len()}"
-  asm.label(label)
-  label
 }
 fun label(asm: &Asm, label: String): Int {
   label = asm.globalize(label).unwrap()
