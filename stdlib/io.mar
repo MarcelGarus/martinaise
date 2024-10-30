@@ -77,7 +77,7 @@ fun write_bytes_safely(
   .ret_ok:    moveib c 0 storeb b c ret
 }
 fun write_byte_safely(file: File, byte: Byte): Result[Nothing, Nothing] {
-  file.write_bytes_safely(Slice { data = byte.&, len = 1 })
+  file.write_bytes_safely(Slice[Byte] { data = byte.&.to_address(), len = 1 })
 }
 fun write_bytes(file: File, buffer: Slice[Byte]) {
   file.write_bytes_safely(buffer) or panic("couldn't write byte")

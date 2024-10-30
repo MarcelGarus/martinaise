@@ -9,9 +9,9 @@ enum Ordering { less, equal, greater }
 
 fun ==(a: Ordering, b: Ordering): Bool {
   switch a
-  case less b.is_less()
-  case equal b.is_equal()
-  case greater b.is_greater()
+  case less b is less
+  case equal b is equal
+  case greater b is greater
 }
 fun hash(hasher: &Hasher, ord: Ordering) {
   hasher.hash(switch ord case less #l case equal #e case greater #g)

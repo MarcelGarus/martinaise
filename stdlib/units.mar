@@ -161,4 +161,4 @@ fun /(a: Volume, b: Float): Volume { Volume { cubic_meters = a.cubic_meters / b 
 fun /(a: Speed, b: Float): Speed { Speed { meters_per_second = a.meters_per_second / b } }
 fun /(a: Speed, b: Duration): Acceleration { Acceleration { meters_per_square_second = a.meters_per_second / b.seconds } }
 
-fun /(a: Acceleration, b: Float): Acceleration { Acceleration { meters_per_second = a.meters_per_second / b } }
+fun /(a: Acceleration, b: Float): Acceleration { Acceleration { meters_per_square_second = a.meters_per_square_second / b } }

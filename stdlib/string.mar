@@ -31,7 +31,7 @@ fun is_whitespace(char: Char): Bool {
 }
 
 fun parse_digit(char: Char): Byte {
-  if char.is_numeric() then return char.byte - #0.byte
+  if char.is_digit() then return char.byte - #0.byte
   if char.is_lower() then return char.byte - #a.byte + 16.lower_byte()
   if char.is_upper() then return char.byte - #A.byte + 16.lower_byte()
   panic("not a digit")
@@ -175,7 +175,7 @@ fun first(string: String, amount: Int): String {
   amount <= string.len or panic("first amount too big")
   string.substr(0..amount)
 }
-fun last(string: String): T {
+fun last(string: String): Char {
   string.is_not_empty() or panic("last only works on non-empty strs")
   string.get(string.len.dec())
 }

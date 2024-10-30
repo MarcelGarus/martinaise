@@ -54,10 +54,10 @@ var null = 0.to_address() | Million dollar mistake?
 fun ==(a: Address, b: Address): Bool { a.to_int() == b.to_int() }
 fun +(a: Address, offset: Int): Address { {a.to_int() + offset}.to_address() }
 
-fun or(address: Address): ControlFlow[Address] {
+fun or(address: Address): ControlFlow[Address, Nothing] {
   if address == null
-  then ControlFlow[Address].evaluate_alternative
-  else ControlFlow[Address].short_circuit(address)
+  then ControlFlow[Address, Nothing].evaluate_alternative
+  else ControlFlow[Address, Nothing].short_circuit(address)
 }
 
 fun write[W](writer: W, address: Address) {
