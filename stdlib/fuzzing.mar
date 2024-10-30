@@ -99,7 +99,9 @@ fun run_sandboxed[Input](input: Input): InputThatRan[Input] {
   current_cov.reset()
 
   var input_copy = input.copy()
+  disable_syscalls()
   var res = try input_copy.run()
+  enable_syscalls()
 
   var coverage = coverage(current_cov.len)
   coverage.integrate(current_cov)
@@ -113,6 +115,13 @@ fun run_sandboxed[Input](input: Input): InputThatRan[Input] {
 
   InputThatRan { input, arg_strings, coverage, result }
 }
+fun enable_syscalls() asm {
+  movei a _syscalls_enabled  moveib b 1  store a b  ret
+}
+fun disable_syscalls() asm {
+  movei a _syscalls_enabled  moveib b 0  store a b  ret
+}
+
 fun complexity[Input](input: InputThatRan[Input]): Int {
   var sum = 0
   for arg in input.arg_strings do sum = sum + arg.len

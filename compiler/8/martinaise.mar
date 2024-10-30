@@ -5119,6 +5119,7 @@ fun assemble(mono: Mono, entry_point: String, asm: &Asm): Result[Nothing, Error]
         0.lower_byte()))
   asm.soil.initial_mem.&.put("_coverage_bitset", empty_slice[Byte]())
   asm.soil.initial_mem.&.put("_coverage_len", filled_slice(8, 0.lower_byte()))
+  asm.soil.initial_mem.&.put("_syscalls_enabled", filled_slice(1, 1.lower_byte()))
 
   asm.set_src(src("_setup", 0..0))
   asm.define_label("_start")
@@ -5969,6 +5970,8 @@ fun instrument(
   new.soil.initial_mem.&.put("_coverage_len", Slice[Byte] {
     len = 8, data = {2 * num_cjumps + 1}.put_on_heap().to_address()
   })
+  new.soil.initial_mem.&.put("_syscalls_enabled",
+    filled_slice(1, 1.lower_byte()))
 
   var label = ""
   var cjump_index = 0
@@ -6028,18 +6031,39 @@ fun instrument(
         new.&.storeb(Reg.a, Reg.b) | <---------------------+
         new.&.pop(Reg.b)
         new.&.pop(Reg.a)
-        to_patch.&.push(new.soil.instructions.len) new.&.cjump(target)
+        to_patch.&.push(new.soil.instructions.len)
+        new.&.cjump(target)
 
         cjump_index = cjump_index + 1
       } else {
-        to_patch.&.push(new.soil.instructions.len) new.&.emit(instruction)
+        to_patch.&.push(new.soil.instructions.len)
+        new.&.emit(instruction)
       }
     }
     case call(target) {
-      to_patch.&.push(new.soil.instructions.len) new.&.emit(instruction)
+      to_patch.&.push(new.soil.instructions.len)
+      new.&.emit(instruction)
     }
     case trystart(catch) {
-      to_patch.&.push(new.soil.instructions.len) new.&.emit(instruction)
+      to_patch.&.push(new.soil.instructions.len)
+      new.&.emit(instruction)
+    }
+    case syscall(number) {
+      var ignore = { | ignore print or log
+        var number = number.to_int()
+        number == 1 or number == 2
+      }
+      eprintln("Transforming syscall {number}")
+
+      new.&.moveimem(Reg.st, "_syscalls_enabled")
+      new.&.loadb(Reg.st, Reg.st)
+      new.&.cjump(new.soil.instructions.len + 2) | ------+
+      if ignore then                                     |
+        new.&.jump(new.soil.instructions.len + 2) | ---+ |
+      else                                             | |
+        new.&.panic()                                  | |
+      new.&.syscall(number) | <------------------------|-+
+      | <----------------------------------------------+
     }
     default new.&.emit(instruction)
   }
@@ -6390,6 +6414,7 @@ fun main(): Never {
       case position(pos) some(tuple(path, pos))
       case fun_ none[Tuple2[String, CodePosition]]()
     soil = soil.instrument(fuzzed_fun, pos)
+    | eprintln("Fuzzed soil:\n{soil}")
 
     var binary = soil.to_binary()
 
