@@ -158,19 +158,22 @@ interface ErrorMessage {
   context: string[];
 }
 interface ExampleMessage {
-  type: "example";
-  inputs: string[];
-  result: ExampleResult;
+  type: "example_calls";
   fun_start_line: number;
   fun_name: string;
+  calls: ExampleCall[];
+}
+interface ExampleCall {
+  inputs: string[];
+  result: ExampleResult;
 }
 type ExampleResult = ExampleReturned | ExamplePanicked;
 interface ExampleReturned {
-  status: "returned",
+  status: "returned";
   value: string;
 }
 interface ExamplePanicked {
-  status: "panicked",
+  status: "panicked";
   message: string;
 }
 
@@ -236,15 +239,33 @@ async function fuzz(document: vs.TextDocument, position: vs.Position) {
   });
   linebyline(soil.stderr).on("line", (line: string) => console.log(line));
 
-  const examples: ExampleMessage[] = [];
   linebyline(soil.stdout).on("line", async function (line: string) {
     console.info("Line: " + line);
     const message = JSON.parse(line) as FuzzMessage;
     if (message.type == "read_file") {
       soil.stdin.write(await handleReadFileMessage(message));
     }
-    if (message.type == "example") {
-      examples.push(message);
+    if (message.type == "example_calls") {
+      let editor: vs.TextEditor | null = null;
+      for (const e of vs.window.visibleTextEditors)
+        if (e.document.uri.toString() == path) editor = e;
+      if (!editor) return;
+
+      const decorations: vs.DecorationOptions[] = [];
+      for (const call of message.calls) {
+        console.info(`Example call: ${JSON.stringify(call)}`);
+        const position = new vs.Position(message.fun_start_line, 80);
+        let text = `${message.fun_name}(${call.inputs.join(", ")})`;
+        if (call.result.status == "returned") text += ` = ${call.result.value}`;
+        if (call.result.status == "panicked") text += ` = <panicked>`;
+        decorations.push({
+          range: new vs.Range(position, position),
+          renderOptions: {
+            after: { contentText: text },
+          },
+        });
+      }
+      editor.setDecorations(exampleDecoration, decorations);
     }
   });
 
@@ -252,26 +273,4 @@ async function fuzz(document: vs.TextDocument, position: vs.Position) {
     soil.on("close", (exitCode) => resolve(exitCode)),
   );
   console.info(`martinaise fuzz exited with ${exitCode}.`);
-
-  let editor: vs.TextEditor | null = null;
-  for (const e of vs.window.visibleTextEditors)
-    if (e.document.uri.toString() == path)
-      editor = e;
-  if (!editor) return;
-
-  const decorations: vs.DecorationOptions[] = [];
-  for (const example of examples) {
-    console.info(`Example: ${JSON.stringify(example)}`);
-    const position = new vs.Position(example.fun_start_line, 80);
-    let text = `${example.fun_name}(${example.inputs.join(", ")})`;
-    if (example.result.status == "returned") text += ` = ${example.result.value}`;
-    if (example.result.status == "panicked") text += ` = <panicked>`;
-    decorations.push({
-      range: new vs.Range(position, position),
-      renderOptions: {
-        after: { contentText: text },
-      },
-    });
-  }
-  editor.setDecorations(exampleDecoration, decorations);
 }
