@@ -2952,6 +2952,35 @@ fun compile_fuzzer_main(ast: Ast, input: Type): Result[Mono, Error] {
     ))
   ok[Mono, Error](mono)
 }
+fun check_all_funs(ast: Ast): List[Error] {
+  print_status("Monoing")
+
+  var context = context()
+  var mono = Mono {
+    type_defs = map[Type, MonoTypeDef](),
+    layouts = map[Type, MemLayout](),
+    globals = map[String, MonoFun](),
+    globals_init_order = list[String](),
+    funs = map[String, MonoFun](),
+    entry_point = "<placeholder>",
+  }
+
+  type("Never").compile(ast, mono.&) or(error) return list(error)
+  type("Nothing").compile(ast, mono.&) or(error) return list(error)
+
+  var errors = list[Error]()
+  for fun_ in ast.funs do
+    for fun_ in fun_.value do
+      if fun_.type_args.is_empty() then
+        if fun_.compile(map[String, Type](), context.&, ast, mono.&) is error(e)
+        then errors.&.push(e)
+
+  | var signature = fun_.compile(context.&, ast, mono.&)
+  |   or(error) return error[Mono, Error](make_error(
+  |     error.src, error.title, error.description, context.signatures))
+
+  errors
+}
 
 | Monomorphizes a type, outputting all the required type defs into the Mono. For
 | example, monomorphizing Map[T, Bool] with {T: Int} results in Map[Int, Bool]
@@ -6055,6 +6084,7 @@ var help_for_martinaise = "
   '  ast <file>            prints the abstract syntax tree\n
   '  mono <file>           prints the monomorphized code\n
   '  soil <file>           prints the Soil instructions\n
+  '  check <file>          checks the file for errors\n
   '  compile <file>        compiles the file to a Soil binary\n
   '  run <file>            compiles and runs the file\n
   '  funs <file>           prints all functions\n
@@ -6076,6 +6106,9 @@ var help_for_soil = "
   'Usage: martinaise soil <file>\n
   'Prints the Soil instructions and initial memory.\n
   'Useful for debugging the language itself."
+var help_for_check = "
+  'Usage: martinaise check <file>\n
+  'Checks the file for errors."
 var help_for_compile = "
   'Usage: martinaise compile <file>\n
   'Compiles the given .mar file into a .soil file that runs the main function."
@@ -6105,6 +6138,7 @@ enum Command {
   ast: String,
   mono: String,
   soil: String,
+  check: String,
   compile: String,
   run: String,
   funs: String,
@@ -6165,6 +6199,10 @@ fun parse_args(): Command {
     args.len == 3 or wrong_usage(help_for_soil)
     args.get(2).ensure_mar_extension()
   })
+  else if command == "check" then Command.check({
+    args.len == 3 or wrong_usage(help_for_check)
+    args.get(2).ensure_mar_extension()
+  })
   else if command == "compile" then Command.compile({
     | TODO: support specifying output file
     args.len == 3 or wrong_usage(help_for_compile)
@@ -6217,11 +6255,14 @@ fun parse_args(): Command {
   else wrong_usage(help_for_martinaise)
 }
 
+fun report(error: Error) {
+  if tooling_mode
+  then println(error.to_json())
+  else { eprintln() stderr.write(error) eprintln() }
+}
 fun unwrap_or_report_and_exit[T](result: Result[T, Error]): T {
   result or(error) {
-    if tooling_mode
-    then println(error.to_json())
-    else { eprintln() stderr.write(error) eprintln() }
+    report(error)
     exit(1)
   }
 }
@@ -6261,6 +6302,19 @@ fun main(): Never {
     var mono = ast.compile_main().unwrap_or_report_and_exit()
     var soil = mono.soil().unwrap_or_report_and_exit()
     print_status("{soil}")
+  }
+  case check(path) {
+    var ast = parse_project(path).unwrap_or_report_and_exit()
+    var errors = ast.check_all_funs()
+    if errors.is_empty()
+    then {
+      print_status("No errors found.")
+      exit(0)
+    }
+    else {
+      for error in errors do error.report()
+      exit(1)
+    }
   }
   case compile(path) {
     var start = now_instant()
@@ -6353,8 +6407,16 @@ fun main(): Never {
     switch command
     case analyze(path) {
       var ast = parse_project(path).unwrap_or_report_and_exit()
-      var mono = ast.compile_main().unwrap_or_report_and_exit()
-      var soil = mono.soil().unwrap_or_report_and_exit()
+      var errors = ast.check_all_funs()
+      if errors.is_empty()
+      then {
+        print_status("No errors found.")
+        exit(0)
+      }
+      else {
+        for error in errors do error.report()
+        exit(1)
+      }
     }
     case fuzz(fuzz) {
       var path = fuzz.path
