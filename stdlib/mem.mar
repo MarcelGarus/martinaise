@@ -316,8 +316,7 @@ fun mutate[T](slice: Slice[T], random: &Random, temperature: Int): Slice[T] {
   if temperature == 0 then return slice
   var copy = uninitialized_list[T](slice.len)
   slice.copy_to(copy.to_slice())
-  var rand = random.next_int(0..temperature)
-  if slice.is_not_empty() and rand < 50 then {
+  if slice.is_not_empty() and random.next_bool() then {
     | Mutate an inner element.
     var temperature = temperature * 12 / 10
     var index = random.next_int(0..slice.len)
@@ -333,7 +332,7 @@ fun mutate[T](slice: Slice[T], random: &Random, temperature: Int): Slice[T] {
   copy.to_slice()
 }
 
-fun to_list[T](slice: Slice[T]): Vec[T] {
+fun to_list[T](slice: Slice[T]): List[T] {
   var list = uninitialized_list[T](slice.len)
   slice.copy_to(list.to_slice())
   list

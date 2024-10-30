@@ -5,7 +5,7 @@ import stdlib.mar
 | generates a $Input struct that contains the inputs to the fuzzed function and
 | then calls fuzzer_main[$Input](). The following functions are also generated:
 | - run($Input): _                       | runs the fuzzed function
-| - arg_strings($Input): Vec[String]        | stringifies the arguments
+| - arg_strings($Input): List[String]    | stringifies the arguments
 
 struct FuzzingInfo {
   has_target_position: Bool,
@@ -32,6 +32,7 @@ fun fuzzer_main[Input](): Never {
   }
   var inputs = list[InputThatRan[Input]]()
 
+  eprintln("Phase 1: Generating random inputs")
   for i in 0..200 do {
     var checkpoint = heap_checkpoint()
     var input = static[Input]().generate(random.&, 100)
@@ -39,11 +40,18 @@ fun fuzzer_main[Input](): Never {
     if input.improves_upon(front) then {
       front.&.integrate(input)
       inputs.&.push(input)
-      report(input)
-    } else
+      report(inputs)
+    } else {
       free_everything_allocated_after(checkpoint)
+    }
   }
 
+  eprintln("End of phase 1.")
+  eprintln("{inputs.len} interesting inputs:")
+  for input in inputs do
+    eprintln(input.input.debug())
+
+  eprintln("Phase 2: Shrinking inputs")
   for i in 0..infinity do {
     if inputs.len <= i then break
     var j = 0
@@ -54,19 +62,20 @@ fun fuzzer_main[Input](): Never {
       var checkpoint = heap_checkpoint()
       var original = inputs.get(i)
       var temperature = 100000 / {j + 1} / {j + 1}
-      var mutated = original.input.mutate(random.&, 10000).run_sandboxed()
+      var mutated = original.input.mutate(random.&, 1000).run_sandboxed()
 
       | eprintln("Mutated (comp {mutated.fuzzing_complexity()}) and original (comp {original.fuzzing_complexity()})")
       if mutated.fuzzing_complexity() < original.fuzzing_complexity()
         and not(original.improves_upon(mutated))
       then {
+        eprintln("Found better representative: {mutated.debug()}")
         inputs.get_ref(i).* = mutated
-        report(mutated)
+        report(inputs)
         j = 0
       } else if mutated.improves_upon(front) then {
         front.&.integrate(mutated)
         inputs.&.push(mutated)
-        report(mutated)
+        report(inputs)
       } else
         free_everything_allocated_after(checkpoint)
     }
@@ -123,23 +132,33 @@ fun integrate[Input](front: &FuzzFront, input: InputThatRan[Input]) {
   front.coverage.integrate(input.coverage)
   if input.result is error then front.crashes = true
 }
-fun report[Input](input: InputThatRan[Input]) {
-  var info = static[Input]().fuzzing_info()
-  if info.has_target_position and not(input.coverage.reached_target()) then
-    return {}
 
+fun report[Input](inputs: List[InputThatRan[Input]]) {
+  var info = static[Input]().fuzzing_info()
+
+  var calls_array = list[Json]()
+  for input in inputs do {
+    if info.has_target_position and not(input.coverage.reached_target()) then
+      continue
+    calls_array.&.push(input.to_json())
+  }
+  println(Json.map(map(
+    "type" -> Json.string("example_calls"),
+    "fun_start_line" -> Json.int(info.fun_line),
+    "fun_name" -> Json.string(info.fun_name),
+    "calls" -> Json.array(calls_array),
+  )))
+}
+fun to_json[Input](input: InputThatRan[Input]): Json {
   var json_args = list[Json]()
   for arg in input.arg_strings do json_args.&.push(Json.string(arg))
-  println(Json.map(map(
-    "type" -> Json.string("example"),
+  Json.map(map(
     "inputs" -> Json.array(json_args),
     "result" -> Json.map(map(
       "status" -> Json.string("returned"),
       "value" -> Json.string(input.result or "<panicked>"),
     )),
-    "fun_start_line" -> Json.int(info.fun_line),
-    "fun_name" -> Json.string(info.fun_name),
-  )))
+  ))
 }
 
 | Generating and mutating values  
@@ -174,8 +193,8 @@ fallback fun fuzzing_complexity[T](value: T): Float { ... }
 | Splits a complexity into n smaller complexities with a sum <= the original
 | one.
 fun split(random: &Random, complexity: Int, n: Int): Slice[Int] {
-  | TODO: add some random variation
   if n == 0 then return empty_slice[Int]()
+  | TODO: add some random variation
   filled_slice(n, complexity / n)
 }
 fun split_2(random: &Random, complexity: Int): Tuple2[Int, Int] {

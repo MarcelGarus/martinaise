@@ -13,6 +13,7 @@ var space = #
 var tab = 9.lower_byte().to_char()
 var newline = 10.lower_byte().to_char()
 var carriage_return = 13.lower_byte().to_char()
+var visible_ascii = 32.lower_byte().to_char()..127.lower_byte().to_char()
 
 var lowercase_chars = #a..=#z
 var uppercase_chars = #A..=#Z
@@ -45,6 +46,17 @@ fun dec(char: Char): Char { Char { byte = char.byte.dec() } }
 fun +(char: Char, delta: Byte): Char { Char { byte = char.byte + delta } }
 fun -(char: Char, delta: Byte): Char { Char { byte = char.byte - delta } }
 fun -(char: Char, other: Char): Byte { char.byte - other.byte }
+
+fun fuzzing_complexity(char: Char): Float {
+  if char.is_lower() then
+    return 1.0 + {{char - #a}.to_int().to_float() / 26.0 / 10.0}
+  if char.is_upper() then
+    return 1.2 + {{char - #A}.to_int().to_float() / 26.0 / 10.0}
+  if char.is_letter() then return 1.5
+  if char.is_alphanumeric() then return 1.7
+  if visible_ascii.contains(char) then return 2.0
+  3.0
+}
 
 | Strings  
 | A String (short for String) is just a wrapper around a Slice[Byte] and it's what
@@ -119,17 +131,13 @@ fun generate(s: Static[Char], random: &Random, complexity: Int): Char {
   random.next_int(visible_ascii).lower_byte().to_char()
 }
 fun mutate(char: Char, random: &Random, temperature: Int): Char {
-  var visible_ascii = 32.lower_byte()..127.lower_byte()
-  {char.byte.to_int() + random.next_int({0 - temperature}..=temperature)}
-    .lower_byte()
-    .clamp(visible_ascii)
-    .to_char()
+  static[Char]().generate(random, 0)
 }
 fun fuzzing_complexity(string: String): Float {
-  var complexity = string.len.to_float()
+  var chars_complexity = 0.0
   for char in string.chars() do
-    complexity = complexity + char.byte.fuzzing_complexity()
-  complexity
+    chars_complexity = chars_complexity + char.fuzzing_complexity()
+  string.len.to_float() + chars_complexity
 }
 fun generate(s: Static[String], random: &Random, complexity: Int): String {
   var len = random.next_int(0..=complexity)
@@ -224,7 +232,7 @@ fun contains(string: String, needle: Char): Bool {
 }
 fun contains(string: String, needle: String): Bool {
   if needle.len > string.len then return false
-  for i in 0..{string.len - needle.len} do
+  for i in 0..={string.len - needle.len} do
     if string.substr(i..+needle.len) == needle then return true
   false
 }
