@@ -3308,11 +3308,9 @@ fun compile_in_current_scope(
       body.string(string)
     }
     case name(name) {
+      body.nop(name.src)
       switch self.vars.lookup(name.string)
-      case some(expr) {
-        body.nop(name.src)
-        expr
-      }
+      case some(expr) expr
       case none {
         switch ast.lookup_global(name.string)
         case some(global) {
