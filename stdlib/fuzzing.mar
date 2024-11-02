@@ -116,10 +116,10 @@ fun run_sandboxed[Input](input: Input): InputThatRan[Input] {
   InputThatRan { input, arg_strings, coverage, result }
 }
 fun enable_syscalls() asm {
-  movei a _syscalls_enabled  moveib b 1  store a b  ret
+  movei a _syscalls_enabled  moveib b 1  storeb a b  ret
 }
 fun disable_syscalls() asm {
-  movei a _syscalls_enabled  moveib b 0  store a b  ret
+  movei a _syscalls_enabled  moveib b 0  storeb a b  ret
 }
 
 fun complexity[Input](input: InputThatRan[Input]): Int {
