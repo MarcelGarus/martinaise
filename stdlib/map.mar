@@ -139,7 +139,7 @@ fun write_debug[W, K, V](writer: W, map: Map[K, V]) {
 }
 fun copy[K, V](map: Map[K, V]): Map[K, V] {
   var copy = map[K, V]()
-  for entry in map do copy.&.push(entry.copy())
+  for entry in map do copy.&.put(entry.key.copy(), entry.value.copy())
   copy
 }
 
@@ -174,7 +174,7 @@ fun mutate[K, V](map: Map[K, V], random: &Random, temperature: Int): Map[K, V] {
       if entry_index == mutated_entry
       then {
         if random.next_bool()
-        then copy.&.put(entry.key.mutate(random, temperature).value)
+        then copy.&.put(entry.key.mutate(random, temperature), entry.value)
         else copy.&.put(entry.key, entry.value.mutate(random, temperature))
       }
       else copy.&.put(entry)
@@ -194,6 +194,7 @@ fun mutate[K, V](map: Map[K, V], random: &Random, temperature: Int): Map[K, V] {
       copy.&.put(static[MapEntry[K, V]]().generate(random, 100))
     }
   }
+  copy
 }
 
 fun iter[K, V](map: Map[K, V]): Iter[MapEntry[K, V], _] {

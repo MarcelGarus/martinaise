@@ -30,52 +30,63 @@ fun fuzzer_main[Input](): Never {
   var front = FuzzFront {
     coverage = coverage(get_coverage().len), crashes = false
   }
-  var inputs = list[InputThatRan[Input]]()
+  var samples = list[FuzzingSample[Input]]()
+  var minimizing = 0
 
-  eprintln("Phase 1: Generating random inputs")
-  for i in 0..200 do {
-    var checkpoint = heap_checkpoint()
-    var input = static[Input]().generate(random.&, 100)
-    var input = input.run_sandboxed()
-    if input.improves_upon(front) then {
-      front.&.integrate(input)
-      inputs.&.push(input)
-      report(inputs)
+  var max_total_runs = 1000
+  var total_runs = 0
+  loop {
+    if total_runs >= max_total_runs then break {}
+
+    if samples.get_maybe_ref(minimizing) is some(original) then {
+      stdout."there's an input there\n"
+      var num_shrink_tries = 200
+      var j = 0
+      loop {
+        if total_runs >= max_total_runs then break {}
+
+        j = j + 1
+        if j == num_shrink_tries then break
+
+        var checkpoint = heap_checkpoint()
+        var temperature = num_shrink_tries - j
+        var mutated = original.input.mutate(random.&, j).run_sandboxed()
+        total_runs = total_runs + 1
+
+        | eprintln("Mutated (comp {mutated.fuzzing_complexity()}) and original (comp {original.fuzzing_complexity()})")
+        if original.coverage == mutated.coverage and original.crashes() == mutated.crashes() then {
+          if mutated.fuzzing_complexity() < original.fuzzing_complexity() then {
+            stderr."Replacing {original.input.debug()} with {mutated.input.debug()}\n"
+            original.* = mutated
+            report(samples)
+            j = 0
+          } else free_everything_allocated_after(checkpoint)
+        } else if mutated.crashes() and not(front.crashes)
+          or mutated.coverage.improves_upon(front.coverage)
+        then {
+          front.&.integrate(mutated)
+          samples.&.push(mutated)
+          report(samples)
+        } else free_everything_allocated_after(checkpoint)
+      }
+
+      | We have tried long enough to shrink this input.
+      | TODO: check that this isn't a duplicate shrunk input
+      minimizing = minimizing + 1
     } else {
-      free_everything_allocated_after(checkpoint)
-    }
-  }
-
-  eprintln("End of phase 1.")
-  eprintln("{inputs.len} interesting inputs:")
-  for input in inputs do
-    eprintln(input.input.debug())
-
-  eprintln("Phase 2: Shrinking inputs")
-  for i in 0..infinity do {
-    if inputs.len <= i then break
-    var j = 0
-    loop {
-      if j == 200 then break
-      j = j + 1
-
       var checkpoint = heap_checkpoint()
-      var original = inputs.get(i)
-      var temperature = 100000 / {j + 1} / {j + 1}
-      var mutated = original.input.mutate(random.&, 1000).run_sandboxed()
+      var input = static[Input]().generate(random.&, 100)
+      var sample = input.run_sandboxed()
+      total_runs = total_runs + 1
 
-      | eprintln("Mutated (comp {mutated.fuzzing_complexity()}) and original (comp {original.fuzzing_complexity()})")
-      if mutated.fuzzing_complexity() < original.fuzzing_complexity()
-        and not(original.improves_upon(mutated))
-      then {
-        eprintln("Found better representative: {mutated.debug()}")
-        inputs.get_ref(i).* = mutated
-        report(inputs)
-        j = 0
-      } else if mutated.improves_upon(front) then {
-        front.&.integrate(mutated)
-        inputs.&.push(mutated)
-        report(inputs)
+      var discovered_new_behavior =
+        sample.crashes() and not(front.crashes)
+          or sample.coverage.improves_upon(front.coverage)
+
+      if discovered_new_behavior then {
+        front.&.integrate(sample)
+        samples.&.push(sample)
+        report(samples)
       } else
         free_everything_allocated_after(checkpoint)
     }
@@ -84,14 +95,14 @@ fun fuzzer_main[Input](): Never {
   exit(0)
 }
 struct FuzzFront { coverage: Coverage, crashes: Bool }
-struct InputThatRan[Input] {
+struct FuzzingSample[Input] {
   input: Input,
   arg_strings: Slice[String],
   coverage: Coverage,
   result: Result[String, Nothing],
 }
 
-fun run_sandboxed[Input](input: Input): InputThatRan[Input] {
+fun run_sandboxed[Input](input: Input): FuzzingSample[Input] {
   var arg_strings = input.arg_strings()
   eprint("Running {comma_separated(arg_strings)} -> ")
 
@@ -113,7 +124,7 @@ fun run_sandboxed[Input](input: Input): InputThatRan[Input] {
   eprint(result or "<panicked>")
   eprintln(" (complexity {input.fuzzing_complexity()})")
 
-  InputThatRan { input, arg_strings, coverage, result }
+  FuzzingSample { input, arg_strings, coverage, result }
 }
 fun enable_syscalls() asm {
   movei a _syscalls_enabled  moveib b 1  storeb a b  ret
@@ -122,50 +133,44 @@ fun disable_syscalls() asm {
   movei a _syscalls_enabled  moveib b 0  storeb a b  ret
 }
 
-fun complexity[Input](input: InputThatRan[Input]): Int {
+fun complexity[Input](input: FuzzingSample[Input]): Int {
   var sum = 0
   for arg in input.arg_strings do sum = sum + arg.len
   sum
 }
-fun crashes[Input](input: InputThatRan[Input]): Bool {
+fun crashes[Input](input: FuzzingSample[Input]): Bool {
   switch input.result case ok false case error true
 }
-fun improves_upon[Input](a: InputThatRan[Input], b: InputThatRan[Input]): Bool {
-  a.crashes() and b.crashes().not() or a.coverage.improves_upon(b.coverage)
-}
-fun improves_upon[Input](input: InputThatRan[Input], front: FuzzFront): Bool {
-  input.crashes() and front.crashes.not()
-    or input.coverage.improves_upon(front.coverage)
-}
-fun integrate[Input](front: &FuzzFront, input: InputThatRan[Input]) {
+fun integrate[Input](front: &FuzzFront, input: FuzzingSample[Input]) {
   front.coverage.integrate(input.coverage)
   if input.result is error then front.crashes = true
 }
 
-fun report[Input](inputs: List[InputThatRan[Input]]) {
+fun report[Input](samples: List[FuzzingSample[Input]]) {
+  var checkpoint = heap_checkpoint()
   var info = static[Input]().fuzzing_info()
 
   var calls_array = list[Json]()
-  for input in inputs do {
-    if info.has_target_position and not(input.coverage.reached_target()) then
-      continue
-    calls_array.&.push(input.to_json())
-  }
+  for sample in samples do
+    if not(info.has_target_position) or sample.coverage.reached_target() then
+      calls_array.&.push(sample.to_json())
+
   println(Json.map(map(
     "type" -> Json.string("example_calls"),
     "fun_start_line" -> Json.int(info.fun_line),
     "fun_name" -> Json.string(info.fun_name),
     "calls" -> Json.array(calls_array),
   )))
+  free_everything_allocated_after(checkpoint)
 }
-fun to_json[Input](input: InputThatRan[Input]): Json {
+fun to_json[Input](sample: FuzzingSample[Input]): Json {
   var json_args = list[Json]()
-  for arg in input.arg_strings do json_args.&.push(Json.string(arg))
+  for arg in sample.arg_strings do json_args.&.push(Json.string(arg))
   Json.map(map(
     "inputs" -> Json.array(json_args),
     "result" -> Json.map(map(
       "status" -> Json.string("returned"),
-      "value" -> Json.string(input.result or "<panicked>"),
+      "value" -> Json.string(sample.result or "<panicked>"),
     )),
   ))
 }
@@ -254,6 +259,10 @@ fun reset(coverage: Coverage) asm {
   storeb a d
   add a e add c e jump .loop
   .done: ret
+}
+fun ==(a: Coverage, b: Coverage): Bool {
+  a.len == b.len or panic()
+  memcompare(a.bitset, b.bitset, a.len) is equal
 }
 fun get_ref(coverage: Coverage, index: Int): &Bool {
   {coverage.bitset + index}.to_reference[Bool]()

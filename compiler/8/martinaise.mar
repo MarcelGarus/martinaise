@@ -6020,13 +6020,17 @@ fun instrument(
 
         new.&.push(Reg.a)
         new.&.push(Reg.b)
+        new.&.push(Reg.c)
         new.&.moveimem(Reg.a, "_coverage_bitset")
-        new.&.movei(Reg.b, cjump_index) | TODO: not times 2?
+        new.&.movei(Reg.b, cjump_index)
+        new.&.movei(Reg.c, 2)
+        new.&.mul(Reg.b, Reg.c)
         new.&.add(Reg.a, Reg.b)
         new.&.moveib(Reg.b, 1.lower_byte())
         new.&.cjump(new.soil.instructions.len + 2) |-------+
         new.&.add(Reg.a, Reg.b)                            |
         new.&.storeb(Reg.a, Reg.b) | <---------------------+
+        new.&.pop(Reg.c)
         new.&.pop(Reg.b)
         new.&.pop(Reg.a)
         to_patch.&.push(new.soil.instructions.len)

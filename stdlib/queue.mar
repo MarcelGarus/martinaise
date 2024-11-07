@@ -72,9 +72,9 @@ fun pop_back[T](queue: &Queue[T]): T {
 }
 fun get_maybe_ref[T](queue: Queue[T], index: Int): Maybe[&T] {
   {0..queue.len()}.contains(index) or return none[&T]()
-  queue.data.get_ref(queue.start + index % queue.data.len)
+  queue.data.get_maybe_ref(queue.start + index % queue.data.len)
 }
-fun get_maybe_ref[T](queue: Queue[T], index: Int): &T {
+fun get_ref[T](queue: Queue[T], index: Int): &T {
   queue.get_maybe_ref(index) or panic("index out of bounds")
 }
 fun get[T](queue: Queue[T], index: Int): T { queue.get_ref(index).* }
@@ -82,4 +82,17 @@ fun ==[T](a: Queue[T], b: Queue[T]): Bool {
   a.len() == b.len() or return false
   for i in 0..a.len() do a.get(i) == b.get(i) or return false
   true
+}
+
+fun iter[T](queue: Queue[T]): Iter[T, _] {
+  Iter[T, QueueIter[T]] { state = QueueIter { queue, index = 0 } }
+}
+struct QueueIter[T] { queue: Queue[T], index: Int }
+fun next[T](iter: &Iter[T, QueueIter[T]]): Maybe[T] {
+  var state = iter.state.&
+  if state.index < state.queue.len() then {
+    var item = state.queue.get(state.index)
+    state.index = state.index + 1
+    some(item)
+  } else none[T]()
 }

@@ -133,10 +133,13 @@ fun pop[T](list: &List[T]): T {
 fun clear[T](list: &List[T]) { list.len = 0 }
 fun get[T](list: List[T], index: Int): T { list.data.get(index) }
 fun get_maybe[T](list: List[T], index: Int): Maybe[T] {
-  list.data.get_maybe(index)
+  switch list.get_maybe_ref(index)
+  case some(value) some(value.*)
+  case none none[T]()
 }
 fun get_ref[T](list: List[T], index: Int): &T { list.data.get_ref(index) }
 fun get_maybe_ref[T](list: List[T], index: Int): Maybe[&T] {
+  {0..list.len}.contains(index) or return none[&T]()
   list.data.get_maybe_ref(index)
 }
 fun set[T](list: &List[T], index: Int, value: T) {
