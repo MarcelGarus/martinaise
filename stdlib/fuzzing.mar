@@ -33,7 +33,7 @@ fun fuzzer_main[Input](): Never {
   var samples = list[FuzzingSample[Input]]()
   var minimizing = 0
 
-  var max_total_runs = 1000
+  var max_total_runs = 10000
   var total_runs = 0
   loop {
     if total_runs >= max_total_runs then break {}
