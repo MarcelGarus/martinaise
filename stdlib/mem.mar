@@ -394,10 +394,10 @@ fun first[T](slice: Slice[T], amount: Int): Slice[T] {
   slice.subslice(0..amount)
 }
 fun last_maybe_ref[T](slice: &Slice[T]): Maybe[&T] {
-  slice.data.get_maybe_ref(slice.len - 1)
+  slice.get_maybe_ref(slice.len - 1)
 }
 fun last_maybe[T](slice: Slice[T]): Maybe[T] {
-  slice.data.get_maybe(slice.len - 1)
+  slice.get_maybe(slice.len - 1)
 }
 fun last_ref[T](slice: &Slice[T]): &T { slice.get_ref(slice.len - 1) }
 fun last[T](slice: Slice[T]): T {

@@ -127,8 +127,12 @@ fun push_all[T, I](list: &List[T], items: Iter[T, I]) {
 }
 fun pop[T](list: &List[T]): T {
   if list.len == 0 then panic("called pop on empty List")
-  list.len = list.len.dec()
+  list.len = list.len - 1
   list.data.get(list.len)
+}
+fun pop[T](list: &List[T], n: Int) {
+  if list.len < n then panic("called pop({n}) on List with only {list.len} items")
+  list.len = list.len - n
 }
 fun clear[T](list: &List[T]) { list.len = 0 }
 fun get[T](list: List[T], index: Int): T { list.data.get(index) }
