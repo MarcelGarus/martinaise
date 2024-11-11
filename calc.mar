@@ -6,18 +6,21 @@ struct Unit { exponents: Map[String, Int] }
 
 struct Amount { src: Range[Int], number: Float, unit: Unit }
 
-struct Operands[T] { left: &T, right: &T }
-
 enum Term {
   amount: Amount,
-  add: Operands[Term],
-  subtract: Operands[Term],
-  multiply: Operands[Term],
-  divide: Operands[Term],
+  add: Operands,
+  subtract: Operands,
+  multiply: Operands,
+  divide: Operands,
 }
+struct Operands { left: &Term, right: &Term }
 
 fun no_unit(): Unit { Unit { exponents = map[String, Int]() } }
 fun unit(string: String): Unit { Unit { exponents = map(string -> 1) } }
+
+fun write_debug[W](writer: W, unit: Unit) { writer."{unit}" }
+fun write_debug[W](writer: W, term: Term) { writer."{term}" }
+
 fun is_none(unit: Unit): Bool { unit.exponents.is_empty() }
 fun ==(a: Unit, b: Unit): Bool {
   a.exponents.size == b.exponents.size or return false
@@ -40,7 +43,7 @@ fun inverse(unit: Unit): Unit {
 }
 fun /(a: Unit, b: Unit): Unit { a * b.inverse() }
 
-fun ops[T](left: T, right: T): Operands[T] {
+fun ops(left: Term, right: Term): Operands {
   Operands { left = left.put_on_heap(), right = right.put_on_heap() }
 }
 
@@ -50,10 +53,13 @@ struct Parser { line: String, cursor: Int }
 
 var null_char = 0.lower_byte().to_char()
 fun parser(line: String): Parser {
-  Parser { line = "{line}{null_char}", cursor = 0 }
+  Parser { line = "{line}", cursor = 0 }
+}
+fun generate(static: Static[Parser], random: &Random, complexity: Int): Parser {
+  Parser { line = static[String]().generate(random, complexity), cursor = 0 }
 }
 
-fun current(parser: Parser): Char { parser.line.get_unchecked(parser.cursor) }
+fun current(parser: Parser): Char { parser.line.get(parser.cursor) }
 fun rest(parser: Parser): String {
   parser.line.substr(parser.cursor..parser.line.len)
 }
@@ -262,7 +268,7 @@ fun write[W](writer: W, term: AsTree[Term]) {
   var indent = term.indent
   for i in 0..indent do writer."  "
   switch term.value
-  case amount(amount) writer."amount"
+  case amount(amount) writer."{amount}"
   case add(ops) writer."+\n{ops.left.*.as_tree(indent + 1)}\n{ops.right.*.as_tree(indent + 1)}"
   case subtract(ops) writer."-\n{ops.left.*.as_tree(indent + 1)}\n{ops.right.*.as_tree(indent + 1)}"
   case multiply(ops) writer."*\n{ops.left.*.as_tree(indent + 1)}\n{ops.right.*.as_tree(indent + 1)}"
