@@ -40,7 +40,7 @@ fun fuzzer_main[Input](): Never {
 
     if samples.get_maybe_ref(minimizing) is some(original) then {
       stdout."there's an input there\n"
-      var num_shrink_tries = 200
+      var num_shrink_tries = 1000
       var j = 0
       loop {
         if total_runs >= max_total_runs then break {}
