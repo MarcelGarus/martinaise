@@ -1,42 +1,86 @@
 import stdlib.mar
 
-struct Operands[T] { left: &T, right: &T }
-
 enum Term {
-  num: Int,
-  add: Operands[Term],
-  mul: Operands[Term],
+  number: Int,
+  add: Operands,
+  subtract: Operands,
+  multiply: Operands,
+  divide: Operands,
 }
+struct Operands { left: &Term, right: &Term }
 
 fun eval(term: Term): Int {
   switch term
-  case num(num) num
+  case number(num) num
   case add(op) op.left.eval() + op.right.eval()
-  case mul(op) op.left.eval() * op.right.eval()
+  case subtract(op) op.left.eval() - op.right.eval()
+  case multiply(op) op.left.eval() * op.right.eval()
+  case divide(op) op.left.eval() / op.right.eval()
 }
 
 fun write[W](writer: W, term: Term) {
   switch term
-  case num(num) writer."{num}"
-  case add(op) writer."{
-      switch op.left.* case num "{op.left}" default "({op.left})"
-    } + {
-      switch op.right.* case num "{op.right}" default "({op.right})"
-    }"
-  case mul(op) writer."{
-    switch op.left.* case num "{op.left}" default "({op.left})"
-  } * {
-    switch op.right.* case num "{op.right}" default "({op.right})"
-  }"
+  case number(num) writer."{num}"
+  case add(op) writer."{op.left} + {op.right}"
+  case subtract(op)
+    writer."{op.left} - {{
+      var needs_parens = op.right.* is add or {op.right.* is subtract}
+      if needs_parens then "({op.right})" else "{op.right}"
+    }}"
+  case multiply(op)
+    writer."{{
+      var needs_parens = op.left.* is add or {op.left.* is subtract}
+      if needs_parens then "({op.left})" else "{op.left}"
+    }} * {{
+      var needs_parens = op.right.* is add or {op.right.* is subtract}
+      if needs_parens then "({op.right})" else "{op.right}"
+    }}"
+  case divide(op)
+    writer."{{
+      var needs_parens = op.left.* is add or {op.left.* is subtract}
+      if needs_parens then "({op.left})" else "{op.left}"
+    }} / {{
+      var needs_parens = not(op.right.* is number)
+      if needs_parens then "({op.right})" else "{op.right}"
+    }}"
 }
 fun write_debug[W](writer: W, term: Term) { writer."{term}" }
 
-fun ops[T](left: T, right: T): Operands[T] {
+fun ops(left: Term, right: Term): Operands {
   Operands { left = left.put_on_heap(), right = right.put_on_heap() }
 }
 
+fun print_generate_table() {
+  println("Generate table:")
+  var random = random_number_generator()
+  for complexity in list(0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500) do {
+    var term = static[Term]().generate(random.&, complexity)
+    print("{complexity} & {term} & {switch try term.eval() case ok(num) "{num}" case error "-"} \\\\ \\hline \n")
+  }
+}
+
+fun print_mutate_table() {
+  var random = random_number_generator()
+  | -2 * 4 * -9 * -5 / (-6 * -2 * -9 / -5)
+  var term = Term.divide(ops(
+    Term.multiply(ops(
+      Term.multiply(ops(Term.number(0-2), Term.number(4))),
+      Term.multiply(ops(Term.number(0-9), Term.number(0-5))),
+    )),
+    Term.multiply(ops(
+      Term.multiply(ops(Term.number(0-6), Term.number(0-2))),
+      Term.divide(ops(Term.number(0-9), Term.number(0-5))),
+    ))
+  ))
+  println("Original term: {term}")
+  println("Mutate table:")
+  for temperature in list(0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500) do {
+    var term = term.mutate(random.&, temperature)
+    print("{temperature} & {term} & {switch try term.eval() case ok(num) "{num}" case error "-"} \\\\ \\hline \n")
+  }
+}
+
 fun main(): Never {
-  var term = Term.add(ops(Term.num(2), Term.num(3)))
-  println("{term} = {term.eval()}")
+  print_mutate_table()
   exit(0)
 }
