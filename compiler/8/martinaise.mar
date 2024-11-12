@@ -4725,12 +4725,18 @@ fun compile_mutate_fun(
   case opaque_ return error[MonoFunBody, Error](make_error(src,
     "For opaque types, you need to implement a mutate function yourself."))
   case struct_(struct_) {
+    | if random.next_bool(temperature) then
+    |   return Static[SomeStruct]{}.generate(random, value.fuzzing_complexity())
     | var field_to_change = random.next_int(0..2)
     | SomeStruct {
-    |   foo = if field_to_change == 0 then value.foo.mutate(random, temperature) else value.foo,
-    |   bar = if field_to_change == 1 then value.bar.mutate(random, temperature) else value.bar,
+    |   foo = if field_to_change == 0 then value.foo.mutate(random, temperature * 10.0) else value.foo,
+    |   bar = if field_to_change == 1 then value.bar.mutate(random, temperature * 10.0) else value.bar,
     | }
     if struct_.fields.len > 0 then {
+      var create_new = body.uninitialized(type("Bool"))
+      body.call_matching_fun(create_new, "next_bool" @ src, list(random), src)?
+      body.jump_if_variant(create_new, "true", struct_.fields.len + 1, src)
+
       var range = body.uninitialized(type("Range", list(type("Int"))))
       body.call_matching_fun(range, ".." @ src,
         list(body.int(0), body.int(struct_.fields.len)), src)?
@@ -4743,9 +4749,9 @@ fun compile_mutate_fun(
         var field = it.item
 
         body.label(it.index, src)
+        body.assign(result.member(field), value.member(field), src)
         body.call_matching_fun(check, "==" @ src,
           list(field_to_change, body.int(it.index)), src)?
-        body.assign(result.member(field), value.member(field), src)
         body.jump_if_variant(check, "false", it.index + 1, src)
 
         var new_field_value = body.uninitialized(field.type)
@@ -4754,12 +4760,20 @@ fun compile_mutate_fun(
         body.assign(value.member(field), new_field_value, src)
       }
 
+      body.label(struct_.fields.len + 1, src)
+
+      | doesn't need to be initialized (size 0)
+      var static_payload = body.uninitialized(
+        type("Static", list(value_ty)).compile(body.ast, body.mono)?)
+      body.call_matching_fun(value, "generate" @ src,
+        list(static_payload, random, temperature), src)?
+
       body.label(struct_.fields.len, src)
     }
   }
   case enum_(enum_) {
-    | if random.next_in(0..=temperature) > 50 then
-    |   return Static[SomeEnum]{}.generate(random, 100)
+    | if random.next_bool() then
+    |   return Static[SomeEnum]{}.generate(random, temperature)
     | switch enum
     | case foo(payload) SomeEnum.foo(payload.mutate(random, temperature))
     | case bar(payload) SomeEnum.bar(payload.mutate(random, temperature))
@@ -4767,20 +4781,10 @@ fun compile_mutate_fun(
       src, "Can't mutate instances of {value_ty}."))
 
     type("Bool").compile(body.ast, body.mono)?
-    type("Range", list(type("Int"))).compile(body.ast, body.mono)?
 
-    var lower = body.int(0)
-    var upper = body.int(enum_.variants.len)
-    var range = body.uninitialized(type("Range", list(type("Int"))))
-    body.call_matching_fun(range, ".." @ src, list(lower, upper), src)?
-
-    var choice = body.uninitialized(type("Int"))
-    body.call_matching_fun(choice, "next_int" @ src, list(random, range), src)?
-
-    var is_greater = body.uninitialized(type("Bool"))
-    body.call_matching_fun(
-      is_greater, ">" @ src, list(choice, body.int(50)), src)?
-    body.jump_if_variant(is_greater, "true", enum_.variants.len, src)
+    var create_new = body.uninitialized(type("Bool"))
+    body.call_matching_fun( create_new, "next_bool" @ src, list(random), src)?
+    body.jump_if_variant(create_new, "true", enum_.variants.len, src)
 
     for it in enum_.variants.iter().enumerate() do
       body.jump_if_variant(value, it.item.name, it.index, src)
@@ -4799,11 +4803,15 @@ fun compile_mutate_fun(
 
     body.label(enum_.variants.len, src)
 
+    | var fuzzing_complexity = body.uninitialized(type("Int"))
+    | body.call_matching_fun(fuzzing_complexity, "fuzzing_complexity" @ src,
+    |   list(value), src)?
+
     | doesn't need to be initialized (size 0)
     var static_payload = body.uninitialized(
       type("Static", list(value_ty)).compile(body.ast, body.mono)?)
 
-    body.call_matching_fun(value, "mutate" @ src,
+    body.call_matching_fun(value, "generate" @ src,
       list(static_payload, random, temperature), src)?
     body.jump(enum_.variants.len + 1, src)
     body.label(enum_.variants.len + 1, src)
