@@ -5690,24 +5690,13 @@ fun emit_byte(bin: &SoilBinary, byte: Int) {
 }
 fun emit(bin: &SoilBinary, bytes: Slice[Byte]) { bin.bytes.&.push_all(bytes) }
 fun emit(bin: &SoilBinary, word: Int) {
-  bin.emit_byte(word & 16#ff)
-  bin.emit_byte(word / 16#100 & 16#ff)
-  bin.emit_byte(word / 16#10000 & 16#ff)
-  bin.emit_byte(word / 16#1000000 & 16#ff)
-  bin.emit_byte(word / 16#100000000 & 16#ff)
-  bin.emit_byte(word / 16#10000000000 & 16#ff)
-  bin.emit_byte(word / 16#1000000000000 & 16#ff)
-  bin.emit_byte(word / 16#100000000000000 & 16#ff)
+  var bytes = Slice[Byte] { data = word.&.to_address(), len = 8 }
+  for byte in bytes do bin.emit(byte)
 }
 fun overwrite(bin: &SoilBinary, pos: Int, n: Int) {
-  bin.bytes.&.get_ref(pos + 0).* = {n & 16#ff}.lower_byte()
-  bin.bytes.&.get_ref(pos + 1).* = {n / 16#100 & 16#ff}.lower_byte()
-  bin.bytes.&.get_ref(pos + 2).* = {n / 16#10000 & 16#ff}.lower_byte()
-  bin.bytes.&.get_ref(pos + 3).* = {n / 16#1000000 & 16#ff}.lower_byte()
-  bin.bytes.&.get_ref(pos + 4).* = {n / 16#100000000 & 16#ff}.lower_byte()
-  bin.bytes.&.get_ref(pos + 5).* = {n / 16#10000000000 & 16#ff}.lower_byte()
-  bin.bytes.&.get_ref(pos + 6).* = {n / 16#1000000000000 & 16#ff}.lower_byte()
-  bin.bytes.&.get_ref(pos + 7).* = {n / 16#100000000000000 & 16#ff}.lower_byte()
+  var bytes = Slice[Byte] { data = n.&.to_address(), len = 8 }
+  for i in 0..8 do
+    bin.bytes.&.get_ref(pos + i).* = bytes.get(i)
 }
 fun emit(bin: &SoilBinary, reg: Reg) { bin.emit(reg.to_bits()) }
 fun emit(bin: &SoilBinary, regs: RegAndReg) {
