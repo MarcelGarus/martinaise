@@ -80,6 +80,9 @@ fun abs(value: Int): Int { if value >= 0 then value else 0 - value }
 fun round_up_to_multiple_of(number: Int, factor: Int): Int {
   {number + factor.dec()} / factor * factor
 }
+fun is_multiple_of(number: Int, factor: Int): Bool {
+  number / factor * factor == number
+}
 fun round_up_to_power_of(number: Int, factor: Int): Int {
   var power = 1
   loop if power >= number then break(power) else power = power * factor
