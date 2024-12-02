@@ -50,7 +50,11 @@ fun fuzzer_main[Input](): Never {
 
         var checkpoint = heap_checkpoint()
         var temperature = num_shrink_tries - j
-        var mutated = original.input.mutate(random.&, j).run_sandboxed()
+        var mutated = original.input.mutate_valid(random.&, j) or {
+          free_everything_allocated_after(checkpoint)
+          break
+        }
+        var mutated = mutated.run_sandboxed()
         total_runs = total_runs + 1
 
         | eprintln("Mutated (comp {mutated.fuzzing_complexity()}) and original (comp {original.fuzzing_complexity()})")
@@ -75,7 +79,10 @@ fun fuzzer_main[Input](): Never {
       minimizing = minimizing + 1
     } else {
       var checkpoint = heap_checkpoint()
-      var input = static[Input]().generate(random.&, 100)
+      var input = static[Input]().generate_valid(random.&, total_runs) or {
+        stderr."Couldn't generate another input."
+        break
+      }
       var sample = input.run_sandboxed()
       total_runs = total_runs + 1
 
@@ -102,9 +109,26 @@ struct FuzzingSample[Input] {
   result: Result[String, Nothing],
 }
 
+fun generate_valid[T](
+  static: Static[T], random: &Random, complexity: Int
+): Maybe[T] {
+  for i in 0..100 do {
+    var generated = static.generate(random, complexity)
+    if generated.is_valid() then return some(generated)
+  }
+  none[T]()
+}
+fun mutate_valid[T](value: T, random: &Random, temperature: Int): Maybe[T] {
+  for i in 0..100 do {
+    var mutated = value.mutate(random, temperature)
+    if mutated.is_valid() then return some(mutated)
+  }
+  none[T]()
+}
+
 fun run_sandboxed[Input](input: Input): FuzzingSample[Input] {
   var arg_strings = input.arg_strings()
-  eprint("Running {comma_separated(arg_strings)} -> ")
+  | eprint("Running {comma_separated(arg_strings)} -> ")
 
   var current_cov = get_coverage()
   current_cov.reset()
@@ -121,8 +145,8 @@ fun run_sandboxed[Input](input: Input): FuzzingSample[Input] {
     switch res
     case ok(res) ok[String, Nothing]("{res.debug()}")
     case error error[String, Nothing]({})
-  eprint(result or "<panicked>")
-  eprintln(" (complexity {input.fuzzing_complexity()})")
+  | eprint(result or "<panicked>")
+  | eprintln(" (complexity {input.fuzzing_complexity()})")
 
   FuzzingSample { input, arg_strings, coverage, result }
 }
@@ -227,6 +251,9 @@ fallback fun mutate[T](value: T, random: &Random, temperature: Int): T { ... }
 fun mutate[T](value: &T, random: &Random, temperature: Int): &T {
   value.*.mutate(random, temperature).put_on_heap()
 }
+
+fallback fun is_valid[T](value: T): Bool { ... }
+fun is_valid[T](value: &T): &T { value.*.is_valid() }
 
 | Coverage  
 | The compiler can be configured to instrument the fuzzed function with coverage

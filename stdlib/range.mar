@@ -41,6 +41,7 @@ fun mutate[T](range: Range[T], random: &Random, temperature: Int): Range[T] {
     else tuple(range.start.mutate(random, temperature), range.end)
   bounds.min()..bounds.max()
 }
+fun is_valid[T](range: Range[T]): Bool { range.start <= range.end }
 
 fun iter[T](range: Range[T]): Iter[T, _] {
   Iter[T, RangeIter[T]] { state = RangeIter { rest = range } }

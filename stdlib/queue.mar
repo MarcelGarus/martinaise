@@ -96,3 +96,8 @@ fun next[T](iter: &Iter[T, QueueIter[T]]): Maybe[T] {
     some(item)
   } else none[T]()
 }
+
+fun is_valid[T](queue: Queue[T]): Bool {
+  for item in queue do item.is_valid() or return false
+  true
+}

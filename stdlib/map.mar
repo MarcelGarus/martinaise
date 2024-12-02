@@ -196,6 +196,11 @@ fun mutate[K, V](map: Map[K, V], random: &Random, temperature: Int): Map[K, V] {
   }
   copy
 }
+fun is_valid[K, V](map: Map[K, V]): Bool {
+  for entry in map do
+    entry.key.is_valid() and entry.value.is_valid() or return false
+  true
+}
 
 fun iter[K, V](map: Map[K, V]): Iter[MapEntry[K, V], _] {
   Iter[MapEntry[K, V], MapIter[K, V]] {

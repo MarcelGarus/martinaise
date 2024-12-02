@@ -4250,7 +4250,7 @@ fun compile_builtin_fun(
     slots = list[MonoSlot](), statements = list[MonoStatementAndSrc](),
     context, ast, mono
   }.&
-  
+
   if name == "size_of" then
     return compile_size_of_fun(type_args, arg_types, body, src)
 
@@ -4271,6 +4271,9 @@ fun compile_builtin_fun(
 
   if name == "generate" then
     return compile_generate_fun(type_args, arg_types, body, src)
+
+  if name == "is_valid" then
+    return compile_is_valid_fun(type_args, arg_types, body, src)
 
   if name == "fuzzing_complexity" then
     return compile_fuzzing_complexity_fun(type_args, arg_types, body, src)
@@ -4818,6 +4821,65 @@ fun compile_mutate_fun(
   }
 
   body.return_(value, src)
+
+  ok[MonoFunBody, Error](body.finish())
+}
+
+fun compile_is_valid_fun(
+  type_args: List[Type], arg_types: List[Type], body: &MonoBodyBuilder, src: Src
+): Result[MonoFunBody, Error] {
+  arg_types.len == 1 or return error[MonoFunBody, Error](make_error(
+    src, "is_valid should take exactly one argument."))
+  var value_ty = arg_types.get(0)
+
+  var value = body.arg(value_ty, 0)
+  var nothing = body.uninitialized(type("Nothing"))
+  var result = body.uninitialized(type("Bool"))
+
+  switch body.mono.type_defs.get(value_ty)
+  case opaque_ return error[MonoFunBody, Error](make_error(src,
+    "For opaque types, you need to implement an is_valid function yourself."))
+  case struct_(struct_) {
+    | if not(value.foo.is_valid()) then return false
+    | if not(value.bar.is_valid()) then return false
+    | true
+    for field in struct_.fields.iter() do {
+      var check = body.uninitialized(type("Bool"))
+      body.call_matching_fun(check, "is_valid" @ src,
+        list(value.member(field)), src)?
+
+      body.jump_if_variant(check, "false", 0, src)
+    }
+
+    body.set_enum(result, "true", nothing, src)
+    body.jump(1, src)
+
+    body.label(0, src)
+    body.set_enum(result, "false", nothing, src)
+
+    body.label(1, src)
+  }
+  case enum_(enum_) {
+    | switch enum
+    | case foo(payload) payload.is_valid()
+    | case bar(payload) payload.is_valid()
+
+    for it in enum_.variants.iter().enumerate() do
+      body.jump_if_variant(value, it.item.name, it.index, src)
+    for it in enum_.variants.iter().enumerate() do {
+      body.label(it.index, src)
+      var variant = it.item
+      var payload = body.uninitialized(variant.type)
+      body.get_enum_value(payload, value, variant.name, src)
+
+      body.call_matching_fun(result, "is_valid" @ src, list(payload), src)?
+      body.jump(enum_.variants.len, src)
+    }
+
+    body.label(enum_.variants.len, src)
+  }
+
+  body.return_(result, src)
 
   ok[MonoFunBody, Error](body.finish())
 }
@@ -5968,6 +6030,7 @@ fun instrument(
   new.soil.initial_mem.&.put("_syscalls_enabled",
     filled_slice(1, 1.lower_byte()))
 
+  var now = now_instant()
   var label = ""
   var cjump_index = 0
   var to_patch = list[Int]()
@@ -6048,21 +6111,32 @@ fun instrument(
       new.&.emit(instruction)
     }
     case syscall(number) {
-      var ignore = { | ignore print or log
-        var number = number.to_int()
-        number == 1 or number == 2
-      }
+      var number = number.to_int()
       eprintln("Transforming syscall {number}")
 
       new.&.moveimem(Reg.st, "_syscalls_enabled")
       new.&.loadb(Reg.st, Reg.st)
-      new.&.cjump(new.soil.instructions.len + 2) | ------+
-      if ignore then                                     |
-        new.&.jump(new.soil.instructions.len + 2) | ---+ |
-      else                                             | |
-        new.&.panic()                                  | |
-      new.&.syscall(number) | <------------------------|-+
-      | <----------------------------------------------+
+      if number == 1 then { | print
+        new.&.cjump(new.soil.instructions.len + 2) | -----+
+        new.&.jump(new.soil.instructions.len + 2)  | ---+ |
+        new.&.syscall(number.lower_byte()) | <----------|-+
+        | <---------------------------------------------+
+      } else if number == 2 then { | log
+        new.&.cjump(new.soil.instructions.len + 2) | -----+
+        new.&.jump(new.soil.instructions.len + 2)  | ---+ |
+        new.&.syscall(number.lower_byte()) | <----------|-+
+        | <---------------------------------------------+
+      } else if number == 16 then { | instant_now
+        new.&.cjump(new.soil.instructions.len + 3) | -----+
+        new.&.movei(Reg.a, now.nanos)                     |
+        new.&.jump(new.soil.instructions.len + 2)  | ---+ |
+        new.&.syscall(number.lower_byte()) | <----------|-+
+        | <---------------------------------------------+
+      } else {
+        new.&.cjump(new.soil.instructions.len + 2) | ---+
+        new.&.panic()                                   |
+        new.&.syscall(number.lower_byte()) | <----------+
+      }
     }
     default new.&.emit(instruction)
   }

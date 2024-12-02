@@ -3,6 +3,9 @@ import stdlib.mar
 | Rectangle  
 
 struct Rectangle { left: Int, top: Int, right: Int, bottom: Int }
+fun is_valid(rect: Rectangle): Bool {
+  rect.left <= rect.right and rect.top <= rect.bottom
+}
 
 fun @(a: Point, b: Point): Rectangle {
   Rectangle {

@@ -10,8 +10,14 @@ fun now_instant(): Instant asm {
   store b a ret
 }
 fun nanos_since(a: Instant, b: Instant): Int { a.nanos - b.nanos }
+fun duration_since(a: Instant, b: Instant): Duration {
+  a.nanos_since(b).to_float().nanoseconds()
+}
 
 struct Timer { start: Instant }
 
 fun start_timer(): Timer { Timer { start = now_instant() } }
 fun read_nanos(timer: Timer): Int { now_instant().nanos_since(timer.start) }
+fun read_duration(timer: Timer): Duration {
+  timer.read_nanos().to_float().nanoseconds()
+}

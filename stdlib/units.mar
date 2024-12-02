@@ -47,6 +47,7 @@ fun in_nanoseconds(duration: Duration): Float { 1000000000.0 * duration.seconds 
 fun in_minutes(duration: Duration): Float { duration.seconds / 60.0 }
 fun in_hours(duration: Duration): Float { duration.seconds / 60.0 / 60.0 }
 fun in_days(duration: Duration): Float { duration.seconds / 60.0 / 60.0 / 24.0 }
+fun in_years(duration: Duration): Float { duration.seconds / 60.0 / 60.0 / 24.0 / 365.25 }
 
 fun meters(meters: Float): Length { Length { meters } }
 fun decimeters(val: Float): Length { Length { meters = val / 10.0 } }

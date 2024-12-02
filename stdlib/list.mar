@@ -203,6 +203,10 @@ fun fuzzing_complexity[T](list: List[T]): Float {
 fun mutate[T](list: List[T], random: &Random, temperature: Int): List[T] {
   list.to_slice().mutate(random, temperature).to_list()
 }
+fun is_valid[T](list: List[T]): Bool {
+  for item in list do item.is_valid() or return false
+  true
+}
 
 fun +[T](a: List[T], b: List[T]): List[T] {
   var concatenated = uninitialized_list[T](a.len + b.len)

@@ -167,7 +167,7 @@ fun write_debug[W](writer: W, int: Int) { writer."{int}" }
 
 fun generate(s: Static[Int], random: &Random, complexity: Int): Int {
   random.next_int(if complexity < 50 then 0 +- 10 else {
-    0 +- complexity
+    0 +- {2 ** complexity}
   })
 }
 fun fuzzing_complexity(int: Int): Float { int.abs().inc().log_2().to_float() }

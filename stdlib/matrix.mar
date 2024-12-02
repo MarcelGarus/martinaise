@@ -117,5 +117,11 @@ fun mutate[T](matrix: Matrix[T], random: &Random, temperature: Int): Matrix[T] {
   matrix.&.get_ref(x @ y).mutate(random, temperature)
   matrix
 }
+fun is_valid[T](matrix: Matrix[T]): Bool {
+  for x in 0..matrix.width do
+    for y in 0..matrix.height do
+      matrix.get(x @ y).is_valid() or return false
+  true
+}
 
 fun sum(matrix: Matrix[Int]): Int { matrix.data.sum() }

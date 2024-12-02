@@ -331,6 +331,10 @@ fun mutate[T](slice: Slice[T], random: &Random, temperature: Int): Slice[T] {
   }
   copy.to_slice()
 }
+fun is_valid[T](slice: Slice[T]): Bool {
+  for item in slice do item.is_valid() or return false
+  true
+}
 
 fun to_list[T](slice: Slice[T]): List[T] {
   var list = uninitialized_list[T](slice.len)
