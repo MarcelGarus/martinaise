@@ -1861,7 +1861,7 @@ fun parse_single_file(input: String, file: String): Result[FileAst, Error] {
 | Multiple FileAsts are joined into a single Ast. While we do that, we make the
 | lookup of methods and variables simpler by putting everything into a map with
 | the name as the key. Thus, the Ast no longer contains an ordering of
-| defintions.
+| definitions.
 | This is also an opportunity to validate the general signatures of definitions
 | – in the first revisions of Martinaise, you could define a function foo(Foo),
 | even if no Foo type exists. The function would simply match no call, so
@@ -2380,7 +2380,7 @@ fun lookup_fun(
 ): Result[LookupFunSolution, Error] {
   var name_matches = ast.funs.get_maybe(name.string)
     or return error[LookupFunSolution, Error](
-      make_error(name.src, "There are no defintions named \"{name}\"."))
+      make_error(name.src, "There are no definitions named \"{name}\"."))
 
   var full_matches = list[LookupFunSolution]()
   for fun_ in name_matches do {
@@ -2424,7 +2424,7 @@ fun lookup_fun(
           'This is the signature:\n
           ' > {signature(name.string, type_args, arg_types)}\n"
         if name_matches.is_empty()
-        then out."There are no defintions named \"{name}\"."
+        then out."There are no definitions named \"{name}\"."
         else {
           out."These definitions have the same name, but arguments don't match:"
           for match in name_matches do out."\n - {match.stripped_signature()}"
