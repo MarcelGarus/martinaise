@@ -4722,13 +4722,12 @@ fun compile_mutate_fun(
   var random = body.arg(type("&", list(type("Random"))), 1)
   var temperature = body.arg(type("Int"), 2)
   var nothing = body.uninitialized(type("Nothing"))
-  var result = body.uninitialized(value_ty)
 
   switch body.mono.type_defs.get(value_ty)
   case opaque_ return error[MonoFunBody, Error](make_error(src,
     "For opaque types, you need to implement a mutate function yourself."))
   case struct_(struct_) {
-    | if random.next_bool(temperature) then
+    | if random.next_bool() then
     |   return Static[SomeStruct]{}.generate(random, value.fuzzing_complexity())
     | var field_to_change = random.next_int(0..2)
     | SomeStruct {
@@ -4752,15 +4751,12 @@ fun compile_mutate_fun(
         var field = it.item
 
         body.label(it.index, src)
-        body.assign(result.member(field), value.member(field), src)
         body.call_matching_fun(check, "==" @ src,
           list(field_to_change, body.int(it.index)), src)?
         body.jump_if_variant(check, "false", it.index + 1, src)
 
-        var new_field_value = body.uninitialized(field.type)
-        body.call_matching_fun(new_field_value, "mutate" @ src,
+        body.call_matching_fun(value.member(field), "mutate" @ src,
           list(value.member(field), random, temperature), src)?
-        body.assign(value.member(field), new_field_value, src)
       }
 
       body.label(struct_.fields.len + 1, src)
