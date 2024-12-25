@@ -15,6 +15,7 @@ fun top[T](stack: Stack[T]): T { stack.top(0) }
 fun top[T](stack: Stack[T], n: Int): T {
   stack.list.get(stack.list.len - n - 1)
 }
+fun top_maybe[T](stack: Stack[T]): Maybe[T] { stack.list.last_maybe() }
 fun top_ref[T](stack: Stack[T]): &T { stack.top_ref(0) }
 fun top_ref[T](stack: Stack[T], n: Int): &T {
   stack.list.get_ref(stack.list.len - n - 1)

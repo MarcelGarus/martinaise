@@ -166,7 +166,7 @@ fun make_space_at[T](list: &List[T], pos: Int, amount: Int, fill: T) {
   list.to_slice().subslice(pos..+amount).&.fill(fill)
 }
 fun insert[T](list: &List[T], index: Int, item: T) {
-  list.make_space_at(0, 1, item)
+  list.make_space_at(index, 1, item)
 }
 fun remove[T](list: &List[T], range: Range[Int]) {
   var slice = list.to_slice()

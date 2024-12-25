@@ -32,6 +32,7 @@ fun hash[T](hasher: &Hasher, value: Maybe[T]) {
   case none hasher.hash(#n)
 }
 
+| Allows writing some_maybe or default_value.
 fun or[T](maybe: Maybe[T]): ControlFlow[T, Nothing] {
   if maybe is some(t)
   then ControlFlow[T, Nothing].short_circuit(t)

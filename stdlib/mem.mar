@@ -260,6 +260,9 @@ fun get[T](slice: Slice[T], index: Int): T { slice.get_ref(index).* }
 fun set[T](slice: &Slice[T], index: Int, value: T) {
   slice.get_ref(index).* = value
 }
+fun swap[T](slice: &Slice[T], a: Int, b: Int) {
+  swap(slice.get_ref(a), slice.get_ref(b))
+}
 
 fun <=>[T](a: Slice[T], b: Slice[T]): Ordering {
   var i = 0

@@ -97,7 +97,7 @@ fun sqrt(num: Int): Int {
   a - 1
 }
 fun log_2(value: Int): Int {
-  value > 0 or panic("log 2 only works for positive values")
+  value > 0 or panic("log 2 only works for positive values, not {value}. {get_stack_pointer()} {heap_head}")
   var i = 0
   loop {
     if value == 1 then break
@@ -167,10 +167,12 @@ fun write_debug[W](writer: W, int: Int) { writer."{int}" }
 
 fun generate(s: Static[Int], random: &Random, complexity: Int): Int {
   random.next_int(if complexity < 50 then 0 +- 10 else {
-    0 +- {2 ** complexity}
+    0 +- {2 ** min(60, complexity / 2)}
   })
 }
-fun fuzzing_complexity(int: Int): Float { int.abs().inc().log_2().to_float() }
+fun fuzzing_complexity(int: Int): Float {
+  log_2(int.abs() + 1).to_float()
+}
 fun mutate(int: Int, random: &Random, temperature: Int): Int {
   int + random.next_int({0 - temperature}..=temperature)
 }

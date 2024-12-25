@@ -89,9 +89,9 @@ fun write[W](writer: W, suffixed: WithFittingSiSuffix) {
   if suffixed.a > 1000000000.0 then { writer."{suffixed.a / 1000000000.0} G"  return {} }
   if suffixed.a > 1000000.0 then { writer."{suffixed.a / 1000000.0} M"  return {} }
   if suffixed.a > 1000.0 then { writer."{suffixed.a / 1000.0} K"  return {} }
-  if suffixed.a < 0.000000001 then { writer."{suffixed.a * 1000000000.0} n"  return {} }
-  if suffixed.a < 0.000001 then { writer."{suffixed.a * 1000000.0} u"  return {} }
-  if suffixed.a < 0.001 then { writer."{suffixed.a * 1000.0} m"  return {} }
+  if suffixed.a < 0.000001 then { writer."{suffixed.a * 1000000000.0} n"  return {} }
+  if suffixed.a < 0.001 then { writer."{suffixed.a * 1000000.0} u"  return {} }
+  if suffixed.a < 1.0 then { writer."{suffixed.a * 1000.0} m"  return {} }
   writer."{suffixed.a} "
 }
 

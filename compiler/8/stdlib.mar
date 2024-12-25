@@ -614,6 +614,10 @@ fun %=[A, B](left: &A, right: B) { left.* = left.* % right }
 
 opaque Int = 8 bytes big, 8 bytes aligned
 
+| TODO: correct?
+var min_int = 0 - 9223372036854775806
+var max_int = 9223372036854775807
+
 fun +(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
@@ -1072,9 +1076,9 @@ enum Ordering { less, equal, greater }
 
 fun ==(a: Ordering, b: Ordering): Bool {
   switch a
-  case less b.is_less()
-  case equal b.is_equal()
-  case greater b.is_greater()
+  case less b is less
+  case equal b is equal
+  case greater b is greater
 }
 fun hash(hasher: &Hasher, ord: Ordering) {
   hasher.hash(switch ord case less #l case equal #e case greater #g)
@@ -1477,8 +1481,8 @@ fun generate[T](
 }
 fun mutate[T](slice: Slice[T], random: &Random, temperature: Int): Slice[T] {
   if temperature == 0 then return slice
-  var copy = uninitialized_slice[T](slice.len)
-  slice.copy_to(copy)
+  var copy = list[T]()
+  for item in slice do copy.&.push(item)
   var rand = random.next_int(0..temperature)
   if slice.is_not_empty() and rand < 50 then {
     | Mutate an inner element.
@@ -1488,14 +1492,14 @@ fun mutate[T](slice: Slice[T], random: &Random, temperature: Int): Slice[T] {
   } else {
     | Change the structure of the slice itself by adding/removing an item.
     if slice.is_not_empty() and random.next_bool() then
-      copy.remove(random.next_int(0..slice.len))
+      copy.&.remove(random.next_int(0..slice.len) ..+ 1)
     else
-      copy.insert(
+      copy.&.insert(
         random.next_int(0..=slice.len),
         static[T]().generate(random, 100)
       )
   }
-  copy
+  copy.to_slice()
 }
 
 fun iter[T](slice: Slice[T]): Iter[T, _] {
@@ -1669,9 +1673,9 @@ fun is_whitespace(char: Char): Bool {
 }
 
 fun parse_digit(char: Char): Byte {
-  if char.is_numeric() then return char.byte - #0.byte
-  if char.is_lower() then return char.byte - #a.byte + 16
-  if char.is_upper() then return char.byte - #A.byte + 16
+  if char.is_digit() then return char.byte - #0.byte
+  if char.is_lower() then return char.byte - #a.byte + 16.lower_byte()
+  if char.is_upper() then return char.byte - #A.byte + 16.lower_byte()
   panic("not a digit")
 }
 fun <=>(a: Char, b: Char): Ordering { a.byte <=> b.byte }
@@ -1754,9 +1758,8 @@ fun generate(s: Static[Char], random: &Random, complexity: Int): Char {
   random.next_int(visible_ascii).lower_byte().to_char()
 }
 fun mutate(char: Char, random: &Random, temperature: Int): Char {
-  var visible_ascii = 32..127
-  {char.byte + random.next_int({0 - temperature}..=temperature)}
-    .clamp(visible_ascii)
+  {char.byte + random.next_int({0 - temperature}..=temperature).lower_byte()}
+    .clamp(32.lower_byte(), 127.lower_byte()) | clamp to visible ASCII chars
     .to_char()
 }
 fun generate(s: Static[String], random: &Random, complexity: Int): String {
@@ -1766,7 +1769,7 @@ fun generate(s: Static[String], random: &Random, complexity: Int): String {
   String { data = slice.data, len }
 }
 fun mutate(string: String, random: &Random, temperature: Int): String {
-  if temperature == 0 then return slice
+  if temperature == 0 then return string
   string.chars().mutate(random, temperature).to_string()
 }
 
@@ -2070,7 +2073,7 @@ fun find[T, I](iter: &Iter[T, I], needle: T): Maybe[Int] {
 
 | Splits an Iter at the given items forming a separator.
 fun split[T, I](iter: Iter[T, I], separator: Slice[T]): Iter[Slice[T], _] {
-  Iter[T, SplitIter[I]] { state = SplitIter { inner = iter.inner, separator } }
+  Iter[T, SplitIter[I]] { state = SplitIter { inner = iter.state, separator } }
 }
 struct SplitIter[T, I] { inner: I, separator: Slice[T] }
 fun next[T, I](iter: &Iter[T, SplitIter[T, I]]): Maybe[Slice[T]] {
@@ -2222,7 +2225,7 @@ fun write_bytes_safely(
   .ret_ok: store b a moveib c 8 add b c moveib c 0 storeb b c ret
 }
 fun write_byte_safely(file: File, byte: Byte): Result[Nothing, Nothing] {
-  file.write_bytes_safely(Slice { data = byte.&, len = 1 })
+  file.write_bytes_safely(Slice[Byte] { data = byte.&.to_address(), len = 1 })
 }
 fun write_bytes(file: File, buffer: Slice[Byte]) {
   file.write_bytes_safely(buffer) or panic("couldn't write byte")
@@ -2475,6 +2478,9 @@ fun remove[T](list: &List[T], range: Range[Int]) {
   var slice = list.to_slice()
   slice.&.remove(range)
   list.len = slice.len
+}
+fun insert[T](list: &List[T], index: Int, item: T) {
+  list.make_space_at(index, 1, item)
 }
 
 fun ==[T](a: List[T], b: List[T]): Bool { a.to_slice() == b.to_slice() }
