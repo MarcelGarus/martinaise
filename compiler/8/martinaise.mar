@@ -949,6 +949,7 @@ fun parse_expr_without_suffix(parser: &Parser): Result[Maybe[AstExpr], String] {
   if parser.parse_str()? is some(string) then return parsed(string)
   if parser.parse_make()? is some(make) then return parsed(make)
   if parser.parse_block()? is some(blck) then return parsed(AstExpr.block(blck))
+  if parser.parse_parenthesized()? is some(expr) then return parsed(expr)
   if parser.parse_var()? is some(var_) then return parsed(AstExpr.var_(var_))
   if parser.parse_if()? is some(if_) then return parsed(if_)
   if parser.parse_switch()? is some(switch_) then return parsed(switch_)
@@ -1182,6 +1183,15 @@ fun parse_block(parser: &Parser): Result[Maybe[List[AstExpr]], String] {
   parser.consume_prefix("}") or return bad_input[List[AstExpr]](
     "Expected the closing brace of the block.")
   parsed(statements)
+}
+
+fun parse_parenthesized(parser: &Parser): Result[Maybe[AstExpr], String] {
+  parser.consume_prefix("(") or return no_match[AstExpr]()
+  var expr = parser.parse_expr()? or return bad_input[AstExpr](
+    "Expected a parenthesized expression.")
+  parser.consume_prefix(")") or return bad_input[AstExpr](
+    "Expected the closing parenthesis.")
+  parsed(expr)
 }
 
 fun parse_var(parser: &Parser): Result[Maybe[AstVar], String] {
