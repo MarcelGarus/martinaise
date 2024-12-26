@@ -2924,14 +2924,47 @@ fun compile_main(ast: Ast): Result[Mono, Error] {
       list[String]()
     ))
   var mono = ast.compile_entry_point(main)?
-  var return_type = mono.funs.get(mono.entry_point).return_type
-  if not(return_type.is_never()) then
+  var main = mono.entry_point
+
+  var return_type = mono.funs.get(main).return_type
+
+  if return_type.is_never() then {
+    | Nothing to do.
+  } else if return_type.is_nothing() then {
+    | Compile a wrapper that calls main and exits with 0.
+    var wrapper = LookupFunSolution {
+      type_env = map[String, Type](),
+      fun_ = AstFun {
+        name = "$main" @ compiler_src,
+        is_fallback = false,
+        type_args = list[AstString](),
+        args = list[AstFunArg](),
+        returns = type("Never"),
+        kind = AstFunKind.asm_(list(
+          AstInstr {
+            kind = AstInstrKind.call(main @ compiler_src),
+            mnemonic = "call" @ compiler_src,
+          },
+          AstInstr {
+            kind = AstInstrKind.moveib(Reg.a & 0.lower_byte()),
+            mnemonic = "moveib" @ compiler_src,
+          },
+          AstInstr {
+            kind = AstInstrKind.syscall(0.lower_byte()),
+            mnemonic = "syscall" @ compiler_src,
+          },
+        ))
+      },
+    }
+    mono.entry_point = wrapper.compile(context().&, ast, mono.&)?
+  } else {
     return error[Mono, Error](make_error(
       src, "main() returns {return_type}.",
-      "The main() function should return Never. You can call exit(0) if you 
-      'want the program to stop.",
+      "The main() function should return Nothing or Never.",
       list[String]()
     ))
+  }
+
   ok[Mono, Error](mono)
 }
 fun compile_fuzzer_main(ast: Ast, input: Type): Result[Mono, Error] {
