@@ -121,6 +121,7 @@ fun print_status(message: String) {
 struct Src { file: String, span: Range[Int] }
 
 fun src(file: String, span: Range[Int]): Src { Src { file, span } }
+var compiler_src = src("compiler", 0..0)
 
 fun write[W](writer: W, src: Src) {
   writer."{src.file} {src.span.start} – {src.span.end}"
@@ -2362,18 +2363,8 @@ fun print_status(context: Context) {
 | Ast Lookup  
 
 | Looks up the type with the given name. Type names have to be unique.
-fun lookup_type(ast: Ast, name: String): Result[AstType, Error] {
-  switch ast.types.get_maybe(name)
-  case some(match) ok[AstType, Error](match)
-  case none return error[AstType, Error](
-    make_error(src("todo", 0..0), {
-      var sb = string_builder().&
-      sb."There is no type named \"{name}\".\n"
-      sb."Types:"
-      for type in ast.types do
-        sb."\n- {type.key}"
-      sb.to_string()
-    }))
+fun lookup_type(ast: Ast, name: String): Maybe[AstType] {
+  ast.types.get_maybe(name)
 }
 
 | Looks up the global variable with the given name. Names of global variables
@@ -2915,8 +2906,8 @@ fun compile_entry_point(
     entry_point = "<placeholder>",
   }
 
-  type("Never").compile(ast, mono.&)?
-  type("Nothing").compile(ast, mono.&)?
+  type("Never").compile(ast, mono.&, compiler_src)?
+  type("Nothing").compile(ast, mono.&, compiler_src)?
 
   var signature = fun_.compile(context.&, ast, mono.&)
     or(error) return error[Mono, Error](make_error(
@@ -2975,8 +2966,8 @@ fun check_all_funs(ast: Ast): List[Error] {
     entry_point = "<placeholder>",
   }
 
-  type("Never").compile(ast, mono.&) or(error) return list(error)
-  type("Nothing").compile(ast, mono.&) or(error) return list(error)
+  type("Never").compile(ast, mono.&, compiler_src) or(error) return list(error)
+  type("Nothing").compile(ast, mono.&, compiler_src) or(error) return list(error)
 
   var errors = list[Error]()
   for fun_ in ast.funs do
@@ -2997,24 +2988,24 @@ fun check_all_funs(ast: Ast): List[Error] {
 | and also creates all the required defs (Map[Int, Bool], MapBucket[Int, Bool],
 | Slice[MapBucket[Int, Bool]], etc.)
 | Also saves the corresponding layout in the Mono.
-fun compile(type: Type, ast: Ast, mono: &Mono): Result[Type, Error] {
-  type.compile(map[String, Type](), ast, mono)
+fun compile(type: Type, ast: Ast, mono: &Mono, src: Src): Result[Type, Error] {
+  type.compile(map[String, Type](), ast, mono, src)
 }
 fun compile(
-  type: Type, type_env: Map[String, Type], ast: Ast, mono: &Mono
+  type: Type, type_env: Map[String, Type], ast: Ast, mono: &Mono, src: Src,
 ): Result[Type, Error] {
-  var mono_type = type.mono_type_def(type_env, ast, mono)?
+  var mono_type = type.mono_type_def(type_env, ast, mono, src)?
   if mono_type.is_complete() then
     mono_type.mem_layout(mono.layouts.&, mono.type_defs).ignore()
   ok[Type, Error](mono_type)
 }
 fun mono_type_def(
-  type: Type, type_env: Map[String, Type], ast: Ast, mono: &Mono,
+  type: Type, type_env: Map[String, Type], ast: Ast, mono: &Mono, src: Src,
 ): Result[Type, Error] {
   | TODO: Make sure generic types don't have parameters.
   var type = type_env.get_maybe(type.name) or {
     var args = list[Type]()
-    for arg in type.args do args.&.push(arg.mono_type_def(type_env, ast, mono)?)
+    for arg in type.args do args.&.push(arg.mono_type_def(type_env, ast, mono, src)?)
     Type { name = type.name, args }
   }
 
@@ -3044,7 +3035,10 @@ fun mono_type_def(
   mono.type_defs.&.put(type,
     MonoTypeDef.opaque_(MonoOpaqueType { size = 0, alignment = 0 }))
 
-  switch ast.lookup_type(type.name)?
+  var ast_type =
+    ast.lookup_type(type.name) or return error[Type, Error](
+      make_error(src, "There is no type named \"{type.name}\"."))
+  switch ast_type
   case opaque_(opaque_) {
     mono.type_defs.&.put(type, MonoTypeDef.opaque_(
       MonoOpaqueType { size = opaque_.size, alignment = opaque_.alignment }
@@ -3065,7 +3059,7 @@ fun mono_type_def(
     for field in struct_.fields do
       fields.&.push(MonoStructField {
         name = field.name.string,
-        type = field.type.mono_type_def(inner_type_env, ast, mono)?,
+        type = field.type.mono_type_def(inner_type_env, ast, mono, field.name.src)?,
       })
 
     mono.type_defs.&.put(type, MonoTypeDef.struct_(MonoStruct { fields }))
@@ -3085,7 +3079,8 @@ fun mono_type_def(
     for variant in enum_.variants do
       variants.&.push(MonoEnumVariant {
         name = variant.name.string,
-        type = variant.type.mono_type_def(inner_type_env, ast, mono)?,
+        type = variant.type.mono_type_def(
+          inner_type_env, ast, mono, variant.name.src)?,
       })
 
     mono.type_defs.&.put(type, MonoTypeDef.enum_(MonoEnum { variants }))
@@ -3178,18 +3173,18 @@ fun compile(
 ): Result[String, Error] {
   var type_args = list[Type]()
   for arg in fun_.type_args do
-    type_args.&.push(type(arg.string).compile(type_env, ast, mono)?)
+    type_args.&.push(type(arg.string).compile(type_env, ast, mono, fun_.name.src)?)
 
   var arg_types = list[Type]()
   for arg in fun_.args do
-    arg_types.&.push(arg.type.compile(type_env, ast, mono)?)
+    arg_types.&.push(arg.type.compile(type_env, ast, mono, fun_.name.src)?)
 
   var signature =
     signature(fun_.name.string, some(type_args), arg_types).format()
   if mono.funs.contains(signature) then return ok[String, Error](signature)
   context.&.push(signature)
 
-  var return_type = fun_.returns.compile(type_env, ast, mono)?
+  var return_type = fun_.returns.compile(type_env, ast, mono, fun_.name.src)?
 
   | TODO: explain
   mono.funs.&.put(signature, MonoFun {
@@ -3306,15 +3301,15 @@ fun compile_in_current_scope(
   ok[MonoExpr, Error](
     switch expr
     case int(int) {
-      type("Int").compile(ast, mono)?
+      type("Int").compile(ast, mono, compiler_src)?
       body.int(int)
     }
     case float(float) {
-      type("Float").compile(ast, mono)?
+      type("Float").compile(ast, mono, compiler_src)?
       body.float(float)
     }
     case string(string) {
-      type("String").compile(ast, mono)?
+      type("String").compile(ast, mono, compiler_src)?
       body.string(string)
     }
     case name(name) {
@@ -3350,7 +3345,9 @@ fun compile_in_current_scope(
         case some(type_args) {
           var mono_type_args = list[Type]()
           for arg in type_args do
-            mono_type_args.&.push(arg.compile(self.type_env, ast, mono)?)
+            mono_type_args.&.push(arg.compile(
+              self.type_env, ast, mono, call.opening_parenthesis.src
+            )?)
           some(mono_type_args)
         }
       var mono_args = list[MonoExpr]()
@@ -3402,7 +3399,7 @@ fun compile_in_current_scope(
 
       var after_scope = self.next_label_id()
       var wrapped_result = self.body.&.uninitialized(
-        type("Result", list(result.type, type("Nothing"))).compile(ast, mono)?)
+        type("Result", list(result.type, type("Nothing"))).compile(ast, mono, src)?)
       body.set_enum(wrapped_result, "ok", result, src)
       body.jump(after_scope, src)
       body.label(catch_label, src)
@@ -3411,7 +3408,11 @@ fun compile_in_current_scope(
       wrapped_result
     }
     case make_struct(make_struct) {
-      var struct_ = ast.lookup_type(make_struct.type.name)?.struct_
+      var type = ast.lookup_type(make_struct.type.name)
+        or return error[MonoExpr, Error](make_error(
+          make_struct.type_src, "Type {make_struct.type} doesn't exist."
+        ))
+      var struct_ = type.struct_
         or return error[MonoExpr, Error](make_error(
           make_struct.type_src, "{make_struct.type.name} is not a struct type."
         ))
@@ -3440,7 +3441,8 @@ fun compile_in_current_scope(
         for i in 0..struct_.type_args.len do
           solver.&.unify(
             type(struct_.type_args.get(i).string),
-            make_struct.type.args.get(i).compile(self.type_env, ast, mono)?,
+            make_struct.type.args.get(i).compile(
+              self.type_env, ast, mono, make_struct.type_src)?,
           ).unwrap() or panic("unifying type args always works")
       }
       for field in fields do {
@@ -3473,8 +3475,8 @@ fun compile_in_current_scope(
       if make_struct.type.args.is_empty() & struct_.type_args.is_not_empty()
       then for arg in struct_.type_args do
         unspecialized_type.args.&
-          .push(type(arg.string).compile(type_env, ast, mono)?)
-      var type = unspecialized_type.compile(self.type_env, ast, mono)?
+          .push(type(arg.string).compile(type_env, ast, mono, make_struct.type_src)?)
+      var type = unspecialized_type.compile(self.type_env, ast, mono, make_struct.type_src)?
 
       var slot = self.body.&.uninitialized(type)
       for field in fields do
@@ -3483,7 +3485,11 @@ fun compile_in_current_scope(
       slot
     }
     case make_enum(make_enum) {
-      var enum_ = ast.lookup_type(make_enum.type.name)?.enum_
+      var type = ast.lookup_type(make_enum.type.name)
+        or return error[MonoExpr, Error](make_error(
+          make_enum.variant.src, "Type {make_enum.type} doesn't exist."
+        ))
+      var enum_ = type.enum_
         or return error[MonoExpr, Error](make_error(
           make_enum.variant.src, "{make_enum.type.name} is not an enum type."))
       var arg = make_enum.arg.compile(self)?
@@ -3510,7 +3516,9 @@ fun compile_in_current_scope(
         for i in 0..enum_.type_args.len do
           switch solver.&.unify(
             type(enum_.type_args.get(i).string),
-            make_enum.type.args.get(i).compile(self.type_env, ast, mono)?
+            make_enum.type.args.get(i).compile(
+              self.type_env, ast, mono, make_enum.variant.src
+            )?
           )
           case error(message) return error[MonoExpr, Error](make_error(
             make_enum.variant.src, message))
@@ -3532,8 +3540,10 @@ fun compile_in_current_scope(
       if make_enum.type.args.is_empty() & enum_.type_args.is_not_empty() then
         for a in enum_.type_args do
           unspecialized_type.args.&
-            .push(type(a.string).compile(type_env, ast, mono)?)
-      var type = unspecialized_type.compile(self.type_env, ast, mono)?
+            .push(type(a.string).compile(
+              type_env, ast, mono, make_enum.variant.src)?)
+      var type = unspecialized_type.compile(
+        self.type_env, ast, mono, make_enum.variant.src)?
 
       var slot = body.uninitialized(type)
       body.set_enum(slot, make_enum.variant.string, arg, make_enum.variant.src)
@@ -3544,7 +3554,7 @@ fun compile_in_current_scope(
       | expr.& references the of
       if member.name.string == "&" then {
         var ref_type = type("&", list(of.type))
-          .compile(self.type_env, ast, mono)?
+          .compile(self.type_env, ast, mono, member.name.src)?
         var slot = self.body.&.uninitialized(ref_type)
         self.body.&.ref(slot, of, member.name.src)
         return ok[MonoExpr, Error](slot)
@@ -4299,7 +4309,7 @@ fun compile_size_of_fun(
 ): Result[MonoFunBody, Error] {
   type_args.len == 1 or return error[MonoFunBody, Error](make_error(
     src, "size_of should take exactly one type argument."))
-  type("Int").compile(body.ast, body.mono)?
+  type("Int").compile(body.ast, body.mono, compiler_src)?
 
   var size = body.int(body.mono.layouts.get(type_args.get(0)).size)
   body.return_(size, src)
@@ -4311,7 +4321,7 @@ fun compile_alignment_of_fun(
 ): Result[MonoFunBody, Error] {
   type_args.len == 1 or return error[MonoFunBody, Error](make_error(
     src, "alignment_of should take exactly one type argument."))
-  type("Int").compile(body.ast, body.mono)?
+  type("Int").compile(body.ast, body.mono, compiler_src)?
 
   var alignment = body.int(body.mono.layouts.get(type_args.get(0)).alignment)
   body.return_(alignment, src)
@@ -4323,7 +4333,7 @@ fun compile_stride_size_of_fun(
 ): Result[MonoFunBody, Error] {
   type_args.len == 1 or return error[MonoFunBody, Error](make_error(
     src, "stride_size_of should take exactly one type argument."))
-  type("Int").compile(body.ast, body.mono)?
+  type("Int").compile(body.ast, body.mono, compiler_src)?
 
   var layout = body.mono.layouts.get(type_args.get(0))
   var stride_size = layout.size.round_up_to_multiple_of(layout.alignment)
@@ -4387,8 +4397,8 @@ fun compile_type_fun(
 ): Result[MonoFunBody, Error] {
   type_args.len == 1 or return error[MonoFunBody, Error](make_error(
     src, "type should take exactly one type argument."))
-  type("Type").compile(body.ast, body.mono)?
-  type("List", list(type("Type"))).compile(body.ast, body.mono)?
+  type("Type").compile(body.ast, body.mono, compiler_src)?
+  type("List", list(type("Type"))).compile(body.ast, body.mono, compiler_src)?
 
   var reflected = compile_type_fun_rec(type_args.get(0), body, src)?
   body.return_(reflected, src)
@@ -4425,7 +4435,7 @@ fun compile_write_debug_fun(
 ): Result[MonoFunBody, Error] {
   arg_types.len == 2 or return error[MonoFunBody, Error](make_error(
     src, "write_debug should take exactly two arguments."))
-  type("String").compile(body.ast, body.mono)?
+  type("String").compile(body.ast, body.mono, compiler_src)?
 
   var writer = body.arg(arg_types.get(0), 0)
   var value = body.arg(arg_types.get(1), 1)
@@ -4535,7 +4545,7 @@ fun compile_generate_fun(
 
       | doesn't have to be initialized (size 0)
       var static_field = body.uninitialized(
-        type("Static", list(field.type)).compile(body.ast, body.mono)?)
+        type("Static", list(field.type)).compile(body.ast, body.mono, compiler_src)?)
 
       var field_complexity = body.uninitialized(type("Int"))
       var index = body.int(it.index)
@@ -4565,8 +4575,8 @@ fun compile_generate_fun(
     if enum_.variants.len == 0 then return error[MonoFunBody, Error](make_error(
       src, "Can't generate instances of {value_ty}."))
 
-    type("Bool").compile(body.ast, body.mono)?
-    type("Range", list(type("Int"))).compile(body.ast, body.mono)?
+    type("Bool").compile(body.ast, body.mono, compiler_src)?
+    type("Range", list(type("Int"))).compile(body.ast, body.mono, compiler_src)?
 
     var non_recursive_variants = list[Int]()
     var has_recursive_variants = false
@@ -4630,7 +4640,7 @@ fun compile_generate_fun(
 
       | doesn't need to be initialized (size 0)
       var static_payload = body.uninitialized(
-        type("Static", list(variant.type)).compile(body.ast, body.mono)?)
+        type("Static", list(variant.type)).compile(body.ast, body.mono, compiler_src)?)
 
       var payload = body.uninitialized(variant.type)
       body.call_matching_fun(payload, "generate" @ src,
@@ -4773,7 +4783,7 @@ fun compile_mutate_fun(
 
       | doesn't need to be initialized (size 0)
       var static_payload = body.uninitialized(
-        type("Static", list(value_ty)).compile(body.ast, body.mono)?)
+        type("Static", list(value_ty)).compile(body.ast, body.mono, compiler_src)?)
       body.call_matching_fun(value, "generate" @ src,
         list(static_payload, random, temperature), src)?
 
@@ -4789,7 +4799,7 @@ fun compile_mutate_fun(
     if enum_.variants.len == 0 then return error[MonoFunBody, Error](make_error(
       src, "Can't mutate instances of {value_ty}."))
 
-    type("Bool").compile(body.ast, body.mono)?
+    type("Bool").compile(body.ast, body.mono, compiler_src)?
 
     var create_new = body.uninitialized(type("Bool"))
     body.call_matching_fun( create_new, "next_bool" @ src, list(random), src)?
@@ -4818,7 +4828,7 @@ fun compile_mutate_fun(
 
     | doesn't need to be initialized (size 0)
     var static_payload = body.uninitialized(
-      type("Static", list(value_ty)).compile(body.ast, body.mono)?)
+      type("Static", list(value_ty)).compile(body.ast, body.mono, compiler_src)?)
 
     body.call_matching_fun(value, "generate" @ src,
       list(static_payload, random, temperature), src)?

@@ -1801,7 +1801,7 @@ fun first(string: String, amount: Int): String {
   amount <= string.len or panic("first amount too big")
   string.substr(0..amount)
 }
-fun last(string: String): T {
+fun last(string: String): Char {
   string.is_not_empty() or panic("last only works on non-empty strs")
   string.get(string.len.dec())
 }
