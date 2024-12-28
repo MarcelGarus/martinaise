@@ -72,7 +72,7 @@ fun solve(sudoku: &Sudoku, start: Int) {
   }
 }
 
-fun main(): Never {
+fun main() {
   var args = get_process_args()
   var file = args.get_maybe(1) or {
     eprintln("Usage: sudoku [file]")
@@ -114,6 +114,4 @@ fun main(): Never {
 
   println(sudoku)
   sudoku.&.solve(0)
-
-  exit(0)
 }

@@ -218,7 +218,7 @@ fun custom_asm_fun() {
 
 | Run everything  
 
-fun main(): Never {
+fun main() {
   functions()
   variables()
   structs_and_enums()
@@ -228,6 +228,4 @@ fun main(): Never {
   references()
   operators()
   custom_asm_fun()
-
-  exit(0)
 }

@@ -1,6 +1,5 @@
 import stdlib.mar
 
-fun main(): Never {
+fun main() {
   println("Hello, world!")
-  exit(0)
 }

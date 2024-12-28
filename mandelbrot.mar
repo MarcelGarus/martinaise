@@ -1,6 +1,6 @@
 import ui.mar
 
-fun main(): Never {
+fun main() {
   var texture = screen_texture()
   var zoom = 1.0
   var move_x = 0.0 - 0.5
