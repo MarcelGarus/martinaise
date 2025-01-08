@@ -101,6 +101,8 @@ fun get_unchecked(string: String, index: Int): Char asm {
   load c sp store c a ret
 }
 
+fun +(a: String, b: String): String { "{a}{b}" }
+
 fun <=>(a: String, b: String): Ordering {
   switch memcompare(a.data, b.data, min(a.len, b.len))
   case less Ordering.less

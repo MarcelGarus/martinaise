@@ -22,8 +22,8 @@ fun by(a: Point, size: Point): Rectangle {
 }
 
 fun contains(rect: Rectangle, point: Point): Bool {
-  {rect.left..rect.right}.contains(point.x)
-    and {rect.top..rect.bottom}.contains(point.y)
+  (rect.left..rect.right).contains(point.x)
+    and (rect.top..rect.bottom).contains(point.y)
 }
 
 fun center_x(rect: Rectangle): Int { rect.left + rect.right / 2 }

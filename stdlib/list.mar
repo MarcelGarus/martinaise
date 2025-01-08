@@ -182,6 +182,7 @@ fun +[T](a: List[T], b: List[T]): List[T] {
   b.to_slice().copy_to(concatenated.to_slice().subslice(a.len..+b.len))
   concatenated
 }
+fun sum[T](list: List[T]): T { list.to_slice().sum() }
 
 fun ==[T](a: List[T], b: List[T]): Bool { a.to_slice() == b.to_slice() }
 fun iter[T](list: List[T]): Iter[T, _] { list.to_slice().iter() }
