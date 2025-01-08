@@ -4811,6 +4811,7 @@ fun compile_mutate_fun(
 
         body.call_matching_fun(value.member(field), "mutate" @ src,
           list(value.member(field), random, temperature), src)?
+        body.jump(struct_.fields.len, src)
       }
 
       body.label(struct_.fields.len + 1, src)
