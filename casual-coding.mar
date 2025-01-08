@@ -1,0 +1,35 @@
+import stdlib.mar
+
+fun main(): Never {
+  println("<h1>Welcome to Marcel's website!</h1>")
+  println("This website runs Martinaise compiled to Soil interpreted in JavaScript in your browser.")
+
+  print("<br>Here is FizzBuzz:")
+  for i in 1..=100 do {
+    var fizz = i % 3 == 0
+    var buzz = i % 5 == 0
+    if i > 1 then print(", ")
+    print(
+      | if fizz and buzz then " <b style=\"color:#8b3ca8;font-size:40px;font-weight:bold;\">fizzbuzz</b>"
+      if fizz and buzz then " <img style=\"max-width:40px;border-radius:50%;background-color:white;\" src=\"https://marcelgarus.dev/me.webp\">"
+      else if fizz then " <b style=\"color:red;font-size:30px;\">fizz</b>"
+      else if buzz then " <b style=\"color:blue;font-size:30px;\">buzz</b>"
+      else "{i}"
+    )
+  }
+  println()
+
+  println("<br>Here are recursively calculated Fibonacci numbers with a font size scaled to their value:<br>")
+  for n in 0..infinity do {
+    var res = fib(n)
+    if n > 0 then print(", ")
+    print("<span style=\"font-size:{max(1, res/10)}px\">{res}</span>")
+  }
+
+  exit(0)
+}
+
+fun fib(n: Int): Int {
+  if n < 2 then return n
+  fib(n - 1) + fib(n - 2)
+}
