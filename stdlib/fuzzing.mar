@@ -28,7 +28,8 @@ fun fuzzer_main[Input](): Never {
   var info = static[Input]().fuzzing_info()
   var random = random_number_generator()
   var front = FuzzFront {
-    coverage = coverage(get_coverage().len), crashes = false
+    coverage = coverage(get_coverage().len),
+    found_crash = false, found_non_crash = false,
   }
   var samples = list[FuzzingSample[Input]]()
   var minimizing = 0
@@ -68,15 +69,11 @@ fun fuzzer_main[Input](): Never {
             shrink_runs = 0
             continue
           } else free_everything_allocated_after(checkpoint)
-        } else {
-          if mutated.crashes() and not(front.crashes)
-            or mutated.coverage.improves_upon(front.coverage)
-          then {
-            front.&.integrate(mutated)
-            samples.&.push(mutated)
-            report(samples)
-          } else free_everything_allocated_after(checkpoint)
-        }
+        } else if mutated.improves_upon(front) then {
+          front.&.integrate(mutated)
+          samples.&.push(mutated)
+          report(samples)
+        } else free_everything_allocated_after(checkpoint)
       }
 
       | We have tried long enough to shrink this input.
@@ -92,11 +89,7 @@ fun fuzzer_main[Input](): Never {
       var sample = input.run_sandboxed()
       total_runs = total_runs + 1
 
-      var discovered_new_behavior =
-        sample.crashes() and not(front.crashes)
-          or sample.coverage.improves_upon(front.coverage)
-
-      if discovered_new_behavior then {
+      if sample.improves_upon(front) then {
         no_new_coverage_runs = 0
         front.&.integrate(sample)
         samples.&.push(sample)
@@ -111,12 +104,20 @@ fun fuzzer_main[Input](): Never {
 
   exit(0)
 }
-struct FuzzFront { coverage: Coverage, crashes: Bool }
+struct FuzzFront {
+  coverage: Coverage, found_crash: Bool, found_non_crash: Bool
+}
 struct FuzzingSample[Input] {
   input: Input,
   arg_strings: Slice[String],
   coverage: Coverage,
   result: Result[String, Nothing],
+}
+
+fun improves_upon[Input](sample: FuzzingSample[Input], front: FuzzFront): Bool {
+  if {sample.result is error} and not(front.found_crash) then return true
+  if {sample.result is ok} and not(front.found_non_crash) then return true
+  sample.coverage.improves_upon(front.coverage)
 }
 
 fun generate_valid[T](
@@ -178,7 +179,8 @@ fun crashes[Input](input: FuzzingSample[Input]): Bool {
 }
 fun integrate[Input](front: &FuzzFront, input: FuzzingSample[Input]) {
   front.coverage.integrate(input.coverage)
-  if input.result is error then front.crashes = true
+  if input.result is ok then front.found_non_crash = true
+  if input.result is error then front.found_crash = true
 }
 
 fun report[Input](samples: List[FuzzingSample[Input]]) {
