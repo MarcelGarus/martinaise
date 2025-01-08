@@ -99,7 +99,7 @@ fun sqrt(num: Int): Int {
   a - 1
 }
 fun log_2(value: Int): Int {
-  value > 0 or panic("log 2 only works for positive values, not {value}. {get_stack_pointer()} {heap_head}")
+  value > 0 or panic("log 2 only works for positive values, not {value}.")
   var i = 0
   loop {
     if value == 1 then break
@@ -173,7 +173,7 @@ fun generate(s: Static[Int], random: &Random, complexity: Int): Int {
   })
 }
 fun fuzzing_complexity(int: Int): Float {
-  log_2(int.abs() + 1).to_float()
+  (int.abs() + 1).to_float().approximate_log_2()
 }
 fun mutate(int: Int, random: &Random, temperature: Int): Int {
   int + random.next_int({0 - temperature}..=temperature)

@@ -111,6 +111,28 @@ fun sqrt(x: Float): Float {
   guess
 }
 
+| A function where the powers of two are accurate:
+|
+| approximate_log_2(4.0) = 2.0
+| approximate_log_2(8.0) = 3.0
+| approximate_log_2(16.0) = 4.0
+|
+| But between those, the values are interpolated linearly:
+|
+| approximate_log_2(6.0) = 2.5   | halfway between 4.0 and 8.0
+| approximate_log_2(5.0) = 2.25  | quaterway between 4.0 and 8.0
+fun approximate_log_2(value: Float): Float {
+  value > 0.0 or panic("log 2 only works for positive values, not {value}.")
+  var full_part = 0
+  loop {
+    if value < 2.0 then break
+    full_part = full_part + 1
+    value = value / 2.0
+  }
+  var pow = (2 ** full_part).to_float()
+  full_part.to_float() + {{value - pow} / pow}
+}
+
 | Well, turns out, writing floats is pretty commplicated. This is a relatively
 | easy algorithm from https://blog.benoitblanchon.fr/lightweight-float-to-string
 fun write[W](writer: W, float: Float) {
