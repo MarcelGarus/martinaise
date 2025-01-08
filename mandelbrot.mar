@@ -13,35 +13,36 @@ fun main() {
   loop {
     for x in 0..texture.width do
       for y in 0..texture.height do {
-        var pixel_real = 1.5 * {x.to_float() - {width / 2.0}}
+        var real = 1.5 * {x.to_float() - {width / 2.0}}
           / {0.5 * zoom * width} + move_x
-        var pixel_imag = {y.to_float() - {height / 2.0}}
+        var imag = {y.to_float() - {height / 2.0}}
           / {0.5 * zoom * height} + move_y
-        var new_real = 0.0
-        var new_imag = 0.0
-        var old_real = 0.0
-        var old_imag = 0.0
-        var i = 0
-        loop {
-          if i == max_iterations then break
-          i = i + 1
-          old_real = new_real
-          old_imag = new_imag
-          new_real = {old_real * old_real} - {old_imag * old_imag} + pixel_real
-          new_imag = 2.0 * old_real * old_imag + pixel_imag
-          if {new_real * new_real} + {new_imag * new_imag} > 4.0 then break
-        }
-        | println("Pixel at {x}, {y} looped {i} times")
-        var color = if i == max_iterations
+        var value = mandelbrot(real, imag, max_iterations)
+        | println("Pixel at {x}, {y} looped {value} times")
+        var color = if value == max_iterations
           then black
-          else color(
-            i % 256,
-            i % 256,
-            i % 256,
-          )
+          else color(value % 256, value % 256, value % 256)
         texture.&.draw(x @ y, color)
       }
     texture.show()
     zoom.& *= {11.to_float() / 10.to_float()}
   }
+}
+
+fun mandelbrot(real: Float, imag: Float, max_iterations: Int): Int {
+  var new_real = 0.0
+  var new_imag = 0.0
+  var old_real = 0.0
+  var old_imag = 0.0
+  var i = 0
+  loop {
+    if i == max_iterations then break
+    i = i + 1
+    old_real = new_real
+    old_imag = new_imag
+    new_real = {old_real * old_real} - {old_imag * old_imag} + real
+    new_imag = 2.0 * old_real * old_imag + imag
+    if {new_real * new_real} + {new_imag * new_imag} > 4.0 then break
+  }
+  i
 }
