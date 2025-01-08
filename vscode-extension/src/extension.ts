@@ -223,9 +223,9 @@ function updateFuzzingExamples(path: Path) {
     for (const call of examplesOfFun.calls) {
       console.info(`Example call: ${JSON.stringify(call)}`);
       const position = new vs.Position(examplesOfFun.fun_start_line, 80);
-      let text = `${examplesOfFun.fun_name}(${call.inputs.join(", ")})`;
-      if (call.result.status == "returned") text += ` = ${call.result.value}`;
-      if (call.result.status == "panicked") text += ` panicked`;
+      let text = call.inputs.join(", ");
+      if (call.result.status == "returned") text += ` -> ${call.result.value}`;
+      if (call.result.status == "panicked") text += ` panics`;
       const collection =
         call.result.status == "returned"
           ? exampleDecorations
