@@ -1,0 +1,130 @@
+import stdlib.mar
+
+struct Person {
+  name: String,
+  birthdate: Date,
+}
+
+struct Date { year: Int, month: Int, day: Int }
+fun years_since(a: Date, b: Date): Int {
+  if a.month < b.month or a.day < b.day then a.year - b.year - 1 else a.year - b.year
+}
+fun write_debug[W](writer: W, date: Date) {
+  writer."{date.year}-{date.month}-{date.day}"
+}
+fun generate(static: Static[Date], random: &Random, complexity: Int): Date {
+  Date {
+    year = static[Int]().generate(random, complexity),
+    month = random.next_int(1..=12),
+    day = random.next_int(1..=31),
+  }
+}
+fun is_valid(date: Date): Bool {
+  {1 ..= 12}.contains(date.month) and {1 ..= 31}.contains(date.day)
+}
+
+struct DateTime { year: Int, month: Int, day: Int, hour: Int, minute: Int }
+fun date(datetime: DateTime): Date {
+  Date { year = datetime.year, month = datetime.month, day = datetime.day }
+}
+fun write_debug[W](writer: W, datetime: DateTime) {
+  writer."{datetime.year}-{datetime.month}-{datetime.day} {datetime.hour}:{datetime.minute}"
+}
+fun is_valid(datetime: DateTime): Bool {
+  {1 ..= 12}.contains(datetime.month)
+    and {1 ..= 31}.contains(datetime.day)
+    and {0..24}.contains(datetime.hour)
+    and {0..60}.contains(datetime.minute)
+}
+
+
+| Age in years
+| fun age(person: Person, now: Date): Int {
+|   now.duration_since(person.birthdate).in_years().to_int()
+| }
+fun today(): Date { Date { year = 2024, month = 12, day = 2 } }
+
+
+fun mail(person: Person): String {
+  var greeting = "Hello {person.name}"
+  var age = today().years_since(person.birthdate)
+  println(age)
+  if age < 16 then return "{greeting}, please grow older"
+  if age < 18 then return "{greeting}, hey"
+  "{greeting}, you are old"
+}
+
+fun foo(a: Int): Bool {
+  if a > 2 then { return false }
+  true
+}
+
+
+
+fun is_valid_email(string: String): Bool {
+  if not(string.contains("@")) then
+    return false
+  var parts = string.split("@")
+  var name = parts.get(0)
+  var host = parts.get(1)
+
+  if name.len < 8 then
+    return false
+  if not(name.is_alphanumeric()) then
+    return false
+
+  true
+}
+fun is_alphanumeric(name: String): Bool {
+  for char in name.chars() do {
+    var is_valid = char.is_letter() or char.is_digit() or char == #.
+    if not(is_valid) then
+      return false
+  }
+  true
+}
+
+
+
+
+
+
+
+
+
+
+
+| TODO:
+| - compare two emails if they are similar (. and +)
+| - generate similar but not equal
+| - generate n similar to but not equal
+| - acknowledge, dass es möglicherweise computationally impossible ist
+|   - Krypto-Beispiel
+
+fun test(number: Int): String {
+  if number % 2 == 0 then {
+    if number % 6 == 0 then "a" else "b"
+  } else {
+    if number <= 1000 then "c" else "d"
+  }
+}
+
+fun sum[T](list: List[T]): T { list.to_slice().sum() }
+
+fun average(list: List[Int]): Int {
+  list.sum() / list.len
+}
+
+| fun test(number: Int): Int {
+|   number
+| }
+
+fun main() {
+  | println("@".split("@").debug())
+  | foo(2)
+  | println("Hello, world!")
+  var should_greet = true
+  if should_greet then {
+    println("Hello, world!")
+  }
+}
