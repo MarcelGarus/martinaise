@@ -268,7 +268,7 @@ fun mutate[T](value: &T, random: &Random, temperature: Int): &T {
 }
 
 fallback fun is_valid[T](value: T): Bool { ... }
-fun is_valid[T](value: &T): &T { value.*.is_valid() }
+fun is_valid[T](value: &T): Bool { value.*.is_valid() }
 
 | Coverage  
 | The compiler can be configured to instrument the fuzzed function with coverage
