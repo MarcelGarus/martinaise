@@ -27,18 +27,36 @@
         "id": "martinaise.example.background",
         "description": "The color of examples.",
         "defaults": {
-          "dark": "#c9ffc9d2",
+          "dark": "#376f42",
           "light": "#c9ffc9d2",
-          "highContrast": "#ffffff"
+          "highContrast": "#000000"
         }
       },
       {
         "id": "martinaise.example.foreground",
         "description": "The color of examples.",
         "defaults": {
-          "dark": "#376f42",
+          "dark": "#c9ffc9d2",
           "light": "#376f42",
+          "highContrast": "#ffffff"
+        }
+      },
+      {
+        "id": "martinaise.panic.background",
+        "description": "The color of panics.",
+        "defaults": {
+          "dark": "#7b0d0d",
+          "light": "#edbbbb",
           "highContrast": "#000000"
+        }
+      },
+      {
+        "id": "martinaise.panic.foreground",
+        "description": "The color of panics.",
+        "defaults": {
+          "dark": "#edbbbb",
+          "light": "#7b0d0d",
+          "highContrast": "#ffffff"
         }
       }
     ],

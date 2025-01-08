@@ -4,6 +4,7 @@ import * as communication from "./communication";
 
 let diagnosticCollection: vs.DiagnosticCollection;
 let exampleDecoration: vs.TextEditorDecorationType;
+let panicDecoration: vs.TextEditorDecorationType;
 
 let fuzzingEnabled = false;
 
@@ -26,6 +27,14 @@ export function activate(context: vs.ExtensionContext) {
     after: {
       color: new vs.ThemeColor(`martinaise.example.foreground`),
       backgroundColor: new vs.ThemeColor(`martinaise.example.background`),
+      margin: "0 0 0 16px",
+    },
+    rangeBehavior: vs.DecorationRangeBehavior.ClosedOpen,
+  });
+  panicDecoration = vs.window.createTextEditorDecorationType({
+    after: {
+      color: new vs.ThemeColor(`martinaise.panic.foreground`),
+      backgroundColor: new vs.ThemeColor(`martinaise.panic.background`),
       margin: "0 0 0 16px",
     },
     rangeBehavior: vs.DecorationRangeBehavior.ClosedOpen,
@@ -205,7 +214,8 @@ function updateFuzzingExamples(path: Path) {
     if (e.document.uri.toString() == path) editor = e;
   if (!editor) return;
 
-  const decorations: vs.DecorationOptions[] = [];
+  const exampleDecorations: vs.DecorationOptions[] = [];
+  const panicDecorations: vs.DecorationOptions[] = [];
 
   const examplesOfFile = examples.get(path);
   if (!examplesOfFile) return;
@@ -215,14 +225,19 @@ function updateFuzzingExamples(path: Path) {
       const position = new vs.Position(examplesOfFun.fun_start_line, 80);
       let text = `${examplesOfFun.fun_name}(${call.inputs.join(", ")})`;
       if (call.result.status == "returned") text += ` = ${call.result.value}`;
-      if (call.result.status == "panicked") text += ` = <panicked>`;
-      decorations.push({
+      if (call.result.status == "panicked") text += ` panicked`;
+      const collection =
+        call.result.status == "returned"
+          ? exampleDecorations
+          : panicDecorations;
+      collection.push({
         range: new vs.Range(position, position),
         renderOptions: { after: { contentText: text } },
       });
     }
   }
-  editor.setDecorations(exampleDecoration, decorations);
+  editor.setDecorations(exampleDecoration, exampleDecorations);
+  editor.setDecorations(panicDecoration, panicDecorations);
 }
 
 async function handleVisibleRanges(uri: vs.Uri, ranges: readonly vs.Range[]) {
