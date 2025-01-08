@@ -23,18 +23,18 @@ export function activate(context: vs.ExtensionContext) {
     }),
   );
 
-  exampleDecoration = vs.window.createTextEditorDecorationType({
-    after: {
-      color: new vs.ThemeColor(`martinaise.example.foreground`),
-      backgroundColor: new vs.ThemeColor(`martinaise.example.background`),
-      margin: "0 0 0 16px",
-    },
-    rangeBehavior: vs.DecorationRangeBehavior.ClosedOpen,
-  });
   panicDecoration = vs.window.createTextEditorDecorationType({
     after: {
       color: new vs.ThemeColor(`martinaise.panic.foreground`),
       backgroundColor: new vs.ThemeColor(`martinaise.panic.background`),
+      margin: "0 0 0 16px",
+    },
+    rangeBehavior: vs.DecorationRangeBehavior.ClosedOpen,
+  });
+  exampleDecoration = vs.window.createTextEditorDecorationType({
+    after: {
+      color: new vs.ThemeColor(`martinaise.example.foreground`),
+      backgroundColor: new vs.ThemeColor(`martinaise.example.background`),
       margin: "0 0 0 16px",
     },
     rangeBehavior: vs.DecorationRangeBehavior.ClosedOpen,
@@ -236,8 +236,8 @@ function updateFuzzingExamples(path: Path) {
       });
     }
   }
-  editor.setDecorations(exampleDecoration, exampleDecorations);
   editor.setDecorations(panicDecoration, panicDecorations);
+  editor.setDecorations(exampleDecoration, exampleDecorations);
 }
 
 async function handleVisibleRanges(uri: vs.Uri, ranges: readonly vs.Range[]) {
