@@ -5,6 +5,8 @@ import stdlib.mar
 
 opaque Float = 8 bytes big, 8 bytes aligned
 
+fun is_valid(float: Float): Bool { true }
+
 var nan = 2#0111111111111000000000000000000000000000000000000000000000000000.cast[Int, Float]()
 var inf = 2#0111111111110000000000000000000000000000000000000000000000000000.cast[Int, Float]()
 
@@ -248,5 +250,3 @@ fun fuzzing_complexity(float: Float): Float {
 fun mutate(value: Float, random: &Random, temperature: Int): Float {
   value.to_int().mutate(random, temperature).to_float()
 }
-
-| TODO: implement generate

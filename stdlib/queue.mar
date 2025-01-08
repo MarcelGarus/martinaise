@@ -10,6 +10,14 @@ import stdlib.mar
 |     s              e               e        s
 
 struct Queue[T] { data: Slice[T], start: Int, end: Int }
+
+fun is_valid[T](queue: Queue[T]): Bool {
+  {0..queue.data.len}.contains(queue.start) or return false
+  {0..queue.data.len}.contains(queue.end) or return false
+  for item in queue do item.is_valid() or return false
+  true
+}
+
 fun queue[T](): Queue[T] {
   Queue { data = uninitialized_slice[T](8), start = 0, end = 0 }
 }
@@ -97,7 +105,11 @@ fun next[T](iter: &Iter[T, QueueIter[T]]): Maybe[T] {
   } else none[T]()
 }
 
-fun is_valid[T](queue: Queue[T]): Bool {
-  for item in queue do item.is_valid() or return false
-  true
+fun generate[T](
+  static: Static[Queue[T]], random: &Random, complexity: Int
+): Queue[T] {
+  var items = static[Slice[T]]().generate(random, complexity)
+  var queue = queue[T]()
+  for item in items do queue.&.push_back(item)
+  queue
 }

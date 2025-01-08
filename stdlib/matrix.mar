@@ -4,6 +4,14 @@ import stdlib.mar
 
 struct Matrix[T] { data: Slice[T], width: Int, height: Int }
 
+fun is_valid[T](matrix: Matrix[T]): Bool {
+  matrix.data.len == {width * height} or return false
+  for x in 0..matrix.width do
+    for y in 0..matrix.height do
+      matrix.get(x @ y).is_valid() or return false
+  true
+}
+
 fun uninitialized_matrix[T](size: Point): Matrix[T] {
   Matrix {
     data = uninitialized_slice[T](size.x * size.y),
@@ -54,6 +62,8 @@ fun get[T](matrix: Matrix[T], point: Point): T { matrix.&.get_ref(point).* }
 fun set[T](matrix: &Matrix[T], point: Point, value: T) {
   matrix.get_ref(point).* = value
 }
+
+fun sum(matrix: Matrix[Int]): Int { matrix.data.sum() }
 
 fun ==[T](a: Matrix[T], b: Matrix[T]): Bool {
   a.width == b.width or return false
@@ -117,11 +127,3 @@ fun mutate[T](matrix: Matrix[T], random: &Random, temperature: Int): Matrix[T] {
   matrix.&.get_ref(x @ y).mutate(random, temperature)
   matrix
 }
-fun is_valid[T](matrix: Matrix[T]): Bool {
-  for x in 0..matrix.width do
-    for y in 0..matrix.height do
-      matrix.get(x @ y).is_valid() or return false
-  true
-}
-
-fun sum(matrix: Matrix[Int]): Int { matrix.data.sum() }

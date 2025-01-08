@@ -8,6 +8,17 @@ struct Map[K, V] { buckets: Slice[MapBucket[K, V]], size: Int }
 enum MapBucket[K, V] { empty, filled: MapEntry[K, V] }
 struct MapEntry[K, V] { key: K, value: V }
 
+fun is_valid[K, V](map: Map[K, V]): Bool {
+  var size = 0
+  for bucket in map.buckets do
+    if bucket is filled then
+      size = size + 1
+  map.size == size or return false
+  for entry in map do
+    entry.key.is_valid() and entry.value.is_valid() or return false
+  true
+}
+
 fun map[K, V](): Map[K, V] {
   Map { buckets = filled_slice(8, MapBucket[K, V].empty), size = 0 }
 }
@@ -195,11 +206,6 @@ fun mutate[K, V](map: Map[K, V], random: &Random, temperature: Int): Map[K, V] {
     }
   }
   copy
-}
-fun is_valid[K, V](map: Map[K, V]): Bool {
-  for entry in map do
-    entry.key.is_valid() and entry.value.is_valid() or return false
-  true
 }
 
 fun iter[K, V](map: Map[K, V]): Iter[MapEntry[K, V], _] {

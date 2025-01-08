@@ -6,6 +6,8 @@ import stdlib.mar
 | A byte is one byte big. Who would have known?
 opaque Byte = 1 byte big, 1 byte aligned
 
+fun is_valid(byte: Byte): Bool { true }
+
 fun +(left: Byte, right: Byte): Byte asm {
   moveib a 8 add a sp loadb a a | left
   moveib b 9 add b sp loadb b b | right

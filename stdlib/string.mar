@@ -65,6 +65,8 @@ fun fuzzing_complexity(char: Char): Float {
 
 struct String { data: Address, len: Int }
 
+fun is_valid(string: String): Bool { true }
+
 fun to_string(chars: Slice[Char]): String {
   chars.unchecked_cast[Slice[Char], String]()
 }
@@ -149,7 +151,6 @@ fun mutate(string: String, random: &Random, temperature: Int): String {
   if temperature == 0 then return string
   string.chars().mutate(random, temperature).to_string()
 }
-fun is_valid(string: String): Bool { true }
 
 fun iter(string: String): Iter[Char, _] {
   Iter[Char, StrIter] { state = StrIter { string, index = 0 } }

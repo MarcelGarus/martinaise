@@ -5,6 +5,8 @@ import stdlib.mar
 
 struct Range[T] { start: T, end: T }
 
+fun is_valid[T](range: Range[T]): Bool { range.start <= range.end }
+
 fun ..[T](start: T, end: T): Range[T] { Range { start, end } }
 fun ..=[T](start: T, end: T): Range[T] { Range { start, end = end.inc() } }
 fun ..+[T, D](start: T, len: D): Range[T] { Range { start, end = start + len } }
@@ -41,7 +43,6 @@ fun mutate[T](range: Range[T], random: &Random, temperature: Int): Range[T] {
     else tuple(range.start.mutate(random, temperature), range.end)
   bounds.min()..bounds.max()
 }
-fun is_valid[T](range: Range[T]): Bool { range.start <= range.end }
 
 fun iter[T](range: Range[T]): Iter[T, _] {
   Iter[T, RangeIter[T]] { state = RangeIter { rest = range } }

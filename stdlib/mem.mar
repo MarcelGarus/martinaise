@@ -216,6 +216,11 @@ fun memhash(address: Address, amount: Int): Int asm {
 
 struct Slice[T] { data: Address, len: Int }
 
+fun is_valid[T](slice: Slice[T]): Bool {
+  for item in slice do item.is_valid() or return false
+  true
+}
+
 fun empty_slice[T](): Slice[T] {
   | Storing a reference that is effectively a null pointer is an antipattern.
   | Here, we still do that because storing a Maybe[&T] would make the Slice type
@@ -333,10 +338,6 @@ fun mutate[T](slice: Slice[T], random: &Random, temperature: Int): Slice[T] {
         random.next_int(0..=slice.len), static[T]().generate(random, 100))
   }
   copy.to_slice()
-}
-fun is_valid[T](slice: Slice[T]): Bool {
-  for item in slice do item.is_valid() or return false
-  true
 }
 
 fun to_list[T](slice: Slice[T]): List[T] {

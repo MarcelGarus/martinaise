@@ -7,6 +7,8 @@ import stdlib.mar
 
 struct List[T] { data: Slice[T], len: Int }
 
+fun is_valid[T](list: List[T]): Bool { list.to_slice().is_valid() }
+
 fun uninitialized_list[T](len: Int): List[T] {
   List {
     data = uninitialized_slice[T](
@@ -174,6 +176,13 @@ fun remove[T](list: &List[T], range: Range[Int]) {
   list.len = slice.len
 }
 
+fun +[T](a: List[T], b: List[T]): List[T] {
+  var concatenated = uninitialized_list[T](a.len + b.len)
+  a.to_slice().copy_to(concatenated.to_slice().subslice(0..a.len))
+  b.to_slice().copy_to(concatenated.to_slice().subslice(a.len..+b.len))
+  concatenated
+}
+
 fun ==[T](a: List[T], b: List[T]): Bool { a.to_slice() == b.to_slice() }
 fun iter[T](list: List[T]): Iter[T, _] { list.to_slice().iter() }
 fun write[W, T](writer: W, list: List[T]) { writer.write(list.to_slice()) }
@@ -202,15 +211,4 @@ fun fuzzing_complexity[T](list: List[T]): Float {
 }
 fun mutate[T](list: List[T], random: &Random, temperature: Int): List[T] {
   list.to_slice().mutate(random, temperature).to_list()
-}
-fun is_valid[T](list: List[T]): Bool {
-  for item in list do item.is_valid() or return false
-  true
-}
-
-fun +[T](a: List[T], b: List[T]): List[T] {
-  var concatenated = uninitialized_list[T](a.len + b.len)
-  a.to_slice().copy_to(concatenated.to_slice().subslice(0..a.len))
-  b.to_slice().copy_to(concatenated.to_slice().subslice(a.len..+b.len))
-  concatenated
 }

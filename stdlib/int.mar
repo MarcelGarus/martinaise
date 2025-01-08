@@ -5,6 +5,8 @@ import stdlib.mar
 
 opaque Int = 8 bytes big, 8 bytes aligned
 
+fun is_valid(int: Int): Bool { true }
+
 var min_int = 0 - 9223372036854775806
 var max_int = 9223372036854775807
 
