@@ -267,7 +267,7 @@ fun generate(s: Static[Float], random: &Random, complexity: Int): Float {
 }
 fun fuzzing_complexity(float: Float): Float {
   var extra = if float.to_int().to_float() == float then 0.0 else 10.0
-  float.abs().to_int().log_2().to_float() + extra
+  {float.abs() + 1.0}.approximate_log_2() + extra
 }
 fun mutate(value: Float, random: &Random, temperature: Int): Float {
   value.to_int().mutate(random, temperature).to_float()
