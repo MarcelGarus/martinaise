@@ -220,32 +220,21 @@ function updateFuzzingExamples(path: Path) {
   const examplesOfFile = examples.get(path);
   if (!examplesOfFile) return;
   for (const examplesOfFun of examplesOfFile.values()) {
-    const position = new vs.Position(examplesOfFun.fun_start_line, 80);
-    const successes = [];
-    const panics = [];
-
     for (const call of examplesOfFun.calls) {
-      switch (call.result.status) {
-        case "returned": {
-          successes.push(`${call.inputs.join(", ")} -> ${call.result.value}`);
-          break;
-        }
-        case "panicked":
-          panics.push(`${call.inputs.join(", ")} panics`);
-      }
-      // console.info(`Example call: ${JSON.stringify(call)}`);
+      console.info(`Example call: ${JSON.stringify(call)}`);
+      const position = new vs.Position(examplesOfFun.fun_start_line, 80);
+      let text = call.inputs.join(", ");
+      if (call.result.status == "returned") text += ` -> ${call.result.value}`;
+      if (call.result.status == "panicked") text += ` panics`;
+      const collection =
+        call.result.status == "returned"
+          ? exampleDecorations
+          : panicDecorations;
+      collection.push({
+        range: new vs.Range(position, position),
+        renderOptions: { after: { contentText: text } },
+      });
     }
-
-    if (successes.length > 0)
-      exampleDecorations.push({
-        range: new vs.Range(position, position),
-        renderOptions: { after: { contentText: successes.join("⠀⠀⠀") } },
-      });
-    if (panics.length > 0)
-      panicDecorations.push({
-        range: new vs.Range(position, position),
-        renderOptions: { after: { contentText: panics.join("⠀⠀⠀") } },
-      });
   }
   editor.setDecorations(panicDecoration, panicDecorations);
   editor.setDecorations(exampleDecoration, exampleDecorations);
