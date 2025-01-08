@@ -246,34 +246,35 @@ fun write_line_number[W](writer: W, n: Int) {
   else writer.write("   {n}")
 }
 
+fun to_json(src: Src): Json {
+  Json.map(
+    switch src.to_code_range()
+    case some(range) map(
+      "file" -> Json.string(src.file),
+      "start" -> Json.map(map(
+        "line"   -> Json.int(range.start.line),
+        "column" -> Json.int(range.start.column),
+      )),
+      "end" -> Json.map(map(
+        "line"   -> Json.int(range.start.line),
+        "column" -> Json.int(range.start.column),
+      ))
+    )
+    case none map(
+      "file"  -> Json.string(src.file),
+      "start" ->
+        Json.map(map("line" -> Json.int(0), "column" -> Json.int(0))),
+      "end" ->
+        Json.map(map("line" -> Json.int(0), "column" -> Json.int(0))),
+    )
+  )
+}
 fun to_json(error: Error): Json {
-  var src_obj =
-    switch error.src.to_code_range()
-      case some(range) map(
-        "file" -> Json.string(error.src.file),
-        "start" -> Json.map(map(
-          "line"   -> Json.int(range.start.line),
-          "column" -> Json.int(range.start.column),
-        )),
-        "end" -> Json.map(map(
-          "line"   -> Json.int(range.start.line),
-          "column" -> Json.int(range.start.column),
-        ))
-      )
-      case none map(
-        "file"  -> Json.string(error.src.file),
-        "start" ->
-          Json.map(map("line" -> Json.int(0), "column" -> Json.int(0))),
-        "end" ->
-          Json.map(map("line" -> Json.int(0), "column" -> Json.int(0))),
-      )
-
   var context_array = list[Json]()
   for entry in error.context do context_array.&.push(Json.string(entry))
-
   Json.map(map(
     "type" -> Json.string("error"),
-    "src" -> Json.map(src_obj),
+    "src" -> error.src.to_json(),
     "title" -> Json.string(error.title),
     "description" -> Json.string(error.description),
     "context" -> Json.array(context_array),
@@ -6549,6 +6550,22 @@ fun main(): Never {
     switch command
     case analyze(path) {
       var ast = parse_project(path).unwrap_or_report_and_exit()
+      { | Print a list of all functions in the file.
+        var funs_in_file = list[Json]()
+        for fun_ in ast.funs do
+          for fun_ in fun_.value do {
+            if fun_.name.src.file != path then continue
+            funs_in_file.&.push(Json.map(map(
+              "src" -> fun_.name.src.to_json(),
+              "signature" -> Json.string(fun_.stripped_signature().format()),
+              "fuzzable" -> Json.bool(fun_.type_args.is_empty()),
+            )))
+          }
+        println(Json.map(map(
+          "type" -> Json.string("functions"),
+          "functions" -> Json.array(funs_in_file),
+        )))
+      }
       var errors = ast.check_all_funs()
       if errors.is_empty()
       then {

@@ -44,9 +44,9 @@
     ],
     "commands": [
       {
-        "category": "Martinaise Fuzzing",
-        "command": "martinaise.fuzzing",
-        "title": "Start fuzzing"
+        "category": "Martinaise",
+        "title": "Toggle fuzzing",
+        "command": "martinaise.toggle-fuzzing"
       }
     ],
     "grammars": [

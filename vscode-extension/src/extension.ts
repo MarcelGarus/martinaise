@@ -1,16 +1,26 @@
 /* eslint-disable @typescript-eslint/no-confusing-void-expression */
-import * as child_process from "child_process";
-import * as linebyline from "linebyline";
 import * as vs from "vscode";
+import * as communication from "./communication";
 
 let diagnosticCollection: vs.DiagnosticCollection;
 let exampleDecoration: vs.TextEditorDecorationType;
+
+let fuzzingEnabled = false;
 
 export function activate(context: vs.ExtensionContext) {
   console.info("Activated Martinaise extension!");
 
   diagnosticCollection = vs.languages.createDiagnosticCollection("martinaise");
   context.subscriptions.push(diagnosticCollection);
+
+  context.subscriptions.push(
+    vs.commands.registerCommand("martinaise.toggle-fuzzing", async () => {
+      fuzzingEnabled = !fuzzingEnabled;
+      await vs.window.showInformationMessage(
+        fuzzingEnabled ? "Fuzzing turned on." : "Fuzzing turned off.",
+      );
+    }),
+  );
 
   exampleDecoration = vs.window.createTextEditorDecorationType({
     after: {
@@ -24,6 +34,14 @@ export function activate(context: vs.ExtensionContext) {
   vs.window.onDidChangeVisibleTextEditors(() => onlyRunOneAtATime(update));
   vs.workspace.onDidChangeTextDocument(() => onlyRunOneAtATime(update));
 
+  vs.window.onDidChangeTextEditorVisibleRanges(async (event) => {
+    if (event.textEditor.document.languageId != "martinaise") return;
+    await handleVisibleRanges(
+      event.textEditor.document.uri,
+      event.visibleRanges,
+    );
+  });
+
   context.subscriptions.push(
     vs.languages.registerCodeActionsProvider(
       "martinaise",
@@ -31,7 +49,7 @@ export function activate(context: vs.ExtensionContext) {
     ),
   );
   context.subscriptions.push(
-    vs.commands.registerCommand("martinaise.fuzz", fuzz),
+    vs.commands.registerCommand("martinaise.fuzz", fuzzToPosition),
   );
 }
 export function deactivate() {
@@ -55,13 +73,13 @@ class MartinaiseCodeActionsProvider implements vs.CodeActionProvider {
   }
 }
 
-// Updates can be triggered very frequently (on every keystroke), but they can
-// take long – for example, when editing the Martinaise compiler itself, simply
-// analyzing the files takes some time. Thus, here we make sure that only one
-// update runs at a time.
+// Updates can be triggered very frequently (on every keystroke or scroll), but
+// they can take long – for example, when editing the Martinaise compiler
+// itself, simply analyzing the files takes some time. Thus, here we make sure
+// that only one update runs at a time.
 
 let newestScheduled = performance.now();
-let currentRun = Promise.resolve(null);
+let currentRun: Promise<void> = Promise.resolve(undefined);
 
 async function onlyRunOneAtATime(callback: () => Promise<void>) {
   console.log("Scheduling update");
@@ -69,14 +87,15 @@ async function onlyRunOneAtATime(callback: () => Promise<void>) {
   newestScheduled = myTime;
   await currentRun;
   if (newestScheduled != myTime) return; // a newer update exists and will run
-  currentRun = new Promise(async (resolve) => {
-    await callback();
-    resolve(null);
-  });
+  currentRun = callback();
 }
 
-const soilBinary = "/home/marcel/projects/soil/soil-zig";
-const martinaiseCompiler = "/home/marcel/projects/martinaise/martinaise.soil";
+type Path = string;
+
+// Analyzing files.
+
+const functions = new Map<Path, communication.FunctionDefinition[]>();
+const errors = new Map<Path, communication.Error[]>();
 
 async function update() {
   console.log("Updating");
@@ -84,193 +103,154 @@ async function update() {
   for (const editor of vs.window.visibleTextEditors) {
     const uri = editor.document.uri.toString();
     if (!uri.endsWith(".mar")) continue;
+    const path = uri.toString();
 
-    const analysis = analyze(uri);
+    const analysis = communication.analyze(uri);
     promises.push(analysis);
     analysis
-      .then((errors) => {
-        diagnosticCollection.clear();
-        const diagnosticMap = new Map<string, vs.Diagnostic[]>();
-        for (const error of errors) {
-          console.info(`Error: ${JSON.stringify(error)}`);
-          if (error.src.file != uri) continue;
-          const range = new vs.Range(
-            new vs.Position(error.src.start.line, error.src.start.column),
-            new vs.Position(error.src.end.line, error.src.end.column),
-          );
-          const diagnostics = diagnosticMap.get(error.src.file) ?? [];
-          diagnostics.push(
-            new vs.Diagnostic(
-              range,
-              `${error.title}\n${error.description}`,
-              vs.DiagnosticSeverity.Error,
-            ),
-          );
-          diagnosticMap.set(error.src.file, diagnostics);
-        }
-        diagnosticMap.forEach((diags, file) =>
-          diagnosticCollection.set(vs.Uri.parse(file), diags),
-        );
+      .then((analysis) => {
+        functions.set(path, analysis.functions);
+        errors.set(path, analysis.errors);
+        updateErrorDiagnostics();
       })
       .catch((error) => console.error(`Analyzing failed: ${error}`));
   }
   await Promise.all(promises);
 }
 
-/// Returns the source code of the given URI. Prefers the content of open text
-/// documents, even if they're not saved yet. If none exists, asks the file
-/// system.
-async function readCode(uri: vs.Uri): Promise<string | null> {
-  for (const doc of vs.workspace.textDocuments)
-    if (doc.uri.toString() == uri.toString()) return doc.getText();
-  try {
-    const bytes = await vs.workspace.fs.readFile(uri);
-    return new TextDecoder("utf8").decode(bytes);
-  } catch (e) {
-    return null;
+function updateErrorDiagnostics() {
+  diagnosticCollection.clear();
+  const diagnosticMap = new Map<string, vs.Diagnostic[]>();
+  for (const fileErrors of errors.values()) {
+    for (const error of fileErrors) {
+      console.info(`Error: ${JSON.stringify(error)}`);
+
+      const range = new vs.Range(
+        new vs.Position(error.src.start.line, error.src.start.column),
+        new vs.Position(error.src.end.line, error.src.end.column),
+      );
+      const diagnostics = diagnosticMap.get(error.src.file) ?? [];
+      diagnostics.push(
+        new vs.Diagnostic(
+          range,
+          `${error.title}\n${error.description}`,
+          vs.DiagnosticSeverity.Error,
+        ),
+      );
+      diagnosticMap.set(error.src.file, diagnostics);
+    }
   }
-}
-
-/// Communication with the Martinaise language server works using the following
-/// schema.
-
-type AnalyzeMessage = ReadFileMessage | ErrorMessage; // martinaise tooling analyze ...
-type FuzzMessage = ReadFileMessage | ExampleMessage; // martinaise tooling fuzz ...
-interface ReadFileMessage {
-  type: "read_file";
-  path: string;
-}
-interface ErrorMessage {
-  type: "error";
-  src: {
-    file: string;
-    start: {
-      line: number;
-      column: number;
-    };
-    end: {
-      line: number;
-      column: number;
-    };
-  };
-  title: string;
-  description: string;
-  context: string[];
-}
-interface ExampleMessage {
-  type: "example_calls";
-  fun_start_line: number;
-  fun_name: string;
-  calls: ExampleCall[];
-}
-interface ExampleCall {
-  inputs: string[];
-  result: ExampleResult;
-}
-type ExampleResult = ExampleReturned | ExamplePanicked;
-interface ExampleReturned {
-  status: "returned";
-  value: string;
-}
-interface ExamplePanicked {
-  status: "panicked";
-  message: string;
-}
-
-async function handleReadFileMessage(
-  message: ReadFileMessage,
-): Promise<string> {
-  const uri = vs.Uri.parse(message.path);
-  const content = await readCode(uri);
-  const response = content
-    ? { type: "read_file", success: true, content: content }
-    : { type: "read_file", success: false };
-  return `${JSON.stringify(response)}\n`;
-}
-
-async function analyze(path: string): Promise<ErrorMessage[]> {
-  console.log(`Analyzing ${path}`);
-  const soil = child_process.spawn(soilBinary, [
-    martinaiseCompiler,
-    "tooling",
-    "analyze",
-    path,
-  ]);
-  soil.on("error", (error) => {
-    console.error(`Failed to spawn: ${error.name}: ${error.message}`);
-  });
-  linebyline(soil.stderr).on("line", (line: string) => console.log(line));
-
-  const diagnostics: ErrorMessage[] = [];
-  linebyline(soil.stdout).on("line", async function (line: string) {
-    console.info("Line: " + line);
-    const message = JSON.parse(line) as AnalyzeMessage;
-    if (message.type == "read_file") {
-      soil.stdin.write(await handleReadFileMessage(message));
-    }
-    if (message.type == "error") {
-      diagnostics.push(message);
-    }
-  });
-
-  const exitCode: number | null = await new Promise((resolve) =>
-    soil.on("close", (exitCode) => resolve(exitCode)),
+  diagnosticMap.forEach((diags, file) =>
+    diagnosticCollection.set(vs.Uri.parse(file), diags),
   );
-  console.info(`martinaise analyze exited with ${exitCode}.`);
-
-  return diagnostics;
 }
 
-async function fuzz(document: vs.TextDocument, position: vs.Position) {
-  const path = document.uri.toString();
+// Fuzzing functions.
+
+const examples = new Map<
+  Path,
+  Map<communication.Signature, communication.FunctionExamples>
+>();
+
+async function fuzz(uri: vs.Uri, signature: string) {
+  const path = uri.toString();
   if (!path.endsWith(".mar")) return;
 
+  console.log(`Fuzzing ${signature}`);
+
+  await communication.fuzz(uri, signature, (new_examples) => {
+    let editor: vs.TextEditor | null = null;
+    for (const e of vs.window.visibleTextEditors)
+      if (e.document.uri.toString() == path) editor = e;
+    if (!editor) return;
+
+    if (!examples.has(path))
+      examples.set(
+        path,
+        new Map<communication.Signature, communication.FunctionExamples>(),
+      );
+
+    const fileExamples = examples.get(path);
+    if (!fileExamples) throw Error("unreachable");
+    fileExamples.set(signature, new_examples);
+    updateFuzzingExamples(path);
+  });
+}
+
+async function fuzzToPosition(
+  document: vs.TextDocument,
+  position: vs.Position,
+) {
+  const path = document.uri.toString();
+  if (!path.endsWith(".mar")) return;
   console.log(`Fuzzing ${path} ${JSON.stringify(position)}`);
 
-  const soil = child_process.spawn(soilBinary, [
-    martinaiseCompiler,
-    "tooling",
-    "fuzz",
-    path,
-    `${position.line}:${position.character}`,
-  ]);
-  soil.on("error", (error) => {
-    console.error(`Failed to spawn: ${error.name}: ${error.message}`);
+  await communication.fuzzToPosition(document, position, (new_examples) => {
+    if (!examples.has(path))
+      examples.set(
+        path,
+        new Map<communication.Signature, communication.FunctionExamples>(),
+      );
+
+    const fileExamples = examples.get(path);
+    if (!fileExamples) throw Error("unreachable");
+    fileExamples.set(new_examples.fun_signature, new_examples);
+    updateFuzzingExamples(path);
   });
-  linebyline(soil.stderr).on("line", (line: string) => console.log(line));
+}
 
-  linebyline(soil.stdout).on("line", async function (line: string) {
-    console.info("Line: " + line);
-    const message = JSON.parse(line) as FuzzMessage;
-    if (message.type == "read_file") {
-      soil.stdin.write(await handleReadFileMessage(message));
+function updateFuzzingExamples(path: Path) {
+  let editor: vs.TextEditor | null = null;
+  for (const e of vs.window.visibleTextEditors)
+    if (e.document.uri.toString() == path) editor = e;
+  if (!editor) return;
+
+  const decorations: vs.DecorationOptions[] = [];
+
+  const examplesOfFile = examples.get(path);
+  if (!examplesOfFile) return;
+  for (const examplesOfFun of examplesOfFile.values()) {
+    for (const call of examplesOfFun.calls) {
+      console.info(`Example call: ${JSON.stringify(call)}`);
+      const position = new vs.Position(examplesOfFun.fun_start_line, 80);
+      let text = `${examplesOfFun.fun_name}(${call.inputs.join(", ")})`;
+      if (call.result.status == "returned") text += ` = ${call.result.value}`;
+      if (call.result.status == "panicked") text += ` = <panicked>`;
+      decorations.push({
+        range: new vs.Range(position, position),
+        renderOptions: { after: { contentText: text } },
+      });
     }
-    if (message.type == "example_calls") {
-      let editor: vs.TextEditor | null = null;
-      for (const e of vs.window.visibleTextEditors)
-        if (e.document.uri.toString() == path) editor = e;
-      if (!editor) return;
+  }
+  editor.setDecorations(exampleDecoration, decorations);
+}
 
-      const decorations: vs.DecorationOptions[] = [];
-      for (const call of message.calls) {
-        console.info(`Example call: ${JSON.stringify(call)}`);
-        const position = new vs.Position(message.fun_start_line, 80);
-        let text = `${message.fun_name}(${call.inputs.join(", ")})`;
-        if (call.result.status == "returned") text += ` = ${call.result.value}`;
-        if (call.result.status == "panicked") text += ` = <panicked>`;
-        decorations.push({
-          range: new vs.Range(position, position),
-          renderOptions: {
-            after: { contentText: text },
-          },
-        });
-      }
-      editor.setDecorations(exampleDecoration, decorations);
-    }
-  });
+async function handleVisibleRanges(uri: vs.Uri, ranges: readonly vs.Range[]) {
+  let start = 999999; // TODO
+  let end = 0;
+  for (const range of ranges) {
+    start = min(start, range.start.line);
+    end = max(end, range.end.line + 1);
+  }
+  await new Promise((resolve) => resolve(2));
+  console.log(`Fuzzing lines from ${start} to ${end} of ${uri.toString()}`);
 
-  const exitCode: number | null = await new Promise((resolve) =>
-    soil.on("close", (exitCode) => resolve(exitCode)),
-  );
-  console.info(`martinaise fuzz exited with ${exitCode}.`);
+  const functions_in_file = functions.get(uri.toString()) ?? [];
+  for (const fun of functions_in_file) {
+    if (fun.src.end.line < start) continue;
+    if (fun.src.start.line > end) continue;
+    console.log(`Fuzzing ${fun.signature}`);
+  }
+  // console.log(`Visible ranges:`);
+  // for (const range of ranges) {
+  //   console.log(
+  //     `${range.start.line}:${range.start.character} – ${range.end.line}:${range.end.character}`,
+  //   );
+  // }
+}
+function min(a: number, b: number): number {
+  return a < b ? a : b;
+}
+function max(a: number, b: number): number {
+  return a > b ? a : b;
 }
