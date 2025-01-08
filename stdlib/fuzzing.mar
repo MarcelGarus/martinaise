@@ -35,25 +35,27 @@ fun fuzzer_main[Input](): Never {
 
   var max_total_runs = 10000
   var total_runs = 0
+  var no_new_coverage_runs = 0
   loop {
     if total_runs >= max_total_runs then break {}
 
     if samples.get_maybe_ref(minimizing) is some(original) then {
-      stdout."there's an input there\n"
+      | stdout."there's an input there\n"
       var num_shrink_tries = 1000
-      var j = 0
+      var shrink_runs = 0
       loop {
         if total_runs >= max_total_runs then break {}
-
-        j = j + 1
-        if j == num_shrink_tries then break
+        if shrink_runs == num_shrink_tries then break {}
+        shrink_runs = shrink_runs + 1
 
         var checkpoint = heap_checkpoint()
-        var temperature = num_shrink_tries - j
-        var mutated = original.input.mutate_valid(random.&, j) or {
+        var temperature = num_shrink_tries - shrink_runs
+        stderr."mutating: {original.input.debug()}\n"
+        var mutated = original.input.mutate_valid(random.&, shrink_runs) or {
           free_everything_allocated_after(checkpoint)
           break
         }
+        stderr."mutated: {mutated.debug()}\n"
         var mutated = mutated.run_sandboxed()
         total_runs = total_runs + 1
 
@@ -63,19 +65,23 @@ fun fuzzer_main[Input](): Never {
             stderr."Replacing {original.input.debug()} with {mutated.input.debug()}\n"
             original.* = mutated
             report(samples)
-            j = 0
+            shrink_runs = 0
+            continue
           } else free_everything_allocated_after(checkpoint)
-        } else if mutated.crashes() and not(front.crashes)
-          or mutated.coverage.improves_upon(front.coverage)
-        then {
-          front.&.integrate(mutated)
-          samples.&.push(mutated)
-          report(samples)
-        } else free_everything_allocated_after(checkpoint)
+        } else {
+          if mutated.crashes() and not(front.crashes)
+            or mutated.coverage.improves_upon(front.coverage)
+          then {
+            front.&.integrate(mutated)
+            samples.&.push(mutated)
+            report(samples)
+          } else free_everything_allocated_after(checkpoint)
+        }
       }
 
       | We have tried long enough to shrink this input.
       | TODO: check that this isn't a duplicate shrunk input
+      stderr."Moving on to next input"
       minimizing = minimizing + 1
     } else {
       var checkpoint = heap_checkpoint()
@@ -91,11 +97,15 @@ fun fuzzer_main[Input](): Never {
           or sample.coverage.improves_upon(front.coverage)
 
       if discovered_new_behavior then {
+        no_new_coverage_runs = 0
         front.&.integrate(sample)
         samples.&.push(sample)
         report(samples)
-      } else
+      } else {
+        no_new_coverage_runs = no_new_coverage_runs + 1
+        if no_new_coverage_runs > 100 then break {}
         free_everything_allocated_after(checkpoint)
+      }
     }
   }
 
@@ -128,7 +138,7 @@ fun mutate_valid[T](value: T, random: &Random, temperature: Int): Maybe[T] {
 
 fun run_sandboxed[Input](input: Input): FuzzingSample[Input] {
   var arg_strings = input.arg_strings()
-  | eprint("Running {comma_separated(arg_strings)} -> ")
+  stderr."Running {comma_separated(arg_strings)} -> "
 
   var current_cov = get_coverage()
   current_cov.reset()
@@ -145,8 +155,9 @@ fun run_sandboxed[Input](input: Input): FuzzingSample[Input] {
     switch res
     case ok(res) ok[String, Nothing]("{res.debug()}")
     case error error[String, Nothing]({})
-  | eprint(result or "<panicked>")
-  | eprintln(" (complexity {input.fuzzing_complexity()})")
+  stderr.write(result or "<panicked>")
+  stderr."\n"
+  | stderr." (complexity {input.fuzzing_complexity()})\n"
 
   FuzzingSample { input, arg_strings, coverage, result }
 }
