@@ -206,7 +206,9 @@ fun to_json[Input](sample: FuzzingSample[Input]): Json {
   Json.map(map(
     "inputs" -> Json.array(json_args),
     "result" -> Json.map(map(
-      "status" -> Json.string("returned"),
+      "status" -> Json.string(
+        switch sample.result case ok "returned" case error "panicked"
+      ),
       "value" -> Json.string(sample.result or "<panicked>"),
     )),
   ))
