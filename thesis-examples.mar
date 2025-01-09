@@ -1,0 +1,255 @@
+import stdlib.mar
+
+
+| Abs & Average
+
+fun abs(number: Int): Int {
+  if number >= 0 then
+    number
+  else
+    0 - number
+}
+
+fun average(list: List[Int]): Int {
+  list.sum() / list.len
+}
+
+
+| Calculator
+
+enum Term {
+  number: Int,
+  add: Operands,
+  subtract: Operands,
+  multiply: Operands,
+  divide: Operands,
+}
+struct Operands { left: &Term, right: &Term }
+
+fun eval(term: Term): Int {
+  switch term
+  case number(num) num
+  case add(op) op.left.eval() + op.right.eval()
+  case subtract(op) op.left.eval() - op.right.eval()
+  case multiply(op) op.left.eval() * op.right.eval()
+  case divide(op) op.left.eval() / op.right.eval()
+}
+
+fun write[W](writer: W, term: Term) {
+  switch term
+  case number(num) writer."{num}"
+  case add(op) writer."{op.left} + {op.right}"
+  case subtract(op)
+    writer."{op.left} - {{
+      var needs_parens = op.right.* is add or {op.right.* is subtract}
+      if needs_parens then "({op.right})" else "{op.right}"
+    }}"
+  case multiply(op)
+    writer."{{
+      var needs_parens = op.left.* is add or {op.left.* is subtract}
+      if needs_parens then "({op.left})" else "{op.left}"
+    }} * {{
+      var needs_parens = op.right.* is add or {op.right.* is subtract}
+      if needs_parens then "({op.right})" else "{op.right}"
+    }}"
+  case divide(op)
+    writer."{{
+      var needs_parens = op.left.* is add or {op.left.* is subtract}
+      if needs_parens then "({op.left})" else "{op.left}"
+    }} / {{
+      var needs_parens = not(op.right.* is number)
+      if needs_parens then "({op.right})" else "{op.right}"
+    }}"
+}
+fun write_debug[W](writer: W, term: Term) { writer."{term}" }
+
+
+| Crypto
+
+var hash = "5E884898DA28047151D0E56F8DC6292773603D0D6AABBDD62A11EF721D1542D8"
+
+fun secret_number(password: String): Maybe[Int] {
+  if sha_256(password) == hash then {
+    some(42)
+  } else {
+    none[Int]()
+  }
+}
+
+fun sha_256(input: String): String { input }  | dummy implementation
+
+
+| Mail
+
+fun is_valid_email(string: String): Bool {
+  if not(string.contains("@")) then
+    return false
+  var parts = string.split("@")
+  var name = parts.get(0)
+  var host = parts.get(1)
+
+  if name.len < 8 then
+    return false
+  if not(name.is_alphanumeric()) then
+    return false
+
+  true
+}
+
+fun is_alphanumeric(name: String): Bool {
+  for char in name.chars() do {
+    var is_valid = char.is_letter() or char.is_digit() or char == #.
+    if not(is_valid) then
+      return false
+  }
+  true
+}
+
+| Greet
+
+fun greet(name: String): String {
+  "Hello, {name}!"
+}
+
+
+
+
+
+
+
+
+
+
+
+| Order
+
+struct Order {
+  customer: String,
+  items: List[Item],
+  discount: Float,
+}
+struct Item {
+  name: String,
+  price: Float,
+  quantity: Int,
+}
+
+fun total_price(item: Item): Float {
+  item.price * item.quantity.to_float()
+}
+fun total_without_discount(order: Order): Float {
+  var sum = 0.0
+  for item in order.items do {
+    sum = sum + item.total_price()
+  }
+  sum * order.discount
+}
+fun total(order: Order): Float {
+  order.total_without_discount() * (1.0 - order.discount)
+}
+
+fun create_invoice(order: Order): String {
+  if order.items.is_empty() then
+    panic("Order is empty.")
+
+  var text =
+    "Hello {order.customer},\n
+    '\n
+    'Thank you for buying at Master's Thesis GmbH.\n
+    'These are your items:\n"
+
+  for item in order.items do
+    text = text + "{item.name}: {item.quantity} x {item.price} = {item.total_price()}\n"
+
+  if order.discount == 0.0 then {
+    text = text + "Discount: {order.discount}"
+  }
+
+  text
+}
+
+
+
+| Rest
+
+
+fun test(number: Int): String {
+  if number % 2 == 0 then {
+    if number % 6 == 0 then "a" else "b"
+  } else {
+    if number <= 1000 then "c" else "d"
+  }
+}
+
+
+
+struct Date { year: Int, month: Int, day: Int }
+fun years_since(a: Date, b: Date): Int {
+  if a.month < b.month or a.day < b.day then a.year - b.year - 1 else a.year - b.year
+}
+fun write_debug[W](writer: W, date: Date) {
+  writer."{date.year}-{date.month}-{date.day}"
+}
+fun generate(static: Static[Date], random: &Random, complexity: Int): Date {
+  Date {
+    year = static[Int]().generate(random, complexity),
+    month = random.next_int(1..=12),
+    day = random.next_int(1..=31),
+  }
+}
+fun is_valid(date: Date): Bool {
+  {1 ..= 12}.contains(date.month) and {1 ..= 31}.contains(date.day)
+}
+
+struct DateTime { year: Int, month: Int, day: Int, hour: Int, minute: Int }
+fun date(datetime: DateTime): Date {
+  Date { year = datetime.year, month = datetime.month, day = datetime.day }
+}
+fun write_debug[W](writer: W, datetime: DateTime) {
+  writer."{datetime.year}-{datetime.month}-{datetime.day} {datetime.hour}:{datetime.minute}"
+}
+fun is_valid(datetime: DateTime): Bool {
+  {1 ..= 12}.contains(datetime.month)
+    and {1 ..= 31}.contains(datetime.day)
+    and {0..24}.contains(datetime.hour)
+    and {0..60}.contains(datetime.minute)
+}
+
+
+| Age in years
+| fun age(person: Person, now: Date): Int {
+|   now.duration_since(person.birthdate).in_years().to_int()
+| }
+fun today(): Date { Date { year = 2024, month = 12, day = 2 } }
+
+
+fun foo(a: Int): Bool {
+  if a > 2 then { return false }
+  true
+}
+
+
+
+
+
+
+
+
+
+
+
+| fun test(number: Int): Int {
+|   number
+| }
+
+struct In {
+  arg: String
+}
+
+fun main() {
+  var random = random_number_generator()
+  var original = In { arg = "toBQOvKP@2|Gfi2<lL;C@55)x" }
+  original.debug().println()
+  for i in 0..30 do
+    original.mutate(random.&, i).debug().println()
+}
