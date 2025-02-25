@@ -41,11 +41,13 @@ fun /(left: Int, right: Int): Int asm {
 fun %(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
   moveib b 16 add b sp load b b | right
+  moveib c 0 cmp b c isequal cjump .mod_by_zero
   load c sp | return value address
   rem a b
   moveib d 0 cmp a d isgreaterequal cjump .done
   .make_positive: add a b
   .done: store c a ret
+  .mod_by_zero: panic
 }
 fun &(left: Int, right: Int): Int asm {
   moveib a 8  add a sp load a a | left
