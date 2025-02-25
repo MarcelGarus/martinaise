@@ -36,3 +36,4 @@ fun <=[T](a: T, b: T): Bool { not(a <=> b is greater) }
 fun min[T](a: T, b: T): T { if a < b then a else b }
 fun max[T](a: T, b: T): T { if a > b then a else b }
 fun clamp[T](a: T, range: Range[T]): T { max(range.start, min(range.end.dec(), a)) }
+fun clamp[T](a: T, range: OpenRange[T]): T { max(range.start, a) }
