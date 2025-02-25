@@ -25,6 +25,7 @@ fun fuzzer_main[Input](): Never {
   |    smaller, replace the current input.
   |    If the mutated version is bigger but results in new behavior, save it.
 
+  var start = now_instant()
   var info = static[Input]().fuzzing_info()
   var random = random_number_generator()
   var front = FuzzFront {
@@ -51,20 +52,21 @@ fun fuzzer_main[Input](): Never {
 
         var checkpoint = heap_checkpoint()
         var temperature = num_shrink_tries - shrink_runs
-        stderr."mutating: {original.input.debug()}\n"
+        | stderr."mutating: {original.input.debug()}\n"
         var mutated = original.input.mutate_valid(random.&, shrink_runs) or {
           free_everything_allocated_after(checkpoint)
           break
         }
-        stderr."mutated: {mutated.debug()}\n"
+        | stderr."mutated: {mutated.debug()}\n"
         var mutated = mutated.run_sandboxed()
         total_runs = total_runs + 1
 
         | eprintln("Mutated (comp {mutated.fuzzing_complexity()}) and original (comp {original.fuzzing_complexity()})")
         if original.coverage == mutated.coverage and original.crashes() == mutated.crashes() then {
           if mutated.fuzzing_complexity() < original.fuzzing_complexity() then {
-            stderr."Replacing {original.input.debug()} with {mutated.input.debug()}\n"
+            | stderr."Replacing {original.input.debug()} with {mutated.input.debug()}\n"
             original.* = mutated
+            stderr."{total_runs} runs, {now_instant().nanos_since(start) / 1000000} ms\n"
             report(samples)
             shrink_runs = 0
             continue
@@ -72,6 +74,7 @@ fun fuzzer_main[Input](): Never {
         } else if mutated.improves_upon(front) then {
           front.&.integrate(mutated)
           samples.&.push(mutated)
+          stderr."{total_runs} runs, {now_instant().nanos_since(start) / 1000000} ms\n"
           report(samples)
         } else free_everything_allocated_after(checkpoint)
       }
@@ -93,6 +96,7 @@ fun fuzzer_main[Input](): Never {
         no_new_coverage_runs = 0
         front.&.integrate(sample)
         samples.&.push(sample)
+        stderr."{total_runs} runs, {now_instant().nanos_since(start) / 1000000} ms\n"
         report(samples)
       } else {
         no_new_coverage_runs = no_new_coverage_runs + 1
@@ -123,14 +127,14 @@ fun improves_upon[Input](sample: FuzzingSample[Input], front: FuzzFront): Bool {
 fun generate_valid[T](
   static: Static[T], random: &Random, complexity: Int
 ): Maybe[T] {
-  for i in 0..100 do {
+  for i in 0..1000 do {
     var generated = static.generate(random, complexity)
     if generated.is_valid() then return some(generated)
   }
   none[T]()
 }
 fun mutate_valid[T](value: T, random: &Random, temperature: Int): Maybe[T] {
-  for i in 0..100 do {
+  for i in 0..1000 do {
     var mutated = value.mutate(random, temperature)
     if mutated.is_valid() then return some(mutated)
   }
@@ -139,7 +143,7 @@ fun mutate_valid[T](value: T, random: &Random, temperature: Int): Maybe[T] {
 
 fun run_sandboxed[Input](input: Input): FuzzingSample[Input] {
   var arg_strings = input.arg_strings()
-  stderr."Running {comma_separated(arg_strings)} -> "
+  | stderr."Running {comma_separated(arg_strings)} -> "
 
   var current_cov = get_coverage()
   current_cov.reset()
@@ -156,8 +160,8 @@ fun run_sandboxed[Input](input: Input): FuzzingSample[Input] {
     switch res
     case ok(res) ok[String, Nothing]("{res.debug()}")
     case error error[String, Nothing]({})
-  stderr.write(result or "<panicked>")
-  stderr."\n"
+  | stderr.write(result or "<panicked>")
+  | stderr."\n"
   | stderr." (complexity {input.fuzzing_complexity()})\n"
 
   FuzzingSample { input, arg_strings, coverage, result }
