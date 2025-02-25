@@ -5,7 +5,7 @@ import stdlib.mar
 | ==.
 
 struct Map[K, V] { buckets: Slice[MapBucket[K, V]], size: Int }
-enum MapBucket[K, V] { empty, filled: MapEntry[K, V] }
+enum MapBucket[K, V] { empty, filled: MapEntry[K, V], tombstone }
 struct MapEntry[K, V] { key: K, value: V }
 
 fun is_valid[K, V](map: Map[K, V]): Bool {
@@ -67,18 +67,23 @@ fun put[K, V](map: &Map[K, V], key: K, value: V) {
       size = 0,
     }
     for bucket in old_buckets do
-      if bucket is filled(entry) then map.raw_insert(entry.key, entry.value)
+      if bucket is filled(entry) then map.raw_put(entry.key, entry.value)
   }
-  map.raw_insert(key, value)
+  map.raw_put(key, value)
 }
-fun raw_insert[K, V](map: &Map[K, V], key: K, value: V) {
+fun raw_put[K, V](map: &Map[K, V], key: K, value: V) {
   var i = key.hash() % map.buckets.len
   loop {
     var bucket = map.buckets.get_ref_unchecked(i)
     switch bucket.*
     case empty {
       bucket.* = MapBucket.filled(MapEntry { key, value })
-      map.size = map.size.inc()
+      map.size = map.size + 1
+      break
+    }
+    case tombstone {
+      bucket.* = MapBucket.filled(MapEntry { key, value })
+      map.size = map.size + 1
       break
     }
     case filled(entry)
@@ -95,6 +100,7 @@ fun get_maybe_ref[K, V](map: &Map[K, V], key: K): Maybe[&V] {
     var bucket = map.buckets.get_unchecked(i)
     switch bucket
     case empty return none[&V]()
+    case tombstone i = i + 1 % map.buckets.len
     case filled(entry)
       if entry.key == key
       then return some(map.buckets.get_ref_unchecked(i)
@@ -112,6 +118,7 @@ fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
     var bucket = map.buckets.get_unchecked(i)
     switch bucket
     case empty return none[V]()
+    case tombstone i = i + 1 % map.buckets.len
     case filled(entry)
       if entry.key == key
       then return some(entry.value)
@@ -124,6 +131,20 @@ fun get[K, V](map: Map[K, V], key: K): V {
 fun get_ref_or_put_default[K, V](map: &Map[K, V], key: K, default_: V): &V {
   if not(map.contains(key)) then map.put(key, default_)
   map.get_maybe_ref(key).unwrap()
+}
+
+fun remove[K, V](map: Map[K, V], key: K) {
+  var i = key.hash() % map.buckets.len
+  loop {
+    var bucket = map.buckets.get_ref_unchecked(i)
+    switch bucket.*
+    case empty panic("{key.debug()} is not in the map")
+    case tombstone i = i + 1 % map.buckets.len
+    case filled(entry)
+      if entry.key == key
+      then return bucket.* = MapBucket[K, V].tombstone
+      else i = i + 1 % map.buckets.len
+  }
 }
 
 fun ==[K, V](a: Map[K, V], b: Map[K, V]): Bool {

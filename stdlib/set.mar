@@ -5,15 +5,16 @@ import stdlib.mar
 struct Set[T] { map: Map[T, Nothing] }
 
 fun set[T](): Set[T] { Set[T] { map = map[T, Nothing]() } }
-fun to_set[T](list: List[T]): Set[T] {
+fun to_set[T](items: Slice[T]): Set[T] {
   var set = set[T]()
-  for item in list do set.&.put(item)
+  for item in items do set.&.put(item)
   set
 }
 
 fun is_empty[T](set: Set[T]): Bool { set.map.size == 0 }
 fun put[T](set: &Set[T], value: T) { set.map.&.put(value, {}) }
 fun contains[T](set: Set[T], value: T): Bool { set.map.contains(value) }
+fun remove[T](set: Set[T], value: T) { set.map.remove(value) }
 
 fun write[W, T](writer: W, set: Set[T]) {
   writer.write(#{)
