@@ -18,6 +18,19 @@ fun writer[W, A, B, C](writer: W, tuple: Tuple3[A, B, C]) {
 fun ==[A, B](a: Tuple2[A, B], b: Tuple2[A, B]): Bool {
   a.a == b.a and a.b == b.b
 }
+fun ==[A, B, C](a: Tuple3[A, B, C], b: Tuple3[A, B, C]): Bool {
+  a.a == b.a and a.b == b.b and a.c == b.c
+}
+
+fun hash[A, B](hasher: &Hasher, tuple: Tuple2[A, B]) {
+  hasher.hash(tuple.a)
+  hasher.hash(tuple.b)
+}
+fun hash[A, B, C](hasher: &Hasher, tuple: Tuple3[A, B, C]) {
+  hasher.hash(tuple.a)
+  hasher.hash(tuple.b)
+  hasher.hash(tuple.c)
+}
 
 fun min[A](tuple: Tuple2[A, A]): A { min(tuple.a, tuple.b) }
 fun max[A](tuple: Tuple2[A, A]): A { max(tuple.a, tuple.b) }
