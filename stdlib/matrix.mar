@@ -5,7 +5,7 @@ import stdlib.mar
 struct Matrix[T] { data: Slice[T], width: Int, height: Int }
 
 fun is_valid[T](matrix: Matrix[T]): Bool {
-  matrix.data.len == {width * height} or return false
+  matrix.data.len == {matrix.width * matrix.height} or return false
   for x in 0..matrix.width do
     for y in 0..matrix.height do
       matrix.get(x @ y).is_valid() or return false
@@ -111,16 +111,22 @@ fun generate[T](
   s: Static[Matrix[T]], random: &Random, complexity: Int
 ): Matrix[T] {
   var sqrt = sqrt(complexity)
-  var width = random.next_int(0..sqrt)
-  var height = random.next_int(0..sqrt)
-  var complexities = random.split(complexity, width * height)
+  var width = random.next_int(0..=sqrt)
+  var height = random.next_int(0..=sqrt)
+  generate_matrix[T](width, height, random, complexity)
+}
+fun generate_matrix[T](
+  width: Int, height: Int, random: &Random, complexity: Int
+): Matrix[T] {
   var matrix = uninitialized_matrix[T](width @ height)
+  var complexities = random.split(complexity, width * height)
   for it in complexities.iter().enumerate() do
     matrix.data.get_ref(it.index).* = static[T]().generate(random, it.item)
   matrix
 }
 fun mutate[T](matrix: Matrix[T], random: &Random, temperature: Int): Matrix[T] {
-  if temperature == 0 then return matrix
+  if temperature == 0 or matrix.width == 0 or matrix.height == 0 then
+    return matrix
   var matrix = matrix.copy()
   var x = random.next_int(0..matrix.width)
   var y = random.next_int(0..matrix.height)
