@@ -59,7 +59,7 @@ async function runSoil<T>(
     console.error(`Failed to spawn: ${error.name}: ${error.message}`);
   });
   linebyline(soil.stderr).on("line", (line: string) => {
-    // console.log(line);
+    console.log(line);
   });
   linebyline(soil.stdout).on("line", async function (line: string) {
     console.info("Line: " + line);
