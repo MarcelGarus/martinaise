@@ -1,9 +1,8 @@
 import stdlib.mar
 
-
 | Abs & Average
 
-fun abs(number: Int): Int {
+fun abs_(number: Int): Int {
   if number >= 0 then
     number
   else
@@ -34,6 +33,7 @@ fun eval(term: Term): Int {
   case multiply(op) op.left.eval() * op.right.eval()
   case divide(op) op.left.eval() / op.right.eval()
 }
+
 
 fun write[W](writer: W, term: Term) {
   switch term
@@ -111,8 +111,50 @@ fun greet(name: String): String {
   "Hello, {name}!"
 }
 
+| Game
 
+struct Game {
+  level: Matrix[Tile],
+  player: Player,
+}
 
+enum Tile { wall, free }
+
+struct Player {
+  position: Point,
+}
+
+fun is_valid(game: Game): Bool {
+  (0..game.level.width).contains(game.player.position.x)
+    and (0..game.level.height).contains(game.player.position.y)
+}
+fun generate(static: Static[Game], random: &Random, complexity: Int): Game {
+  var width  = random.next_int(0..=complexity).clamp(1..infinity)
+  var height = random.next_int(0..=complexity).clamp(1..infinity)
+  Game {
+    level = generate_matrix[Tile](width, height, random, complexity),
+    player = Player {
+      position = Point {
+        x = random.next_int(0..width),
+        y = random.next_int(0..height),
+      },
+    }
+  }
+}
+
+fun move_right(game: &Game) {
+  var new_position = game.player.position + (1 @ 0)
+  if game.level.get(new_position) is free then
+    game.player.position = new_position
+}
+
+| Greet
+
+struct User { first_name: String, last_name: String }
+
+| fun greet(name: String) {
+|   println("Hello, {name}!")
+| }
 
 
 
@@ -167,6 +209,12 @@ fun create_invoice(order: Order): String {
 
   text
 }
+
+
+
+
+
+
 
 
 

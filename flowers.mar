@@ -18,5 +18,5 @@ fun can_place_flowers(flowerbed: List[Plot], n: Int): Bool {
 }
 
 fun main() {
-  list(Plot.empty, Plot.full, Plot.empty).can_place_flowers(2)
+  list(Plot.empty, Plot.full, Plot.empty).can_place_flowers(2).ignore()
 }
