@@ -103,6 +103,101 @@ fun list[T](
   list.push(k) list.push(l) list.push(m) list.push(n) list.push(o) list.push(p)
   list.*
 }
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T, o: T, p: T, q: T
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.push(n) list.push(o) list.push(p)
+  list.push(q) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T, o: T, p: T, q: T, r: T
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.push(n) list.push(o) list.push(p)
+  list.push(q) list.push(r) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T, o: T, p: T, q: T, r: T, s: T
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.push(n) list.push(o) list.push(p)
+  list.push(q) list.push(r) list.push(s) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T, o: T, p: T, q: T, r: T, s: T, t: T
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.push(n) list.push(o) list.push(p)
+  list.push(q) list.push(r) list.push(s) list.push(t) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.push(n) list.push(o) list.push(p)
+  list.push(q) list.push(r) list.push(s) list.push(t) list.push(u) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.push(n) list.push(o) list.push(p)
+  list.push(q) list.push(r) list.push(s) list.push(t) list.push(u) list.push(v)
+  list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.push(n) list.push(o) list.push(p)
+  list.push(q) list.push(r) list.push(s) list.push(t) list.push(u) list.push(v)
+  list.push(w) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.push(n) list.push(o) list.push(p)
+  list.push(q) list.push(r) list.push(s) list.push(t) list.push(u) list.push(v)
+  list.push(w) list.push(x) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.push(n) list.push(o) list.push(p)
+  list.push(q) list.push(r) list.push(s) list.push(t) list.push(u) list.push(v)
+  list.push(w) list.push(x) list.push(y) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T,
+  n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T,
+): List[T] {
+  var list = list[T]().& list.push(a) list.push(b) list.push(c) list.push(d)
+  list.push(e) list.push(f) list.push(g) list.push(h) list.push(i) list.push(j)
+  list.push(k) list.push(l) list.push(m) list.push(n) list.push(o) list.push(p)
+  list.push(q) list.push(r) list.push(s) list.push(t) list.push(u) list.push(v)
+  list.push(w) list.push(x) list.push(y) list.push(z) list.*
+}
 
 fun reserve_uninitialized[T](list: &List[T], n: Int): Slice[T] {
   if list.data.len == 0 then

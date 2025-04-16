@@ -53,6 +53,52 @@ fun map[K, V](
   var m = map[K, V]().& m.put(a) m.put(b) m.put(c) m.put(d) m.put(e) m.put(f)
   m.*
 }
+fun map[K, V](
+  a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V], d: MapEntry[K, V],
+  e: MapEntry[K, V], f: MapEntry[K, V], g: MapEntry[K, V],
+): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.put(b) m.put(c) m.put(d) m.put(e) m.put(f)
+  m.put(g) m.*
+}
+fun map[K, V](
+  a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V], d: MapEntry[K, V],
+  e: MapEntry[K, V], f: MapEntry[K, V], g: MapEntry[K, V], h: MapEntry[K, V],
+): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.put(b) m.put(c) m.put(d) m.put(e) m.put(f)
+  m.put(g) m.put(h) m.*
+}
+fun map[K, V](
+  a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V], d: MapEntry[K, V],
+  e: MapEntry[K, V], f: MapEntry[K, V], g: MapEntry[K, V], h: MapEntry[K, V],
+  i: MapEntry[K, V],
+): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.put(b) m.put(c) m.put(d) m.put(e) m.put(f)
+  m.put(g) m.put(h) m.put(i) m.*
+}
+fun map[K, V](
+  a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V], d: MapEntry[K, V],
+  e: MapEntry[K, V], f: MapEntry[K, V], g: MapEntry[K, V], h: MapEntry[K, V],
+  i: MapEntry[K, V], j: MapEntry[K, V],
+): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.put(b) m.put(c) m.put(d) m.put(e) m.put(f)
+  m.put(g) m.put(h) m.put(i) m.put(j) m.*
+}
+fun map[K, V](
+  a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V], d: MapEntry[K, V],
+  e: MapEntry[K, V], f: MapEntry[K, V], g: MapEntry[K, V], h: MapEntry[K, V],
+  i: MapEntry[K, V], j: MapEntry[K, V], k: MapEntry[K, V],
+): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.put(b) m.put(c) m.put(d) m.put(e) m.put(f)
+  m.put(g) m.put(h) m.put(i) m.put(j) m.put(k) m.*
+}
+fun map[K, V](
+  a: MapEntry[K, V], b: MapEntry[K, V], c: MapEntry[K, V], d: MapEntry[K, V],
+  e: MapEntry[K, V], f: MapEntry[K, V], g: MapEntry[K, V], h: MapEntry[K, V],
+  i: MapEntry[K, V], j: MapEntry[K, V], k: MapEntry[K, V], l: MapEntry[K, V],
+): Map[K, V] {
+  var m = map[K, V]().& m.put(a) m.put(b) m.put(c) m.put(d) m.put(e) m.put(f)
+  m.put(g) m.put(h) m.put(i) m.put(j) m.put(k) m.put(l) m.*
+}
 
 fun is_empty[K, V](map: Map[K, V]): Bool { map.size == 0 }
 fun put[K, V](map: &Map[K, V], entry: MapEntry[K, V]) {

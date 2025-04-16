@@ -16,6 +16,8 @@ fun put[T](set: &Set[T], value: T) { set.map.&.put(value, {}) }
 fun contains[T](set: Set[T], value: T): Bool { set.map.contains(value) }
 fun remove[T](set: Set[T], value: T) { set.map.remove(value) }
 
+fun ==[T](a: Set[T], b: Set[T]): Bool { a.map == b.map }
+
 fun write[W, T](writer: W, set: Set[T]) {
   writer.write(#{)
   var first = true
