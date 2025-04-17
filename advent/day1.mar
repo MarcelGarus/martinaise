@@ -1,9 +1,8 @@
 import ../stdlib.mar
 
-fun main(): Never {
+fun main() {
   var sum = read_file("advent/day1.smol").unwrap().to_string().solve()
   println(sum)
-  exit(0)
 }
 
 fun solve(input: String): Int {
@@ -23,6 +22,6 @@ fun line_score(line: String): Int {
 fun find_first_digit[I](iter: &Iter[Char, I]): Int {
   for char in iter do
     if {#0..=#9}.contains(char)
-    then return {char.byte - #0.byte}.to_int()
+    then return {char.byte - #0.byte}.to_int_typo()
   panic("iter doesn't contain a digit")
 }

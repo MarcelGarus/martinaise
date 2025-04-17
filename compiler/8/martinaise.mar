@@ -6512,6 +6512,7 @@ fun main(): Never {
       println("{f.stripped_signature()}")
   }
   case fuzz(fuzz) {
+    var start = now_instant()
     var path = fuzz.path
     var ast = parse_project(path).unwrap_or_report_and_exit()
 
@@ -6551,7 +6552,8 @@ fun main(): Never {
 
     var binary = soil.to_binary()
 
-    print_status("Generated fuzzer ({binary.len} bytes). Fuzzing!")
+    var end = now_instant()
+    print_status("Generated fuzzer ({binary.len} bytes) in {end.nanos_since(start) / 1000000} ms. Fuzzing!")
     exec(binary)
   }
   case tooling(command) {

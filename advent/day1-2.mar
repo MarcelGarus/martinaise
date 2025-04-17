@@ -5,9 +5,9 @@ struct Windows { slice: Slice[Char], index: Int }
 fun next(iter: &Windows): Maybe[Slice[Char]] {
   var item =
     if iter.index < iter.slice.len
-    then some(iter.slice.subslice(iter.index))
+    then some(iter.slice.without_first(iter.index))
     else none[Slice[Char]]()
-  iter.index = iter.index.add(1)
+  iter.index = iter.index + 1
   item
 }
 
@@ -18,7 +18,7 @@ struct RevWindows { slice: Slice[Char], index: Int }
 fun next(iter: &RevWindows): Maybe[Slice[Char]] {
   iter.index = iter.index - 1
   if iter.index < iter.slice.len
-  then some(iter.slice.subslice(iter.index))
+  then some(iter.slice.without_first(iter.index))
   else none[Slice[Char]]()
 }
 
@@ -36,7 +36,7 @@ fun find_first_digit[I](iter: I, digit_names: List[Slice[Char]]): Int {
 }
 
 fun main(): Never {
-  var digit_names = list[Str]()
+  var digit_names = list[String]()
   digit_names.&.push("one")
   digit_names.&.push("two")
   digit_names.&.push("three")
