@@ -58,7 +58,7 @@ async function runSoil<T>(
   soil.on("error", (error) => {
     console.error(`Failed to spawn: ${error.name}: ${error.message}`);
   });
-  linebyline(soil.stderr).on("line", (line: string) => {
+  linebyline(soil.stderr).on("line", (_: string) => {
     // console.log(line);
   });
   linebyline(soil.stdout).on("line", async function (line: string) {
@@ -85,9 +85,11 @@ export interface FunctionDefinition {
   signature: string;
   fuzzable: boolean;
 }
-interface FunctionsMessage {
-  type: "functions";
-  functions: FunctionDefinition[];
+interface FunctionMessage {
+  type: "function";
+  src: Src;
+  signature: string;
+  fuzzable: boolean;
 }
 interface ErrorMessage {
   type: "error";
@@ -111,17 +113,13 @@ export async function analyze(path: string): Promise<AnalysisReport> {
   console.log(`Analyzing ${path}`);
 
   const errors: Error[] = [];
-  let functions: FunctionDefinition[] = [];
+  const functions: FunctionDefinition[] = [];
 
-  await runSoil<FunctionsMessage | ErrorMessage>(
+  await runSoil<FunctionMessage | ErrorMessage>(
     [martinaiseCompiler, "tooling", "analyze", path],
     (message) => {
-      if (message.type == "functions") {
-        functions = message.functions;
-      }
-      if (message.type == "error") {
-        errors.push(message);
-      }
+      if (message.type == "function") functions.push(message);
+      if (message.type == "error") errors.push(message);
     },
   );
 
@@ -159,16 +157,15 @@ export interface FunctionExamples {
 }
 
 export async function fuzz(
-  uri: vs.Uri,
+  path: string,
   signature: string,
   newCalls: (examples: FunctionExamples) => void,
 ) {
-  const path = uri.toString();
   if (!path.endsWith(".mar")) return;
   console.log(`Fuzzing ${signature}`);
 
   await runSoil<ExampleMessage>(
-    [martinaiseCompiler, "tooling", "fuzz", signature],
+    [martinaiseCompiler, "tooling", "fuzz", path, signature],
     (message) => {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (message.type != "example_calls") throw new Error("unknown message");

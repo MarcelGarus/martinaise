@@ -1841,7 +1841,7 @@ fun parse_import(parser: &Parser): Result[Maybe[AstString], String] {
     if path_str.is_empty() then
       return bad_input[AstString]("Expected a file path.")
     parser.consume_keyword("use")
-      or return bad_input[AstString]("Expected a with keyword (like in Ada).")
+      or return bad_input[AstString]("Expected a use keyword (like in Ada).")
     parser.consume_whitespace()
     var path_again = parser.consume_non_whitespace()
     if path_again.string != path_str then
@@ -6163,7 +6163,7 @@ fun instrument(
     }
     case syscall(number) {
       var number = number.to_int()
-      eprintln("Transforming syscall {number}")
+      | eprintln("Transforming syscall {number}")
 
       new.&.moveimem(Reg.st, "_syscalls_enabled")
       new.&.loadb(Reg.st, Reg.st)
@@ -6294,8 +6294,7 @@ enum HelpTarget { help, ast, mono, soil, compile, run, funs, fuzz, tooling }
 struct FuzzCommand { path: String, what: FuzzWhat }
 enum FuzzWhat { position: CodePosition, fun_: Signature }
 
-enum ToolingCommand { analyze: String, fuzz: ToolingFuzzCommand }
-struct ToolingFuzzCommand { path: String, target: CodePosition }
+enum ToolingCommand { analyze: String, fuzz: FuzzCommand }
 
 fun wrong_usage(message: String): Never { stderr."{message}\n" exit(1) }
 fun ensure_mar_extension(path: String): String {
@@ -6389,9 +6388,19 @@ fun parse_args(): Command {
       args.len == 5 or wrong_usage(help_for_tooling)
       var path = args.get(3).ensure_mar_extension()
       var parser = parser("_cli", args.get(4))
-      var target = parser.&.parse_position()
-        or wrong_usage(help_for_tooling)
-      ToolingCommand.fuzz(ToolingFuzzCommand { path, target })
+      var what =
+        switch parser.&.parse_position()
+        case some(pos) FuzzWhat.position(pos)
+        case none FuzzWhat.fun_(
+          parser.&.parse_signature() or(error) wrong_usage({
+            var sb = string_builder().&
+            sb."{args.get(3)}\n"
+            for i in 0..parser.cursor do sb." "
+            sb."^\n{error}"
+            sb.to_string()
+          })
+        )
+      ToolingCommand.fuzz(FuzzCommand { path, what })
     }
     else wrong_usage(help_for_tooling)
   })
@@ -6551,22 +6560,17 @@ fun main(): Never {
     switch command
     case analyze(path) {
       var ast = parse_project(path).unwrap_or_report_and_exit()
-      { | Print a list of all functions in the file.
-        var funs_in_file = list[Json]()
-        for fun_ in ast.funs do
-          for fun_ in fun_.value do {
-            if fun_.name.src.file != path then continue
-            funs_in_file.&.push(Json.map(map(
-              "src" -> fun_.name.src.to_json(),
-              "signature" -> Json.string(fun_.stripped_signature().format()),
-              "fuzzable" -> Json.bool(fun_.type_args.is_empty()),
-            )))
-          }
-        println(Json.map(map(
-          "type" -> Json.string("functions"),
-          "functions" -> Json.array(funs_in_file),
-        )))
-      }
+      | Print all functions in the file.
+      for fun_ in ast.funs do
+        for fun_ in fun_.value do {
+          if fun_.name.src.file != path then continue
+          println(Json.map(map(
+            "type" -> Json.string("function"),
+            "src" -> fun_.name.src.to_json(),
+            "signature" -> Json.string(fun_.stripped_signature().format()),
+            "fuzzable" -> Json.bool(fun_.type_args.is_empty()),
+          )))
+        }
       var errors = ast.check_all_funs()
       if errors.is_empty()
       then {
@@ -6583,14 +6587,23 @@ fun main(): Never {
       var ast = parse_project(path).unwrap_or_report_and_exit()
 
       var fuzzed_fun =
-        switch ast.find_fun(path, fuzz.target)
-        case none wrong_usage("There is no function at that position.")
-        case some(fun_) {
-          if fun_.type_args.is_empty()
-          then LookupFunSolution { fun_, type_env = map[String, Type]() }
-          else wrong_usage("Can't fuzz generic function (for now).")
+        switch fuzz.what
+        case position(pos) {
+          switch ast.find_fun(path, pos)
+          case none wrong_usage("There is no function at that position.")
+          case some(fun_) {
+            if fun_.type_args.is_empty()
+            then LookupFunSolution { fun_, type_env = map[String, Type]() }
+            else wrong_usage("Can't fuzz generic function (for now).")
+          }
         }
-      ast.&.generate_fuzzing_hooks(fuzzed_fun.fun_, fuzzed_fun.type_env, true)
+        case fun_(signature)
+          ast.lookup_fun(signature.name, none[List[Type]](), signature.args)
+            .unwrap_or_report_and_exit()
+
+      ast.&.generate_fuzzing_hooks(
+        fuzzed_fun.fun_, fuzzed_fun.type_env, fuzz.what is position
+      )
 
       var mono = ast.compile_fuzzer_main(type("$Input"))
         .unwrap_or_report_and_exit()
@@ -6598,7 +6611,11 @@ fun main(): Never {
 
       var fuzzed_fun = fuzzed_fun.compile(context().&, ast, mono.&)
         .unwrap("The fuzzed fun should already be compiled.")
-      var soil = soil.instrument(fuzzed_fun, some(tuple(path, fuzz.target)))
+      var pos =
+        switch fuzz.what
+        case position(pos) some(tuple(path, pos))
+        case fun_ none[Tuple2[String, CodePosition]]()
+      var soil = soil.instrument(fuzzed_fun, pos)
 
       var binary = soil.to_binary()
       print_status("Generated fuzzer ({binary.len} bytes). Fuzzing!")
