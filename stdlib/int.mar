@@ -171,12 +171,13 @@ fun write_debug[W](writer: W, int: Int) { writer."{int}" }
 
 fun generate(s: Static[Int], random: &Random, complexity: Int): Int {
   random.next_int(if complexity < 50 then 0 +- 10 else {
-    0 +- {2 ** min(60, complexity / 2)}
+    0 +- {2 ** min(60, complexity - 50 / 2)}
   })
 }
 fun fuzzing_complexity(int: Int): Float {
   (int.abs() + 1).to_float().approximate_log_2()
 }
 fun mutate(int: Int, random: &Random, temperature: Int): Int {
-  int + random.next_int({0 - temperature}..=temperature)
+  var magnitude = if temperature < 50 then 10 else 2 ** min(60, temperature - 50 / 2)
+  int + random.next_int(0 +- magnitude)
 }

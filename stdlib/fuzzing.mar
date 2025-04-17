@@ -81,7 +81,7 @@ fun fuzzer_main[Input](): Never {
 
       | We have tried long enough to shrink this input.
       | TODO: check that this isn't a duplicate shrunk input
-      stderr."Moving on to next input"
+      | stderr."Moving on to next input"
       minimizing = minimizing + 1
     } else {
       var checkpoint = heap_checkpoint()
