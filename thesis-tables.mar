@@ -1,11 +1,44 @@
 import thesis-examples.mar
 
+struct LatexTerm { term: Term }
+
+fun latex(term: Term): LatexTerm { LatexTerm { term } }
+fun write[W](writer: W, term: LatexTerm) {
+  | writer."no"
+  | return {}
+  switch term.term
+  case number(num) writer."{num}"
+  case add(op) writer."{op.left.latex()} + {op.right.latex()}"
+  case subtract(op)
+    writer."{op.left.latex()} - {{
+      var needs_parens = op.right.* is add or {op.right.* is subtract}
+      if needs_parens then "({op.right.latex()})" else "{op.right.latex()}"
+    }}"
+  case multiply(op)
+    writer."{{
+      var needs_parens = op.left.* is add or {op.left.* is subtract}
+      if needs_parens then "({op.left.latex()})" else "{op.left.latex()}"
+    }} \\cdot {{
+      var needs_parens = op.right.* is add or {op.right.* is subtract}
+      if needs_parens then "({op.right.latex()})" else "{op.right.latex()}"
+    }}"
+  case divide(op)
+    writer."{{
+      var needs_parens = op.left.* is add or {op.left.* is subtract}
+      if needs_parens then "({op.left.latex()})" else "{op.left.latex()}"
+    }} / {{
+      var needs_parens = not(op.right.* is number)
+      if needs_parens then "({op.right.latex()})" else "{op.right.latex()}"
+    }}"
+}
+
 fun print_generate_table() {
   println("Generate table:")
   var random = random_number_generator()
   for complexity in list(0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500) do {
     var term = static[Term]().generate(random.&, complexity)
-    print("{complexity} & {term} & {switch try term.eval() case ok(num) "{num}" case error "-"} \\\\ \\hline \n")
+    print("{complexity} & ${term.latex()}$ \\\\ \\hline \n")
+    | print("{complexity} & ${term.latex()}$ & {switch try term.eval() case ok(num) "${num}$" case error "-"} \\\\ \\hline \n")
   }
 }
 
@@ -13,7 +46,6 @@ fun ops(left: Term, right: Term): Operands {
   Operands { left = left.put_on_heap(), right = right.put_on_heap() }
 }
 fun print_mutate_table() {
-  var random = random_number_generator()
   | -2 * 4 * -9 * -5 / (-6 * -2 * -9 / -5)
   var term = Term.divide(ops(
     Term.multiply(ops(
@@ -27,13 +59,16 @@ fun print_mutate_table() {
   ))
   println("Original term: {term}")
   println("Mutate table:")
+  var random = random_number_generator()
   for temperature in list(0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500) do {
     var term = term.mutate(random.&, temperature)
-    print("{temperature} & {term} & {switch try term.eval() case ok(num) "{num}" case error "-"} \\\\ \\hline \n")
+    print("{temperature} & ${term.latex()}$ \\\\ \\hline \n")
+    | print("{temperature} & ${term.latex()}$ & {switch try term.eval() case ok(num) "${num}$" case error "-"} \\\\ \\hline \n")
   }
 }
 
 fun main() {
   print_generate_table()
+  println()
   print_mutate_table()
 }

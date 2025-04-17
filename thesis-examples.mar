@@ -3,7 +3,7 @@ import stdlib.mar
 
 | Abs & Average
 
-fun abs(number: Int): Int {
+fun abs_(number: Int): Int {
   if number >= 0 then
     number
   else
@@ -111,6 +111,29 @@ fun greet(name: String): String {
   "Hello, {name}!"
 }
 
+
+fun snippets() {
+  var url = ""
+
+  if url.starts_with("https://") then {
+    |...
+  }
+
+
+  "https://"
+
+  "hello"
+
+  "htttt"
+
+  average  (list(0)) = 0
+
+  main   ()
+
+  | [1, 2, 3]
+}
+
+fun main() {}
 
 
 
@@ -246,10 +269,10 @@ struct In {
   arg: String
 }
 
-fun main() {
-  var random = random_number_generator()
-  var original = In { arg = "toBQOvKP@2|Gfi2<lL;C@55)x" }
-  original.debug().println()
-  for i in 0..30 do
-    original.mutate(random.&, i).debug().println()
-}
+| fun main() {
+|   var random = random_number_generator()
+|   var original = In { arg = "toBQOvKP@2|Gfi2<lL;C@55)x" }
+|   original.debug().println()
+|   for i in 0..30 do
+|     original.mutate(random.&, i).debug().println()
+| }
