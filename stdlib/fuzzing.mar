@@ -11,6 +11,7 @@ struct FuzzingInfo {
   has_target_position: Bool,
   fun_line: Int,
   fun_name: String,
+  fun_signature: String,
 }
 
 fun fuzzer_main[Input](): Never {
@@ -199,6 +200,7 @@ fun report[Input](samples: List[FuzzingSample[Input]]) {
   println(Json.map(map(
     "type" -> Json.string("example_calls"),
     "fun_start_line" -> Json.int(info.fun_line),
+    "fun_signature" -> Json.string("{info.fun_signature}"),
     "fun_name" -> Json.string(info.fun_name),
     "calls" -> Json.array(calls_array),
   )))

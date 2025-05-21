@@ -5973,6 +5973,7 @@ fun generate_fuzzing_hooks(
   |     has_target_position = ...,
   |     fun_line = ...,
   |     fun_name = ...,
+  |     fun_signature = ...,
   |   }
   | }
   {
@@ -6008,7 +6009,14 @@ fun generate_fuzzing_hooks(
                 name = "fun_name" @ src,
                 value = AstExpr.string(fun_.name.string)
               },
-
+              AstMakeStructField {
+                name = "fun_signature" @ src,
+                value = AstExpr.string(
+                  signature(
+                    fun_.name.string, none[List[Type]](), arg_types
+                  ).format()
+                )
+              },
             )
           }),
         )),

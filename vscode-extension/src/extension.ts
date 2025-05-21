@@ -52,6 +52,11 @@ export function activate(context: vs.ExtensionContext) {
     vs.commands.registerCommand("martinaise.fuzz", fuzzToPosition),
   );
   context.subscriptions.push(registerCodeActionsProvider());
+
+  const visiblePaths = new Set<Path>();
+  for (const editor of vs.window.visibleTextEditors)
+    visiblePaths.add(editor.document.uri.toString());
+  for (const path of visiblePaths) scheduleAnalysis(path);
 }
 export function deactivate() {
   // TODO: What to do here?
@@ -72,15 +77,17 @@ type Timestamp = number;
 const pendingAnalyses = new Map<Path, Timestamp>();
 const analyses = new Map<Path, Analysis>();
 interface Analysis {
+  content: string;
   functions: communication.FunctionDefinition[];
   errors: communication.Error[];
 }
 
 const pendingFuzzing = new Map<Path, Map<communication.Signature, Timestamp>>();
-const examples = new Map<
-  Path,
-  Map<communication.Signature, communication.FunctionExamples>
->();
+const examples = new Map<Path, Map<communication.Signature, Examples>>();
+interface Examples {
+  examples: communication.FunctionExamples;
+  based_on_content: string;
+}
 
 function onDidChangeVisibleTextEditors(editors: readonly vs.TextEditor[]) {
   const visiblePaths = new Set<Path>();
@@ -107,24 +114,41 @@ function scheduleAnalysis(path: Path) {
     if (pendingAnalyses.has(path) && pendingAnalyses.get(path)! > scheduled)
       return;
 
+    const content = (await communication.readCode(vs.Uri.parse(path)))!;
+    if (analyses.get(path)?.content == content) {
+      console.log("Still up to date.");
+      return;
+    } else {
+      if (analyses.get(path)) {
+        console.log(`Analyzing "${path}" because it has changed.`);
+      } else {
+        console.log(`Analyzing "${path}" because it hasn't been analyzed yet.`);
+      }
+    }
+
     const analysis = await communication.analyze(path);
     const errorsFromThisFile = [];
     for (const error of analysis.errors) {
       if (error.src.file == path) errorsFromThisFile.push(error);
     }
     analyses.set(path, {
+      content: content,
       functions: analysis.functions,
       errors: errorsFromThisFile,
     });
+    examples.get(path)?.clear();
     updateErrorDiagnostics();
+    updateFuzzingExamples(path);
   });
 }
 
 function onDidChangeVisibleRanges(
   event: vs.TextEditorVisibleRangesChangeEvent,
 ) {
+  if (!fuzzingEnabled) return;
   if (event.textEditor.document.languageId != "martinaise") return;
   const path = event.textEditor.document.uri.toString();
+  console.log(`onDidChangeVisibleRanges Examples: ${JSON.stringify(examples)}`);
 
   let start = 999999; // TODO
   let end = 0;
@@ -150,6 +174,9 @@ const min = (a: number, b: number) => (a < b ? a : b);
 const max = (a: number, b: number) => (a > b ? a : b);
 
 function scheduleFuzzingOfFunction(path: Path, signature: string) {
+  console.log(
+    `scheduleFuzzingOfFunction Examples: ${JSON.stringify(examples)}`,
+  );
   const scheduled = performance.now();
   if (!pendingFuzzing.has(path)) pendingFuzzing.set(path, new Map());
   pendingFuzzing.get(path)!.set(signature, scheduled);
@@ -158,6 +185,20 @@ function scheduleFuzzingOfFunction(path: Path, signature: string) {
     if (pendingFuzzing.get(path)!.get(signature)! > scheduled) return;
 
     console.log(`Fuzzing ${signature}`);
+
+    const content = (await communication.readCode(vs.Uri.parse(path)))!;
+    if (examples.get(path)?.get(signature)?.based_on_content == content) {
+      console.log("Still up to date.");
+      return;
+    } else {
+      if (!examples.get(path)?.get(signature)) {
+        console.log(
+          `No examples for "${path}":"${signature}": ${JSON.stringify(examples)}`,
+        );
+      } else {
+        console.log("Examples out of date.");
+      }
+    }
 
     await communication.fuzz(path, signature, (newExamples) => {
       let visible = false;
@@ -173,8 +214,14 @@ function scheduleFuzzingOfFunction(path: Path, signature: string) {
 
       const fileExamples = examples.get(path);
       if (!fileExamples) throw Error("unreachable");
-      fileExamples.set(signature, newExamples);
+      fileExamples.set(newExamples.fun_signature, {
+        examples: newExamples,
+        based_on_content: content,
+      });
       updateFuzzingExamples(path);
+      console.log(
+        `scheduleFuzzingOfFunction.end Examples: ${JSON.stringify(examples)}`,
+      );
     });
   });
 }
@@ -183,17 +230,22 @@ async function fuzzToPosition(
   document: vs.TextDocument,
   position: vs.Position,
 ) {
+  console.log(`FuzzToPosition Examples: ${JSON.stringify(examples)}`);
   const path = document.uri.toString();
   if (!path.endsWith(".mar")) return;
   console.log(`Fuzzing ${path} ${JSON.stringify(position)}`);
   if (fuzzingEnabled) fuzzingEnabled = false;
 
+  const content = (await communication.readCode(vs.Uri.parse(path)))!;
   await communication.fuzzToPosition(document, position, (newExamples) => {
     if (!examples.has(path)) examples.set(path, new Map());
 
     const fileExamples = examples.get(path);
     if (!fileExamples) throw Error("unreachable");
-    fileExamples.set(newExamples.fun_signature, newExamples);
+    fileExamples.set(newExamples.fun_signature, {
+      examples: newExamples,
+      based_on_content: content,
+    });
     updateFuzzingExamples(path);
   });
 }
@@ -227,6 +279,7 @@ function updateErrorDiagnostics() {
 }
 
 function updateFuzzingExamples(path: Path) {
+  console.log(`updateFuzzingExamples Examples: ${JSON.stringify(examples)}`);
   let editor: vs.TextEditor | null = null;
   for (const e of vs.window.visibleTextEditors)
     if (e.document.uri.toString() == path) editor = e;
@@ -236,11 +289,20 @@ function updateFuzzingExamples(path: Path) {
   const panicDecorations: vs.DecorationOptions[] = [];
 
   const examplesOfFile = examples.get(path);
+  console.log(`Examples of file: ${JSON.stringify(examplesOfFile)}`);
   if (!examplesOfFile) return;
-  for (const examplesOfFun of examplesOfFile.values()) {
-    for (const call of examplesOfFun.calls) {
-      console.info(`Example call: ${JSON.stringify(call)}`);
-      const position = new vs.Position(examplesOfFun.fun_start_line, 80);
+  // console.info(`Functions that we have examples for:`);
+  // for (const signature in examplesOfFile.keys()) {
+  //   console.info(signature);
+  // }
+  for (const examplesOfFun of examplesOfFile) {
+    // console.info(
+    //   `Signature: ${examplesOfFun[0]} ${examplesOfFun[1].examples.fun_signature}`,
+    // );
+    const line = examplesOfFun[1].examples.fun_start_line;
+    for (const call of examplesOfFun[1].examples.calls) {
+      // console.info(`Example call: ${JSON.stringify(call)}`);
+      const position = new vs.Position(line, 80);
       let text = call.inputs.join(", ");
       if (call.result.status == "returned") text += ` -> ${call.result.value}`;
       if (call.result.status == "panicked") text += ` panics`;
