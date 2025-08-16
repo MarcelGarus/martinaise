@@ -165,6 +165,189 @@ fun list[T](
   list.push(z) list.*
 }
 
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z
+  ).& list.push(aa) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa
+  ).& list.push(ab) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab
+  ).& list.push(ac) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac
+  ).& list.push(ad) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad
+  ).& list.push(ae) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae
+  ).& list.push(af) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af
+  ).& list.push(ag) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag
+  ).& list.push(ah) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah
+  ).& list.push(ai) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai
+  ).& list.push(aj) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj
+  ).& list.push(ak) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T, al: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj, ak
+  ).& list.push(al) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T, al: T, am: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj, ak, al
+  ).& list.push(am) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T, al: T, am: T, an: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj, ak, al, am
+  ).& list.push(an) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T, al: T, am: T, an: T, ao: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj, ak, al, am, an
+  ).& list.push(ao) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T, al: T, am: T, an: T, ao: T, ap: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj, ak, al, am, an, ao
+  ).& list.push(ap) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T, al: T, am: T, an: T, ao: T, ap: T, aq: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj, ak, al, am, an, ao, ap
+  ).& list.push(aq) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T, al: T, am: T, an: T, ao: T, ap: T, aq: T, ar: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj, ak, al, am, an, ao, ap, aq
+  ).& list.push(ar) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T, al: T, am: T, an: T, ao: T, ap: T, aq: T, ar: T, as: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj, ak, al, am, an, ao, ap, aq, ar
+  ).& list.push(as) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T, al: T, am: T, an: T, ao: T, ap: T, aq: T, ar: T, as: T, at: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj, ak, al, am, an, ao, ap, aq, ar, as
+  ).& list.push(at) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T, al: T, am: T, an: T, ao: T, ap: T, aq: T, ar: T, as: T, at: T, au: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj, ak, al, am, an, ao, ap, aq, ar, as, at
+  ).& list.push(au) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T, al: T, am: T, an: T, ao: T, ap: T, aq: T, ar: T, as: T, at: T, au: T, av: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj, ak, al, am, an, ao, ap, aq, ar, as, at, au
+  ).& list.push(av) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T, al: T, am: T, an: T, ao: T, ap: T, aq: T, ar: T, as: T, at: T, au: T, av: T, aw: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj, ak, al, am, an, ao, ap, aq, ar, as, at, au, av
+  ).& list.push(aw) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T, al: T, am: T, an: T, ao: T, ap: T, aq: T, ar: T, as: T, at: T, au: T, av: T, aw: T, ax: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj, ak, al, am, an, ao, ap, aq, ar, as, at, au, av, aw
+  ).& list.push(ax) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T, al: T, am: T, an: T, ao: T, ap: T, aq: T, ar: T, as: T, at: T, au: T, av: T, aw: T, ax: T, ay: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj, ak, al, am, an, ao, ap, aq, ar, as, at, au, av, aw, ax
+  ).& list.push(ay) list.*
+}
+fun list[T](
+  a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T, j: T, k: T, l: T, m: T, n: T, o: T, p: T, q: T, r: T, s: T, t: T, u: T, v: T, w: T, x: T, y: T, z: T, aa: T, ab: T, ac: T, ad: T, ae: T, af: T, ag: T, ah: T, ai: T, aj: T, ak: T, al: T, am: T, an: T, ao: T, ap: T, aq: T, ar: T, as: T, at: T, au: T, av: T, aw: T, ax: T, ay: T, az: T
+): List[T] {
+  var list = list(
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, aa, ab, ac, ad, ae, af, ag, ah, ai, aj, ak, al, am, an, ao, ap, aq, ar, as, at, au, av, aw, ax, ay
+  ).& list.push(az) list.*
+}
+
 fun reserve_uninitialized[T](list: &List[T], n: Int): Slice[T] {
   if list.data.len == 0 then
     list.data = uninitialized_slice[T](
