@@ -444,6 +444,11 @@ fun trim_suffix[T](slice: &Slice[T], suffix: Slice[T]): Bool {
   if matches then slice.* = slice.without_last(suffix.len)
   matches
 }
+fun reversed[T](slice: Slice[T]): Slice[T] {
+  var new = uninitialized_slice[T](slice.len)
+  for i in 0..slice.len do new.set(slice.len - i - 1, slice.get(i))
+  new
+}
 
 fun sum(slice: Slice[Int]): Int {
   var sum = 0
