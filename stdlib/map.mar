@@ -217,6 +217,17 @@ fun write_debug[W, K, V](writer: W, map: Map[K, V]) {
   }
   writer."}"
 }
+fun hash[K, V](hasher: &Hasher, map: Map[K, V]) {
+  hasher.hash(map.size)
+  var aggregate_hash = 0
+  for entry in map do {
+    var entry_hasher = Hasher { state = 5381 }
+    entry_hasher.&.hash(entry.key)
+    entry_hasher.&.hash(entry.value)
+    aggregate_hash = aggregate_hash ^ (entry_hasher.state * 33)
+  }
+  hasher.hash(aggregate_hash)
+}
 fun copy[K, V](map: Map[K, V]): Map[K, V] {
   var copy = map[K, V]()
   for entry in map do copy.&.put(entry.key.copy(), entry.value.copy())
