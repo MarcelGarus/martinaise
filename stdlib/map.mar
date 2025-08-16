@@ -141,6 +141,7 @@ fun raw_put[K, V](map: &Map[K, V], key: K, value: V) {
 }
 fun contains[K, V](map: Map[K, V], key: K): Bool { map.get_maybe(key) is some }
 fun get_maybe_ref[K, V](map: &Map[K, V], key: K): Maybe[&V] {
+  if map.buckets.len == 0 then return none[&V]()
   var i = key.hash() % map.buckets.len
   loop {
     var bucket = map.buckets.get_unchecked(i)
@@ -159,6 +160,7 @@ fun get_ref[K, V](map: &Map[K, V], key: K): &V {
   map.get_maybe_ref(key) or panic("Key {debug(key)} is not in the map.")
 }
 fun get_maybe[K, V](map: Map[K, V], key: K): Maybe[V] {
+  if map.buckets.len == 0 then return none[V]()
   var i = key.hash() % map.buckets.len
   loop {
     var bucket = map.buckets.get_unchecked(i)
