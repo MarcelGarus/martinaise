@@ -17,6 +17,10 @@ fun +-[T](mid: T, distance: T): Range[T] { | thanks to @antoniusnaumann
   Range { start = mid - distance, end = {mid + distance}.inc() }
 }
 
+fun ==[T](a: Range[T], b: Range[T]): Bool {
+  a.start == b.start and a.end == b.end
+}
+
 fun len[T](range: Range[T]): Int { range.end - range.start }
 fun contains[T](range: Range[T], value: T): Bool {
   value >= range.start and value < range.end
