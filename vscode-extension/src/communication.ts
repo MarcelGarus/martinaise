@@ -28,7 +28,7 @@ interface Src {
 /// Returns the source code of the given URI. Prefers the content of open text
 /// documents, even if they're not saved yet. If none exists, asks the file
 /// system.
-async function readCode(uri: vs.Uri): Promise<string | null> {
+export async function readCode(uri: vs.Uri): Promise<string | null> {
   for (const doc of vs.workspace.textDocuments)
     if (doc.uri.toString() == uri.toString()) return doc.getText();
   try {
@@ -62,7 +62,7 @@ async function runSoil<T>(
     // console.log(line);
   });
   linebyline(soil.stdout).on("line", async function (line: string) {
-    console.info("Line: " + line);
+    // console.info("Line: " + line);
     const message = JSON.parse(line) as { type: string };
     if (message.type == "read_file") {
       soil.stdin.write(await handleReadFileMessage(message as ReadFileMessage));

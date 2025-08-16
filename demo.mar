@@ -1,0 +1,138 @@
+import stdlib.mar
+
+
+
+
+
+
+
+
+
+
+
+| Average  
+| A small function for averaging a list of integers.
+
+fun average(list: List[Int]): Int {
+  list.sum() / list.len
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+| Mail Checking  
+
+fun is_valid_email(string: String): Bool {
+  if not(string.contains("@")) then
+    return false
+  var parts = string.split("@")
+  var name = parts.get(0)
+  var host = parts.get(1)
+
+  if name.len < 8 then
+    return false
+  if not(name.is_alphanumeric()) then
+    return false
+
+  true
+}
+
+
+
+
+
+
+
+
+
+fun is_alphanumeric(name: String): Bool {
+  for char in name.chars() do {
+    var is_valid = char.is_letter() or char.is_digit() or char == #.
+    if not(is_valid) then
+      return false
+  }
+  true
+}
+
+
+
+
+
+
+
+| Calculator  
+| These terms can represent simple mathematical expressions. They can be
+| evaluated.
+
+enum Term {
+  number: Int,
+  add: Operands,
+  subtract: Operands,
+  multiply: Operands,
+  divide: Operands,
+}
+struct Operands { left: &Term, right: &Term }
+
+fun eval(term: Term): Int {
+  switch term
+  case number(int)  int
+  case add(op)      op.left.eval() + op.right.eval()
+  case subtract(op) op.left.eval() - op.right.eval()
+  case multiply(op) op.left.eval() * op.right.eval()
+  case divide(op)   op.left.eval() / op.right.eval()
+}
+
+
+
+
+
+
+
+
+
+fun write[W](writer: W, term: Term) {
+  switch term
+  case number(num) writer."{num}"
+  case add(op) writer."{op.left} + {op.right}"
+  case subtract(op)
+    writer."{op.left} - {{
+      var needs_parens = op.right.* is add or {op.right.* is subtract}
+      if needs_parens then "({op.right})" else "{op.right}"
+    }}"
+  case multiply(op)
+    writer."{{
+      var needs_parens = op.left.* is add or {op.left.* is subtract}
+      if needs_parens then "({op.left})" else "{op.left}"
+    }} * {{
+      var needs_parens = op.right.* is add or {op.right.* is subtract}
+      if needs_parens then "({op.right})" else "{op.right}"
+    }}"
+  case divide(op)
+    writer."{{
+      var needs_parens = op.left.* is add or {op.left.* is subtract}
+      if needs_parens then "({op.left})" else "{op.left}"
+    }} / {{
+      var needs_parens = not(op.right.* is number)
+      if needs_parens then "({op.right})" else "{op.right}"
+    }}"
+}
+fun write_debug[W](writer: W, term: Term) { writer."{term}" }
+
