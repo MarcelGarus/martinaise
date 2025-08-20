@@ -361,6 +361,21 @@ fun next[T](iter: &Iter[T, SliceIter[T]]): Maybe[T] {
   else none[T]()
 }
 
+fun ref_iter[T](slice: Slice[T]): Iter[&T, _] {
+  Iter[&T, SliceRefIter[T]] { state = SliceRefIter { slice, index = 0 } }
+}
+struct SliceRefIter[T] { slice: Slice[T], index: Int }
+fun next[T](iter: &Iter[&T, SliceRefIter[T]]): Maybe[&T] {
+  var state = iter.state.&
+  if state.index < state.slice.len
+  then {
+    var item_ref = state.slice.get_ref(state.index)
+    state.index = state.index + 1
+    some(item_ref)
+  }
+  else none[&T]()
+}
+
 fun rev_iter[T](slice: Slice[T]): Iter[T, _] {
   Iter[T, SliceRevIter[T]] { state = SliceRevIter { slice, index = slice.len } }
 }
